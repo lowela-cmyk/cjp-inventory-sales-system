@@ -28,6 +28,11 @@ const runDemoLogin = (form) => {
 document.addEventListener('submit', (event) => {
     const form = event.target.closest('[data-demo-login-form]');
     if (!form) {
+        const registerForm = event.target.closest('[data-demo-register-form]');
+        if (registerForm) {
+            event.preventDefault();
+            window.location.href = registerForm.dataset.loginUrl || '/login';
+        }
         return;
     }
 

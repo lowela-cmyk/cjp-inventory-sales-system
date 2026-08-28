@@ -8,6 +8,7 @@ use Illuminate\View\Middleware\ShareErrorsFromSession;
 Route::withoutMiddleware([StartSession::class, ShareErrorsFromSession::class, VerifyCsrfToken::class])->group(function () {
     Route::view('/', 'auth.login')->name('home');
     Route::view('/login', 'auth.login')->name('login');
+    Route::view('/register', 'auth.register')->name('register');
 
     Route::redirect('/admin', '/admin/dashboard')->name('admin.shortcut');
     Route::prefix('admin')->name('admin.')->group(function () {

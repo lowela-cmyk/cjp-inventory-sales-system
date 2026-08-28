@@ -10,7 +10,7 @@
     <main class="login-shell">
         <section class="login-panel" aria-labelledby="login-title">
             <div class="login-form-wrap">
-                <h1 id="login-title">Sign In</h1>
+                <h1 id="login-title">Log In</h1>
 
                 @php
                     // TEMPORARY DEMO LOGIN BYPASS
@@ -44,7 +44,7 @@
                     <button class="login-submit" type="button" data-demo-login-button>LOG IN</button>
                 </form>
 
-                <p class="login-register">Don&rsquo;t have an account? Click Here.</p>
+                <p class="login-register">Don&rsquo;t have an account? <a href="{{ route('register') }}">Click Here.</a></p>
             </div>
         </section>
 

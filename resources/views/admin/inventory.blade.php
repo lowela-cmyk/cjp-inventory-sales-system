@@ -35,14 +35,14 @@
                 <button class="btn btn-primary" type="button">Date</button>
                 <button class="btn btn-primary" type="button">Depot</button>
                 <button class="btn btn-primary" type="button">Fuel Type (All)</button>
-                <button class="btn btn-primary" type="button">+ Record Purchases</button>
+                <button class="btn btn-primary" type="button" data-modal-open="purchase-add">+ Record Purchases</button>
             </div>
             <div class="table-wrap">
                 <table class="admin-table">
                     <thead><tr><th>Purchase-ID</th><th>Date</th><th>Fuel</th><th>Depot</th><th>QTY (L)</th><th>Cost / Liter</th><th>Total Cost</th><th>Delivery Receipt</th><th>Payment Status</th><th>Actions</th></tr></thead>
                     <tbody>
                         @foreach ($purchases as $row)
-                            <tr class="{{ $row[9] }}"><td>{{ $row[0] }}</td><td>{{ $row[1] }}</td><td>{{ $row[2] }}</td><td>{{ $row[3] }}</td><td>{{ $row[4] }}</td><td>{{ $row[5] }}</td><td>{{ $row[6] }}</td><td>{{ $row[7] }}</td><td><x-admin.status-badge :status="$row[8]" /></td><td><button class="btn btn-secondary" type="button">Edit</button></td></tr>
+                            <tr class="{{ $row[9] }}"><td>{{ $row[0] }}</td><td>{{ $row[1] }}</td><td>{{ $row[2] }}</td><td>{{ $row[3] }}</td><td>{{ $row[4] }}</td><td>{{ $row[5] }}</td><td>{{ $row[6] }}</td><td>{{ $row[7] }}</td><td><x-admin.status-badge :status="$row[8]" /></td><td><button class="btn btn-secondary" type="button" data-modal-open="purchase-edit">Edit</button></td></tr>
                         @endforeach
                     </tbody>
                 </table>
@@ -61,7 +61,7 @@
                     <thead><tr><th>Purchase-ID</th><th>Order Date</th><th>Fuel</th><th>Depot</th><th>QTY Ordered</th><th>Cost / Liter</th><th>Total Cost</th><th>Current Quantity</th><th>Status</th><th>Actions</th></tr></thead>
                     <tbody>
                         @foreach ($stockIn as $row)
-                            <tr class="{{ $row[9] }}"><td>{{ $row[0] }}</td><td>{{ $row[1] }}</td><td>{{ $row[2] }}</td><td>{{ $row[3] }}</td><td>{{ $row[4] }}</td><td>{{ $row[5] }}</td><td>{{ $row[6] }}</td><td>{{ $row[7] }}</td><td><x-admin.status-badge :status="$row[8]" /></td><td><button class="btn btn-secondary" type="button">Edit</button></td></tr>
+                            <tr class="{{ $row[9] }}"><td>{{ $row[0] }}</td><td>{{ $row[1] }}</td><td>{{ $row[2] }}</td><td>{{ $row[3] }}</td><td>{{ $row[4] }}</td><td>{{ $row[5] }}</td><td>{{ $row[6] }}</td><td>{{ $row[7] }}</td><td><x-admin.status-badge :status="$row[8]" /></td><td><button class="btn btn-secondary" type="button" data-modal-open="stock-detail">View</button></td></tr>
                         @endforeach
                     </tbody>
                 </table>
@@ -87,4 +87,43 @@
             </div>
         </section>
     </div>
+
+    <x-admin.modal id="purchase-add" title="Record Purchases" wide>
+        <div class="modal-card">
+            <div class="form-grid">
+                @foreach (['Purchase ID', 'Date', 'Fuel', 'Depot', 'QTY (L)', 'Cost / Liter', 'Total Cost', 'Delivery Receipt', 'Payment Status'] as $field)
+                    <div class="form-row">
+                        <label>{{ $field }}</label>
+                        <input type="{{ $field === 'Date' ? 'date' : (str_contains($field, 'QTY') || str_contains($field, 'Cost') ? 'number' : 'text') }}" placeholder="Enter {{ $field }}">
+                    </div>
+                @endforeach
+            </div>
+        </div>
+        <div class="modal-actions"><button class="btn btn-pill btn-secondary" type="button">Add</button><button class="btn btn-pill btn-danger" type="button" data-modal-close>Delete</button></div>
+    </x-admin.modal>
+
+    <x-admin.modal id="purchase-edit" title="Edit Purchase Record">
+        <div class="modal-card">
+            <span class="detail-status">Partial</span>
+            <p class="detail-id">PUR-000003</p>
+            <div class="detail-grid">
+                @foreach (['Date' => '8/26/2026', 'Fuel' => 'Diesel', 'Depot' => 'Phoenix A', 'QTY (L)' => '90,000.00', 'Cost / Liter' => '85.00', 'Total Cost' => '7,650,000.00', 'Delivery Receipt' => 'img.png', 'Payment Status' => 'Partial'] as $label => $value)
+                    <div class="detail-row"><div class="detail-label">{{ $label }}</div><div class="detail-value">{{ $value }}</div></div>
+                @endforeach
+            </div>
+        </div>
+        <div class="modal-actions"><button class="btn btn-pill btn-secondary" type="button">Edit</button><button class="btn btn-pill btn-danger" type="button">Delete</button></div>
+    </x-admin.modal>
+
+    <x-admin.modal id="stock-detail" title="Stock Details">
+        <div class="modal-card">
+            <span class="detail-status">Available</span>
+            <p class="detail-id">PUR-000001</p>
+            <div class="detail-grid">
+                @foreach (['Fuel' => 'Premium', 'Depot' => 'Petron A', 'QTY Ordered' => '100,000.00', 'Current Quantity' => '40,000.00', 'Status' => 'Available'] as $label => $value)
+                    <div class="detail-row"><div class="detail-label">{{ $label }}</div><div class="detail-value">{{ $value }}</div></div>
+                @endforeach
+            </div>
+        </div>
+    </x-admin.modal>
 @endcomponent

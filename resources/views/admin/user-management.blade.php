@@ -15,15 +15,34 @@
 
 @component('layouts.admin', ['title' => 'User Management', 'active' => 'user-management'])
     <div data-tabs>
-        <h2 class="section-title">Drivers</h2>
+        <h2 class="section-title">Office Staff</h2>
         <div class="tabs">
-            <button class="tab-button is-active" type="button" data-tab-target="drivers">Drivers</button>
-            <button class="tab-button" type="button" data-tab-target="office">Office Staff</button>
+            <button class="tab-button is-active" type="button" data-tab-target="office">Office Staff</button>
+            <button class="tab-button" type="button" data-tab-target="drivers">Drivers</button>
             <button class="tab-button" type="button" data-tab-target="customers">Customers</button>
         </div>
         <div class="actions-right"><button class="btn btn-secondary" type="button">Export</button></div>
 
-        <section data-tab-panel="drivers">
+        <section data-tab-panel="office">
+            <div class="toolbar toolbar-narrow">
+                <input type="search" placeholder="Search..." aria-label="Search office staff">
+                <button class="btn btn-primary" type="button">Position</button>
+                <button class="btn btn-primary" type="button">Contact</button>
+                <button class="btn btn-primary" type="button" data-modal-open="staff-add">+ Add Office Staff</button>
+            </div>
+            <div class="table-wrap">
+                <table class="admin-table">
+                    <thead><tr><th>Staff ID</th><th>Name</th><th>Position</th><th>Email</th><th>Contact Number</th><th>Actions</th></tr></thead>
+                    <tbody>
+                        @foreach ($staff as $row)
+                            <tr><td>{{ $row[0] }}</td><td>{{ $row[1] }}</td><td>{{ $row[2] }}</td><td>{{ $row[3] }}</td><td>{{ $row[4] }}</td><td><button class="btn btn-secondary" type="button" data-modal-open="staff-edit">Edit</button></td></tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section data-tab-panel="drivers" hidden>
             <div class="toolbar toolbar-narrow">
                 <input type="search" placeholder="Search..." aria-label="Search drivers">
                 <button class="btn btn-primary" type="button">License</button>
@@ -36,25 +55,6 @@
                     <tbody>
                         @foreach ($drivers as $row)
                             <tr><td>{{ $row[0] }}</td><td>{{ $row[1] }}</td><td>{{ $row[2] }}</td><td>{{ $row[3] }}</td><td>{{ $row[4] }}</td><td><button class="btn btn-secondary" type="button" data-modal-open="driver-edit">Edit</button></td></tr>
-                        @endforeach
-                    </tbody>
-                </table>
-            </div>
-        </section>
-
-        <section data-tab-panel="office" hidden>
-            <div class="toolbar toolbar-narrow">
-                <input type="search" placeholder="Search..." aria-label="Search office staff">
-                <button class="btn btn-primary" type="button">Position</button>
-                <button class="btn btn-primary" type="button">Contact</button>
-                <button class="btn btn-primary" type="button" data-modal-open="staff-add">+ Add Staff</button>
-            </div>
-            <div class="table-wrap">
-                <table class="admin-table">
-                    <thead><tr><th>Staff ID</th><th>Name</th><th>Position</th><th>Email</th><th>Contact Number</th><th>Actions</th></tr></thead>
-                    <tbody>
-                        @foreach ($staff as $row)
-                            <tr><td>{{ $row[0] }}</td><td>{{ $row[1] }}</td><td>{{ $row[2] }}</td><td>{{ $row[3] }}</td><td>{{ $row[4] }}</td><td><button class="btn btn-secondary" type="button" data-modal-open="staff-edit">Edit</button></td></tr>
                         @endforeach
                     </tbody>
                 </table>

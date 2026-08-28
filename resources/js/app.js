@@ -52,6 +52,14 @@ document.addEventListener('click', (event) => {
         closeModal(event.target.closest('.modal-backdrop') || event.target);
     }
 
+    const modalSwap = event.target.closest('[data-modal-swap]');
+    if (modalSwap) {
+        closeModal(modalSwap.closest('.modal-backdrop'));
+        const modal = document.getElementById(modalSwap.dataset.modalSwap);
+        modal?.classList.add('is-open');
+        modal?.setAttribute('aria-hidden', 'false');
+    }
+
     const tabButton = event.target.closest('[data-tab-target]');
     if (tabButton) {
         const scope = tabButton.closest('[data-tabs]');

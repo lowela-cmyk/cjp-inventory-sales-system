@@ -1,12 +1,13 @@
-@component('layouts.admin', ['title' => 'Reports Tab', 'subtitle' => 'Reports and AI Insights', 'active' => 'reports'])
-    <h2 class="section-title">Reports Tab</h2>
+@component('layouts.admin', ['title' => 'Reports Tab', 'active' => 'reports'])
+    <h2 class="section-title">Reports and A.I Insights</h2>
+    <div class="report-intro" style="border-bottom:0;padding:0 0 12px">
+        <button class="btn btn-primary" type="button">Generate</button>
+        <button class="btn btn-secondary" type="button">Export</button>
+    </div>
     <section class="report-panel">
         <div class="report-intro">
-            <strong>Click "Generate" to Produce Insights from Current Data</strong>
-            <button class="btn btn-primary" type="button">Generate</button>
+            <strong>Click "Generate" to Produce insights from current data.</strong>
         </div>
-        <div class="report-sheet">
-            Report output preview area.
-        </div>
+        <div class="report-sheet"></div>
     </section>
 @endcomponent

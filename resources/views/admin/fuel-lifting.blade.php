@@ -43,15 +43,26 @@
     <x-admin.modal id="lift-add" title="Schedule Lift" wide>
         <div class="modal-card">
             <div class="form-grid">
-                @foreach (['Purchase ID', 'DR Number', 'Lift Date', 'Location', 'Driver', 'Truck ID', 'Capacity', 'Quantity to Lift'] as $field)
+                @foreach (['Truck ID', 'Truck Capacity', 'Driver', 'Location', 'Date'] as $field)
                     <div class="form-row">
                         <label>{{ $field }}</label>
-                        <input type="{{ str_contains($field, 'Date') ? 'date' : (str_contains($field, 'Capacity') || str_contains($field, 'Quantity') ? 'number' : 'text') }}" placeholder="Enter {{ $field }}">
+                        <input type="{{ $field === 'Date' ? 'date' : (str_contains($field, 'Capacity') ? 'number' : 'text') }}" placeholder="Enter {{ $field === 'Date' ? 'Lift Date' : $field }}">
                     </div>
                 @endforeach
+                <div class="nested-form-box">
+                    <div class="form-grid">
+                        @foreach (['Purchase ID', 'DR Number', 'Price / Unit', 'Amount To Lift'] as $field)
+                            <div class="form-row">
+                                <label>{{ $field }}</label>
+                                <input type="{{ str_contains($field, 'Price') || str_contains($field, 'Amount') ? 'number' : 'text' }}" placeholder="Enter {{ $field === 'Amount To Lift' ? 'Amount from Purchase ID' : $field }}">
+                            </div>
+                        @endforeach
+                    </div>
+                </div>
             </div>
         </div>
-        <div class="modal-actions"><button class="btn btn-pill btn-secondary" type="button">Add</button><button class="btn btn-pill btn-danger" type="button" data-modal-close>Cancel</button></div>
+        <div style="text-align:center;margin-top:12px;font-weight:800">+ Add Purchase ID</div>
+        <div class="modal-actions"><button class="btn btn-pill btn-secondary" type="button">Add</button><button class="btn btn-pill btn-danger" type="button" data-modal-close>Delete</button></div>
     </x-admin.modal>
 
     <x-admin.modal id="lift-detail" title="Scheduled Lifts">
@@ -64,6 +75,21 @@
                 @endforeach
             </div>
         </div>
-        <div class="modal-actions"><button class="btn btn-pill btn-secondary" type="button">Edit</button><button class="btn btn-pill btn-danger" type="button">Delete</button></div>
+        <div class="modal-actions"><button class="btn btn-pill btn-secondary" type="button" data-modal-swap="lift-edit">Edit</button><button class="btn btn-pill btn-danger" type="button">Delete</button></div>
+    </x-admin.modal>
+
+    <x-admin.modal id="lift-edit" title="Edit Lift Record" wide>
+        <div class="modal-card">
+            <p class="detail-id">LFT-000001</p>
+            <div class="form-grid">
+                @foreach (['Purchase ID' => 'PUR-000001', 'DR Number' => '0000053', 'Lift Date' => '2026-08-22', 'Location' => 'Nasugbu Batangas', 'Driver' => 'Manuel P. Ligaya', 'Truck ID' => 'TRK-000001', 'Capacity' => '40000', 'Quantity Lift' => '40000'] as $field => $value)
+                    <div class="form-row">
+                        <label>{{ $field }}</label>
+                        <input type="{{ str_contains($field, 'Date') ? 'date' : (str_contains($field, 'Capacity') || str_contains($field, 'Quantity') ? 'number' : 'text') }}" value="{{ $value }}">
+                    </div>
+                @endforeach
+            </div>
+        </div>
+        <div class="modal-actions"><button class="btn btn-pill btn-secondary" type="button">Edit</button><button class="btn btn-pill btn-danger" type="button" data-modal-close>Delete</button></div>
     </x-admin.modal>
 @endcomponent

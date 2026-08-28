@@ -24,6 +24,7 @@ Route::withoutMiddleware([StartSession::class, ShareErrorsFromSession::class, Ve
     Route::redirect('/dispatch', '/dispatch/fuel-lifting')->name('dispatch.shortcut');
     Route::prefix('dispatch')->name('dispatch.')->group(function () {
         Route::view('/fuel-lifting', 'dispatch.fuel-lifting')->name('fuel-lifting');
+        Route::view('/fuel-lifting/hauled', 'dispatch.fuel-lifting', ['state' => 'hauled'])->name('fuel-lifting.hauled');
         Route::view('/ledger', 'dispatch.ledger')->name('ledger');
         Route::view('/alerts', 'dispatch.alerts')->name('alerts');
     });

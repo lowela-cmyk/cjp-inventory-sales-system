@@ -5,6 +5,21 @@ const closeModal = (modal) => {
     modal?.setAttribute('aria-hidden', 'true');
 };
 
+const openModal = (modal) => {
+    if (!modal) {
+        return;
+    }
+
+    document.querySelectorAll('.modal-backdrop.is-open').forEach((openModalElement) => {
+        if (openModalElement !== modal) {
+            closeModal(openModalElement);
+        }
+    });
+
+    modal.classList.add('is-open');
+    modal.setAttribute('aria-hidden', 'false');
+};
+
 const runDemoLogin = (form) => {
     const role = form?.querySelector('[data-demo-role]')?.value;
     const error = form?.querySelector('[data-demo-login-error]');
@@ -49,8 +64,7 @@ document.addEventListener('click', (event) => {
     const modalButton = event.target.closest('[data-modal-open]');
     if (modalButton) {
         const modal = document.getElementById(modalButton.dataset.modalOpen);
-        modal?.classList.add('is-open');
-        modal?.setAttribute('aria-hidden', 'false');
+        openModal(modal);
     }
 
     if (event.target.matches('[data-modal-close]') || event.target.classList.contains('modal-backdrop')) {
@@ -61,8 +75,7 @@ document.addEventListener('click', (event) => {
     if (modalSwap) {
         closeModal(modalSwap.closest('.modal-backdrop'));
         const modal = document.getElementById(modalSwap.dataset.modalSwap);
-        modal?.classList.add('is-open');
-        modal?.setAttribute('aria-hidden', 'false');
+        openModal(modal);
     }
 
     const tabButton = event.target.closest('[data-tab-target]');

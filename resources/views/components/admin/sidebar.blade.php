@@ -14,13 +14,13 @@
 @endphp
 
 <aside class="admin-sidebar" data-sidebar>
-    <div class="brand-row">
+    <a class="brand-row brand-home" href="{{ route('admin.dashboard') }}" aria-label="Admin dashboard">
         <img class="brand-logo" src="{{ asset('images/cjp-logo.png') }}" alt="CJP Southern Star OPC">
         <div>
             <div class="brand-name">CJP Southern Star OPC</div>
             <div class="brand-subtitle">INVENTORY AND SALES</div>
         </div>
-    </div>
+    </a>
 
     <nav class="side-nav" aria-label="Admin navigation">
         @foreach ($links as $link)

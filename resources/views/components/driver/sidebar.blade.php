@@ -4,13 +4,13 @@
 ])
 
 <aside class="admin-sidebar" data-sidebar>
-    <div class="brand-row">
+    <a class="brand-row brand-home" href="{{ route('driver.fuel-lifting') }}" aria-label="Driver fuel lifting">
         <img class="brand-logo" src="{{ asset('images/cjp-logo.png') }}" alt="CJP Southern Star OPC">
         <div>
             <div class="brand-name">CJP Southern Star OPC</div>
             <div class="brand-subtitle">INVENTORY AND SALES</div>
         </div>
-    </div>
+    </a>
 
     <nav class="side-nav driver-nav" aria-label="Driver navigation">
         <a class="side-link {{ request()->routeIs('driver.fuel-lifting*') ? 'is-active' : '' }}" href="{{ route('driver.fuel-lifting') }}">

@@ -8,13 +8,13 @@
 @endphp
 
 <aside class="admin-sidebar" data-sidebar>
-    <div class="brand-row">
+    <a class="brand-row brand-home" href="{{ route('sales-officer.sales') }}" aria-label="Sales officer sales">
         <img class="brand-logo" src="{{ asset('images/cjp-logo.png') }}" alt="CJP Southern Star OPC">
         <div>
             <div class="brand-name">CJP Southern Star OPC</div>
             <div class="brand-subtitle">INVENTORY AND SALES</div>
         </div>
-    </div>
+    </a>
 
     <nav class="side-nav sales-officer-nav" aria-label="Sales officer navigation">
         @foreach ($links as $link)

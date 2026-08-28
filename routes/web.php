@@ -42,6 +42,7 @@ Route::withoutMiddleware([StartSession::class, ShareErrorsFromSession::class, Ve
     Route::redirect('/sales-officer', '/sales-officer/sales')->name('sales-officer.shortcut');
     Route::prefix('sales-officer')->name('sales-officer.')->group(function () {
         Route::view('/sales', 'sales-officer.sales')->name('sales');
+        Route::view('/sales/customers', 'sales-officer.sales', ['state' => 'customers'])->name('sales.customers');
         Route::view('/alerts', 'sales-officer.alerts')->name('alerts');
     });
 

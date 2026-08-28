@@ -14,19 +14,20 @@
         ['SLS-000002', '8/22/2026', 'Jay P. Calinisan', 'Jay P Constructions', 'Premium', '20,000.00', '90.00', '1,800,000.00', '800,000.00', '80.00', '1,600,000.00', '- 800,000.00', 'row-danger'],
         ['SLS-000003', '8/22/2026', 'Yuri Q. Mabini', 'Gold Steel Productions', 'Premium', '10,000.00', '90.00', '900,000.00', '0', '80.00', '800,000.00', '- 800,000.00', 'row-danger'],
     ];
+    $activeTab = in_array($state ?? 'purchases', ['stock-in', 'stock-out'], true) ? $state : 'purchases';
 @endphp
 
 @component('layouts.inventory-officer', ['title' => 'Inventory Management', 'active' => 'inventory'])
     <div data-tabs>
-        <h2 class="section-title" data-tab-heading>Purchases</h2>
+        <h2 class="section-title" data-tab-heading>{{ ['purchases' => 'Purchases', 'stock-in' => 'Stock-In', 'stock-out' => 'Stock-Out'][$activeTab] }}</h2>
         <div class="tabs">
-            <button class="tab-button is-active" type="button" data-tab-target="purchases" data-heading="Purchases">Purchases</button>
-            <button class="tab-button" type="button" data-tab-target="stock-in" data-heading="Stock-In">Stock-In</button>
-            <button class="tab-button" type="button" data-tab-target="stock-out" data-heading="Stock-Out">Stock Out</button>
+            <button class="tab-button {{ $activeTab === 'purchases' ? 'is-active' : '' }}" type="button" data-tab-target="purchases" data-heading="Purchases">Purchases</button>
+            <button class="tab-button {{ $activeTab === 'stock-in' ? 'is-active' : '' }}" type="button" data-tab-target="stock-in" data-heading="Stock-In">Stock-In</button>
+            <button class="tab-button {{ $activeTab === 'stock-out' ? 'is-active' : '' }}" type="button" data-tab-target="stock-out" data-heading="Stock-Out">Stock Out</button>
         </div>
         <div class="actions-right"><button class="btn btn-secondary" type="button">Export</button></div>
 
-        <section data-tab-panel="purchases">
+        <section data-tab-panel="purchases" @hidden($activeTab !== 'purchases')>
             <div class="toolbar">
                 <input type="search" placeholder="Search..." aria-label="Search purchases">
                 <button class="btn btn-primary" type="button">Status</button>
@@ -47,7 +48,7 @@
             </div>
         </section>
 
-        <section data-tab-panel="stock-in" hidden>
+        <section data-tab-panel="stock-in" @hidden($activeTab !== 'stock-in')>
             <div class="toolbar">
                 <input type="search" placeholder="Search..." aria-label="Search stock-in">
                 <span></span>
@@ -68,14 +69,14 @@
             </div>
         </section>
 
-        <section data-tab-panel="stock-out" hidden>
+        <section data-tab-panel="stock-out" @hidden($activeTab !== 'stock-out')>
             <div class="toolbar">
                 <input type="search" placeholder="Search..." aria-label="Search stock-out">
                 <button class="btn btn-primary" type="button">Status</button>
                 <button class="btn btn-primary" type="button">Date</button>
                 <button class="btn btn-primary" type="button">Depot</button>
                 <button class="btn btn-primary" type="button">Fuel Type (All)</button>
-                <button class="btn btn-primary" type="button">+ Record Stock-Out</button>
+                <button class="btn btn-primary" type="button" data-modal-open="io-stockout-add">+ Record Stock-Out</button>
             </div>
             <div class="table-wrap">
                 <table class="admin-table">
@@ -127,5 +128,19 @@
             </div>
         </div>
         <div class="modal-actions"><button class="btn btn-pill btn-secondary" type="button">Send to Garage</button></div>
+    </x-admin.modal>
+
+    <x-admin.modal id="io-stockout-add" title="Record Stock-Out" wide>
+        <div class="modal-card">
+            <div class="form-grid">
+                @foreach (['Order ID', 'Transaction Date', 'Customer Name', 'Company Name', 'Fuel', 'QTY', 'Price / Unit', 'Total Paid'] as $field)
+                    <div class="form-row">
+                        <label>{{ $field }}</label>
+                        <input type="{{ str_contains($field, 'Date') ? 'date' : (str_contains($field, 'QTY') || str_contains($field, 'Price') || str_contains($field, 'Paid') ? 'number' : 'text') }}" placeholder="Enter {{ $field }}">
+                    </div>
+                @endforeach
+            </div>
+        </div>
+        <div class="modal-actions"><button class="btn btn-pill btn-secondary" type="button">Add</button><button class="btn btn-pill btn-danger" type="button" data-modal-close>Delete</button></div>
     </x-admin.modal>
 @endcomponent

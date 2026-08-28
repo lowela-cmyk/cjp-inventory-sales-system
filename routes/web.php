@@ -32,7 +32,10 @@ Route::withoutMiddleware([StartSession::class, ShareErrorsFromSession::class, Ve
     Route::redirect('/inventory-officer', '/inventory-officer/inventory')->name('inventory-officer.shortcut');
     Route::prefix('inventory-officer')->name('inventory-officer.')->group(function () {
         Route::view('/inventory', 'inventory-officer.inventory')->name('inventory');
+        Route::view('/inventory/stock-in', 'inventory-officer.inventory', ['state' => 'stock-in'])->name('inventory.stock-in');
+        Route::view('/inventory/stock-out', 'inventory-officer.inventory', ['state' => 'stock-out'])->name('inventory.stock-out');
         Route::view('/ledger', 'inventory-officer.ledger')->name('ledger');
+        Route::view('/ledger/transactions', 'inventory-officer.ledger', ['state' => 'transactions'])->name('ledger.transactions');
         Route::view('/alerts', 'inventory-officer.alerts')->name('alerts');
     });
 

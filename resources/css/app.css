@@ -254,6 +254,23 @@ select {
     margin: -51px 0 8px;
 }
 
+.admin-flash {
+    margin: 0 0 14px;
+    padding: 12px 16px;
+    border: 1px solid #111;
+    border-left: 8px solid var(--admin-red);
+    background: #fff;
+    font-weight: 700;
+}
+
+.admin-flash-success {
+    border-left-color: #16833a;
+}
+
+.admin-flash-error {
+    color: #a31318;
+}
+
 .btn {
     display: inline-flex;
     min-height: 32px;

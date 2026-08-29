@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\AdminDashboardController;
+use App\Http\Controllers\AdminUserManagementController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', [AuthController::class, 'showLogin'])->name('home');
@@ -28,7 +29,12 @@ Route::middleware(['auth'])->group(function () {
         Route::view('/sales', 'admin.sales')->name('sales');
         Route::view('/reports', 'admin.reports')->name('reports');
         Route::view('/alerts', 'admin.alerts')->name('alerts');
-        Route::view('/user-management', 'admin.user-management')->name('user-management');
+        Route::get('/user-management', [AdminUserManagementController::class, 'index'])->name('user-management');
+        Route::post('/user-management/staff', [AdminUserManagementController::class, 'storeStaff'])->name('user-management.staff.store');
+        Route::patch('/user-management/staff/{user}', [AdminUserManagementController::class, 'updateStaff'])->name('user-management.staff.update');
+        Route::post('/user-management/drivers', [AdminUserManagementController::class, 'storeDriver'])->name('user-management.drivers.store');
+        Route::patch('/user-management/drivers/{user}', [AdminUserManagementController::class, 'updateDriver'])->name('user-management.drivers.update');
+        Route::patch('/user-management/users/{user}/status', [AdminUserManagementController::class, 'updateStatus'])->name('user-management.users.status');
     });
 
     Route::redirect('/dispatch', '/dispatch/fuel-lifting')->middleware('role:dispatch_officer')->name('dispatch.shortcut');

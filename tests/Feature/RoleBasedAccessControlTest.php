@@ -44,12 +44,106 @@ class RoleBasedAccessControlTest extends TestCase
         ];
     }
 
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function protectedUrlProvider(): array
+    {
+        $urls = ['/dashboard', '/home'];
+
+        foreach (self::roleUrlMap() as $roleUrls) {
+            array_push($urls, ...$roleUrls);
+        }
+
+        return collect($urls)
+            ->unique()
+            ->mapWithKeys(fn (string $url): array => [$url => [$url]])
+            ->all();
+    }
+
+    /**
+     * @return array<string, array{string, array<int, string>, array<int, string>}>
+     */
+    public static function fullRoleAccessProvider(): array
+    {
+        $roleUrlMap = self::roleUrlMap();
+
+        return collect($roleUrlMap)
+            ->mapWithKeys(function (array $allowedUrls, string $role) use ($roleUrlMap): array {
+                $blockedUrls = collect($roleUrlMap)
+                    ->except($role)
+                    ->flatten()
+                    ->unique()
+                    ->values()
+                    ->all();
+
+                return [$role => [$role, $allowedUrls, $blockedUrls]];
+            })
+            ->all();
+    }
+
+    /**
+     * @return array<string, array<int, string>>
+     */
+    private static function roleUrlMap(): array
+    {
+        return [
+            'admin' => [
+                '/admin',
+                '/admin/dashboard',
+                '/admin/inventory',
+                '/admin/ledger',
+                '/admin/fuel-lifting',
+                '/admin/sales',
+                '/admin/reports',
+                '/admin/alerts',
+                '/admin/user-management',
+            ],
+            'inventory_officer' => [
+                '/inventory-officer',
+                '/inventory-officer/inventory',
+                '/inventory-officer/inventory/stock-in',
+                '/inventory-officer/inventory/stock-out',
+                '/inventory-officer/ledger',
+                '/inventory-officer/ledger/transactions',
+                '/inventory-officer/alerts',
+            ],
+            'sales_officer' => [
+                '/sales-officer',
+                '/sales-officer/sales',
+                '/sales-officer/sales/customers',
+                '/sales-officer/alerts',
+            ],
+            'dispatch_officer' => [
+                '/dispatch',
+                '/dispatch/fuel-lifting',
+                '/dispatch/fuel-lifting/hauled',
+                '/dispatch/ledger',
+                '/dispatch/alerts',
+            ],
+            'driver' => [
+                '/driver',
+                '/driver/fuel-lifting',
+                '/driver/fuel-lifting/hauled',
+                '/driver/fuel-lifting/no-schedule',
+                '/driver/fuel-lifting/no-hauled',
+            ],
+        ];
+    }
+
     public function test_guest_is_redirected_from_protected_pages_to_login(): void
     {
         $this->get('/admin/dashboard')
             ->assertRedirect('/login');
 
         $this->get('/dashboard')
+            ->assertRedirect('/login');
+    }
+
+    #[DataProvider('protectedUrlProvider')]
+    public function test_guest_is_redirected_from_every_protected_url_to_login(string $url): void
+    {
+        $this->get($url)
             ->assertRedirect('/login');
     }
 
@@ -96,6 +190,54 @@ class RoleBasedAccessControlTest extends TestCase
             ->assertRedirect('/admin/dashboard');
     }
 
+    /**
+     * @param array<int, string> $allowedUrls
+     * @param array<int, string> $blockedUrls
+     */
+    #[DataProvider('fullRoleAccessProvider')]
+    public function test_every_role_route_is_enforced_server_side(string $role, array $allowedUrls, array $blockedUrls): void
+    {
+        $user = User::factory()->create([
+            'role' => $role,
+            'status' => 'active',
+        ]);
+
+        foreach ($allowedUrls as $allowedUrl) {
+            $response = $this->actingAs($user)->get($allowedUrl);
+
+            $this->assertContains($response->getStatusCode(), [200, 302], "{$role} should access {$allowedUrl}");
+        }
+
+        foreach ($blockedUrls as $blockedUrl) {
+            $this->actingAs($user)
+                ->get($blockedUrl)
+                ->assertForbidden();
+        }
+    }
+
+    /**
+     * @param array<int, string> $allowedUrls
+     * @param array<int, string> $blockedUrls
+     */
+    #[DataProvider('fullRoleAccessProvider')]
+    public function test_query_parameters_cannot_tamper_with_role_authorization(string $role, array $allowedUrls, array $blockedUrls): void
+    {
+        $user = User::factory()->create([
+            'role' => $role,
+            'status' => 'active',
+        ]);
+
+        $this->assertContains(
+            $this->actingAs($user)->get($allowedUrls[0].'?role=admin&redirect=/admin/dashboard')->getStatusCode(),
+            [200, 302],
+            'Allowed route should remain allowed regardless of query parameters.'
+        );
+
+        $this->actingAs($user)
+            ->get($blockedUrls[0].'?role='.$role.'&redirect='.$allowedUrls[0])
+            ->assertForbidden();
+    }
+
     public function test_login_uses_database_role_and_blocks_wrong_role_selection(): void
     {
         $user = User::factory()->create([
@@ -112,6 +254,27 @@ class RoleBasedAccessControlTest extends TestCase
         ])->assertSessionHasErrors('username');
 
         $this->assertGuest();
+    }
+
+    public function test_login_regenerates_the_session_id(): void
+    {
+        $user = User::factory()->create([
+            'email' => 'session@example.com',
+            'role' => 'admin',
+            'status' => 'active',
+            'password' => 'password',
+        ]);
+
+        $this->startSession();
+        $previousSessionId = session()->getId();
+
+        $this->post('/login', [
+            'username' => $user->email,
+            'role' => 'admin',
+            'password' => 'password',
+        ])->assertRedirect(route('admin.dashboard'));
+
+        $this->assertNotSame($previousSessionId, session()->getId());
     }
 
     public function test_login_redirects_to_the_authenticated_users_role_dashboard(): void
@@ -383,5 +546,64 @@ class RoleBasedAccessControlTest extends TestCase
             ->assertRedirect('/login');
 
         $this->assertGuest();
+    }
+
+    public function test_protected_routes_remain_blocked_after_logout(): void
+    {
+        $user = User::factory()->create([
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($user)
+            ->get('/admin/dashboard')
+            ->assertOk();
+
+        $this->post('/logout')
+            ->assertRedirect('/login');
+
+        $this->get('/admin/dashboard')
+            ->assertRedirect('/login');
+    }
+
+    public function test_switching_accounts_does_not_retain_previous_role_access(): void
+    {
+        $admin = User::factory()->create([
+            'email' => 'switch-admin@example.com',
+            'role' => 'admin',
+            'status' => 'active',
+            'password' => 'password',
+        ]);
+
+        $driver = User::factory()->create([
+            'email' => 'switch-driver@example.com',
+            'role' => 'driver',
+            'status' => 'active',
+            'password' => 'password',
+        ]);
+
+        $this->post('/login', [
+            'username' => $admin->email,
+            'role' => 'admin',
+            'password' => 'password',
+        ])->assertRedirect(route('admin.dashboard'));
+
+        $this->get('/admin/dashboard')
+            ->assertOk();
+
+        $this->post('/logout')
+            ->assertRedirect('/login');
+
+        $this->post('/login', [
+            'username' => $driver->email,
+            'role' => 'driver',
+            'password' => 'password',
+        ])->assertRedirect(route('driver.fuel-lifting'));
+
+        $this->get('/admin/dashboard')
+            ->assertForbidden();
+
+        $this->get('/driver/fuel-lifting')
+            ->assertOk();
     }
 }

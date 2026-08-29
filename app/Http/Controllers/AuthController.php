@@ -45,6 +45,11 @@ class AuthController extends Controller
         return view('auth.forgot-password');
     }
 
+    public function redirectToDashboard(Request $request): RedirectResponse
+    {
+        return redirect()->route($this->dashboardRouteFor($request->user()->role));
+    }
+
     public function sendPasswordResetCode(Request $request): RedirectResponse
     {
         $data = $request->validate([

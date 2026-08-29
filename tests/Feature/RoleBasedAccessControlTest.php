@@ -30,9 +30,26 @@ class RoleBasedAccessControlTest extends TestCase
         ];
     }
 
+    /**
+     * @return array<string, array{string, string}>
+     */
+    public static function roleDashboardProvider(): array
+    {
+        return [
+            'admin' => ['admin', 'admin.dashboard'],
+            'inventory officer' => ['inventory_officer', 'inventory-officer.inventory'],
+            'sales officer' => ['sales_officer', 'sales-officer.sales'],
+            'dispatch officer' => ['dispatch_officer', 'dispatch.fuel-lifting'],
+            'driver' => ['driver', 'driver.fuel-lifting'],
+        ];
+    }
+
     public function test_guest_is_redirected_from_protected_pages_to_login(): void
     {
         $this->get('/admin/dashboard')
+            ->assertRedirect('/login');
+
+        $this->get('/dashboard')
             ->assertRedirect('/login');
     }
 
@@ -113,6 +130,40 @@ class RoleBasedAccessControlTest extends TestCase
         ])->assertRedirect(route('sales-officer.sales'));
 
         $this->assertAuthenticatedAs($user);
+    }
+
+    #[DataProvider('roleDashboardProvider')]
+    public function test_login_redirects_each_role_to_its_existing_dashboard(string $role, string $dashboardRoute): void
+    {
+        $user = User::factory()->create([
+            'email' => "{$role}@example.com",
+            'role' => $role,
+            'status' => 'active',
+            'password' => 'password',
+        ]);
+
+        $this->post('/login', [
+            'username' => $user->email,
+            'role' => $role,
+            'password' => 'password',
+        ])->assertRedirect(route($dashboardRoute));
+    }
+
+    #[DataProvider('roleDashboardProvider')]
+    public function test_generic_dashboard_routes_redirect_by_authenticated_database_role(string $role, string $dashboardRoute): void
+    {
+        $user = User::factory()->create([
+            'role' => $role,
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($user)
+            ->get('/dashboard')
+            ->assertRedirect(route($dashboardRoute));
+
+        $this->actingAs($user)
+            ->get('/home')
+            ->assertRedirect(route($dashboardRoute));
     }
 
     public function test_registration_creates_user_in_database_and_requires_login(): void

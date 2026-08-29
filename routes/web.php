@@ -15,6 +15,9 @@ Route::get('/reset-password', [AuthController::class, 'showResetPassword'])->nam
 Route::post('/reset-password', [AuthController::class, 'resetPassword'])->name('password.update');
 
 Route::middleware(['auth'])->group(function () {
+    Route::get('/dashboard', [AuthController::class, 'redirectToDashboard'])->name('dashboard');
+    Route::get('/home', [AuthController::class, 'redirectToDashboard'])->name('home.dashboard');
+
     Route::redirect('/admin', '/admin/dashboard')->middleware('role:admin')->name('admin.shortcut');
     Route::prefix('admin')->name('admin.')->middleware('role:admin')->group(function () {
         Route::view('/dashboard', 'admin.dashboard')->name('dashboard');

@@ -58,6 +58,27 @@ class RoleBasedAccessControlTest extends TestCase
         }
     }
 
+    public function test_role_shortcut_urls_are_also_role_protected(): void
+    {
+        $driver = User::factory()->create([
+            'role' => 'driver',
+            'status' => 'active',
+        ]);
+
+        $admin = User::factory()->create([
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($driver)
+            ->get('/admin')
+            ->assertForbidden();
+
+        $this->actingAs($admin)
+            ->get('/admin')
+            ->assertRedirect('/admin/dashboard');
+    }
+
     public function test_login_uses_database_role_and_blocks_wrong_role_selection(): void
     {
         $user = User::factory()->create([

@@ -1392,9 +1392,82 @@ body.login-page {
     font-weight: 700;
 }
 
+.login-success {
+    position: relative;
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    margin: 22px 0 -14px;
+    border: 1px solid rgba(255, 255, 255, .7);
+    border-left: 7px solid #f50037;
+    border-radius: 5px;
+    padding: 14px 18px;
+    background: #fff;
+    color: #111827;
+    box-shadow: 0 14px 30px rgba(0, 0, 0, .22);
+}
+
+.login-success-mark {
+    display: inline-flex;
+    width: 34px;
+    height: 34px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: #f50037;
+    color: #fff;
+    font-size: 20px;
+    font-weight: 800;
+    flex: 0 0 auto;
+}
+
+.login-success strong,
+.login-success span {
+    display: block;
+}
+
+.login-success strong {
+    margin-bottom: 3px;
+    font-size: 16px;
+    font-weight: 800;
+}
+
+.login-success span {
+    color: #263248;
+    font-size: 14px;
+    line-height: 1.35;
+}
+
+.reset-success {
+    margin: -12px 0 18px;
+}
+
 .login-submit:hover,
 .login-submit:focus {
     background: #d90031;
+}
+
+.auth-action-submit {
+    margin-top: 34px;
+}
+
+.login-forgot {
+    margin: 16px 0 0;
+    text-align: center;
+    font-size: 15px;
+}
+
+.login-forgot a {
+    color: rgba(255, 255, 255, .9);
+    font-weight: 700;
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 5px;
+}
+
+.login-forgot a:hover,
+.login-forgot a:focus {
+    color: #fff;
 }
 
 .login-register {
@@ -1481,7 +1554,8 @@ body.login-page {
     gap: 4px;
 }
 
-.register-form .login-field input {
+.register-form .login-field input,
+.register-form .login-field select {
     height: 64px;
 }
 

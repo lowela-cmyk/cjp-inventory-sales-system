@@ -12,36 +12,48 @@
             <div class="login-form-wrap register-form-wrap">
                 <h1 id="register-title">Sign Up</h1>
 
-                <form class="login-form register-form" aria-label="Sign up form" data-demo-register-form data-login-url="{{ route('login') }}">
+                <form class="login-form register-form" aria-label="Sign up form" method="POST" action="{{ route('register.store') }}">
+                    @csrf
                     <div class="login-field">
                         <label for="full_name">FULL NAME</label>
-                        <input id="full_name" name="full_name" type="text" placeholder="Full Name" autocomplete="name">
+                        <input id="full_name" name="full_name" type="text" placeholder="Full Name" autocomplete="name" value="{{ old('full_name') }}" required>
                     </div>
 
                     <div class="login-field">
                         <label for="email">EMAIL</label>
-                        <input id="email" name="email" type="email" placeholder="Email" autocomplete="email">
-                    </div>
-
-                    <div class="login-field">
-                        <label for="register_username">USERNAME</label>
-                        <input id="register_username" name="username" type="text" placeholder="Username" autocomplete="username">
+                        <input id="email" name="email" type="email" placeholder="Email" autocomplete="email" value="{{ old('email') }}" required>
                     </div>
 
                     <div class="login-field">
                         <label for="contact_number">CONTACT NUMBER</label>
-                        <input id="contact_number" name="contact_number" type="tel" placeholder="Contact Number" autocomplete="tel">
+                        <input id="contact_number" name="contact_number" type="tel" placeholder="Contact Number" autocomplete="tel" value="{{ old('contact_number') }}">
+                    </div>
+
+                    <div class="login-field">
+                        <label for="register_role">ROLE</label>
+                        <select id="register_role" name="role" required>
+                            <option value="" @selected(! old('role')) disabled>Role</option>
+                            <option value="admin" @selected(old('role') === 'admin')>Admin</option>
+                            <option value="inventory_officer" @selected(old('role') === 'inventory_officer')>Inventory Officer</option>
+                            <option value="sales_officer" @selected(old('role') === 'sales_officer')>Sales Officer</option>
+                            <option value="dispatch_officer" @selected(old('role') === 'dispatch_officer')>Dispatch Officer</option>
+                            <option value="driver" @selected(old('role') === 'driver')>Driver</option>
+                        </select>
                     </div>
 
                     <div class="login-field">
                         <label for="register_password">PASSWORD</label>
-                        <input id="register_password" name="password" type="password" placeholder="Password" autocomplete="new-password">
+                        <input id="register_password" name="password" type="password" placeholder="Password" autocomplete="new-password" required>
                     </div>
 
                     <div class="login-field">
                         <label for="password_confirmation">CONFIRM PASSWORD</label>
-                        <input id="password_confirmation" name="password_confirmation" type="password" placeholder="Confirm Password" autocomplete="new-password">
+                        <input id="password_confirmation" name="password_confirmation" type="password" placeholder="Confirm Password" autocomplete="new-password" required>
                     </div>
+
+                    @if ($errors->any())
+                        <p class="login-error">{{ $errors->first() }}</p>
+                    @endif
 
                     <button class="login-submit register-submit" type="submit">SIGN UP</button>
                 </form>

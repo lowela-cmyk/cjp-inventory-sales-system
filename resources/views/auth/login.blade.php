@@ -43,6 +43,18 @@
                     <button class="login-submit" type="submit">LOG IN</button>
                 </form>
 
+                <p class="login-forgot"><a href="{{ route('password.request') }}">Forgot Password?</a></p>
+
+                @if (session('status'))
+                    <div class="login-success" role="status">
+                        <span class="login-success-mark" aria-hidden="true">&check;</span>
+                        <div>
+                            <strong>Account ready</strong>
+                            <span>{{ session('status') }}</span>
+                        </div>
+                    </div>
+                @endif
+
                 <p class="login-register">Don&rsquo;t have an account? <a href="{{ route('register') }}">Click Here.</a></p>
             </div>
         </section>

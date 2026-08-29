@@ -51,4 +51,16 @@ class User extends Authenticatable
             'password' => 'hashed',
         ];
     }
+
+    public function getRoleLabelAttribute(): string
+    {
+        return match ($this->role) {
+            'admin' => 'Admin',
+            'inventory_officer' => 'Inventory Officer',
+            'sales_officer' => 'Sales Officer',
+            'dispatch_officer' => 'Dispatch Officer',
+            'driver' => 'Driver',
+            default => ucfirst(str_replace('_', ' ', (string) $this->role)),
+        };
+    }
 }

@@ -1,6 +1,7 @@
 @props(['active' => 'inventory'])
 
 @php
+    $user = auth()->user();
     $links = [
         ['route' => 'inventory-officer.inventory', 'label' => 'Inventory'],
         ['route' => 'inventory-officer.ledger', 'label' => 'Ledger'],
@@ -26,8 +27,8 @@
     </nav>
 
     <div class="sidebar-account">
-        <div class="sidebar-user">Janeth Magsombol</div>
-        <div class="sidebar-role">Inventory Officer</div>
+        <div class="sidebar-user">{{ strtoupper($user?->name ?? 'Account') }}</div>
+        <div class="sidebar-role">{{ $user?->role_label ?? 'User' }}</div>
         <form method="POST" action="{{ route('logout') }}">
             @csrf
             <button class="btn btn-secondary btn-block" type="submit">Logout</button>

@@ -20,14 +20,6 @@ const openModal = (modal) => {
     modal.setAttribute('aria-hidden', 'false');
 };
 
-document.addEventListener('submit', (event) => {
-    const registerForm = event.target.closest('[data-demo-register-form]');
-    if (registerForm) {
-        event.preventDefault();
-        window.location.href = registerForm.dataset.loginUrl || '/login';
-    }
-});
-
 document.addEventListener('click', (event) => {
     const modalButton = event.target.closest('[data-modal-open]');
     if (modalButton) {

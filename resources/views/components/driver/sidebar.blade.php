@@ -3,6 +3,8 @@
     'driverName' => 'Manuel Ligaya',
 ])
 
+@php($user = auth()->user())
+
 <aside class="admin-sidebar" data-sidebar>
     <a class="brand-row brand-home" href="{{ route('driver.fuel-lifting') }}" aria-label="Driver fuel lifting">
         <img class="brand-logo" src="{{ asset('images/cjp-logo.png') }}" alt="CJP Southern Star OPC">
@@ -19,8 +21,8 @@
     </nav>
 
     <div class="sidebar-account">
-        <div class="sidebar-user">{{ strtoupper($driverName) }}</div>
-        <div class="sidebar-role">Driver</div>
+        <div class="sidebar-user">{{ strtoupper($user?->name ?? $driverName) }}</div>
+        <div class="sidebar-role">{{ $user?->role_label ?? 'Driver' }}</div>
         <form method="POST" action="{{ route('logout') }}">
             @csrf
             <button class="btn btn-secondary btn-block" type="submit">Logout</button>

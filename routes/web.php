@@ -1,17 +1,17 @@
 <?php
 
+use App\Http\Controllers\AuthController;
 use Illuminate\Support\Facades\Route;
-use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
-use Illuminate\Session\Middleware\StartSession;
-use Illuminate\View\Middleware\ShareErrorsFromSession;
 
-Route::withoutMiddleware([StartSession::class, ShareErrorsFromSession::class, VerifyCsrfToken::class])->group(function () {
-    Route::view('/', 'auth.login')->name('home');
-    Route::view('/login', 'auth.login')->name('login');
-    Route::view('/register', 'auth.register')->name('register');
+Route::get('/', [AuthController::class, 'showLogin'])->name('home');
+Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
+Route::post('/login', [AuthController::class, 'login'])->name('login.store');
+Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth')->name('logout');
+Route::view('/register', 'auth.register')->name('register');
 
+Route::middleware(['auth'])->group(function () {
     Route::redirect('/admin', '/admin/dashboard')->name('admin.shortcut');
-    Route::prefix('admin')->name('admin.')->group(function () {
+    Route::prefix('admin')->name('admin.')->middleware('role:admin')->group(function () {
         Route::view('/dashboard', 'admin.dashboard')->name('dashboard');
         Route::view('/inventory', 'admin.inventory')->name('inventory');
         Route::view('/ledger', 'admin.ledger')->name('ledger');
@@ -23,7 +23,7 @@ Route::withoutMiddleware([StartSession::class, ShareErrorsFromSession::class, Ve
     });
 
     Route::redirect('/dispatch', '/dispatch/fuel-lifting')->name('dispatch.shortcut');
-    Route::prefix('dispatch')->name('dispatch.')->group(function () {
+    Route::prefix('dispatch')->name('dispatch.')->middleware('role:dispatch_officer')->group(function () {
         Route::view('/fuel-lifting', 'dispatch.fuel-lifting')->name('fuel-lifting');
         Route::view('/fuel-lifting/hauled', 'dispatch.fuel-lifting', ['state' => 'hauled'])->name('fuel-lifting.hauled');
         Route::view('/ledger', 'dispatch.ledger')->name('ledger');
@@ -31,7 +31,7 @@ Route::withoutMiddleware([StartSession::class, ShareErrorsFromSession::class, Ve
     });
 
     Route::redirect('/inventory-officer', '/inventory-officer/inventory')->name('inventory-officer.shortcut');
-    Route::prefix('inventory-officer')->name('inventory-officer.')->group(function () {
+    Route::prefix('inventory-officer')->name('inventory-officer.')->middleware('role:inventory_officer')->group(function () {
         Route::view('/inventory', 'inventory-officer.inventory')->name('inventory');
         Route::view('/inventory/stock-in', 'inventory-officer.inventory', ['state' => 'stock-in'])->name('inventory.stock-in');
         Route::view('/inventory/stock-out', 'inventory-officer.inventory', ['state' => 'stock-out'])->name('inventory.stock-out');
@@ -41,14 +41,14 @@ Route::withoutMiddleware([StartSession::class, ShareErrorsFromSession::class, Ve
     });
 
     Route::redirect('/sales-officer', '/sales-officer/sales')->name('sales-officer.shortcut');
-    Route::prefix('sales-officer')->name('sales-officer.')->group(function () {
+    Route::prefix('sales-officer')->name('sales-officer.')->middleware('role:sales_officer')->group(function () {
         Route::view('/sales', 'sales-officer.sales')->name('sales');
         Route::view('/sales/customers', 'sales-officer.sales', ['state' => 'customers'])->name('sales.customers');
         Route::view('/alerts', 'sales-officer.alerts')->name('alerts');
     });
 
     Route::redirect('/driver', '/driver/fuel-lifting')->name('driver.shortcut');
-    Route::prefix('driver')->name('driver.')->group(function () {
+    Route::prefix('driver')->name('driver.')->middleware('role:driver')->group(function () {
         Route::view('/fuel-lifting', 'driver.fuel-lifting')->name('fuel-lifting');
         Route::view('/fuel-lifting/hauled', 'driver.fuel-lifting', ['state' => 'hauled'])->name('fuel-lifting.hauled');
         Route::view('/fuel-lifting/no-schedule', 'driver.fuel-lifting', ['state' => 'no-schedule'])->name('fuel-lifting.no-schedule');

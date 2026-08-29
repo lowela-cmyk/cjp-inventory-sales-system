@@ -21,6 +21,9 @@
     <div class="sidebar-account">
         <div class="sidebar-user">{{ strtoupper($driverName) }}</div>
         <div class="sidebar-role">Driver</div>
-        <a class="btn btn-secondary btn-block" href="{{ route('login') }}">Logout</a>
+        <form method="POST" action="{{ route('logout') }}">
+            @csrf
+            <button class="btn btn-secondary btn-block" type="submit">Logout</button>
+        </form>
     </div>
 </aside>

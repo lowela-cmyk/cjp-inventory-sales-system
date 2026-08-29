@@ -12,36 +12,35 @@
             <div class="login-form-wrap">
                 <h1 id="login-title">Log In</h1>
 
-                @php
-                    // TEMPORARY DEMO LOGIN BYPASS
-                    // Replace with real authentication later.
-                @endphp
-                <form class="login-form" aria-label="Sign in form" data-demo-login-form>
+                <form class="login-form" aria-label="Sign in form" method="POST" action="{{ route('login.store') }}">
+                    @csrf
                     <div class="login-field">
                         <label for="username">USERNAME</label>
-                        <input id="username" name="username" type="text" placeholder="Username" autocomplete="username">
+                        <input id="username" name="username" type="text" placeholder="Username" autocomplete="username" value="{{ old('username') }}" required>
                     </div>
 
                     <div class="login-field">
                         <label for="role">ROLE</label>
-                        <select id="role" name="role" data-demo-role>
-                            <option value="" selected disabled>Role</option>
-                            <option value="admin">Admin</option>
-                            <option value="dispatch">Dispatch Officer</option>
-                            <option value="inventory-officer">Inventory Officer</option>
-                            <option value="sales-officer">Sales Officer</option>
-                            <option value="driver">Driver</option>
+                        <select id="role" name="role" required>
+                            <option value="" @selected(! old('role')) disabled>Role</option>
+                            <option value="admin" @selected(old('role') === 'admin')>Admin</option>
+                            <option value="dispatch_officer" @selected(old('role') === 'dispatch_officer')>Dispatch Officer</option>
+                            <option value="inventory_officer" @selected(old('role') === 'inventory_officer')>Inventory Officer</option>
+                            <option value="sales_officer" @selected(old('role') === 'sales_officer')>Sales Officer</option>
+                            <option value="driver" @selected(old('role') === 'driver')>Driver</option>
                         </select>
                     </div>
 
                     <div class="login-field">
                         <label for="password">PASSWORD</label>
-                        <input id="password" name="password" type="password" placeholder="Password" autocomplete="current-password">
+                        <input id="password" name="password" type="password" placeholder="Password" autocomplete="current-password" required>
                     </div>
 
-                    <p class="login-error" data-demo-login-error hidden>Please select a role.</p>
+                    @if ($errors->any())
+                        <p class="login-error">{{ $errors->first() }}</p>
+                    @endif
 
-                    <button class="login-submit" type="button" data-demo-login-button>LOG IN</button>
+                    <button class="login-submit" type="submit">LOG IN</button>
                 </form>
 
                 <p class="login-register">Don&rsquo;t have an account? <a href="{{ route('register') }}">Click Here.</a></p>

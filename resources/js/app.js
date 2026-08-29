@@ -20,47 +20,15 @@ const openModal = (modal) => {
     modal.setAttribute('aria-hidden', 'false');
 };
 
-const runDemoLogin = (form) => {
-    const role = form?.querySelector('[data-demo-role]')?.value;
-    const error = form?.querySelector('[data-demo-login-error]');
-    const destinations = {
-        admin: '/admin/dashboard',
-        dispatch: '/dispatch/fuel-lifting',
-        'inventory-officer': '/inventory-officer/inventory',
-        'sales-officer': '/sales-officer/sales',
-        driver: '/driver/fuel-lifting',
-    };
-
-    if (!role || !destinations[role]) {
-        error.hidden = false;
-        return;
-    }
-
-    error.hidden = true;
-    window.location.href = destinations[role];
-};
-
 document.addEventListener('submit', (event) => {
-    const form = event.target.closest('[data-demo-login-form]');
-    if (!form) {
-        const registerForm = event.target.closest('[data-demo-register-form]');
-        if (registerForm) {
-            event.preventDefault();
-            window.location.href = registerForm.dataset.loginUrl || '/login';
-        }
-        return;
+    const registerForm = event.target.closest('[data-demo-register-form]');
+    if (registerForm) {
+        event.preventDefault();
+        window.location.href = registerForm.dataset.loginUrl || '/login';
     }
-
-    event.preventDefault();
-    runDemoLogin(form);
 });
 
 document.addEventListener('click', (event) => {
-    const demoLoginButton = event.target.closest('[data-demo-login-button]');
-    if (demoLoginButton) {
-        runDemoLogin(demoLoginButton.closest('[data-demo-login-form]'));
-    }
-
     const modalButton = event.target.closest('[data-modal-open]');
     if (modalButton) {
         const modal = document.getElementById(modalButton.dataset.modalOpen);

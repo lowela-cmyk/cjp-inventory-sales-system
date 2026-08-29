@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Mail\PasswordResetCodeMail;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
@@ -295,6 +296,44 @@ class RoleBasedAccessControlTest extends TestCase
         $this->assertAuthenticatedAs($user);
     }
 
+    public function test_login_accepts_the_registered_account_name_as_username(): void
+    {
+        $user = User::factory()->create([
+            'name' => 'luke',
+            'email' => 'luke-login@example.com',
+            'role' => 'admin',
+            'status' => 'active',
+            'password' => 'password',
+        ]);
+
+        $this->post('/login', [
+            'username' => 'luke',
+            'role' => 'admin',
+            'password' => 'password',
+        ])->assertRedirect(route('admin.dashboard'));
+
+        $this->assertAuthenticatedAs($user);
+    }
+
+    public function test_login_still_accepts_the_registered_email_as_username(): void
+    {
+        $user = User::factory()->create([
+            'name' => 'Email Login User',
+            'email' => 'email-login@example.com',
+            'role' => 'driver',
+            'status' => 'active',
+            'password' => 'password',
+        ]);
+
+        $this->post('/login', [
+            'username' => 'email-login@example.com',
+            'role' => 'driver',
+            'password' => 'password',
+        ])->assertRedirect(route('driver.fuel-lifting'));
+
+        $this->assertAuthenticatedAs($user);
+    }
+
     #[DataProvider('roleDashboardProvider')]
     public function test_login_redirects_each_role_to_its_existing_dashboard(string $role, string $dashboardRoute): void
     {
@@ -367,6 +406,229 @@ class RoleBasedAccessControlTest extends TestCase
             ->assertSee('MARIA SANTOS')
             ->assertSee('Admin')
             ->assertDontSee('CJ Pilar');
+    }
+
+    public function test_admin_dashboard_uses_safe_empty_states_without_demo_values(): void
+    {
+        $admin = User::factory()->create([
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($admin)
+            ->get('/admin/dashboard')
+            ->assertOk()
+            ->assertSee('0 KL')
+            ->assertSee('PHP 0')
+            ->assertSee('No data available')
+            ->assertDontSee('PHP 4,580,000')
+            ->assertDontSee('PHP10.5M')
+            ->assertDontSee('40,000 L');
+    }
+
+    public function test_admin_dashboard_calculates_values_from_existing_database_tables(): void
+    {
+        Carbon::setTestNow('2026-08-26 10:00:00');
+
+        $admin = User::factory()->create([
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+
+        $driver = User::factory()->create([
+            'role' => 'driver',
+            'status' => 'active',
+        ]);
+
+        $depotId = DB::table('depots')->insertGetId([
+            'depot_code' => 'DEP-TEST',
+            'name' => 'Test Depot',
+            'status' => 'active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $storageLocationId = DB::table('storage_locations')->insertGetId([
+            'location_code' => 'GAR-TEST',
+            'name' => 'Test Garage',
+            'type' => 'garage',
+            'status' => 'active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $premiumId = DB::table('fuel_types')->insertGetId([
+            'code' => 'PREM',
+            'name' => 'Premium',
+            'status' => 'active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $dieselId = DB::table('fuel_types')->insertGetId([
+            'code' => 'DSL',
+            'name' => 'Diesel',
+            'status' => 'active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $customerId = DB::table('customers')->insertGetId([
+            'customer_code' => 'CUS-TEST',
+            'name' => 'Test Customer',
+            'company_name' => 'Test Customer Company',
+            'payment_status' => 'partial',
+            'status' => 'active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $truckId = DB::table('trucks')->insertGetId([
+            'truck_code' => 'TRK-TEST',
+            'capacity_liters' => 10000,
+            'truck_type' => 'delivery',
+            'status' => 'assigned',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $purchaseId = DB::table('purchases')->insertGetId([
+            'purchase_code' => 'PUR-TEST',
+            'depot_id' => $depotId,
+            'purchase_date' => now()->toDateString(),
+            'payment_status' => 'partial',
+            'status' => 'partially_hauled',
+            'created_by' => $admin->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('purchase_items')->insert([
+            'purchase_id' => $purchaseId,
+            'fuel_type_id' => $premiumId,
+            'quantity_ordered_liters' => 100000,
+            'unit_cost' => 45,
+            'line_total' => 4500000,
+            'quantity_hauled_liters' => 40000,
+            'status' => 'partial',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('inventory_movements')->insert([
+            [
+                'movement_code' => 'MOV-IN-PREM',
+                'storage_location_id' => $storageLocationId,
+                'fuel_type_id' => $premiumId,
+                'movement_type' => 'stock_in',
+                'direction' => 'in',
+                'quantity_liters' => 50000,
+                'reference_type' => 'test',
+                'reference_id' => 1,
+                'movement_date' => now(),
+                'created_by' => $admin->id,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'movement_code' => 'MOV-OUT-PREM',
+                'storage_location_id' => $storageLocationId,
+                'fuel_type_id' => $premiumId,
+                'movement_type' => 'stock_out',
+                'direction' => 'out',
+                'quantity_liters' => 10000,
+                'reference_type' => 'test',
+                'reference_id' => 2,
+                'movement_date' => now(),
+                'created_by' => $admin->id,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'movement_code' => 'MOV-IN-DSL',
+                'storage_location_id' => $storageLocationId,
+                'fuel_type_id' => $dieselId,
+                'movement_type' => 'beginning',
+                'direction' => 'in',
+                'quantity_liters' => 1000,
+                'reference_type' => 'test',
+                'reference_id' => 3,
+                'movement_date' => now(),
+                'created_by' => $admin->id,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $saleId = DB::table('sales')->insertGetId([
+            'sale_code' => 'SAL-TEST',
+            'customer_id' => $customerId,
+            'sale_date' => now()->toDateString(),
+            'payment_method' => 'bank_transfer',
+            'payment_terms' => 'installment',
+            'status' => 'partially_paid',
+            'created_by' => $admin->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $saleItemId = DB::table('sale_items')->insertGetId([
+            'sale_id' => $saleId,
+            'fuel_type_id' => $premiumId,
+            'quantity_liters' => 20000,
+            'unit_price' => 90,
+            'line_total' => 1800000,
+            'fulfilled_quantity_liters' => 5000,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('payments')->insert([
+            'payment_code' => 'PAY-TEST',
+            'sale_id' => $saleId,
+            'payment_date' => now()->toDateString(),
+            'amount' => 800000,
+            'method' => 'bank_transfer',
+            'received_by' => $admin->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('deliveries')->insert([
+            'delivery_code' => 'DEL-TEST',
+            'sale_id' => $saleId,
+            'sale_item_id' => $saleItemId,
+            'customer_id' => $customerId,
+            'fuel_type_id' => $premiumId,
+            'source_type' => 'garage',
+            'storage_location_id' => $storageLocationId,
+            'truck_id' => $truckId,
+            'driver_user_id' => $driver->id,
+            'scheduled_at' => now(),
+            'scheduled_quantity_liters' => 20000,
+            'status' => 'in_transit',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($admin)
+            ->get('/admin/dashboard')
+            ->assertOk()
+            ->assertSee('41 KL')
+            ->assertSee('PHP 1,800,000')
+            ->assertSee('PHP 1,000,000')
+            ->assertSee('60 KL')
+            ->assertSee('Scheduled / in transit')
+            ->assertSee('40,000 L')
+            ->assertSee('Premium')
+            ->assertSee('1,000 L')
+            ->assertSee('Diesel')
+            ->assertSee('PHP1,800,000')
+            ->assertSee('PHP800,000')
+            ->assertSee('PHP1,000,000')
+            ->assertSee('Hot Wed');
+
+        Carbon::setTestNow();
     }
 
     public function test_registration_validates_unique_email_role_and_confirmed_password(): void

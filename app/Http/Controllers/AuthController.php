@@ -100,18 +100,22 @@ class AuthController extends Controller
             'password' => ['required', 'string'],
         ]);
 
-        $attempt = Auth::attempt([
-            'email' => $credentials['username'],
-            'password' => $credentials['password'],
-            'role' => $credentials['role'],
-            'status' => 'active',
-        ]);
+        $user = User::query()
+            ->where('role', $credentials['role'])
+            ->where('status', 'active')
+            ->where(function ($query) use ($credentials): void {
+                $query->where('email', $credentials['username'])
+                    ->orWhere('name', $credentials['username']);
+            })
+            ->first();
 
-        if (! $attempt) {
+        if (! $user || ! Hash::check($credentials['password'], $user->password)) {
             throw ValidationException::withMessages([
                 'username' => 'The provided credentials do not match an active account.',
             ]);
         }
+
+        Auth::login($user);
 
         $request->session()->regenerate();
 

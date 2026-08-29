@@ -491,7 +491,7 @@ select {
 
 .mini-bar i {
     display: block;
-    height: 6px;
+    height: var(--bar-height, 6px);
     border-radius: 8px 8px 0 0;
     background: var(--admin-ink);
 }
@@ -627,6 +627,15 @@ select {
 
 .mock-point:first-child {
     background: var(--admin-ink);
+}
+
+.dashboard-empty-state {
+    min-height: 255px;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    color: #6b7280;
+    font-weight: 700;
 }
 
 .mock-line-path::after {

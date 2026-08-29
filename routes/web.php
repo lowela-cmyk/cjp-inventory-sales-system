@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\AdminDashboardController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', [AuthController::class, 'showLogin'])->name('home');
@@ -20,7 +21,7 @@ Route::middleware(['auth'])->group(function () {
 
     Route::redirect('/admin', '/admin/dashboard')->middleware('role:admin')->name('admin.shortcut');
     Route::prefix('admin')->name('admin.')->middleware('role:admin')->group(function () {
-        Route::view('/dashboard', 'admin.dashboard')->name('dashboard');
+        Route::get('/dashboard', AdminDashboardController::class)->name('dashboard');
         Route::view('/inventory', 'admin.inventory')->name('inventory');
         Route::view('/ledger', 'admin.ledger')->name('ledger');
         Route::view('/fuel-lifting', 'admin.fuel-lifting')->name('fuel-lifting');

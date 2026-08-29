@@ -10,7 +10,7 @@ Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth')->n
 Route::view('/register', 'auth.register')->name('register');
 
 Route::middleware(['auth'])->group(function () {
-    Route::redirect('/admin', '/admin/dashboard')->name('admin.shortcut');
+    Route::redirect('/admin', '/admin/dashboard')->middleware('role:admin')->name('admin.shortcut');
     Route::prefix('admin')->name('admin.')->middleware('role:admin')->group(function () {
         Route::view('/dashboard', 'admin.dashboard')->name('dashboard');
         Route::view('/inventory', 'admin.inventory')->name('inventory');
@@ -22,7 +22,7 @@ Route::middleware(['auth'])->group(function () {
         Route::view('/user-management', 'admin.user-management')->name('user-management');
     });
 
-    Route::redirect('/dispatch', '/dispatch/fuel-lifting')->name('dispatch.shortcut');
+    Route::redirect('/dispatch', '/dispatch/fuel-lifting')->middleware('role:dispatch_officer')->name('dispatch.shortcut');
     Route::prefix('dispatch')->name('dispatch.')->middleware('role:dispatch_officer')->group(function () {
         Route::view('/fuel-lifting', 'dispatch.fuel-lifting')->name('fuel-lifting');
         Route::view('/fuel-lifting/hauled', 'dispatch.fuel-lifting', ['state' => 'hauled'])->name('fuel-lifting.hauled');
@@ -30,7 +30,7 @@ Route::middleware(['auth'])->group(function () {
         Route::view('/alerts', 'dispatch.alerts')->name('alerts');
     });
 
-    Route::redirect('/inventory-officer', '/inventory-officer/inventory')->name('inventory-officer.shortcut');
+    Route::redirect('/inventory-officer', '/inventory-officer/inventory')->middleware('role:inventory_officer')->name('inventory-officer.shortcut');
     Route::prefix('inventory-officer')->name('inventory-officer.')->middleware('role:inventory_officer')->group(function () {
         Route::view('/inventory', 'inventory-officer.inventory')->name('inventory');
         Route::view('/inventory/stock-in', 'inventory-officer.inventory', ['state' => 'stock-in'])->name('inventory.stock-in');
@@ -40,14 +40,14 @@ Route::middleware(['auth'])->group(function () {
         Route::view('/alerts', 'inventory-officer.alerts')->name('alerts');
     });
 
-    Route::redirect('/sales-officer', '/sales-officer/sales')->name('sales-officer.shortcut');
+    Route::redirect('/sales-officer', '/sales-officer/sales')->middleware('role:sales_officer')->name('sales-officer.shortcut');
     Route::prefix('sales-officer')->name('sales-officer.')->middleware('role:sales_officer')->group(function () {
         Route::view('/sales', 'sales-officer.sales')->name('sales');
         Route::view('/sales/customers', 'sales-officer.sales', ['state' => 'customers'])->name('sales.customers');
         Route::view('/alerts', 'sales-officer.alerts')->name('alerts');
     });
 
-    Route::redirect('/driver', '/driver/fuel-lifting')->name('driver.shortcut');
+    Route::redirect('/driver', '/driver/fuel-lifting')->middleware('role:driver')->name('driver.shortcut');
     Route::prefix('driver')->name('driver.')->middleware('role:driver')->group(function () {
         Route::view('/fuel-lifting', 'driver.fuel-lifting')->name('fuel-lifting');
         Route::view('/fuel-lifting/hauled', 'driver.fuel-lifting', ['state' => 'hauled'])->name('fuel-lifting.hauled');

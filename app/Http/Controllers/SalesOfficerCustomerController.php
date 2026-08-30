@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Database\Query\Builder;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -36,18 +37,24 @@ class SalesOfficerCustomerController extends Controller
     {
         $data = $this->validatedCustomerData($request);
 
-        DB::table('customers')->insert([
-            'customer_code' => $this->nextCustomerCode(),
-            'name' => $data['name'],
-            'company_name' => $data['company_name'],
-            'location' => $data['location'] ?? null,
-            'email' => $data['email'] ?? null,
-            'phone' => $data['phone'] ?? null,
-            'payment_status' => $data['payment_status'],
-            'status' => $data['status'],
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        try {
+            DB::table('customers')->insert([
+                'customer_code' => $this->nextCustomerCode(),
+                'name' => $data['name'],
+                'company_name' => $data['company_name'],
+                'location' => $data['location'] ?? null,
+                'email' => $data['email'] ?? null,
+                'phone' => $data['phone'] ?? null,
+                'payment_status' => $data['payment_status'],
+                'status' => $data['status'],
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        } catch (QueryException) {
+            return back()
+                ->withInput()
+                ->withErrors(['company_name' => 'Customer record could not be saved. Please review the customer details and try again.']);
+        }
 
         return redirect()
             ->route('sales-officer.sales.customers')
@@ -60,18 +67,24 @@ class SalesOfficerCustomerController extends Controller
 
         $data = $this->validatedCustomerData($request, $customer);
 
-        DB::table('customers')
-            ->where('id', $customer)
-            ->update([
-                'name' => $data['name'],
-                'company_name' => $data['company_name'],
-                'location' => $data['location'] ?? null,
-                'email' => $data['email'] ?? null,
-                'phone' => $data['phone'] ?? null,
-                'payment_status' => $data['payment_status'],
-                'status' => $data['status'],
-                'updated_at' => now(),
-            ]);
+        try {
+            DB::table('customers')
+                ->where('id', $customer)
+                ->update([
+                    'name' => $data['name'],
+                    'company_name' => $data['company_name'],
+                    'location' => $data['location'] ?? null,
+                    'email' => $data['email'] ?? null,
+                    'phone' => $data['phone'] ?? null,
+                    'payment_status' => $data['payment_status'],
+                    'status' => $data['status'],
+                    'updated_at' => now(),
+                ]);
+        } catch (QueryException) {
+            return back()
+                ->withInput()
+                ->withErrors(['company_name' => 'Customer record could not be updated. Please review the customer details and try again.']);
+        }
 
         return redirect()
             ->route('sales-officer.sales.customers')
@@ -82,12 +95,17 @@ class SalesOfficerCustomerController extends Controller
     {
         abort_unless(DB::table('customers')->where('id', $customer)->exists(), 404);
 
-        DB::table('customers')
-            ->where('id', $customer)
-            ->update([
-                'status' => 'inactive',
-                'updated_at' => now(),
-            ]);
+        try {
+            DB::table('customers')
+                ->where('id', $customer)
+                ->update([
+                    'status' => 'inactive',
+                    'updated_at' => now(),
+                ]);
+        } catch (QueryException) {
+            return back()
+                ->withErrors(['customer' => 'Customer record could not be deactivated. Please try again.']);
+        }
 
         return redirect()
             ->route('sales-officer.sales.customers')

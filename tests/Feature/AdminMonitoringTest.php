@@ -30,7 +30,7 @@ class AdminMonitoringTest extends TestCase
             ->assertOk()
             ->assertSee('PUR-MONITOR')
             ->assertSee('LFT-MONITOR')
-            ->assertSee('Partial');
+            ->assertSee('Stock In');
 
         $this->actingAs($records['admin'])
             ->get(route('admin.fuel-lifting'))
@@ -99,7 +99,7 @@ class AdminMonitoringTest extends TestCase
             + DB::table('alerts')->count();
 
         $this->actingAs($admin)->get(route('admin.inventory'))->assertOk()->assertSee('No records found.');
-        $this->actingAs($admin)->get(route('admin.ledger'))->assertOk()->assertSee('No records found.');
+        $this->actingAs($admin)->get(route('admin.ledger'))->assertOk()->assertSee('No inventory movements found.');
         $this->actingAs($admin)->get(route('admin.fuel-lifting'))->assertOk()->assertSee('No records found.');
         $this->actingAs($admin)->get(route('admin.sales'))->assertOk()->assertSee('No records found.');
         $this->actingAs($admin)->get(route('admin.alerts'))->assertOk()->assertSee('No records found.');

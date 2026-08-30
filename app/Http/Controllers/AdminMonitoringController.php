@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\InventoryLedgerService;
 use Illuminate\Http\Request;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
@@ -141,79 +142,17 @@ class AdminMonitoringController extends Controller
         ]);
     }
 
-    public function ledger(Request $request): View
+    public function ledger(Request $request, InventoryLedgerService $ledgerService): View
     {
         $search = $this->validatedSearch($request);
+        $rows = $ledgerService->rows($search);
 
-        $ledger = DB::table('purchase_items')
-            ->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
-            ->join('depots', 'depots.id', '=', 'purchases.depot_id')
-            ->join('fuel_types', 'fuel_types.id', '=', 'purchase_items.fuel_type_id')
-            ->whereNull('purchases.deleted_at')
-            ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
-                'purchases.purchase_code',
-                'depots.name',
-                'fuel_types.name',
-                'purchase_items.status',
-            ]))
-            ->orderByDesc('purchases.purchase_date')
-            ->orderByDesc('purchase_items.id')
-            ->get([
-                'purchase_items.id',
-                'purchases.purchase_code',
-                'purchases.purchase_date',
-                'depots.name as depot_name',
-                'fuel_types.name as fuel_name',
-                'purchase_items.quantity_ordered_liters',
-                'purchase_items.quantity_hauled_liters',
-                'purchase_items.status',
-            ])
-            ->map(fn (object $row): array => [
-                $row->purchase_code,
-                $this->formatDate($row->purchase_date),
-                $row->fuel_name,
-                $row->depot_name,
-                $this->formatLiters($row->quantity_ordered_liters),
-                $this->formatLiters($row->quantity_hauled_liters),
-                $this->formatLiters(max(0, (float) $row->quantity_hauled_liters)),
-                $this->formatLiters(max(0, (float) $row->quantity_ordered_liters - (float) $row->quantity_hauled_liters)),
-                $this->label($row->status),
-            ]);
-
-        $transactions = DB::table('purchase_items')
-            ->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
-            ->join('depots', 'depots.id', '=', 'purchases.depot_id')
-            ->join('fuel_types', 'fuel_types.id', '=', 'purchase_items.fuel_type_id')
-            ->leftJoin('hauls', 'hauls.purchase_item_id', '=', 'purchase_items.id')
-            ->whereNull('purchases.deleted_at')
-            ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
-                'purchases.purchase_code',
-                'depots.name',
-                'fuel_types.name',
-                'purchase_items.status',
-                'hauls.haul_code',
-                'hauls.dr_number',
-            ]))
-            ->selectRaw('purchase_items.id, purchases.purchase_code, depots.name as depot_name, fuel_types.name as fuel_name, purchase_items.quantity_ordered_liters, purchase_items.quantity_hauled_liters, purchase_items.status, COALESCE(SUM(hauls.quantity_liters), 0) as scheduled_liters')
-            ->groupBy('purchase_items.id', 'purchases.purchase_code', 'depots.name', 'fuel_types.name', 'purchase_items.quantity_ordered_liters', 'purchase_items.quantity_hauled_liters', 'purchase_items.status')
-            ->orderByDesc('purchase_items.id')
-            ->get()
-            ->map(fn (object $row): array => [
-                'id' => 'ledger-transaction-'.$row->id,
-                'cells' => [
-                    $row->purchase_code,
-                    $row->depot_name,
-                    $row->fuel_name,
-                    $this->formatLiters($row->quantity_ordered_liters),
-                    $this->formatLiters($row->quantity_hauled_liters),
-                    $this->formatLiters(max(0, (float) $row->quantity_ordered_liters - (float) $row->quantity_hauled_liters)),
-                    $this->label($row->status),
-                ],
-                'status' => $this->label($row->status),
-                'hauls' => $this->haulsForPurchaseItem((int) $row->id),
-            ]);
-
-        return view('admin.ledger', compact('search', 'ledger', 'transactions'));
+        return view('admin.ledger', [
+            'search' => $search,
+            'ledger' => $rows['ledger'],
+            'transactions' => $rows['transactions'],
+            'latestBalances' => $rows['latestBalances'],
+        ]);
     }
 
     public function fuelLifting(Request $request): View

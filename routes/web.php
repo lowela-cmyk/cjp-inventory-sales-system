@@ -4,6 +4,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\AdminDashboardController;
 use App\Http\Controllers\AdminMonitoringController;
 use App\Http\Controllers\AdminUserManagementController;
+use App\Http\Controllers\InventoryOfficerLedgerController;
 use App\Http\Controllers\InventoryOfficerPurchaseController;
 use Illuminate\Support\Facades\Route;
 
@@ -59,8 +60,8 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/inventory/stock-in', [InventoryOfficerPurchaseController::class, 'storeStockIn'])->name('inventory.stock-in.store');
         Route::get('/inventory/stock-in', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'stock-in')->name('inventory.stock-in');
         Route::get('/inventory/stock-out', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'stock-out')->name('inventory.stock-out');
-        Route::view('/ledger', 'inventory-officer.ledger')->name('ledger');
-        Route::view('/ledger/transactions', 'inventory-officer.ledger', ['state' => 'transactions'])->name('ledger.transactions');
+        Route::get('/ledger', InventoryOfficerLedgerController::class)->name('ledger');
+        Route::get('/ledger/transactions', InventoryOfficerLedgerController::class)->defaults('state', 'transactions')->name('ledger.transactions');
         Route::view('/alerts', 'inventory-officer.alerts')->name('alerts');
     });
 

@@ -26,7 +26,11 @@
                         @forelse ($purchases as $row)
                             <tr class="{{ $row['class'] }}">
                                 @foreach ($row['cells'] as $cell)
-                                    <td>{{ $cell }}</td>
+                                    @if ($loop->index === 7 && $row['receipt_url'])
+                                        <td><a href="{{ $row['receipt_url'] }}">{{ $cell }}</a></td>
+                                    @else
+                                        <td>{{ $cell }}</td>
+                                    @endif
                                 @endforeach
                                 <td><button class="btn btn-secondary" type="button" data-modal-open="{{ $row['id'] }}">View</button></td>
                             </tr>
@@ -110,7 +114,16 @@
                 <p class="detail-id">{{ $row['cells'][0] }}</p>
                 <div class="detail-grid">
                     @foreach ($row['details'] as $label => $value)
-                        <div class="detail-row"><div class="detail-label">{{ $label }}</div><div class="detail-value">{{ $value }}</div></div>
+                        <div class="detail-row">
+                            <div class="detail-label">{{ $label }}</div>
+                            <div class="detail-value">
+                                @if ($label === 'Delivery Receipt' && $row['receipt_url'])
+                                    <a href="{{ $row['receipt_url'] }}">{{ $value }}</a>
+                                @else
+                                    {{ $value }}
+                                @endif
+                            </div>
+                        </div>
                     @endforeach
                 </div>
             </div>

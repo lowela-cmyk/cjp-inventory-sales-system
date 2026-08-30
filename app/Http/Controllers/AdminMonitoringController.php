@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
 
 class AdminMonitoringController extends Controller
@@ -33,6 +34,7 @@ class AdminMonitoringController extends Controller
             ->orderByDesc('purchase_items.id')
             ->get([
                 'purchase_items.id',
+                'purchases.id as purchase_id',
                 'purchases.purchase_code',
                 'purchases.purchase_date',
                 'purchases.receipt_reference',
@@ -48,6 +50,7 @@ class AdminMonitoringController extends Controller
             ])
             ->map(fn (object $row): array => [
                 'id' => 'purchase-detail-'.$row->id,
+                'receipt_url' => $this->isStoredReceipt($row->receipt_reference) ? route('purchase-receipts.show', $row->purchase_id) : null,
                 'cells' => [
                     $row->purchase_code,
                     $this->formatDate($row->purchase_date),
@@ -56,7 +59,7 @@ class AdminMonitoringController extends Controller
                     $this->formatNumber($row->quantity_ordered_liters),
                     $this->formatNumber($row->unit_cost),
                     $this->formatNumber($row->line_total),
-                    $row->receipt_reference ?: 'N/A',
+                    $this->receiptDisplay($row->receipt_reference),
                     $this->label($row->payment_status),
                 ],
                 'status' => $this->label($row->payment_status),
@@ -69,7 +72,7 @@ class AdminMonitoringController extends Controller
                     'QTY Lifted (L)' => $this->formatLiters($row->quantity_hauled_liters),
                     'Cost / Liter' => $this->formatNumber($row->unit_cost),
                     'Total Cost' => $this->formatNumber($row->line_total),
-                    'Delivery Receipt' => $row->receipt_reference ?: 'N/A',
+                    'Delivery Receipt' => $this->receiptDisplay($row->receipt_reference),
                     'Purchase Status' => $this->label($row->purchase_status),
                     'Item Status' => $this->label($row->item_status),
                     'Payment Status' => $this->label($row->payment_status),
@@ -597,6 +600,23 @@ class AdminMonitoringController extends Controller
             $liters < 15000 => 'Low Stock',
             default => 'Available',
         };
+    }
+
+    private function isStoredReceipt(?string $path): bool
+    {
+        return is_string($path)
+            && str_starts_with($path, 'purchase-receipts/')
+            && ! str_contains($path, '..')
+            && Storage::disk('local')->exists($path);
+    }
+
+    private function receiptDisplay(?string $path): string
+    {
+        if ($this->isStoredReceipt($path)) {
+            return 'View Receipt';
+        }
+
+        return $path ?: 'No receipt uploaded';
     }
 
     private function formatDate(mixed $date): string

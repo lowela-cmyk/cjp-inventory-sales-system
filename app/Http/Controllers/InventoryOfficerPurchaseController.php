@@ -6,8 +6,11 @@ use Illuminate\Database\Query\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class InventoryOfficerPurchaseController extends Controller
 {
@@ -41,11 +44,13 @@ class InventoryOfficerPurchaseController extends Controller
         $data = $this->validatedPurchaseData($request);
 
         DB::transaction(function () use ($request, $data): void {
+            $receiptPath = $this->storeReceipt($request);
+
             $purchaseId = DB::table('purchases')->insertGetId([
                 'purchase_code' => $this->nextCode('purchases', 'purchase_code', 'PUR'),
                 'depot_id' => $data['depot_id'],
                 'purchase_date' => $data['purchase_date'],
-                'receipt_reference' => $data['receipt_reference'] ?? null,
+                'receipt_reference' => $receiptPath ?: ($data['receipt_reference'] ?? null),
                 'payment_status' => $data['payment_status'],
                 'status' => $data['status'],
                 'created_by' => $request->user()->id,
@@ -84,13 +89,16 @@ class InventoryOfficerPurchaseController extends Controller
                 ->withInput();
         }
 
-        DB::transaction(function () use ($row, $data): void {
+        DB::transaction(function () use ($request, $row, $data): void {
+            $receiptPath = $this->storeReceipt($request);
+            $oldReceiptPath = $row->receipt_reference;
+
             DB::table('purchases')
                 ->where('id', $row->purchase_id)
                 ->update([
                     'depot_id' => $data['depot_id'],
                     'purchase_date' => $data['purchase_date'],
-                    'receipt_reference' => $data['receipt_reference'] ?? null,
+                    'receipt_reference' => $receiptPath ?: ($data['receipt_reference'] ?? $oldReceiptPath),
                     'payment_status' => $data['payment_status'],
                     'status' => $data['status'],
                     'updated_at' => now(),
@@ -106,11 +114,32 @@ class InventoryOfficerPurchaseController extends Controller
                     'status' => $this->itemStatus((float) $row->quantity_hauled_liters, (float) $data['quantity_ordered_liters']),
                     'updated_at' => now(),
                 ]);
+
+            if ($receiptPath && $oldReceiptPath && $oldReceiptPath !== $receiptPath && Storage::disk('local')->exists($oldReceiptPath)) {
+                Storage::disk('local')->delete($oldReceiptPath);
+            }
         });
 
         return redirect()
             ->route('inventory-officer.inventory')
             ->with('status', 'Purchase record updated successfully.');
+    }
+
+    public function receipt(int $purchase): StreamedResponse
+    {
+        $row = DB::table('purchases')
+            ->where('id', $purchase)
+            ->whereNull('deleted_at')
+            ->first(['purchase_code', 'receipt_reference']);
+
+        abort_unless($row && $this->isStoredReceipt($row->receipt_reference), 404);
+
+        $extension = pathinfo((string) $row->receipt_reference, PATHINFO_EXTENSION);
+
+        return Storage::disk('local')->download(
+            $row->receipt_reference,
+            Str::slug($row->purchase_code).'-receipt.'.$extension
+        );
     }
 
     public function cancel(Request $request, int $purchaseItem): RedirectResponse
@@ -149,6 +178,7 @@ class InventoryOfficerPurchaseController extends Controller
             'quantity_ordered_liters' => ['required', 'numeric', 'gt:0', 'max:999999999999.99'],
             'unit_cost' => ['required', 'numeric', 'gte:0', 'max:9999999999.99'],
             'receipt_reference' => ['nullable', 'string', 'max:255'],
+            'receipt_file' => ['nullable', 'file', 'mimetypes:application/pdf,image/jpeg,image/png', 'max:5120'],
             'payment_status' => ['required', Rule::in(self::PAYMENT_STATUSES)],
             'status' => ['required', Rule::in(self::PURCHASE_STATUSES)],
         ]);
@@ -204,6 +234,7 @@ class InventoryOfficerPurchaseController extends Controller
                 'quantity_ordered_liters' => $row->quantity_ordered_liters,
                 'unit_cost' => $row->unit_cost,
                 'receipt_reference' => $row->receipt_reference,
+                'receipt_url' => $this->isStoredReceipt($row->receipt_reference) ? route('purchase-receipts.show', $row->purchase_id) : null,
                 'payment_status' => $row->payment_status,
                 'purchase_status' => $row->purchase_status,
                 'has_dependencies' => $this->hasDependentActivity($row),
@@ -216,7 +247,7 @@ class InventoryOfficerPurchaseController extends Controller
                     $this->formatNumber($row->quantity_ordered_liters),
                     $this->formatNumber($row->unit_cost),
                     $this->formatNumber($row->line_total),
-                    $row->receipt_reference ?: 'N/A',
+                    $this->receiptDisplay($row->receipt_reference),
                     $this->label($row->payment_status),
                 ],
                 'details' => [
@@ -227,7 +258,7 @@ class InventoryOfficerPurchaseController extends Controller
                     'Quantity Hauled' => $this->formatLiters($row->quantity_hauled_liters),
                     'Cost/Liter' => $this->formatNumber($row->unit_cost),
                     'Total Cost' => $this->formatNumber($row->line_total),
-                    'Delivery Receipt' => $row->receipt_reference ?: 'N/A',
+                    'Delivery Receipt' => $this->receiptDisplay($row->receipt_reference),
                     'Purchase Status' => $this->label($row->purchase_status),
                     'Item Status' => $this->label($row->item_status),
                     'Created By' => $row->created_by_name ?: 'N/A',
@@ -333,6 +364,7 @@ class InventoryOfficerPurchaseController extends Controller
                 'purchase_items.unit_cost',
                 'purchases.depot_id',
                 'purchases.purchase_date',
+                'purchases.receipt_reference',
             ]);
     }
 
@@ -385,6 +417,36 @@ class InventoryOfficerPurchaseController extends Controller
     private function lineTotal(mixed $quantity, mixed $unitCost): float
     {
         return round(((float) $quantity) * ((float) $unitCost), 2);
+    }
+
+    private function storeReceipt(Request $request): ?string
+    {
+        if (! $request->hasFile('receipt_file')) {
+            return null;
+        }
+
+        $file = $request->file('receipt_file');
+        $extension = $file->guessExtension() ?: $file->extension();
+        $filename = (string) Str::uuid().'.'.$extension;
+
+        return $file->storeAs('purchase-receipts', $filename, 'local');
+    }
+
+    private function isStoredReceipt(?string $path): bool
+    {
+        return is_string($path)
+            && str_starts_with($path, 'purchase-receipts/')
+            && ! str_contains($path, '..')
+            && Storage::disk('local')->exists($path);
+    }
+
+    private function receiptDisplay(?string $path): string
+    {
+        if ($this->isStoredReceipt($path)) {
+            return 'View Receipt';
+        }
+
+        return $path ?: 'No receipt uploaded';
     }
 
     private function itemStatus(float $hauled, float $ordered): string

@@ -21,6 +21,9 @@ Route::post('/reset-password', [AuthController::class, 'resetPassword'])->name('
 Route::middleware(['auth'])->group(function () {
     Route::get('/dashboard', [AuthController::class, 'redirectToDashboard'])->name('dashboard');
     Route::get('/home', [AuthController::class, 'redirectToDashboard'])->name('home.dashboard');
+    Route::get('/purchase-receipts/{purchase}', [InventoryOfficerPurchaseController::class, 'receipt'])
+        ->middleware('role:admin,inventory_officer')
+        ->name('purchase-receipts.show');
 
     Route::redirect('/admin', '/admin/dashboard')->middleware('role:admin')->name('admin.shortcut');
     Route::prefix('admin')->name('admin.')->middleware('role:admin')->group(function () {

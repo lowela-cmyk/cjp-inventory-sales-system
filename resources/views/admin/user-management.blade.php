@@ -167,7 +167,7 @@
                 <p class="detail-id">{{ $staffId($row) }}</p>
                 <div class="form-grid">
                     <div class="form-row"><label for="staff_name_{{ $row->id }}">Staff Name</label><input form="staff-update-{{ $row->id }}" id="staff_name_{{ $row->id }}" name="name" type="text" value="{{ old('name', $row->name) }}" required></div>
-                    <div class="form-row"><label for="staff_role_{{ $row->id }}">Position</label><select form="staff-update-{{ $row->id }}" id="staff_role_{{ $row->id }}" name="role" required>@foreach ($officeRoles as $value => $label)<option value="{{ $value }}" @selected(old('role', $row->role) === $value)>{{ $label }}</option>@endforeach</select></div>
+                    <div class="form-row"><label for="staff_role_{{ $row->id }}">Position</label><select form="staff-update-{{ $row->id }}" id="staff_role_{{ $row->id }}" name="role" required>@foreach ($roles as $value => $label)<option value="{{ $value }}" @selected(old('role', $row->role) === $value)>{{ $label }}</option>@endforeach</select></div>
                     <div class="form-row"><label for="staff_email_{{ $row->id }}">Email</label><input form="staff-update-{{ $row->id }}" id="staff_email_{{ $row->id }}" name="email" type="email" value="{{ old('email', $row->email) }}" required></div>
                     <div class="form-row"><label for="staff_phone_{{ $row->id }}">Contact Number</label><input form="staff-update-{{ $row->id }}" id="staff_phone_{{ $row->id }}" name="phone" type="tel" value="{{ old('phone', $row->phone) }}"></div>
                     <div class="form-row"><label for="staff_status_{{ $row->id }}">Status</label><select form="staff-update-{{ $row->id }}" id="staff_status_{{ $row->id }}" name="status" required>@foreach ($statuses as $status)<option value="{{ $status }}" @selected(old('status', $row->status) === $status)>{{ ucfirst($status) }}</option>@endforeach</select></div>
@@ -193,12 +193,12 @@
             <form id="driver-update-{{ $row->id }}" method="POST" action="{{ route('admin.user-management.drivers.update', $row) }}">
                 @csrf
                 @method('PATCH')
-                <input type="hidden" name="role" value="driver">
             </form>
             <div class="modal-card">
                 <p class="detail-id">{{ $driverId($row) }}</p>
                 <div class="form-grid">
                     <div class="form-row"><label for="driver_name_{{ $row->id }}">Driver Name</label><input form="driver-update-{{ $row->id }}" id="driver_name_{{ $row->id }}" name="name" type="text" value="{{ old('name', $row->name) }}" required></div>
+                    <div class="form-row"><label for="driver_role_{{ $row->id }}">Position</label><select form="driver-update-{{ $row->id }}" id="driver_role_{{ $row->id }}" name="role" required>@foreach ($roles as $value => $label)<option value="{{ $value }}" @selected(old('role', $row->role) === $value)>{{ $label }}</option>@endforeach</select></div>
                     <div class="form-row"><label for="license_number_{{ $row->id }}">License Number</label><input form="driver-update-{{ $row->id }}" id="license_number_{{ $row->id }}" name="license_number" type="text" value="{{ old('license_number', $row->license_number) }}"></div>
                     <div class="form-row"><label for="driver_email_{{ $row->id }}">Email</label><input form="driver-update-{{ $row->id }}" id="driver_email_{{ $row->id }}" name="email" type="email" value="{{ old('email', $row->email) }}" required></div>
                     <div class="form-row"><label for="driver_phone_{{ $row->id }}">Contact Number</label><input form="driver-update-{{ $row->id }}" id="driver_phone_{{ $row->id }}" name="phone" type="tel" value="{{ old('phone', $row->phone) }}"></div>

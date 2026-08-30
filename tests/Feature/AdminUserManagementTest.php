@@ -289,10 +289,254 @@ class AdminUserManagementTest extends TestCase
             ->assertForbidden();
 
         $this->actingAs($inventoryOfficer)
+            ->patch(route('admin.user-management.staff.update', $target), [
+                'name' => 'Blocked Update',
+                'email' => 'blocked-update@example.com',
+                'role' => 'admin',
+                'status' => 'active',
+                'password' => null,
+                'password_confirmation' => null,
+            ])
+            ->assertForbidden();
+
+        $this->actingAs($inventoryOfficer)
             ->patch(route('admin.user-management.users.status', $target), [
                 'status' => 'inactive',
                 'tab' => 'drivers',
             ])
             ->assertForbidden();
+    }
+
+    public function test_admin_can_change_inventory_officer_to_sales_officer_and_login_uses_new_dashboard(): void
+    {
+        $admin = User::factory()->create([
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+
+        $staff = User::factory()->create([
+            'name' => 'Inventory Staff',
+            'email' => 'inventory-to-sales@example.com',
+            'role' => 'inventory_officer',
+            'status' => 'active',
+            'password' => 'password',
+        ]);
+
+        $this->actingAs($admin)
+            ->patch(route('admin.user-management.staff.update', $staff), [
+                'name' => 'Inventory Staff',
+                'email' => 'inventory-to-sales@example.com',
+                'phone' => null,
+                'role' => 'sales_officer',
+                'status' => 'active',
+                'password' => null,
+                'password_confirmation' => null,
+            ])
+            ->assertRedirect(route('admin.user-management', ['tab' => 'office']));
+
+        $this->assertSame('sales_officer', $staff->refresh()->role);
+
+        $this->post('/logout');
+
+        $this->post('/login', [
+            'username' => 'inventory-to-sales@example.com',
+            'role' => 'sales_officer',
+            'password' => 'password',
+        ])->assertRedirect(route('sales-officer.sales'));
+
+        $this->get(route('inventory-officer.inventory'))->assertForbidden();
+        $this->get(route('sales-officer.sales'))->assertOk();
+    }
+
+    public function test_admin_can_change_sales_officer_to_dispatch_officer(): void
+    {
+        $admin = User::factory()->create([
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+
+        $staff = User::factory()->create([
+            'name' => 'Sales Staff',
+            'email' => 'sales-to-dispatch@example.com',
+            'role' => 'sales_officer',
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($admin)
+            ->patch(route('admin.user-management.staff.update', $staff), [
+                'name' => 'Sales Staff',
+                'email' => 'sales-to-dispatch@example.com',
+                'phone' => null,
+                'role' => 'dispatch_officer',
+                'status' => 'active',
+                'password' => null,
+                'password_confirmation' => null,
+            ])
+            ->assertRedirect(route('admin.user-management', ['tab' => 'office']));
+
+        $this->assertSame('dispatch_officer', $staff->refresh()->role);
+    }
+
+    public function test_admin_can_change_staff_account_to_driver_without_duplicate_account(): void
+    {
+        $admin = User::factory()->create([
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+
+        $staff = User::factory()->create([
+            'name' => 'Staff Driver',
+            'email' => 'staff-to-driver@example.com',
+            'role' => 'sales_officer',
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($admin)
+            ->patch(route('admin.user-management.staff.update', $staff), [
+                'name' => 'Staff Driver',
+                'email' => 'staff-to-driver@example.com',
+                'phone' => null,
+                'role' => 'driver',
+                'status' => 'active',
+                'password' => null,
+                'password_confirmation' => null,
+            ])
+            ->assertRedirect(route('admin.user-management', ['tab' => 'drivers']));
+
+        $this->assertSame('driver', $staff->refresh()->role);
+        $this->assertSame(1, User::where('email', 'staff-to-driver@example.com')->count());
+        $this->assertDatabaseHas('driver_profiles', [
+            'user_id' => $staff->id,
+            'driver_code' => 'DRV-'.str_pad((string) $staff->id, 6, '0', STR_PAD_LEFT),
+            'status' => 'available',
+        ]);
+    }
+
+    public function test_driver_can_be_changed_to_office_role_while_driver_profile_is_preserved(): void
+    {
+        $admin = User::factory()->create([
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+
+        $driver = User::factory()->create([
+            'name' => 'Driver History',
+            'email' => 'driver-history@example.com',
+            'role' => 'driver',
+            'status' => 'active',
+        ]);
+
+        DB::table('driver_profiles')->insert([
+            'user_id' => $driver->id,
+            'driver_code' => 'DRV-HISTORY',
+            'license_number' => 'KEEP-ME',
+            'status' => 'available',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($admin)
+            ->patch(route('admin.user-management.drivers.update', $driver), [
+                'name' => 'Driver History',
+                'email' => 'driver-history@example.com',
+                'phone' => null,
+                'role' => 'inventory_officer',
+                'license_number' => 'KEEP-ME',
+                'status' => 'active',
+                'password' => null,
+                'password_confirmation' => null,
+            ])
+            ->assertRedirect(route('admin.user-management', ['tab' => 'office']));
+
+        $this->assertSame('inventory_officer', $driver->refresh()->role);
+        $this->assertDatabaseHas('driver_profiles', [
+            'user_id' => $driver->id,
+            'driver_code' => 'DRV-HISTORY',
+            'license_number' => 'KEEP-ME',
+            'status' => 'inactive',
+        ]);
+    }
+
+    public function test_invalid_role_submission_is_rejected(): void
+    {
+        $admin = User::factory()->create([
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+
+        $staff = User::factory()->create([
+            'role' => 'sales_officer',
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($admin)
+            ->patch(route('admin.user-management.staff.update', $staff), [
+                'name' => $staff->name,
+                'email' => $staff->email,
+                'phone' => null,
+                'role' => 'super_admin',
+                'status' => 'active',
+                'password' => null,
+                'password_confirmation' => null,
+            ])
+            ->assertSessionHasErrors('role');
+
+        $this->assertSame('sales_officer', $staff->refresh()->role);
+    }
+
+    public function test_removing_final_active_admin_role_is_blocked(): void
+    {
+        $admin = User::factory()->create([
+            'name' => 'Only Admin',
+            'email' => 'only-admin@example.com',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($admin)
+            ->patch(route('admin.user-management.staff.update', $admin), [
+                'name' => 'Only Admin',
+                'email' => 'only-admin@example.com',
+                'phone' => null,
+                'role' => 'sales_officer',
+                'status' => 'active',
+                'password' => null,
+                'password_confirmation' => null,
+            ])
+            ->assertSessionHasErrors('role');
+
+        $this->assertSame('admin', $admin->refresh()->role);
+    }
+
+    public function test_deactivating_final_active_admin_is_blocked(): void
+    {
+        $admin = User::factory()->create([
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($admin)
+            ->patch(route('admin.user-management.users.status', $admin), [
+                'status' => 'inactive',
+                'tab' => 'office',
+            ])
+            ->assertSessionHasErrors('role');
+
+        $this->assertSame('active', $admin->refresh()->status);
+    }
+
+    public function test_stale_logged_in_role_is_rechecked_on_protected_requests(): void
+    {
+        $user = User::factory()->create([
+            'role' => 'inventory_officer',
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($user);
+
+        $user->forceFill(['role' => 'sales_officer'])->save();
+
+        $this->get(route('inventory-officer.inventory'))->assertForbidden();
+        $this->get(route('dashboard'))->assertRedirect(route('sales-officer.sales'));
     }
 }

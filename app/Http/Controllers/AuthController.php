@@ -47,7 +47,13 @@ class AuthController extends Controller
 
     public function redirectToDashboard(Request $request): RedirectResponse
     {
-        return redirect()->route($this->dashboardRouteFor($request->user()->role));
+        $user = $request->user()?->fresh();
+
+        abort_unless($user && $user->status === 'active', 403);
+
+        Auth::setUser($user);
+
+        return redirect()->route($this->dashboardRouteFor($user->role));
     }
 
     public function sendPasswordResetCode(Request $request): RedirectResponse

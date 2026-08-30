@@ -4,6 +4,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\AdminDashboardController;
 use App\Http\Controllers\AdminMonitoringController;
 use App\Http\Controllers\AdminUserManagementController;
+use App\Http\Controllers\InventoryOfficerPurchaseController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', [AuthController::class, 'showLogin'])->name('home');
@@ -48,9 +49,12 @@ Route::middleware(['auth'])->group(function () {
 
     Route::redirect('/inventory-officer', '/inventory-officer/inventory')->middleware('role:inventory_officer')->name('inventory-officer.shortcut');
     Route::prefix('inventory-officer')->name('inventory-officer.')->middleware('role:inventory_officer')->group(function () {
-        Route::view('/inventory', 'inventory-officer.inventory')->name('inventory');
-        Route::view('/inventory/stock-in', 'inventory-officer.inventory', ['state' => 'stock-in'])->name('inventory.stock-in');
-        Route::view('/inventory/stock-out', 'inventory-officer.inventory', ['state' => 'stock-out'])->name('inventory.stock-out');
+        Route::get('/inventory', [InventoryOfficerPurchaseController::class, 'index'])->name('inventory');
+        Route::post('/inventory/purchases', [InventoryOfficerPurchaseController::class, 'store'])->name('inventory.purchases.store');
+        Route::patch('/inventory/purchases/{purchaseItem}', [InventoryOfficerPurchaseController::class, 'update'])->name('inventory.purchases.update');
+        Route::patch('/inventory/purchases/{purchaseItem}/cancel', [InventoryOfficerPurchaseController::class, 'cancel'])->name('inventory.purchases.cancel');
+        Route::get('/inventory/stock-in', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'stock-in')->name('inventory.stock-in');
+        Route::get('/inventory/stock-out', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'stock-out')->name('inventory.stock-out');
         Route::view('/ledger', 'inventory-officer.ledger')->name('ledger');
         Route::view('/ledger/transactions', 'inventory-officer.ledger', ['state' => 'transactions'])->name('ledger.transactions');
         Route::view('/alerts', 'inventory-officer.alerts')->name('alerts');

@@ -1,0 +1,621 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+use Illuminate\Database\Query\Builder;
+use Illuminate\Support\Facades\DB;
+use Illuminate\View\View;
+
+class AdminMonitoringController extends Controller
+{
+    /**
+     * @return array<string, mixed>
+     */
+    public function inventory(Request $request): View
+    {
+        $search = $this->validatedSearch($request);
+
+        $purchaseRows = DB::table('purchase_items')
+            ->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
+            ->join('depots', 'depots.id', '=', 'purchases.depot_id')
+            ->join('fuel_types', 'fuel_types.id', '=', 'purchase_items.fuel_type_id')
+            ->whereNull('purchases.deleted_at')
+            ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
+                'purchases.purchase_code',
+                'depots.name',
+                'fuel_types.name',
+                'purchases.receipt_reference',
+                'purchases.payment_status',
+                'purchases.status',
+            ]))
+            ->orderByDesc('purchases.purchase_date')
+            ->orderByDesc('purchase_items.id')
+            ->get([
+                'purchase_items.id',
+                'purchases.purchase_code',
+                'purchases.purchase_date',
+                'purchases.receipt_reference',
+                'purchases.payment_status',
+                'purchases.status as purchase_status',
+                'depots.name as depot_name',
+                'fuel_types.name as fuel_name',
+                'purchase_items.quantity_ordered_liters',
+                'purchase_items.quantity_hauled_liters',
+                'purchase_items.unit_cost',
+                'purchase_items.line_total',
+                'purchase_items.status as item_status',
+            ])
+            ->map(fn (object $row): array => [
+                'id' => 'purchase-detail-'.$row->id,
+                'cells' => [
+                    $row->purchase_code,
+                    $this->formatDate($row->purchase_date),
+                    $row->fuel_name,
+                    $row->depot_name,
+                    $this->formatNumber($row->quantity_ordered_liters),
+                    $this->formatNumber($row->unit_cost),
+                    $this->formatNumber($row->line_total),
+                    $row->receipt_reference ?: 'N/A',
+                    $this->label($row->payment_status),
+                ],
+                'status' => $this->label($row->payment_status),
+                'class' => $this->rowClass($row->payment_status),
+                'details' => [
+                    'Date' => $this->formatDate($row->purchase_date),
+                    'Fuel' => $row->fuel_name,
+                    'Depot' => $row->depot_name,
+                    'QTY Ordered (L)' => $this->formatLiters($row->quantity_ordered_liters),
+                    'QTY Lifted (L)' => $this->formatLiters($row->quantity_hauled_liters),
+                    'Cost / Liter' => $this->formatNumber($row->unit_cost),
+                    'Total Cost' => $this->formatNumber($row->line_total),
+                    'Delivery Receipt' => $row->receipt_reference ?: 'N/A',
+                    'Purchase Status' => $this->label($row->purchase_status),
+                    'Item Status' => $this->label($row->item_status),
+                    'Payment Status' => $this->label($row->payment_status),
+                ],
+            ]);
+
+        $stockInRows = DB::table('inventory_movements')
+            ->join('storage_locations', 'storage_locations.id', '=', 'inventory_movements.storage_location_id')
+            ->join('fuel_types', 'fuel_types.id', '=', 'inventory_movements.fuel_type_id')
+            ->where('inventory_movements.direction', 'in')
+            ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
+                'inventory_movements.movement_code',
+                'storage_locations.name',
+                'fuel_types.name',
+                'inventory_movements.movement_type',
+                'inventory_movements.remarks',
+            ]))
+            ->orderByDesc('inventory_movements.movement_date')
+            ->orderByDesc('inventory_movements.id')
+            ->get([
+                'inventory_movements.id',
+                'inventory_movements.movement_code',
+                'inventory_movements.movement_date',
+                'inventory_movements.movement_type',
+                'inventory_movements.quantity_liters',
+                'inventory_movements.unit_cost',
+                'inventory_movements.reference_type',
+                'inventory_movements.reference_id',
+                'inventory_movements.remarks',
+                'storage_locations.name as location_name',
+                'fuel_types.name as fuel_name',
+            ])
+            ->map(fn (object $row): array => [
+                'id' => 'stock-detail-'.$row->id,
+                'cells' => [
+                    $row->movement_code,
+                    $this->formatDateTime($row->movement_date),
+                    $row->fuel_name,
+                    $row->location_name,
+                    $this->formatNumber($row->quantity_liters),
+                    $this->formatNumber($row->unit_cost),
+                    $this->formatNumber(((float) $row->quantity_liters) * ((float) ($row->unit_cost ?? 0))),
+                    $this->formatNumber($row->quantity_liters),
+                    $this->stockStatus((float) $row->quantity_liters),
+                ],
+                'status' => $this->stockStatus((float) $row->quantity_liters),
+                'class' => $this->rowClass($this->stockStatus((float) $row->quantity_liters)),
+                'details' => [
+                    'Movement Type' => $this->label($row->movement_type),
+                    'Fuel' => $row->fuel_name,
+                    'Location' => $row->location_name,
+                    'Quantity' => $this->formatLiters($row->quantity_liters),
+                    'Unit Cost' => $this->formatNumber($row->unit_cost),
+                    'Reference' => $row->reference_type.' #'.$row->reference_id,
+                    'Remarks' => $row->remarks ?: 'N/A',
+                ],
+            ]);
+
+        $stockOutRows = $this->stockOutRows($search);
+
+        return view('admin.inventory', [
+            'search' => $search,
+            'purchases' => $purchaseRows,
+            'stockIn' => $stockInRows,
+            'stockOut' => $stockOutRows,
+        ]);
+    }
+
+    public function ledger(Request $request): View
+    {
+        $search = $this->validatedSearch($request);
+
+        $ledger = DB::table('purchase_items')
+            ->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
+            ->join('depots', 'depots.id', '=', 'purchases.depot_id')
+            ->join('fuel_types', 'fuel_types.id', '=', 'purchase_items.fuel_type_id')
+            ->whereNull('purchases.deleted_at')
+            ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
+                'purchases.purchase_code',
+                'depots.name',
+                'fuel_types.name',
+                'purchase_items.status',
+            ]))
+            ->orderByDesc('purchases.purchase_date')
+            ->orderByDesc('purchase_items.id')
+            ->get([
+                'purchase_items.id',
+                'purchases.purchase_code',
+                'purchases.purchase_date',
+                'depots.name as depot_name',
+                'fuel_types.name as fuel_name',
+                'purchase_items.quantity_ordered_liters',
+                'purchase_items.quantity_hauled_liters',
+                'purchase_items.status',
+            ])
+            ->map(fn (object $row): array => [
+                $row->purchase_code,
+                $this->formatDate($row->purchase_date),
+                $row->fuel_name,
+                $row->depot_name,
+                $this->formatLiters($row->quantity_ordered_liters),
+                $this->formatLiters($row->quantity_hauled_liters),
+                $this->formatLiters(max(0, (float) $row->quantity_hauled_liters)),
+                $this->formatLiters(max(0, (float) $row->quantity_ordered_liters - (float) $row->quantity_hauled_liters)),
+                $this->label($row->status),
+            ]);
+
+        $transactions = DB::table('purchase_items')
+            ->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
+            ->join('depots', 'depots.id', '=', 'purchases.depot_id')
+            ->join('fuel_types', 'fuel_types.id', '=', 'purchase_items.fuel_type_id')
+            ->leftJoin('hauls', 'hauls.purchase_item_id', '=', 'purchase_items.id')
+            ->whereNull('purchases.deleted_at')
+            ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
+                'purchases.purchase_code',
+                'depots.name',
+                'fuel_types.name',
+                'purchase_items.status',
+                'hauls.haul_code',
+                'hauls.dr_number',
+            ]))
+            ->selectRaw('purchase_items.id, purchases.purchase_code, depots.name as depot_name, fuel_types.name as fuel_name, purchase_items.quantity_ordered_liters, purchase_items.quantity_hauled_liters, purchase_items.status, COALESCE(SUM(hauls.quantity_liters), 0) as scheduled_liters')
+            ->groupBy('purchase_items.id', 'purchases.purchase_code', 'depots.name', 'fuel_types.name', 'purchase_items.quantity_ordered_liters', 'purchase_items.quantity_hauled_liters', 'purchase_items.status')
+            ->orderByDesc('purchase_items.id')
+            ->get()
+            ->map(fn (object $row): array => [
+                'id' => 'ledger-transaction-'.$row->id,
+                'cells' => [
+                    $row->purchase_code,
+                    $row->depot_name,
+                    $row->fuel_name,
+                    $this->formatLiters($row->quantity_ordered_liters),
+                    $this->formatLiters($row->quantity_hauled_liters),
+                    $this->formatLiters(max(0, (float) $row->quantity_ordered_liters - (float) $row->quantity_hauled_liters)),
+                    $this->label($row->status),
+                ],
+                'status' => $this->label($row->status),
+                'hauls' => $this->haulsForPurchaseItem((int) $row->id),
+            ]);
+
+        return view('admin.ledger', compact('search', 'ledger', 'transactions'));
+    }
+
+    public function fuelLifting(Request $request): View
+    {
+        $search = $this->validatedSearch($request);
+        $rows = $this->haulRows($search);
+
+        return view('admin.fuel-lifting', [
+            'search' => $search,
+            'scheduled' => $rows->whereIn('raw_status', ['scheduled', 'in_transit'])->values(),
+            'hauled' => $rows->whereIn('raw_status', ['lifted', 'completed'])->values(),
+        ]);
+    }
+
+    public function sales(Request $request): View
+    {
+        $search = $this->validatedSearch($request);
+
+        $sales = $this->salesRows($search);
+        $customers = DB::table('customers')
+            ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
+                'customer_code',
+                'name',
+                'company_name',
+                'location',
+                'email',
+                'phone',
+                'payment_status',
+            ]))
+            ->orderBy('id')
+            ->get()
+            ->map(fn (object $row): array => [
+                'id' => 'customer-detail-'.$row->id,
+                'cells' => [
+                    $row->customer_code,
+                    $row->name,
+                    $row->company_name,
+                    $row->location ?: 'N/A',
+                    $row->email ?: 'N/A',
+                    $row->phone ?: 'N/A',
+                ],
+                'details' => [
+                    'Customer Name' => $row->name,
+                    'Company Name' => $row->company_name,
+                    'Location' => $row->location ?: 'N/A',
+                    'Email' => $row->email ?: 'N/A',
+                    'Contact Number' => $row->phone ?: 'N/A',
+                    'Payment Status' => $this->label($row->payment_status),
+                    'Account Status' => $this->label($row->status),
+                ],
+            ]);
+
+        return view('admin.sales', compact('search', 'sales', 'customers'));
+    }
+
+    public function alerts(Request $request): View
+    {
+        $search = $this->validatedSearch($request);
+
+        $alerts = DB::table('alerts')
+            ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
+                'alert_code',
+                'type',
+                'severity',
+                'title',
+                'message',
+                'reference_type',
+                'status',
+            ]))
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->get()
+            ->map(fn (object $row): array => [
+                'class' => $row->severity === 'critical' ? 'alert-critical' : 'alert-warning',
+                'title' => $row->alert_code.' - '.$row->title,
+                'message' => $row->message,
+                'time' => $this->formatDateTime($row->created_at),
+                'meta' => trim($this->label($row->type).' / '.($row->reference_type ?: '').($row->reference_id ? ' #'.$row->reference_id : '')),
+                'status' => $this->label($row->status),
+            ]);
+
+        return view('admin.alerts', compact('search', 'alerts'));
+    }
+
+    private function stockOutRows(?string $search)
+    {
+        $currentStock = DB::table('inventory_movements')
+            ->selectRaw("fuel_type_id, COALESCE(SUM(CASE WHEN direction = 'in' THEN quantity_liters ELSE -quantity_liters END), 0) as current_stock")
+            ->groupBy('fuel_type_id');
+
+        $payments = DB::table('payments')
+            ->selectRaw('sale_id, COALESCE(SUM(amount), 0) as total_paid')
+            ->groupBy('sale_id');
+
+        return DB::table('stock_outs')
+            ->join('sales', 'sales.id', '=', 'stock_outs.sale_id')
+            ->join('customers', 'customers.id', '=', 'stock_outs.customer_id')
+            ->join('fuel_types', 'fuel_types.id', '=', 'stock_outs.fuel_type_id')
+            ->leftJoin('sale_items', 'sale_items.id', '=', 'stock_outs.sale_item_id')
+            ->leftJoinSub($payments, 'payments_total', 'payments_total.sale_id', '=', 'sales.id')
+            ->leftJoinSub($currentStock, 'current_stock', 'current_stock.fuel_type_id', '=', 'fuel_types.id')
+            ->whereNull('sales.deleted_at')
+            ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
+                'stock_outs.stock_out_code',
+                'sales.sale_code',
+                'customers.name',
+                'customers.company_name',
+                'fuel_types.name',
+                'stock_outs.status',
+            ]))
+            ->orderByDesc('stock_outs.stock_out_at')
+            ->orderByDesc('stock_outs.id')
+            ->get([
+                'stock_outs.id',
+                'stock_outs.stock_out_code',
+                'stock_outs.stock_out_at',
+                'stock_outs.quantity_liters',
+                'stock_outs.status',
+                'sales.sale_code',
+                'customers.name as customer_name',
+                'customers.company_name',
+                'fuel_types.name as fuel_name',
+                'sale_items.unit_price',
+                'sale_items.line_total',
+                'payments_total.total_paid',
+                'current_stock.current_stock',
+            ])
+            ->map(fn (object $row): array => [
+                'cells' => [
+                    $row->sale_code ?: $row->stock_out_code,
+                    $this->formatDateTime($row->stock_out_at),
+                    $row->customer_name,
+                    $row->company_name,
+                    $row->fuel_name,
+                    $this->formatNumber($row->quantity_liters),
+                    $this->formatNumber($row->unit_price),
+                    $this->formatNumber($row->line_total),
+                    $this->formatNumber($row->total_paid),
+                    $this->formatNumber($row->current_stock),
+                    $this->label($row->status),
+                ],
+                'class' => $this->rowClass($row->status),
+            ]);
+    }
+
+    private function salesRows(?string $search)
+    {
+        $payments = DB::table('payments')
+            ->selectRaw('sale_id, COALESCE(SUM(amount), 0) as total_paid')
+            ->groupBy('sale_id');
+
+        return DB::table('sale_items')
+            ->join('sales', 'sales.id', '=', 'sale_items.sale_id')
+            ->join('customers', 'customers.id', '=', 'sales.customer_id')
+            ->join('fuel_types', 'fuel_types.id', '=', 'sale_items.fuel_type_id')
+            ->leftJoin('receivables', 'receivables.sale_id', '=', 'sales.id')
+            ->leftJoinSub($payments, 'payments_total', 'payments_total.sale_id', '=', 'sales.id')
+            ->whereNull('sales.deleted_at')
+            ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
+                'sales.sale_code',
+                'customers.name',
+                'customers.company_name',
+                'fuel_types.name',
+                'sales.status',
+                'receivables.status',
+            ]))
+            ->orderByDesc('sales.sale_date')
+            ->orderByDesc('sale_items.id')
+            ->get([
+                'sale_items.id',
+                'sale_items.quantity_liters',
+                'sale_items.unit_price',
+                'sale_items.line_total',
+                'sale_items.fulfilled_quantity_liters',
+                'sales.id as sale_id',
+                'sales.sale_code',
+                'sales.sale_date',
+                'sales.payment_method',
+                'sales.payment_terms',
+                'sales.status',
+                'customers.name as customer_name',
+                'customers.company_name',
+                'fuel_types.name as fuel_name',
+                'receivables.due_date',
+                'receivables.status as receivable_status',
+                'payments_total.total_paid',
+            ])
+            ->map(function (object $row): array {
+                $paid = (float) ($row->total_paid ?? 0);
+                $balance = max(0, (float) $row->line_total - $paid);
+                $status = $this->label($row->receivable_status ?: $row->status);
+
+                return [
+                    'id' => 'sales-detail-'.$row->id,
+                    'payment_id' => 'payment-history-'.$row->id,
+                    'cells' => [
+                        $row->sale_code,
+                        $this->formatDate($row->sale_date),
+                        $row->customer_name,
+                        $row->company_name,
+                        $row->fuel_name,
+                        $this->formatNumber($row->quantity_liters),
+                        $this->formatNumber($row->unit_price),
+                        $this->formatNumber($row->line_total),
+                        $this->formatNumber($paid),
+                        $this->formatNumber($balance),
+                        $status,
+                    ],
+                    'status' => $status,
+                    'class' => $this->rowClass($status),
+                    'details' => [
+                        'Transaction Date' => $this->formatDate($row->sale_date),
+                        'Customer Name' => $row->customer_name,
+                        'Company Name' => $row->company_name,
+                        'Fuel Type' => $row->fuel_name,
+                        'Quantity Ordered' => $this->formatLiters($row->quantity_liters),
+                        'Quantity Fulfilled' => $this->formatLiters($row->fulfilled_quantity_liters),
+                        'Price / Unit' => $this->formatNumber($row->unit_price),
+                        'Total Price' => $this->formatNumber($row->line_total),
+                        'Total Paid' => $this->formatNumber($paid),
+                        'Balance' => $this->formatNumber($balance),
+                        'Due Date' => $row->due_date ? $this->formatDate($row->due_date) : 'N/A',
+                        'Payment Terms' => $this->label($row->payment_terms),
+                        'Payment Method' => $row->payment_method ? $this->label($row->payment_method) : 'N/A',
+                    ],
+                    'payments' => $this->paymentsForSale((int) $row->sale_id),
+                    'balance' => $this->formatNumber($balance),
+                ];
+            });
+    }
+
+    private function haulRows(?string $search)
+    {
+        return DB::table('hauls')
+            ->join('purchases', 'purchases.id', '=', 'hauls.purchase_id')
+            ->join('depots', 'depots.id', '=', 'hauls.depot_id')
+            ->join('fuel_types', 'fuel_types.id', '=', 'hauls.fuel_type_id')
+            ->join('trucks', 'trucks.id', '=', 'hauls.truck_id')
+            ->join('users as drivers', 'drivers.id', '=', 'hauls.driver_user_id')
+            ->whereNull('purchases.deleted_at')
+            ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
+                'hauls.haul_code',
+                'purchases.purchase_code',
+                'hauls.dr_number',
+                'hauls.source_location',
+                'depots.name',
+                'fuel_types.name',
+                'trucks.truck_code',
+                'drivers.name',
+                'drivers.phone',
+                'hauls.status',
+            ]))
+            ->orderByDesc('hauls.scheduled_at')
+            ->orderByDesc('hauls.id')
+            ->get([
+                'hauls.id',
+                'hauls.haul_code',
+                'hauls.dr_number',
+                'hauls.scheduled_at',
+                'hauls.hauled_at',
+                'hauls.source_location',
+                'hauls.quantity_liters',
+                'hauls.status',
+                'purchases.purchase_code',
+                'depots.name as depot_name',
+                'fuel_types.name as fuel_name',
+                'trucks.truck_code',
+                'trucks.capacity_liters',
+                'drivers.name as driver_name',
+                'drivers.phone as driver_phone',
+            ])
+            ->map(fn (object $row): array => [
+                'id' => 'lift-detail-'.$row->id,
+                'raw_status' => $row->status,
+                'cells' => [
+                    $row->haul_code,
+                    $row->purchase_code,
+                    $row->dr_number ?: 'N/A',
+                    $this->formatDateTime($row->hauled_at ?: $row->scheduled_at),
+                    $row->source_location ?: $row->depot_name,
+                    $row->driver_name,
+                    $row->driver_phone ?: 'N/A',
+                    $row->truck_code,
+                    $this->formatNumber($row->capacity_liters),
+                    $this->formatLiters($row->quantity_liters),
+                    $this->label($row->status),
+                ],
+                'status' => $this->label($row->status),
+                'class' => $this->rowClass($row->status),
+                'details' => [
+                    'Purchase ID' => $row->purchase_code,
+                    'Fuel Type' => $row->fuel_name,
+                    'DR Number' => $row->dr_number ?: 'N/A',
+                    'Scheduled Date' => $this->formatDateTime($row->scheduled_at),
+                    'Hauled Date' => $row->hauled_at ? $this->formatDateTime($row->hauled_at) : 'N/A',
+                    'Location' => $row->source_location ?: $row->depot_name,
+                    'Driver' => $row->driver_name,
+                    "Driver's Contact" => $row->driver_phone ?: 'N/A',
+                    'Truck ID' => $row->truck_code,
+                    'Capacity' => $this->formatNumber($row->capacity_liters),
+                    'Quantity Lift' => $this->formatLiters($row->quantity_liters),
+                ],
+            ]);
+    }
+
+    /**
+     * @return array<int, array<string, string>>
+     */
+    private function haulsForPurchaseItem(int $purchaseItemId): array
+    {
+        return DB::table('hauls')
+            ->where('purchase_item_id', $purchaseItemId)
+            ->orderBy('scheduled_at')
+            ->get()
+            ->map(fn (object $row): array => [
+                'label' => $row->haul_code.' / DR '.($row->dr_number ?: 'N/A').' / '.$this->formatDateTime($row->hauled_at ?: $row->scheduled_at),
+                'quantity' => $this->formatLiters($row->quantity_liters),
+                'status' => $this->label($row->status),
+            ])
+            ->all();
+    }
+
+    /**
+     * @return array<int, array<string, string>>
+     */
+    private function paymentsForSale(int $saleId): array
+    {
+        return DB::table('payments')
+            ->where('sale_id', $saleId)
+            ->orderBy('payment_date')
+            ->get()
+            ->map(fn (object $row): array => [
+                'code' => $row->payment_code,
+                'date' => $this->formatDate($row->payment_date),
+                'amount' => $this->formatNumber($row->amount),
+                'method' => $this->label($row->method),
+                'reference' => $row->reference_number ?: 'N/A',
+            ])
+            ->all();
+    }
+
+    private function validatedSearch(Request $request): ?string
+    {
+        $data = $request->validate([
+            'search' => ['nullable', 'string', 'max:100'],
+        ]);
+
+        $search = trim((string) ($data['search'] ?? ''));
+
+        return $search === '' ? null : $search;
+    }
+
+    /**
+     * @param array<int, string> $columns
+     */
+    private function search(Builder $query, string $term, array $columns): Builder
+    {
+        return $query->where(function (Builder $query) use ($term, $columns): void {
+            foreach ($columns as $column) {
+                $query->orWhere($column, 'like', '%'.$term.'%');
+            }
+        });
+    }
+
+    private function label(?string $value): string
+    {
+        return ucwords(str_replace('_', ' ', (string) $value));
+    }
+
+    private function rowClass(?string $status): string
+    {
+        return match (strtolower(str_replace(' ', '_', (string) $status))) {
+            'unpaid', 'overdue', 'cancelled', 'critical', 'depleted' => 'row-danger',
+            'partial', 'partially_paid', 'partially_hauled', 'pending', 'scheduled', 'in_transit', 'low_stock', 'incomplete' => 'row-warning',
+            'paid', 'clear', 'hauled', 'lifted', 'completed', 'delivered', 'available', 'released' => 'row-success',
+            default => '',
+        };
+    }
+
+    private function stockStatus(float $liters): string
+    {
+        return match (true) {
+            $liters <= 0 => 'Depleted',
+            $liters < 15000 => 'Low Stock',
+            default => 'Available',
+        };
+    }
+
+    private function formatDate(mixed $date): string
+    {
+        return $date ? date('n/j/Y', strtotime((string) $date)) : 'N/A';
+    }
+
+    private function formatDateTime(mixed $date): string
+    {
+        return $date ? date('n/j/Y h:i A', strtotime((string) $date)) : 'N/A';
+    }
+
+    private function formatNumber(mixed $value): string
+    {
+        return number_format((float) ($value ?? 0), 2);
+    }
+
+    private function formatLiters(mixed $value): string
+    {
+        return $this->formatNumber($value).' L';
+    }
+}

@@ -1,21 +1,3 @@
-@php
-    $purchases = [
-        ['PUR-000001', '8/20/2026', 'Premium', 'Petron A', '100,000.00', '80.00', '8,000,000.00', 'img.png', 'Paid', ''],
-        ['PUR-000002', '8/26/2026', 'Unleaded', 'Shell A', '80,000.00', '70.00', '5,600,000.00', 'img.png', 'Unpaid', 'row-danger'],
-        ['PUR-000003', '8/26/2026', 'Diesel', 'Phoenix A', '90,000.00', '85.00', '7,650,000.00', 'img.png', 'Partial', 'row-warning'],
-    ];
-    $stockIn = [
-        ['PUR-000001', '8/20/2026', 'Premium', 'Petron A', '100,000.00', '80.00', '8,000,000.00', '40,000.00', 'Available', ''],
-        ['PUR-000002', '8/26/2026', 'Unleaded', 'Shell A', '80,000.00', '70.00', '5,600,000.00', '0.00', 'Depleted', 'row-danger'],
-        ['PUR-000003', '8/26/2026', 'Diesel', 'Phoenix A', '90,000.00', '85.00', '7,650,000.00', '12,000.00', 'Low Stock', 'row-warning'],
-    ];
-    $stockOut = [
-        ['SLS-000001', '8/22/2026', 'Ken C. Binhi', 'Binhi Green Homes', 'Premium', '10,000.00', '90.00', '900,000.00', '900,000.00', '40,000.00', 'Available', ''],
-        ['SLS-000002', '8/22/2026', 'Jay P. Calinisan', 'Jay P Constructions', 'Premium', '20,000.00', '90.00', '1,800,000.00', '800,000.00', '20,000.00', 'Low Stock', 'row-warning'],
-        ['SLS-000003', '8/22/2026', 'Yuri Q. Mabini', 'Gold Steel Productions', 'Premium', '10,000.00', '90.00', '900,000.00', '0', '0.00', 'Critical', 'row-danger'],
-    ];
-@endphp
-
 @component('layouts.admin', ['title' => 'Inventory Management', 'active' => 'inventory'])
     <div data-tabs>
         <h2 class="section-title">Purchases</h2>
@@ -29,59 +11,87 @@
         </div>
 
         <section data-tab-panel="purchases">
-            <div class="toolbar">
-                <input type="search" placeholder="Search..." aria-label="Search purchases">
-                <button class="btn btn-primary" type="button">Status</button>
-                <button class="btn btn-primary" type="button">Date</button>
-                <button class="btn btn-primary" type="button">Depot</button>
-                <button class="btn btn-primary" type="button">Fuel Type (All)</button>
+            <form class="toolbar" method="GET" action="{{ route('admin.inventory') }}">
+                <input type="search" name="search" placeholder="Search..." aria-label="Search purchases" value="{{ $search }}">
+                <button class="btn btn-primary" type="submit">Status</button>
+                <button class="btn btn-primary" type="submit">Date</button>
+                <button class="btn btn-primary" type="submit">Depot</button>
+                <button class="btn btn-primary" type="submit">Fuel Type (All)</button>
                 <button class="btn btn-primary" type="button" data-modal-open="purchase-add">+ Record Purchases</button>
-            </div>
+            </form>
             <div class="table-wrap">
                 <table class="admin-table">
                     <thead><tr><th>Purchase-ID</th><th>Date</th><th>Fuel</th><th>Depot</th><th>QTY (L)</th><th>Cost / Liter</th><th>Total Cost</th><th>Delivery Receipt</th><th>Payment Status</th><th>Actions</th></tr></thead>
                     <tbody>
-                        @foreach ($purchases as $row)
-                            <tr class="{{ $row[9] }}"><td>{{ $row[0] }}</td><td>{{ $row[1] }}</td><td>{{ $row[2] }}</td><td>{{ $row[3] }}</td><td>{{ $row[4] }}</td><td>{{ $row[5] }}</td><td>{{ $row[6] }}</td><td>{{ $row[7] }}</td><td><x-admin.status-badge :status="$row[8]" /></td><td><button class="btn btn-secondary" type="button" data-modal-open="purchase-edit">Edit</button></td></tr>
-                        @endforeach
+                        @forelse ($purchases as $row)
+                            <tr class="{{ $row['class'] }}">
+                                @foreach ($row['cells'] as $cell)
+                                    <td>{{ $cell }}</td>
+                                @endforeach
+                                <td><button class="btn btn-secondary" type="button" data-modal-open="{{ $row['id'] }}">View</button></td>
+                            </tr>
+                        @empty
+                            <tr><td class="empty-cell" colspan="10">No records found.</td></tr>
+                        @endforelse
                     </tbody>
                 </table>
             </div>
         </section>
 
         <section data-tab-panel="stock-in" hidden>
-            <div class="toolbar toolbar-narrow">
-                <input type="search" placeholder="Search..." aria-label="Search stock-in">
-                <button class="btn btn-primary" type="button">Date</button>
-                <button class="btn btn-primary" type="button">Depot</button>
-                <button class="btn btn-primary" type="button">Fuel Type (All)</button>
-            </div>
+            <form class="toolbar toolbar-narrow" method="GET" action="{{ route('admin.inventory') }}">
+                <input type="search" name="search" placeholder="Search..." aria-label="Search stock-in" value="{{ $search }}">
+                <button class="btn btn-primary" type="submit">Date</button>
+                <button class="btn btn-primary" type="submit">Depot</button>
+                <button class="btn btn-primary" type="submit">Fuel Type (All)</button>
+            </form>
             <div class="table-wrap">
                 <table class="admin-table">
                     <thead><tr><th>Purchase-ID</th><th>Order Date</th><th>Fuel</th><th>Depot</th><th>QTY Ordered</th><th>Cost / Liter</th><th>Total Cost</th><th>Current Quantity</th><th>Status</th><th>Actions</th></tr></thead>
                     <tbody>
-                        @foreach ($stockIn as $row)
-                            <tr class="{{ $row[9] }}"><td>{{ $row[0] }}</td><td>{{ $row[1] }}</td><td>{{ $row[2] }}</td><td>{{ $row[3] }}</td><td>{{ $row[4] }}</td><td>{{ $row[5] }}</td><td>{{ $row[6] }}</td><td>{{ $row[7] }}</td><td><x-admin.status-badge :status="$row[8]" /></td><td><button class="btn btn-secondary" type="button" data-modal-open="stock-detail">View</button></td></tr>
-                        @endforeach
+                        @forelse ($stockIn as $row)
+                            <tr class="{{ $row['class'] }}">
+                                @foreach ($row['cells'] as $cell)
+                                    @if ($loop->last)
+                                        <td><x-admin.status-badge :status="$cell" /></td>
+                                    @else
+                                        <td>{{ $cell }}</td>
+                                    @endif
+                                @endforeach
+                                <td><button class="btn btn-secondary" type="button" data-modal-open="{{ $row['id'] }}">View</button></td>
+                            </tr>
+                        @empty
+                            <tr><td class="empty-cell" colspan="10">No records found.</td></tr>
+                        @endforelse
                     </tbody>
                 </table>
             </div>
         </section>
 
         <section data-tab-panel="stock-out" hidden>
-            <div class="toolbar toolbar-narrow">
-                <input type="search" placeholder="Search..." aria-label="Search stock-out">
-                <button class="btn btn-primary" type="button">Date</button>
-                <button class="btn btn-primary" type="button">Fuel Type (All)</button>
+            <form class="toolbar toolbar-narrow" method="GET" action="{{ route('admin.inventory') }}">
+                <input type="search" name="search" placeholder="Search..." aria-label="Search stock-out" value="{{ $search }}">
+                <button class="btn btn-primary" type="submit">Date</button>
+                <button class="btn btn-primary" type="submit">Fuel Type (All)</button>
                 <button class="btn btn-primary" type="button">Print</button>
-            </div>
+            </form>
             <div class="table-wrap">
                 <table class="admin-table">
                     <thead><tr><th>Order-ID</th><th>Transaction Date</th><th>Customer Name</th><th>Company Name</th><th>Fuel</th><th>QTY</th><th>Price / Liter</th><th>Total</th><th>Total Paid</th><th>Current Stock</th><th>Result</th></tr></thead>
                     <tbody>
-                        @foreach ($stockOut as $row)
-                            <tr class="{{ $row[11] }}"><td>{{ $row[0] }}</td><td>{{ $row[1] }}</td><td>{{ $row[2] }}</td><td>{{ $row[3] }}</td><td>{{ $row[4] }}</td><td>{{ $row[5] }}</td><td>{{ $row[6] }}</td><td>{{ $row[7] }}</td><td>{{ $row[8] }}</td><td>{{ $row[9] }}</td><td><x-admin.status-badge :status="$row[10]" /></td></tr>
-                        @endforeach
+                        @forelse ($stockOut as $row)
+                            <tr class="{{ $row['class'] }}">
+                                @foreach ($row['cells'] as $cell)
+                                    @if ($loop->last)
+                                        <td><x-admin.status-badge :status="$cell" /></td>
+                                    @else
+                                        <td>{{ $cell }}</td>
+                                    @endif
+                                @endforeach
+                            </tr>
+                        @empty
+                            <tr><td class="empty-cell" colspan="11">No records found.</td></tr>
+                        @endforelse
                     </tbody>
                 </table>
             </div>
@@ -89,41 +99,35 @@
     </div>
 
     <x-admin.modal id="purchase-add" title="Record Purchases" wide>
-        <div class="modal-card">
-            <div class="form-grid">
-                @foreach (['Purchase ID', 'Date', 'Fuel', 'Depot', 'QTY (L)', 'Cost / Liter', 'Total Cost', 'Delivery Receipt', 'Payment Status'] as $field)
-                    <div class="form-row">
-                        <label>{{ $field }}</label>
-                        <input type="{{ $field === 'Date' ? 'date' : (str_contains($field, 'QTY') || str_contains($field, 'Cost') ? 'number' : 'text') }}" placeholder="Enter {{ $field }}">
-                    </div>
-                @endforeach
-            </div>
-        </div>
-        <div class="modal-actions"><button class="btn btn-pill btn-secondary" type="button">Add</button><button class="btn btn-pill btn-danger" type="button" data-modal-close>Delete</button></div>
+        <div class="modal-card"><p class="detail-value">Purchase records are monitored here and are managed in the Inventory Officer workflow.</p></div>
+        <div class="modal-actions"><button class="btn btn-pill btn-danger" type="button" data-modal-close>Close</button></div>
     </x-admin.modal>
 
-    <x-admin.modal id="purchase-edit" title="Edit Purchase Record">
-        <div class="modal-card">
-            <span class="detail-status">Partial</span>
-            <p class="detail-id">PUR-000003</p>
-            <div class="detail-grid">
-                @foreach (['Date' => '8/26/2026', 'Fuel' => 'Diesel', 'Depot' => 'Phoenix A', 'QTY (L)' => '90,000.00', 'Cost / Liter' => '85.00', 'Total Cost' => '7,650,000.00', 'Delivery Receipt' => 'img.png', 'Payment Status' => 'Partial'] as $label => $value)
-                    <div class="detail-row"><div class="detail-label">{{ $label }}</div><div class="detail-value">{{ $value }}</div></div>
-                @endforeach
+    @foreach ($purchases as $row)
+        <x-admin.modal id="{{ $row['id'] }}" title="Purchase Record">
+            <div class="modal-card">
+                <span class="detail-status">{{ $row['status'] }}</span>
+                <p class="detail-id">{{ $row['cells'][0] }}</p>
+                <div class="detail-grid">
+                    @foreach ($row['details'] as $label => $value)
+                        <div class="detail-row"><div class="detail-label">{{ $label }}</div><div class="detail-value">{{ $value }}</div></div>
+                    @endforeach
+                </div>
             </div>
-        </div>
-        <div class="modal-actions"><button class="btn btn-pill btn-secondary" type="button">Edit</button><button class="btn btn-pill btn-danger" type="button">Delete</button></div>
-    </x-admin.modal>
+        </x-admin.modal>
+    @endforeach
 
-    <x-admin.modal id="stock-detail" title="Stock Details">
-        <div class="modal-card">
-            <span class="detail-status">Available</span>
-            <p class="detail-id">PUR-000001</p>
-            <div class="detail-grid">
-                @foreach (['Fuel' => 'Premium', 'Depot' => 'Petron A', 'QTY Ordered' => '100,000.00', 'Current Quantity' => '40,000.00', 'Status' => 'Available'] as $label => $value)
-                    <div class="detail-row"><div class="detail-label">{{ $label }}</div><div class="detail-value">{{ $value }}</div></div>
-                @endforeach
+    @foreach ($stockIn as $row)
+        <x-admin.modal id="{{ $row['id'] }}" title="Stock Details">
+            <div class="modal-card">
+                <span class="detail-status">{{ $row['status'] }}</span>
+                <p class="detail-id">{{ $row['cells'][0] }}</p>
+                <div class="detail-grid">
+                    @foreach ($row['details'] as $label => $value)
+                        <div class="detail-row"><div class="detail-label">{{ $label }}</div><div class="detail-value">{{ $value }}</div></div>
+                    @endforeach
+                </div>
             </div>
-        </div>
-    </x-admin.modal>
+        </x-admin.modal>
+    @endforeach
 @endcomponent

@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\AdminDashboardController;
+use App\Http\Controllers\AdminMonitoringController;
 use App\Http\Controllers\AdminUserManagementController;
 use Illuminate\Support\Facades\Route;
 
@@ -23,12 +24,12 @@ Route::middleware(['auth'])->group(function () {
     Route::redirect('/admin', '/admin/dashboard')->middleware('role:admin')->name('admin.shortcut');
     Route::prefix('admin')->name('admin.')->middleware('role:admin')->group(function () {
         Route::get('/dashboard', AdminDashboardController::class)->name('dashboard');
-        Route::view('/inventory', 'admin.inventory')->name('inventory');
-        Route::view('/ledger', 'admin.ledger')->name('ledger');
-        Route::view('/fuel-lifting', 'admin.fuel-lifting')->name('fuel-lifting');
-        Route::view('/sales', 'admin.sales')->name('sales');
+        Route::get('/inventory', [AdminMonitoringController::class, 'inventory'])->name('inventory');
+        Route::get('/ledger', [AdminMonitoringController::class, 'ledger'])->name('ledger');
+        Route::get('/fuel-lifting', [AdminMonitoringController::class, 'fuelLifting'])->name('fuel-lifting');
+        Route::get('/sales', [AdminMonitoringController::class, 'sales'])->name('sales');
         Route::view('/reports', 'admin.reports')->name('reports');
-        Route::view('/alerts', 'admin.alerts')->name('alerts');
+        Route::get('/alerts', [AdminMonitoringController::class, 'alerts'])->name('alerts');
         Route::get('/user-management', [AdminUserManagementController::class, 'index'])->name('user-management');
         Route::post('/user-management/staff', [AdminUserManagementController::class, 'storeStaff'])->name('user-management.staff.store');
         Route::patch('/user-management/staff/{user}', [AdminUserManagementController::class, 'updateStaff'])->name('user-management.staff.update');

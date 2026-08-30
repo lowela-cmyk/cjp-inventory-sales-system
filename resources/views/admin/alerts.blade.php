@@ -1,9 +1,24 @@
 @component('layouts.admin', ['title' => 'Alerts Tab', 'active' => 'alerts'])
     <h2 class="section-title">System Alerts</h2>
+    <form class="toolbar toolbar-narrow" method="GET" action="{{ route('admin.alerts') }}">
+        <input type="search" name="search" placeholder="Search..." aria-label="Search alerts" value="{{ $search }}">
+        <button class="btn btn-primary" type="submit">Status</button>
+    </form>
     <div class="alert-stack">
-        <div class="alert-bar alert-critical"><div class="alert-icon">!</div><div><div class="alert-title">ALT-000001 - Stock critically low</div><div>Premium inventory is below operating threshold for scheduled deliveries.</div></div><div class="alert-time">8/27/2026 08:10 AM</div></div>
-        <div class="alert-bar alert-critical"><div class="alert-icon">!</div><div><div class="alert-title">ALT-000002 - Payment overdue</div><div>SLS-000003 remains unpaid and requires office follow-up.</div></div><div class="alert-time">8/27/2026 09:15 AM</div></div>
-        <div class="alert-bar alert-warning"><div class="alert-icon">!</div><div><div class="alert-title">ALT-000003 - Pending lifting activity</div><div>LFT-000002 is scheduled but has not been marked hauled.</div></div><div class="alert-time">8/27/2026 10:40 AM</div></div>
-        <div class="alert-bar alert-warning"><div class="alert-icon">!</div><div><div class="alert-title">ALT-000004 - Low diesel inventory</div><div>Diesel stock is nearing the reorder level.</div></div><div class="alert-time">8/27/2026 11:05 AM</div></div>
+        @forelse ($alerts as $alert)
+            <div class="alert-bar {{ $alert['class'] }}">
+                <div class="alert-icon">!</div>
+                <div>
+                    <div class="alert-title">{{ $alert['title'] }}</div>
+                    <div>{{ $alert['message'] }}</div>
+                    @if ($alert['meta'])
+                        <div>{{ $alert['meta'] }} / {{ $alert['status'] }}</div>
+                    @endif
+                </div>
+                <div class="alert-time">{{ $alert['time'] }}</div>
+            </div>
+        @empty
+            <div class="table-wrap"><table class="admin-table"><tbody><tr><td class="empty-cell">No records found.</td></tr></tbody></table></div>
+        @endforelse
     </div>
 @endcomponent

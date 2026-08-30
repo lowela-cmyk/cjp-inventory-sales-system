@@ -6,6 +6,7 @@ use App\Http\Controllers\AdminMonitoringController;
 use App\Http\Controllers\AdminUserManagementController;
 use App\Http\Controllers\InventoryOfficerLedgerController;
 use App\Http\Controllers\InventoryOfficerPurchaseController;
+use App\Http\Controllers\SalesOfficerCustomerController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', [AuthController::class, 'showLogin'])->name('home');
@@ -67,8 +68,11 @@ Route::middleware(['auth'])->group(function () {
 
     Route::redirect('/sales-officer', '/sales-officer/sales')->middleware('role:sales_officer')->name('sales-officer.shortcut');
     Route::prefix('sales-officer')->name('sales-officer.')->middleware('role:sales_officer')->group(function () {
-        Route::view('/sales', 'sales-officer.sales')->name('sales');
-        Route::view('/sales/customers', 'sales-officer.sales', ['state' => 'customers'])->name('sales.customers');
+        Route::get('/sales', [SalesOfficerCustomerController::class, 'index'])->name('sales');
+        Route::get('/sales/customers', [SalesOfficerCustomerController::class, 'index'])->defaults('state', 'customers')->name('sales.customers');
+        Route::post('/sales/customers', [SalesOfficerCustomerController::class, 'store'])->name('sales.customers.store');
+        Route::patch('/sales/customers/{customer}', [SalesOfficerCustomerController::class, 'update'])->name('sales.customers.update');
+        Route::patch('/sales/customers/{customer}/deactivate', [SalesOfficerCustomerController::class, 'deactivate'])->name('sales.customers.deactivate');
         Route::view('/alerts', 'sales-officer.alerts')->name('alerts');
     });
 

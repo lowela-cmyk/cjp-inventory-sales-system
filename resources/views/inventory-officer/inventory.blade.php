@@ -63,13 +63,23 @@
                 <button class="btn btn-primary" type="submit">Date</button>
                 <button class="btn btn-primary" type="submit">Depot</button>
                 <button class="btn btn-primary" type="submit">Fuel Type (All)</button>
+                <button class="btn btn-primary" type="button" data-modal-open="io-stockin-add">+ Record Stock-In</button>
             </form>
             <div class="table-wrap">
                 <table class="admin-table">
                     <thead><tr><th>Purchase-ID</th><th>Order Date</th><th>Fuel</th><th>Depot</th><th>QTY Ordered (L)</th><th>Cost / Liter</th><th>Total Cost</th><th>Current QTY</th><th>Sold QTY</th><th>Status</th><th>Actions</th></tr></thead>
                     <tbody>
                         @forelse ($stockIn as $row)
-                            <tr class="{{ $row[10] }}"><td>{{ $row[0] }}</td><td>{{ $row[1] }}</td><td>{{ $row[2] }}</td><td>{{ $row[3] }}</td><td>{{ $row[4] }}</td><td>{{ $row[5] }}</td><td>{{ $row[6] }}</td><td>{{ $row[7] }}</td><td>{{ $row[8] }}</td><td><x-admin.status-badge :status="$row[9]" /></td><td><button class="btn btn-secondary" type="button" data-modal-open="io-stockin-edit">Edit</button></td></tr>
+                            <tr class="{{ $row['class'] }}">
+                                @foreach ($row['cells'] as $cell)
+                                    @if ($loop->last)
+                                        <td><x-admin.status-badge :status="$cell" /></td>
+                                    @else
+                                        <td>{{ $cell }}</td>
+                                    @endif
+                                @endforeach
+                                <td><button class="btn btn-secondary" type="button" data-modal-open="{{ $row['modal_id'] }}">Edit</button></td>
+                            </tr>
                         @empty
                             <tr><td class="empty-cell" colspan="11">No records found.</td></tr>
                         @endforelse
@@ -166,10 +176,35 @@
         </x-admin.modal>
     @endforeach
 
-    <x-admin.modal id="io-stockin-edit" title="Edit Stock-In Record">
-        <div class="modal-card"><p class="detail-value">Stock-In is handled in the dedicated Stock-In phase.</p></div>
-        <div class="modal-actions"><button class="btn btn-pill btn-secondary" type="button" data-modal-close>Close</button></div>
+    <x-admin.modal id="io-stockin-add" title="Edit Stock-In Record" wide>
+        <form method="POST" action="{{ route('inventory-officer.inventory.stock-in.store') }}">
+            @csrf
+            <div class="modal-card">
+                <div class="form-grid">
+                    <div class="form-row"><label for="haul_allocation_id">Source Allocation</label><select id="haul_allocation_id" name="haul_allocation_id" required><option value="" disabled @selected(! old('haul_allocation_id'))>Select Allocation</option>@foreach ($garageAllocations as $allocation)<option value="{{ $allocation->id }}" @selected((string) old('haul_allocation_id') === (string) $allocation->id)>{{ $allocation->label }}</option>@endforeach</select></div>
+                    <div class="form-row"><label for="stock_in_storage_location_id">Garage</label><select id="stock_in_storage_location_id" name="storage_location_id" required><option value="" disabled @selected(! old('storage_location_id'))>Select Garage</option>@foreach ($garages as $garage)<option value="{{ $garage->id }}" @selected((string) old('storage_location_id') === (string) $garage->id)>{{ $garage->name }}</option>@endforeach</select></div>
+                    <div class="form-row"><label for="stock_in_quantity_liters">Quantity (Liters)</label><input id="stock_in_quantity_liters" name="quantity_liters" type="number" min="0.01" step="0.01" placeholder="Enter Quantity (Liters)" value="{{ old('quantity_liters') }}" required></div>
+                    <div class="form-row"><label for="stock_in_movement_date">Date</label><input id="stock_in_movement_date" name="movement_date" type="datetime-local" value="{{ old('movement_date', now()->format('Y-m-d\TH:i')) }}" required></div>
+                    <div class="form-row"><label for="stock_in_remarks">Remarks</label><input id="stock_in_remarks" name="remarks" type="text" placeholder="Enter Remarks" value="{{ old('remarks') }}"></div>
+                </div>
+            </div>
+            <div class="modal-actions"><button class="btn btn-pill btn-secondary" type="submit">Add</button><button class="btn btn-pill btn-danger" type="button" data-modal-close>Cancel</button></div>
+        </form>
     </x-admin.modal>
+
+    @foreach ($stockIn as $row)
+        <x-admin.modal id="{{ $row['modal_id'] }}" title="Edit Stock-In Record">
+            <div class="modal-card">
+                <p class="detail-id">{{ $row['cells'][0] }}</p>
+                <div class="detail-grid">
+                    @foreach ($row['details'] as $label => $value)
+                        <div class="detail-row"><div class="detail-label">{{ $label }}</div><div class="detail-value">{{ $value }}</div></div>
+                    @endforeach
+                </div>
+            </div>
+            <div class="modal-actions"><button class="btn btn-pill btn-secondary" type="button" data-modal-close>Close</button></div>
+        </x-admin.modal>
+    @endforeach
 
     <x-admin.modal id="io-stockout-add" title="Record Stock-Out" wide>
         <div class="modal-card"><p class="detail-value">Stock-Out is handled in the dedicated Stock-Out phase.</p></div>

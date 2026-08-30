@@ -59,7 +59,7 @@ class AdminMonitoringController extends Controller
                     $this->formatNumber($row->quantity_ordered_liters),
                     $this->formatNumber($row->unit_cost),
                     $this->formatNumber($row->line_total),
-                    $this->receiptDisplay($row->receipt_reference),
+                    $this->receiptStatus($row->receipt_reference),
                     $this->label($row->payment_status),
                 ],
                 'status' => $this->label($row->payment_status),
@@ -72,7 +72,7 @@ class AdminMonitoringController extends Controller
                     'QTY Lifted (L)' => $this->formatLiters($row->quantity_hauled_liters),
                     'Cost / Liter' => $this->formatNumber($row->unit_cost),
                     'Total Cost' => $this->formatNumber($row->line_total),
-                    'Delivery Receipt' => $this->receiptDisplay($row->receipt_reference),
+                    'Delivery Receipt' => $this->receiptStatus($row->receipt_reference),
                     'Purchase Status' => $this->label($row->purchase_status),
                     'Item Status' => $this->label($row->item_status),
                     'Payment Status' => $this->label($row->payment_status),
@@ -610,13 +610,15 @@ class AdminMonitoringController extends Controller
             && Storage::disk('local')->exists($path);
     }
 
-    private function receiptDisplay(?string $path): string
+    private function receiptStatus(?string $path): string
     {
-        if ($this->isStoredReceipt($path)) {
-            return 'View Receipt';
+        $reference = trim((string) $path);
+
+        if ($reference === '') {
+            return 'No Receipt';
         }
 
-        return $path ?: 'No receipt uploaded';
+        return $this->isStoredReceipt($reference) ? 'Submitted' : 'Submitted ('.$reference.')';
     }
 
     private function formatDate(mixed $date): string

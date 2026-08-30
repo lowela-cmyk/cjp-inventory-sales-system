@@ -98,7 +98,7 @@ class PurchaseReceiptUploadTest extends TestCase
         $this->actingAs($records['inventoryOfficer'])
             ->get(route('inventory-officer.inventory'))
             ->assertOk()
-            ->assertSee('No receipt uploaded');
+            ->assertSee('No Receipt');
 
         $this->actingAs($records['inventoryOfficer'])
             ->get(route('purchase-receipts.show', $records['purchaseId']))

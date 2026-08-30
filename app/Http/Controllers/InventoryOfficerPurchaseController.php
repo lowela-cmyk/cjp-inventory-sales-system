@@ -247,6 +247,7 @@ class InventoryOfficerPurchaseController extends Controller
             'unit_cost' => ['required', 'numeric', 'gte:0', 'max:9999999999.99'],
             'receipt_reference' => ['nullable', 'string', 'max:255'],
             'receipt_file' => ['nullable', 'file', 'mimetypes:application/pdf,image/jpeg,image/png', 'max:5120'],
+            'receipt_status' => ['prohibited'],
             'payment_status' => ['required', Rule::in(self::PAYMENT_STATUSES)],
             'status' => ['required', Rule::in(self::PURCHASE_STATUSES)],
         ]);
@@ -315,7 +316,7 @@ class InventoryOfficerPurchaseController extends Controller
                     $this->formatNumber($row->quantity_ordered_liters),
                     $this->formatNumber($row->unit_cost),
                     $this->formatNumber($row->line_total),
-                    $this->receiptDisplay($row->receipt_reference),
+                    $this->receiptStatus($row->receipt_reference),
                     $this->label($row->payment_status),
                 ],
                 'details' => [
@@ -326,7 +327,7 @@ class InventoryOfficerPurchaseController extends Controller
                     'Quantity Hauled' => $this->formatLiters($row->quantity_hauled_liters),
                     'Cost/Liter' => $this->formatNumber($row->unit_cost),
                     'Total Cost' => $this->formatNumber($row->line_total),
-                    'Delivery Receipt' => $this->receiptDisplay($row->receipt_reference),
+                    'Delivery Receipt' => $this->receiptStatus($row->receipt_reference),
                     'Purchase Status' => $this->label($row->purchase_status),
                     'Item Status' => $this->label($row->item_status),
                     'Created By' => $row->created_by_name ?: 'N/A',
@@ -597,13 +598,15 @@ class InventoryOfficerPurchaseController extends Controller
             && Storage::disk('local')->exists($path);
     }
 
-    private function receiptDisplay(?string $path): string
+    private function receiptStatus(?string $path): string
     {
-        if ($this->isStoredReceipt($path)) {
-            return 'View Receipt';
+        $reference = trim((string) $path);
+
+        if ($reference === '') {
+            return 'No Receipt';
         }
 
-        return $path ?: 'No receipt uploaded';
+        return $this->isStoredReceipt($reference) ? 'Submitted' : 'Submitted ('.$reference.')';
     }
 
     private function itemStatus(float $hauled, float $ordered): string

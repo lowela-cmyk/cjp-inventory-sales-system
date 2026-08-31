@@ -1,6 +1,9 @@
 @php
     $activeTab = $activeTab ?? 'schedule';
     $driverName = $driverName ?? auth()->user()?->name;
+    $summaryCards = $summaryCards ?? [];
+    $driverProfile = $driverProfile ?? [];
+    $currentAssignment = $currentAssignment ?? null;
 @endphp
 
 @component('layouts.driver', ['title' => 'Fuel Lifting Operations', 'active' => 'fuel-lifting', 'driverName' => $driverName])
@@ -14,6 +17,51 @@
 
         <div class="actions-right">
             <button class="btn btn-secondary" type="button" onclick="window.print()">Export</button>
+        </div>
+
+        @if (! empty($summaryCards))
+            <div class="metric-row">
+                @foreach ($summaryCards as $card)
+                    <div class="metric-card">
+                        <em>{{ $card['label'] }}</em>
+                        <strong>{{ $card['value'] }}</strong>
+                    </div>
+                @endforeach
+            </div>
+        @endif
+
+        <div class="dashboard-grid">
+            <div class="modal-card">
+                <span class="detail-status">{{ $driverProfile['Profile Status'] ?? 'N/A' }}</span>
+                <p class="detail-id">{{ $driverProfile['Driver ID'] ?? 'N/A' }}</p>
+                <div class="detail-grid driver-detail-grid">
+                    @foreach ($driverProfile as $label => $value)
+                        <div class="detail-row">
+                            <div class="detail-label">{{ $label }}</div>
+                            <div class="detail-value">{{ $value }}</div>
+                        </div>
+                    @endforeach
+                </div>
+            </div>
+            <div class="modal-card">
+                <span class="detail-status">{{ $currentAssignment['details']['Status'] ?? 'N/A' }}</span>
+                <p class="detail-id">{{ $currentAssignment['cells'][0] ?? 'No Assignment' }}</p>
+                <div class="detail-grid driver-detail-grid">
+                    @if ($currentAssignment)
+                        @foreach ($currentAssignment['details'] as $label => $value)
+                            <div class="detail-row">
+                                <div class="detail-label">{{ $label }}</div>
+                                <div class="detail-value">{{ $value }}</div>
+                            </div>
+                        @endforeach
+                    @else
+                        <div class="detail-row">
+                            <div class="detail-label">Status</div>
+                            <div class="detail-value">No active assignment</div>
+                        </div>
+                    @endif
+                </div>
+            </div>
         </div>
 
         <section data-tab-panel="schedule" @hidden($activeTab !== 'schedule')>

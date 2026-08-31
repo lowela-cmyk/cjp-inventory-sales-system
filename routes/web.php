@@ -69,6 +69,9 @@ Route::middleware(['auth'])->group(function () {
     Route::redirect('/sales-officer', '/sales-officer/sales')->middleware('role:sales_officer')->name('sales-officer.shortcut');
     Route::prefix('sales-officer')->name('sales-officer.')->middleware('role:sales_officer')->group(function () {
         Route::get('/sales', [SalesOfficerCustomerController::class, 'index'])->name('sales');
+        Route::post('/sales', [SalesOfficerCustomerController::class, 'storeSale'])->name('sales.store');
+        Route::patch('/sales/{sale}', [SalesOfficerCustomerController::class, 'updateSale'])->name('sales.update');
+        Route::patch('/sales/{sale}/cancel', [SalesOfficerCustomerController::class, 'cancelSale'])->name('sales.cancel');
         Route::get('/sales/customers', [SalesOfficerCustomerController::class, 'index'])->defaults('state', 'customers')->name('sales.customers');
         Route::post('/sales/customers', [SalesOfficerCustomerController::class, 'store'])->name('sales.customers.store');
         Route::patch('/sales/customers/{customer}', [SalesOfficerCustomerController::class, 'update'])->name('sales.customers.update');

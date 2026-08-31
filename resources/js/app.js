@@ -57,7 +57,66 @@ document.addEventListener('click', (event) => {
     if (event.target.closest('[data-sidebar-toggle]')) {
         document.body.classList.toggle('sidebar-open');
     }
+
+    const addSaleItemButton = event.target.closest('[data-sales-item-add]');
+    if (addSaleItemButton) {
+        const modal = addSaleItemButton.closest('.modal-backdrop');
+        const items = modal?.querySelector('[data-sales-items]');
+        const source = items?.querySelector('[data-sales-item]:last-child');
+
+        if (!items || !source) {
+            return;
+        }
+
+        const clone = source.cloneNode(true);
+        clone.querySelectorAll('input').forEach((input) => {
+            input.value = '';
+        });
+        clone.querySelectorAll('select').forEach((select) => {
+            select.selectedIndex = 0;
+        });
+        items.appendChild(clone);
+        reindexSaleItems(items);
+    }
+
+    const removeSaleItemButton = event.target.closest('[data-sales-item-remove]');
+    if (removeSaleItemButton) {
+        const items = removeSaleItemButton.closest('[data-sales-items]');
+
+        if (!items || items.querySelectorAll('[data-sales-item]').length <= 1) {
+            return;
+        }
+
+        removeSaleItemButton.closest('[data-sales-item]')?.remove();
+        reindexSaleItems(items);
+    }
 });
+
+const reindexSaleItems = (items) => {
+    const rows = items.querySelectorAll('[data-sales-item]');
+
+    rows.forEach((row, index) => {
+        row.querySelectorAll('[name]').forEach((field) => {
+            field.name = field.name.replace(/items\[\d+\]/, `items[${index}]`);
+        });
+
+        row.querySelectorAll('[id]').forEach((field) => {
+            const oldId = field.id;
+            const newId = oldId.replace(/_\d+$/, `_${index}`);
+            field.id = newId;
+
+            const label = row.querySelector(`label[for="${oldId}"]`);
+            if (label) {
+                label.setAttribute('for', newId);
+            }
+        });
+
+        const removeButton = row.querySelector('[data-sales-item-remove]');
+        if (removeButton) {
+            removeButton.disabled = rows.length === 1;
+        }
+    });
+};
 
 document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {

@@ -884,6 +884,43 @@ select {
     color: #333;
 }
 
+.sales-items {
+    display: grid;
+    gap: 12px;
+}
+
+.sales-item-row {
+    display: grid;
+    gap: 12px;
+    padding: 12px 0;
+    border-top: 1px solid var(--admin-soft-line);
+}
+
+.sales-item-row:first-child {
+    border-top: 0;
+    padding-top: 0;
+}
+
+.sales-item-actions,
+.sales-item-remove {
+    justify-self: end;
+}
+
+.sales-items-table {
+    min-height: auto;
+    margin-top: 18px;
+}
+
+.sales-items-table .admin-table {
+    min-width: 640px;
+}
+
+.sales-items-table .admin-table th,
+.sales-items-table .admin-table td {
+    padding: 10px 8px;
+    font-size: 14px;
+}
+
 .modal-actions {
     display: flex;
     justify-content: flex-end;

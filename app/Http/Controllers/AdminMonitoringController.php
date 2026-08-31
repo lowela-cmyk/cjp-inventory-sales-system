@@ -304,10 +304,14 @@ class AdminMonitoringController extends Controller
             ->selectRaw('sale_id, COALESCE(SUM(amount), 0) as total_paid')
             ->groupBy('sale_id');
 
-        return DB::table('sale_items')
-            ->join('sales', 'sales.id', '=', 'sale_items.sale_id')
-            ->join('customers', 'customers.id', '=', 'sales.customer_id')
+        $items = DB::table('sale_items')
             ->join('fuel_types', 'fuel_types.id', '=', 'sale_items.fuel_type_id')
+            ->selectRaw('sale_items.sale_id, COUNT(*) as item_count, SUM(sale_items.quantity_liters) as total_quantity_liters, SUM(sale_items.line_total) as sale_total, MIN(fuel_types.name) as first_fuel_name')
+            ->groupBy('sale_items.sale_id');
+
+        return DB::table('sales')
+            ->joinSub($items, 'items_total', 'items_total.sale_id', '=', 'sales.id')
+            ->join('customers', 'customers.id', '=', 'sales.customer_id')
             ->leftJoin('receivables', 'receivables.sale_id', '=', 'sales.id')
             ->leftJoinSub($payments, 'payments_total', 'payments_total.sale_id', '=', 'sales.id')
             ->whereNull('sales.deleted_at')
@@ -315,18 +319,13 @@ class AdminMonitoringController extends Controller
                 'sales.sale_code',
                 'customers.name',
                 'customers.company_name',
-                'fuel_types.name',
+                'items_total.first_fuel_name',
                 'sales.status',
                 'receivables.status',
             ]))
             ->orderByDesc('sales.sale_date')
-            ->orderByDesc('sale_items.id')
+            ->orderByDesc('sales.id')
             ->get([
-                'sale_items.id',
-                'sale_items.quantity_liters',
-                'sale_items.unit_price',
-                'sale_items.line_total',
-                'sale_items.fulfilled_quantity_liters',
                 'sales.id as sale_id',
                 'sales.sale_code',
                 'sales.sale_date',
@@ -335,28 +334,32 @@ class AdminMonitoringController extends Controller
                 'sales.status',
                 'customers.name as customer_name',
                 'customers.company_name',
-                'fuel_types.name as fuel_name',
+                'items_total.item_count',
+                'items_total.total_quantity_liters',
+                'items_total.sale_total',
+                'items_total.first_fuel_name',
                 'receivables.due_date',
                 'receivables.status as receivable_status',
                 'payments_total.total_paid',
             ])
             ->map(function (object $row): array {
                 $paid = (float) ($row->total_paid ?? 0);
-                $balance = max(0, (float) $row->line_total - $paid);
+                $saleTotal = (float) $row->sale_total;
+                $balance = max(0, $saleTotal - $paid);
                 $status = $this->label($row->receivable_status ?: $row->status);
 
                 return [
-                    'id' => 'sales-detail-'.$row->id,
-                    'payment_id' => 'payment-history-'.$row->id,
+                    'id' => 'sales-detail-'.$row->sale_id,
+                    'payment_id' => 'payment-history-'.$row->sale_id,
                     'cells' => [
                         $row->sale_code,
                         $this->formatDate($row->sale_date),
                         $row->customer_name,
                         $row->company_name,
-                        $row->fuel_name,
-                        $this->formatNumber($row->quantity_liters),
-                        $this->formatNumber($row->unit_price),
-                        $this->formatNumber($row->line_total),
+                        $this->fuelSummary((string) $row->first_fuel_name, (int) $row->item_count),
+                        $this->formatNumber($row->total_quantity_liters),
+                        $this->itemPriceSummary((int) $row->sale_id),
+                        $this->formatNumber($saleTotal),
                         $this->formatNumber($paid),
                         $this->formatNumber($balance),
                         $status,
@@ -367,16 +370,16 @@ class AdminMonitoringController extends Controller
                         'Transaction Date' => $this->formatDate($row->sale_date),
                         'Customer Name' => $row->customer_name,
                         'Company Name' => $row->company_name,
-                        'Fuel Type' => $row->fuel_name,
-                        'Quantity Ordered' => $this->formatLiters($row->quantity_liters),
-                        'Quantity Fulfilled' => $this->formatLiters($row->fulfilled_quantity_liters),
-                        'Price / Unit' => $this->formatNumber($row->unit_price),
-                        'Total Price' => $this->formatNumber($row->line_total),
+                        'Fuel Type' => $this->fuelSummary((string) $row->first_fuel_name, (int) $row->item_count),
+                        'Quantity Ordered' => $this->formatLiters($row->total_quantity_liters),
+                        'Quantity Fulfilled' => $this->formatLiters($this->fulfilledQuantityForSale((int) $row->sale_id)),
+                        'Price / Unit' => $this->itemPriceSummary((int) $row->sale_id),
+                        'Total Price' => $this->formatNumber($saleTotal),
                         'Total Paid' => $this->formatNumber($paid),
                         'Balance' => $this->formatNumber($balance),
                         'Due Date' => $row->due_date ? $this->formatDate($row->due_date) : 'N/A',
                         'Payment Terms' => $this->label($row->payment_terms),
-                        'Payment Method' => $row->payment_method ? $this->label($row->payment_method) : 'N/A',
+                        'Payment Method' => $this->paymentMethodLabel($row->payment_method),
                     ],
                     'payments' => $this->paymentsForSale((int) $row->sale_id),
                     'balance' => $this->formatNumber($balance),
@@ -520,6 +523,45 @@ class AdminMonitoringController extends Controller
     private function label(?string $value): string
     {
         return ucwords(str_replace('_', ' ', (string) $value));
+    }
+
+    private function paymentMethodLabel(?string $value): string
+    {
+        return match ($value) {
+            'cash_on_delivery' => 'COD',
+            'bank_transfer' => 'Banking',
+            'advance_payment' => 'Advance Payment',
+            'cheque' => 'Cheque',
+            default => $value ? $this->label($value) : 'N/A',
+        };
+    }
+
+    private function fuelSummary(string $firstFuel, int $itemCount): string
+    {
+        if ($itemCount <= 1) {
+            return $firstFuel;
+        }
+
+        return trim($firstFuel).' + '.($itemCount - 1);
+    }
+
+    private function itemPriceSummary(int $saleId): string
+    {
+        $prices = DB::table('sale_items')
+            ->where('sale_id', $saleId)
+            ->distinct()
+            ->orderBy('unit_price')
+            ->pluck('unit_price')
+            ->map(fn (mixed $price): string => $this->formatNumber($price));
+
+        return $prices->count() === 1 ? $prices->first() : 'Mixed';
+    }
+
+    private function fulfilledQuantityForSale(int $saleId): float
+    {
+        return (float) DB::table('sale_items')
+            ->where('sale_id', $saleId)
+            ->sum('fulfilled_quantity_liters');
     }
 
     private function rowClass(?string $status): string

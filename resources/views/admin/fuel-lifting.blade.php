@@ -1,6 +1,12 @@
 @component('layouts.admin', ['title' => 'Fuel Lifting Operations', 'active' => 'fuel-lifting'])
     <div data-tabs>
         <h2 class="section-title">Schedule</h2>
+        @if (session('status'))
+            <div class="admin-flash admin-flash-success" role="status">{{ session('status') }}</div>
+        @endif
+        @if ($errors->any())
+            <div class="admin-flash admin-flash-error" role="alert">{{ $errors->first() }}</div>
+        @endif
         <div class="tabs">
             <button class="tab-button is-active" type="button" data-tab-target="schedule">Schedule</button>
             <button class="tab-button" type="button" data-tab-target="hauled">Hauled</button>
@@ -45,6 +51,24 @@
                     @endforeach
                 </div>
             </div>
+            @if (! empty($row['allowed_statuses']))
+                <form method="POST" action="{{ route('admin.fuel-lifting.hauls.status', $row['haul_id']) }}">
+                    @csrf
+                    @method('PATCH')
+                    <input type="hidden" name="idempotency_key" value="{{ $liftingStatusIdempotencyKey }}">
+                    <div class="modal-card" style="margin-top:14px">
+                        <div class="form-row">
+                            <label for="lifting_status_{{ $row['haul_id'] }}">Status</label>
+                            <select id="lifting_status_{{ $row['haul_id'] }}" name="status" required>
+                                @foreach ($row['allowed_statuses'] as $status)
+                                    <option value="{{ $status }}">{{ ucwords(str_replace('_', ' ', $status)) }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                    </div>
+                    <div class="modal-actions"><button class="btn btn-pill btn-secondary" type="submit">Edit</button><button class="btn btn-pill btn-danger" type="button" data-modal-close>Cancel</button></div>
+                </form>
+            @endif
         </x-admin.modal>
     @endforeach
 @endcomponent

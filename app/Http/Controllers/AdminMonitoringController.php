@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\View\View;
 
 class AdminMonitoringController extends Controller
@@ -164,6 +165,7 @@ class AdminMonitoringController extends Controller
             'search' => $search,
             'scheduled' => $rows->whereIn('raw_status', ['scheduled', 'in_transit'])->values(),
             'hauled' => $rows->whereIn('raw_status', ['lifted', 'completed'])->values(),
+            'liftingStatusIdempotencyKey' => (string) Str::uuid(),
         ]);
     }
 
@@ -439,6 +441,7 @@ class AdminMonitoringController extends Controller
             ])
             ->map(fn (object $row): array => [
                 'id' => 'lift-detail-'.$row->id,
+                'haul_id' => (int) $row->id,
                 'raw_status' => $row->status,
                 'cells' => [
                     $row->haul_code,
@@ -468,6 +471,7 @@ class AdminMonitoringController extends Controller
                     'Capacity' => $this->formatNumber($row->capacity_liters),
                     'Quantity Lift' => $this->formatLiters($row->quantity_liters),
                 ],
+                'allowed_statuses' => DispatchLiftingStatusController::STATUS_TRANSITIONS[$row->status] ?? [],
             ]);
     }
 

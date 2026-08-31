@@ -45,6 +45,112 @@ class SalesOfficerCustomerController extends Controller
         ]);
     }
 
+    public function storePayment(Request $request, int $sale): RedirectResponse
+    {
+        $data = $this->validatedPaymentData($request);
+        $token = (string) $data['idempotency_key'];
+        $sessionKey = 'payments.created.'.$token;
+
+        if ($request->session()->has($sessionKey)) {
+            return redirect()
+                ->route('sales-officer.sales')
+                ->with('status', 'Payment record was already submitted.');
+        }
+
+        $result = DB::transaction(function () use ($request, $sale, $data): array {
+            $saleRow = DB::table('sales')
+                ->join('customers', 'customers.id', '=', 'sales.customer_id')
+                ->where('sales.id', $sale)
+                ->whereNull('sales.deleted_at')
+                ->whereNotIn('sales.status', ['draft', 'cancelled'])
+                ->lockForUpdate()
+                ->first([
+                    'sales.id',
+                    'sales.sale_code',
+                    'sales.customer_id',
+                    'sales.status',
+                    'customers.status as customer_status',
+                ]);
+
+            if (! $saleRow || $saleRow->customer_status !== 'active') {
+                return ['error' => 'The selected sale is not eligible for payment.'];
+            }
+
+            DB::table('payments')
+                ->where('sale_id', $saleRow->id)
+                ->lockForUpdate()
+                ->get(['id']);
+
+            $saleTotal = $this->saleTotalForUpdate((int) $saleRow->id);
+            $previousPaid = $this->paidTotalForSale((int) $saleRow->id);
+            $amount = round((float) $data['amount'], 2);
+            $remaining = round($saleTotal - $previousPaid, 2);
+
+            if ($saleTotal <= 0) {
+                return ['error' => 'The selected sale has no billable items.'];
+            }
+
+            if ($remaining <= 0) {
+                return ['error' => 'The selected sale is already fully paid.'];
+            }
+
+            if ($amount > $remaining) {
+                return ['error' => 'Payment amount cannot exceed the remaining balance.'];
+            }
+
+            $paymentCode = $this->nextCode('payments', 'payment_code', 'PAY');
+
+            DB::table('payments')->insert([
+                'payment_code' => $paymentCode,
+                'sale_id' => $saleRow->id,
+                'payment_schedule_id' => null,
+                'payment_date' => $data['payment_date'],
+                'amount' => $amount,
+                'method' => $data['method'],
+                'reference_number' => $data['reference_number'] ?? null,
+                'remarks' => $data['remarks'] ?? null,
+                'received_by' => $request->user()->id,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            $totalPaid = round($previousPaid + $amount, 2);
+            $newStatus = $this->salePaymentStatus($saleTotal, $totalPaid);
+            $newReceivableStatus = $this->receivableStatusForSale($saleTotal, $totalPaid);
+
+            DB::table('sales')
+                ->where('id', $saleRow->id)
+                ->update([
+                    'status' => $newStatus,
+                    'updated_at' => now(),
+                ]);
+
+            DB::table('receivables')
+                ->updateOrInsert(
+                    ['sale_id' => $saleRow->id],
+                    [
+                        'status' => $newReceivableStatus,
+                        'updated_at' => now(),
+                        'created_at' => now(),
+                    ]
+                );
+
+            return ['payment_code' => $paymentCode];
+        });
+
+        if (isset($result['error'])) {
+            return back()
+                ->withInput()
+                ->withErrors(['payment' => $result['error']]);
+        }
+
+        $request->session()->put($sessionKey, $result['payment_code']);
+
+        return redirect()
+            ->route('sales-officer.sales')
+            ->with('status', 'Payment record '.$result['payment_code'].' recorded successfully.');
+    }
+
     public function storeSale(Request $request): RedirectResponse
     {
         $data = $this->validatedSaleData($request);
@@ -310,7 +416,19 @@ class SalesOfficerCustomerController extends Controller
             ]))
             ->orderByDesc('created_at')
             ->orderByDesc('id')
-            ->get()
+            ->get([
+                'id',
+                'customer_code',
+                'name',
+                'company_name',
+                'location',
+                'email',
+                'phone',
+                'payment_status',
+                'status',
+                'created_at',
+                'updated_at',
+            ])
             ->map(fn (object $row): array => [
                 'id' => (int) $row->id,
                 'modal_id' => 'so-customer-edit-'.$row->id,
@@ -413,13 +531,15 @@ class SalesOfficerCustomerController extends Controller
                 $paid = (float) ($row->total_paid ?? 0);
                 $saleTotal = (float) $row->sale_total;
                 $balance = max(0, $saleTotal - $paid);
-                $status = $this->label($row->receivable_status ?: $row->status);
+                $paymentStatus = $this->salePaymentStatus($saleTotal, $paid);
+                $status = $this->label($paymentStatus);
                 $saleItems = $this->itemsForSale((int) $row->sale_id);
 
                 return [
                     'id' => (int) $row->sale_id,
                     'modal_id' => 'so-sales-edit-'.$row->sale_id,
                     'payment_id' => 'so-payment-history-'.$row->sale_id,
+                    'payment_token' => (string) Str::uuid(),
                     'sale_code' => $row->sale_code,
                     'sale_date' => $row->sale_date,
                     'customer_id' => (int) $row->customer_id,
@@ -458,6 +578,8 @@ class SalesOfficerCustomerController extends Controller
                         'Payment Method' => $this->paymentMethodLabel($row->payment_method),
                     ],
                     'payments' => $this->paymentsForSale((int) $row->sale_id),
+                    'sale_total' => $this->formatNumber($saleTotal),
+                    'total_paid' => $this->formatNumber($paid),
                     'balance' => $this->formatNumber($balance),
                 ];
             });
@@ -489,6 +611,29 @@ class SalesOfficerCustomerController extends Controller
             'total' => ['prohibited'],
             'total_paid' => ['prohibited'],
             'balance' => ['prohibited'],
+        ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function validatedPaymentData(Request $request): array
+    {
+        return $request->validate([
+            'idempotency_key' => ['required', 'uuid'],
+            'payment_date' => ['required', 'date'],
+            'amount' => ['required', 'numeric', 'gt:0', 'max:999999999999.99'],
+            'method' => ['required', Rule::in(self::PAYMENT_METHODS)],
+            'reference_number' => ['nullable', 'string', 'max:100', 'required_if:method,cheque,bank_transfer'],
+            'remarks' => ['nullable', 'string', 'max:1000'],
+            'sale_id' => ['prohibited'],
+            'customer_id' => ['prohibited'],
+            'sale_total' => ['prohibited'],
+            'total_paid' => ['prohibited'],
+            'remaining_balance' => ['prohibited'],
+            'balance' => ['prohibited'],
+            'status' => ['prohibited'],
+            'received_by' => ['prohibited'],
         ]);
     }
 
@@ -576,6 +721,43 @@ class SalesOfficerCustomerController extends Controller
         return $requested !== '' ? $requested : $this->nextCode('sales', 'sale_code', 'SLS');
     }
 
+    private function saleTotalForUpdate(int $saleId): float
+    {
+        DB::table('sale_items')
+            ->where('sale_id', $saleId)
+            ->lockForUpdate()
+            ->get(['id']);
+
+        return round((float) DB::table('sale_items')
+            ->where('sale_id', $saleId)
+            ->sum('line_total'), 2);
+    }
+
+    private function paidTotalForSale(int $saleId): float
+    {
+        return round((float) DB::table('payments')
+            ->where('sale_id', $saleId)
+            ->sum('amount'), 2);
+    }
+
+    private function salePaymentStatus(float $saleTotal, float $totalPaid): string
+    {
+        if ($totalPaid <= 0) {
+            return 'unpaid';
+        }
+
+        return round($totalPaid, 2) >= round($saleTotal, 2) ? 'paid' : 'partially_paid';
+    }
+
+    private function receivableStatusForSale(float $saleTotal, float $totalPaid): string
+    {
+        if ($totalPaid <= 0) {
+            return 'unpaid';
+        }
+
+        return round($totalPaid, 2) >= round($saleTotal, 2) ? 'clear' : 'partial';
+    }
+
     private function nextCode(string $table, string $column, string $prefix): string
     {
         $nextId = ((int) DB::table($table)->max('id')) + 1;
@@ -661,15 +843,28 @@ class SalesOfficerCustomerController extends Controller
     private function paymentsForSale(int $saleId): array
     {
         return DB::table('payments')
+            ->leftJoin('users', 'users.id', '=', 'payments.received_by')
             ->where('sale_id', $saleId)
             ->orderBy('payment_date')
-            ->get()
+            ->orderBy('payments.id')
+            ->get([
+                'payments.payment_code',
+                'payments.payment_date',
+                'payments.amount',
+                'payments.method',
+                'payments.reference_number',
+                'payments.remarks',
+                'users.name as received_by_name',
+            ])
             ->map(fn (object $row): array => [
                 'code' => $row->payment_code,
                 'date' => $this->formatDate($row->payment_date),
                 'amount' => $this->formatNumber($row->amount),
                 'method' => $this->paymentMethodLabel($row->method),
                 'reference' => $row->reference_number ?: 'N/A',
+                'recorded_by' => $row->received_by_name ?: 'N/A',
+                'remarks' => $row->remarks ?: 'N/A',
+                'status' => 'Recorded',
             ])
             ->all();
     }
@@ -714,7 +909,8 @@ class SalesOfficerCustomerController extends Controller
     {
         return match (strtolower(str_replace(' ', '_', (string) $status))) {
             'unpaid' => 'row-danger',
-            'pending', 'partial' => 'row-warning',
+            'pending', 'partial', 'partially_paid' => 'row-warning',
+            'paid', 'clear' => 'row-success',
             default => '',
         };
     }

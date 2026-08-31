@@ -346,7 +346,7 @@ class AdminMonitoringController extends Controller
                 $paid = (float) ($row->total_paid ?? 0);
                 $saleTotal = (float) $row->sale_total;
                 $balance = max(0, $saleTotal - $paid);
-                $status = $this->label($row->receivable_status ?: $row->status);
+                $status = $this->label($this->salePaymentStatus($saleTotal, $paid));
 
                 return [
                     'id' => 'sales-detail-'.$row->sale_id,
@@ -382,6 +382,8 @@ class AdminMonitoringController extends Controller
                         'Payment Method' => $this->paymentMethodLabel($row->payment_method),
                     ],
                     'payments' => $this->paymentsForSale((int) $row->sale_id),
+                    'sale_total' => $this->formatNumber($saleTotal),
+                    'total_paid' => $this->formatNumber($paid),
                     'balance' => $this->formatNumber($balance),
                 ];
             });
@@ -484,15 +486,26 @@ class AdminMonitoringController extends Controller
     private function paymentsForSale(int $saleId): array
     {
         return DB::table('payments')
+            ->leftJoin('users', 'users.id', '=', 'payments.received_by')
             ->where('sale_id', $saleId)
             ->orderBy('payment_date')
-            ->get()
+            ->orderBy('payments.id')
+            ->get([
+                'payments.payment_code',
+                'payments.payment_date',
+                'payments.amount',
+                'payments.method',
+                'payments.reference_number',
+                'users.name as received_by_name',
+            ])
             ->map(fn (object $row): array => [
                 'code' => $row->payment_code,
                 'date' => $this->formatDate($row->payment_date),
                 'amount' => $this->formatNumber($row->amount),
-                'method' => $this->label($row->method),
+                'method' => $this->paymentMethodLabel($row->method),
                 'reference' => $row->reference_number ?: 'N/A',
+                'recorded_by' => $row->received_by_name ?: 'N/A',
+                'status' => 'Recorded',
             ])
             ->all();
     }
@@ -562,6 +575,15 @@ class AdminMonitoringController extends Controller
         return (float) DB::table('sale_items')
             ->where('sale_id', $saleId)
             ->sum('fulfilled_quantity_liters');
+    }
+
+    private function salePaymentStatus(float $saleTotal, float $totalPaid): string
+    {
+        if ($totalPaid <= 0) {
+            return 'unpaid';
+        }
+
+        return round($totalPaid, 2) >= round($saleTotal, 2) ? 'paid' : 'partially_paid';
     }
 
     private function rowClass(?string $status): string

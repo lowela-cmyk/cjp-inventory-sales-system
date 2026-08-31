@@ -88,15 +88,20 @@
         <x-admin.modal id="{{ $row['payment_id'] }}" title="Payment History">
             <div class="modal-card">
                 <p class="detail-id">{{ $row['cells'][0] }}</p>
-                <div class="detail-row"><div class="detail-label">Balance</div><div class="detail-value">PHP {{ $row['balance'] }}</div></div>
+                <div class="detail-grid">
+                    <div class="detail-row"><div class="detail-label">Sale Total</div><div class="detail-value">PHP {{ $row['sale_total'] }}</div></div>
+                    <div class="detail-row"><div class="detail-label">Total Paid</div><div class="detail-value">PHP {{ $row['total_paid'] }}</div></div>
+                    <div class="detail-row"><div class="detail-label">Remaining Balance</div><div class="detail-value">PHP {{ $row['balance'] }}</div></div>
+                    <div class="detail-row"><div class="detail-label">Payment Status</div><div class="detail-value">{{ $row['status'] }}</div></div>
+                </div>
                 <div class="table-wrap" style="margin-top: 18px">
                     <table class="admin-table" style="min-width: 560px">
-                        <thead><tr><th>Payment ID</th><th>Date Recorded</th><th>Amount</th><th>Method</th><th>Reference</th></tr></thead>
+                        <thead><tr><th>Payment ID</th><th>Date Recorded</th><th>Amount</th><th>Method</th><th>Reference</th><th>Recorded By</th><th>Status</th></tr></thead>
                         <tbody>
                             @forelse ($row['payments'] as $payment)
-                                <tr><td>{{ $payment['code'] }}</td><td>{{ $payment['date'] }}</td><td>{{ $payment['amount'] }}</td><td>{{ $payment['method'] }}</td><td>{{ $payment['reference'] }}</td></tr>
+                                <tr><td>{{ $payment['code'] }}</td><td>{{ $payment['date'] }}</td><td>{{ $payment['amount'] }}</td><td>{{ $payment['method'] }}</td><td>{{ $payment['reference'] }}</td><td>{{ $payment['recorded_by'] }}</td><td>{{ $payment['status'] }}</td></tr>
                             @empty
-                                <tr><td class="empty-cell" colspan="5">No payment records found.</td></tr>
+                                <tr><td class="empty-cell" colspan="7">No payment records found.</td></tr>
                             @endforelse
                         </tbody>
                     </table>

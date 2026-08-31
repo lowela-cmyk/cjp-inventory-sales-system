@@ -285,15 +285,39 @@
         <x-admin.modal id="{{ $row['payment_id'] }}" title="Payment History">
             <div class="modal-card">
                 <p class="detail-id">{{ $row['sale_code'] }}</p>
-                <div class="detail-row"><div class="detail-label">Total / Balance</div><div class="detail-value">PHP {{ $row['balance'] }}</div></div>
+                <div class="detail-grid">
+                    <div class="detail-row"><div class="detail-label">Sale Total</div><div class="detail-value">PHP {{ $row['sale_total'] }}</div></div>
+                    <div class="detail-row"><div class="detail-label">Total Paid</div><div class="detail-value">PHP {{ $row['total_paid'] }}</div></div>
+                    <div class="detail-row"><div class="detail-label">Remaining Balance</div><div class="detail-value">PHP {{ $row['balance'] }}</div></div>
+                    <div class="detail-row"><div class="detail-label">Payment Status</div><div class="detail-value">{{ $row['cells'][10] }}</div></div>
+                </div>
+                <form method="POST" action="{{ route('sales-officer.sales.payments.store', $row['id']) }}" style="margin-top:18px">
+                    @csrf
+                    <input type="hidden" name="idempotency_key" value="{{ old('idempotency_key', $row['payment_token']) }}">
+                    <div class="form-grid">
+                        <div class="form-row"><label for="payment_amount_{{ $row['id'] }}">Amount Paid</label><input id="payment_amount_{{ $row['id'] }}" name="amount" type="number" min="0.01" step="0.01" max="{{ str_replace(',', '', $row['balance']) }}" value="{{ old('amount') }}" required></div>
+                        <div class="form-row">
+                            <label for="payment_method_{{ $row['id'] }}">Payment Method</label>
+                            <select id="payment_method_{{ $row['id'] }}" name="method" required>
+                                @foreach ($paymentMethods as $method)
+                                    <option value="{{ $method }}" @selected(old('method', $row['payment_method'] ?: 'cash_on_delivery') === $method)>{{ $paymentMethodLabels[$method] ?? ucwords(str_replace('_', ' ', $method)) }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div class="form-row"><label for="payment_reference_{{ $row['id'] }}">Reference Number</label><input id="payment_reference_{{ $row['id'] }}" name="reference_number" type="text" maxlength="100" value="{{ old('reference_number') }}"></div>
+                        <div class="form-row"><label for="payment_date_{{ $row['id'] }}">Payment Date</label><input id="payment_date_{{ $row['id'] }}" name="payment_date" type="date" value="{{ old('payment_date', now()->toDateString()) }}" required></div>
+                        <div class="form-row"><label for="payment_remarks_{{ $row['id'] }}">Remarks</label><input id="payment_remarks_{{ $row['id'] }}" name="remarks" type="text" maxlength="1000" value="{{ old('remarks') }}"></div>
+                    </div>
+                    <div class="modal-actions"><button class="btn btn-pill btn-secondary" type="submit" @disabled((float) str_replace(',', '', $row['balance']) <= 0)>Record Payment</button></div>
+                </form>
                 <div class="table-wrap" style="margin-top:18px;min-height:auto">
                     <table class="admin-table" style="min-width:560px">
-                        <thead><tr><th>Payment ID</th><th>Date Recorded</th><th>Amount</th><th>Method</th><th>Reference</th></tr></thead>
+                        <thead><tr><th>Payment ID</th><th>Date Recorded</th><th>Amount</th><th>Method</th><th>Reference</th><th>Recorded By</th><th>Status</th></tr></thead>
                         <tbody>
                             @forelse ($row['payments'] as $payment)
-                                <tr><td>{{ $payment['code'] }}</td><td>{{ $payment['date'] }}</td><td>{{ $payment['amount'] }}</td><td>{{ $payment['method'] }}</td><td>{{ $payment['reference'] }}</td></tr>
+                                <tr><td>{{ $payment['code'] }}</td><td>{{ $payment['date'] }}</td><td>{{ $payment['amount'] }}</td><td>{{ $payment['method'] }}</td><td>{{ $payment['reference'] }}</td><td>{{ $payment['recorded_by'] }}</td><td>{{ $payment['status'] }}</td></tr>
                             @empty
-                                <tr><td class="empty-cell" colspan="5">No payment records found.</td></tr>
+                                <tr><td class="empty-cell" colspan="7">No payment records found.</td></tr>
                             @endforelse
                         </tbody>
                     </table>

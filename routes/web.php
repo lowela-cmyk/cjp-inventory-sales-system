@@ -37,6 +37,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/ledger', [AdminMonitoringController::class, 'ledger'])->name('ledger');
         Route::get('/fuel-lifting', [AdminMonitoringController::class, 'fuelLifting'])->name('fuel-lifting');
         Route::post('/fuel-lifting/deliveries', [DispatchDeliveryController::class, 'store'])->name('fuel-lifting.deliveries.store');
+        Route::patch('/fuel-lifting/deliveries/{delivery}/assignment', [DispatchDeliveryController::class, 'updateAssignment'])->name('fuel-lifting.deliveries.assignment');
         Route::patch('/fuel-lifting/deliveries/{delivery}/status', [DispatchDeliveryController::class, 'updateStatus'])->name('fuel-lifting.deliveries.status');
         Route::get('/sales', [AdminMonitoringController::class, 'sales'])->name('sales');
         Route::get('/reports', AdminSalesReportController::class)->name('reports');
@@ -54,6 +55,7 @@ Route::middleware(['auth'])->group(function () {
     Route::prefix('dispatch')->name('dispatch.')->middleware('role:dispatch_officer')->group(function () {
         Route::get('/fuel-lifting', [DispatchDeliveryController::class, 'index'])->name('fuel-lifting');
         Route::post('/fuel-lifting/deliveries', [DispatchDeliveryController::class, 'store'])->name('fuel-lifting.deliveries.store');
+        Route::patch('/fuel-lifting/deliveries/{delivery}/assignment', [DispatchDeliveryController::class, 'updateAssignment'])->name('fuel-lifting.deliveries.assignment');
         Route::patch('/fuel-lifting/deliveries/{delivery}/status', [DispatchDeliveryController::class, 'updateStatus'])->name('fuel-lifting.deliveries.status');
         Route::get('/fuel-lifting/hauled', [DispatchDeliveryController::class, 'index'])->defaults('state', 'hauled')->name('fuel-lifting.hauled');
         Route::view('/ledger', 'dispatch.ledger')->name('ledger');

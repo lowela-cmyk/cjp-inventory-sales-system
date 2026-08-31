@@ -192,8 +192,38 @@
                     @endforeach
                 </div>
             </div>
+            @if (in_array($row['raw_status'], ['scheduled', 'incomplete'], true))
+                <form method="POST" action="{{ route('dispatch.fuel-lifting.deliveries.assignment', $row['delivery_id']) }}">
+                    @csrf
+                    @method('PATCH')
+                    <input type="hidden" name="idempotency_key" value="{{ $assignmentIdempotencyKey }}">
+                    <div class="modal-card" style="margin-top:14px">
+                        <div class="form-grid">
+                            <div class="form-row">
+                                <label for="delivery_driver_{{ $row['delivery_id'] }}">Driver</label>
+                                <select id="delivery_driver_{{ $row['delivery_id'] }}" name="driver_user_id" required>
+                                    <option value="">Select driver</option>
+                                    @foreach ($drivers as $driver)
+                                        <option value="{{ $driver->id }}" @selected((string) old('driver_user_id', $row['driver_user_id']) === (string) $driver->id)>{{ $driver->name }}{{ $driver->phone ? ' / '.$driver->phone : '' }}{{ $driver->driver_code ? ' / '.$driver->driver_code : '' }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <div class="form-row">
+                                <label for="delivery_truck_{{ $row['delivery_id'] }}">Truck ID</label>
+                                <select id="delivery_truck_{{ $row['delivery_id'] }}" name="truck_id" required>
+                                    <option value="">Select truck</option>
+                                    @foreach ($trucks as $truck)
+                                        <option value="{{ $truck->id }}" @selected((string) old('truck_id', $row['truck_id']) === (string) $truck->id)>{{ $truck->truck_code }} / {{ number_format((float) $truck->capacity_liters, 2) }} L</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-actions"><button class="btn btn-pill btn-secondary" type="submit">Assign</button><button class="btn btn-pill btn-danger" type="button" data-modal-close>Cancel</button></div>
+                </form>
+            @endif
             @if (! empty($row['allowed_statuses']))
-                <form method="POST" action="{{ route('dispatch.fuel-lifting.deliveries.status', str_replace('dispatch-delivery-', '', $row['id'])) }}">
+                <form method="POST" action="{{ route('dispatch.fuel-lifting.deliveries.status', $row['delivery_id']) }}">
                     @csrf
                     @method('PATCH')
                     <input type="hidden" name="idempotency_key" value="{{ $statusIdempotencyKey }}">

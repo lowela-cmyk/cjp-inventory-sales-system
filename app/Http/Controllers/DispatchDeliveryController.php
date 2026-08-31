@@ -14,6 +14,7 @@ use Illuminate\View\View;
 class DispatchDeliveryController extends Controller
 {
     private const ACTIVE_DELIVERY_STATUSES = ['scheduled', 'in_transit', 'incomplete'];
+    private const ASSIGNABLE_DELIVERY_STATUSES = ['scheduled', 'incomplete'];
     private const DELIVERY_STATUSES = ['scheduled', 'in_transit', 'delivered', 'cancelled', 'incomplete'];
     private const ELIGIBLE_SALE_STATUSES = ['confirmed', 'partially_paid', 'paid', 'unpaid'];
     private const STATUS_TRANSITIONS = [
@@ -42,6 +43,7 @@ class DispatchDeliveryController extends Controller
             'drivers' => $this->driverOptions(),
             'trucks' => $this->truckOptions(),
             'idempotencyKey' => (string) Str::uuid(),
+            'assignmentIdempotencyKey' => (string) Str::uuid(),
             'statusIdempotencyKey' => (string) Str::uuid(),
         ]);
     }
@@ -138,6 +140,14 @@ class DispatchDeliveryController extends Controller
                 return 'The selected status transition is not allowed for this delivery.';
             }
 
+            if ($nextStatus === 'in_transit') {
+                $assignmentError = $this->validateDispatchAssignment($row);
+
+                if ($assignmentError) {
+                    return $assignmentError;
+                }
+            }
+
             $updates = [
                 'status' => $nextStatus,
                 'updated_at' => now(),
@@ -168,6 +178,90 @@ class DispatchDeliveryController extends Controller
         return redirect()
             ->route($this->redirectRoute($request))
             ->with('status', 'Delivery status updated successfully.');
+    }
+
+    public function updateAssignment(Request $request, int $delivery): RedirectResponse
+    {
+        $data = $request->validate([
+            'idempotency_key' => ['required', 'uuid'],
+            'driver_user_id' => ['required', 'integer'],
+            'truck_id' => ['required', 'integer'],
+        ]);
+        $sessionKey = 'deliveries.assignment.'.$delivery.'.'.((string) $data['idempotency_key']);
+
+        if ($request->session()->has($sessionKey)) {
+            return redirect()
+                ->route($this->redirectRoute($request))
+                ->with('status', 'Delivery assignment was already submitted.');
+        }
+
+        $result = DB::transaction(function () use ($delivery, $data): ?string {
+            $row = $this->deliveryForUpdate($delivery);
+
+            if (! $row) {
+                return 'The selected delivery does not exist or is missing required linked records.';
+            }
+
+            if (! in_array($row->status, self::ASSIGNABLE_DELIVERY_STATUSES, true)) {
+                return 'This delivery status does not allow driver or truck assignment changes.';
+            }
+
+            $driver = $this->driverForAssignment((int) $data['driver_user_id']);
+
+            if (! $driver) {
+                return 'The selected driver is not eligible for dispatch assignment.';
+            }
+
+            $truck = $this->truckForAssignment((int) $data['truck_id']);
+
+            if (! $truck) {
+                return 'The selected truck is not eligible for dispatch assignment.';
+            }
+
+            $quantity = round((float) ($row->actual_quantity_liters ?? $row->scheduled_quantity_liters ?? 0), 2);
+
+            if ($quantity <= 0) {
+                return 'Delivery quantity is required before assigning dispatch resources.';
+            }
+
+            if ($quantity > round((float) $truck->capacity_liters, 2)) {
+                return 'Delivery quantity cannot exceed the selected truck capacity.';
+            }
+
+            $scheduledAt = $row->scheduled_at ? CarbonImmutable::parse($row->scheduled_at) : null;
+
+            if (! $scheduledAt) {
+                return 'Delivery schedule is required before assigning dispatch resources.';
+            }
+
+            if (! $this->driverIsAvailable((int) $driver->id, $scheduledAt, $row->id)) {
+                return 'The selected driver already has an active delivery at this schedule.';
+            }
+
+            if (! $this->truckIsAvailable((int) $truck->id, $scheduledAt, $row->id)) {
+                return 'The selected truck already has an active delivery at this schedule.';
+            }
+
+            DB::table('deliveries')
+                ->where('id', $row->id)
+                ->update([
+                    'driver_user_id' => $driver->id,
+                    'truck_id' => $truck->id,
+                    'updated_at' => now(),
+                ]);
+
+            return null;
+        });
+
+        if ($result) {
+            return back()->withErrors(['delivery' => $result])->withInput();
+        }
+
+        $request->session()->put($sessionKey, true);
+
+        return redirect()
+            ->route($this->redirectRoute($request))
+            ->with('status', 'Delivery assignment updated successfully.');
     }
 
     private function redirectRoute(Request $request): string
@@ -344,6 +438,8 @@ class DispatchDeliveryController extends Controller
                 'deliveries.scheduled_quantity_liters',
                 'deliveries.actual_quantity_liters',
                 'deliveries.status',
+                'deliveries.driver_user_id',
+                'deliveries.truck_id',
                 'sales.sale_code',
                 'customers.name as customer_name',
                 'customers.company_name',
@@ -364,6 +460,9 @@ class DispatchDeliveryController extends Controller
 
                 return [
                     'id' => 'dispatch-delivery-'.$row->id,
+                    'delivery_id' => (int) $row->id,
+                    'driver_user_id' => $row->driver_user_id ? (int) $row->driver_user_id : null,
+                    'truck_id' => $row->truck_id ? (int) $row->truck_id : null,
                     'raw_status' => $row->status,
                     'status' => $this->label($row->status),
                     'cells' => [
@@ -425,8 +524,40 @@ class DispatchDeliveryController extends Controller
                 'deliveries.scheduled_quantity_liters',
                 'deliveries.actual_quantity_liters',
                 'deliveries.status',
+                'deliveries.driver_user_id',
+                'deliveries.truck_id',
+                'deliveries.scheduled_at',
                 'haul_allocations.quantity_liters as allocation_quantity_liters',
             ]);
+    }
+
+    private function validateDispatchAssignment(object $delivery): ?string
+    {
+        if (! $delivery->driver_user_id || ! $this->driverForAssignment((int) $delivery->driver_user_id)) {
+            return 'A valid assigned driver is required before dispatching this delivery.';
+        }
+
+        if (! $delivery->truck_id) {
+            return 'A valid assigned truck is required before dispatching this delivery.';
+        }
+
+        $truck = $this->truckForAssignment((int) $delivery->truck_id, true);
+
+        if (! $truck) {
+            return 'A valid assigned truck is required before dispatching this delivery.';
+        }
+
+        $quantity = round((float) ($delivery->actual_quantity_liters ?? $delivery->scheduled_quantity_liters ?? 0), 2);
+
+        if ($quantity <= 0) {
+            return 'Delivery quantity is required before dispatching this delivery.';
+        }
+
+        if ($quantity > round((float) $truck->capacity_liters, 2)) {
+            return 'Delivery quantity cannot exceed the assigned truck capacity.';
+        }
+
+        return null;
     }
 
     private function markDirectAllocationDeliveredWhenComplete(object $delivery): void
@@ -546,6 +677,37 @@ class DispatchDeliveryController extends Controller
             ->get(['id', 'truck_code', 'plate_number', 'capacity_liters']);
     }
 
+    private function driverForAssignment(int $driverId): ?object
+    {
+        return DB::table('users')
+            ->leftJoin('driver_profiles', 'driver_profiles.user_id', '=', 'users.id')
+            ->where('users.id', $driverId)
+            ->where('users.role', 'driver')
+            ->where('users.status', 'active')
+            ->where(function (Builder $query): void {
+                $query->whereNull('driver_profiles.status')
+                    ->orWhere('driver_profiles.status', '!=', 'inactive');
+            })
+            ->lockForUpdate()
+            ->first(['users.id']);
+    }
+
+    private function truckForAssignment(int $truckId, bool $allowCurrentlyAssigned = false): ?object
+    {
+        return DB::table('trucks')
+            ->where('id', $truckId)
+            ->whereIn('truck_type', ['delivery', 'mixed'])
+            ->where(function (Builder $query) use ($allowCurrentlyAssigned): void {
+                $query->where('status', 'available');
+
+                if ($allowCurrentlyAssigned) {
+                    $query->orWhere('status', 'assigned');
+                }
+            })
+            ->lockForUpdate()
+            ->first(['id', 'capacity_liters']);
+    }
+
     private function truckForUpdate(int $truckId): ?object
     {
         return DB::table('trucks')
@@ -556,22 +718,24 @@ class DispatchDeliveryController extends Controller
             ->first(['id', 'capacity_liters']);
     }
 
-    private function driverIsAvailable(int $driverId, CarbonImmutable $scheduledAt): bool
+    private function driverIsAvailable(int $driverId, CarbonImmutable $scheduledAt, ?int $exceptDeliveryId = null): bool
     {
         return ! DB::table('deliveries')
             ->where('driver_user_id', $driverId)
             ->whereIn('status', self::ACTIVE_DELIVERY_STATUSES)
             ->where('scheduled_at', $scheduledAt->toDateTimeString())
+            ->when($exceptDeliveryId, fn (Builder $query): Builder => $query->where('id', '!=', $exceptDeliveryId))
             ->lockForUpdate()
             ->exists();
     }
 
-    private function truckIsAvailable(int $truckId, CarbonImmutable $scheduledAt): bool
+    private function truckIsAvailable(int $truckId, CarbonImmutable $scheduledAt, ?int $exceptDeliveryId = null): bool
     {
         return ! DB::table('deliveries')
             ->where('truck_id', $truckId)
             ->whereIn('status', self::ACTIVE_DELIVERY_STATUSES)
             ->where('scheduled_at', $scheduledAt->toDateTimeString())
+            ->when($exceptDeliveryId, fn (Builder $query): Builder => $query->where('id', '!=', $exceptDeliveryId))
             ->lockForUpdate()
             ->exists();
     }

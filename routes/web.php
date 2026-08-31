@@ -60,6 +60,7 @@ Route::middleware(['auth'])->group(function () {
         Route::patch('/inventory/purchases/{purchaseItem}/cancel', [InventoryOfficerPurchaseController::class, 'cancel'])->name('inventory.purchases.cancel');
         Route::post('/inventory/stock-in', [InventoryOfficerPurchaseController::class, 'storeStockIn'])->name('inventory.stock-in.store');
         Route::get('/inventory/stock-in', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'stock-in')->name('inventory.stock-in');
+        Route::post('/inventory/stock-out', [InventoryOfficerPurchaseController::class, 'storeStockOut'])->name('inventory.stock-out.store');
         Route::get('/inventory/stock-out', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'stock-out')->name('inventory.stock-out');
         Route::get('/ledger', InventoryOfficerLedgerController::class)->name('ledger');
         Route::get('/ledger/transactions', InventoryOfficerLedgerController::class)->defaults('state', 'transactions')->name('ledger.transactions');

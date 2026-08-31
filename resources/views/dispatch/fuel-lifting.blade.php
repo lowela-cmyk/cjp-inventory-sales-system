@@ -192,6 +192,24 @@
                     @endforeach
                 </div>
             </div>
+            @if (! empty($row['allowed_statuses']))
+                <form method="POST" action="{{ route('dispatch.fuel-lifting.deliveries.status', str_replace('dispatch-delivery-', '', $row['id'])) }}">
+                    @csrf
+                    @method('PATCH')
+                    <input type="hidden" name="idempotency_key" value="{{ $statusIdempotencyKey }}">
+                    <div class="modal-card" style="margin-top:14px">
+                        <div class="form-row">
+                            <label for="delivery_status_{{ $row['id'] }}">Status</label>
+                            <select id="delivery_status_{{ $row['id'] }}" name="status" required>
+                                @foreach ($row['allowed_statuses'] as $status)
+                                    <option value="{{ $status }}">{{ ucwords(str_replace('_', ' ', $status)) }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                    </div>
+                    <div class="modal-actions"><button class="btn btn-pill btn-secondary" type="submit">Edit</button><button class="btn btn-pill btn-danger" type="button" data-modal-close>Cancel</button></div>
+                </form>
+            @endif
         </x-admin.modal>
     @endforeach
 @endcomponent

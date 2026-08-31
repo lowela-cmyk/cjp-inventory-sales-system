@@ -14,7 +14,15 @@ use Illuminate\View\View;
 class DispatchDeliveryController extends Controller
 {
     private const ACTIVE_DELIVERY_STATUSES = ['scheduled', 'in_transit', 'incomplete'];
+    private const DELIVERY_STATUSES = ['scheduled', 'in_transit', 'delivered', 'cancelled', 'incomplete'];
     private const ELIGIBLE_SALE_STATUSES = ['confirmed', 'partially_paid', 'paid', 'unpaid'];
+    private const STATUS_TRANSITIONS = [
+        'scheduled' => ['in_transit', 'cancelled'],
+        'in_transit' => ['delivered', 'incomplete', 'cancelled'],
+        'incomplete' => ['in_transit', 'cancelled'],
+        'delivered' => [],
+        'cancelled' => [],
+    ];
 
     public function index(Request $request, string $state = 'schedule'): View
     {
@@ -34,6 +42,7 @@ class DispatchDeliveryController extends Controller
             'drivers' => $this->driverOptions(),
             'trucks' => $this->truckOptions(),
             'idempotencyKey' => (string) Str::uuid(),
+            'statusIdempotencyKey' => (string) Str::uuid(),
         ]);
     }
 
@@ -99,6 +108,66 @@ class DispatchDeliveryController extends Controller
         return redirect()
             ->route($this->redirectRoute($request))
             ->with('status', 'Delivery scheduled successfully.');
+    }
+
+    public function updateStatus(Request $request, int $delivery): RedirectResponse
+    {
+        $data = $request->validate([
+            'idempotency_key' => ['required', 'uuid'],
+            'status' => ['required', Rule::in(self::DELIVERY_STATUSES)],
+        ]);
+        $sessionKey = 'deliveries.status.'.$delivery.'.'.((string) $data['idempotency_key']);
+
+        if ($request->session()->has($sessionKey)) {
+            return redirect()
+                ->route($this->redirectRoute($request))
+                ->with('status', 'Delivery status update was already submitted.');
+        }
+
+        $result = DB::transaction(function () use ($delivery, $data): ?string {
+            $row = $this->deliveryForUpdate($delivery);
+
+            if (! $row) {
+                return 'The selected delivery does not exist or is missing required linked records.';
+            }
+
+            $nextStatus = (string) $data['status'];
+            $allowed = self::STATUS_TRANSITIONS[$row->status] ?? [];
+
+            if (! in_array($nextStatus, $allowed, true)) {
+                return 'The selected status transition is not allowed for this delivery.';
+            }
+
+            $updates = [
+                'status' => $nextStatus,
+                'updated_at' => now(),
+            ];
+
+            if ($nextStatus === 'delivered') {
+                $updates['delivered_at'] = now();
+                $updates['actual_quantity_liters'] = round((float) ($row->actual_quantity_liters ?? $row->scheduled_quantity_liters), 2);
+            }
+
+            DB::table('deliveries')
+                ->where('id', $row->id)
+                ->update($updates);
+
+            if ($nextStatus === 'delivered' && $row->source_type === 'depot') {
+                $this->markDirectAllocationDeliveredWhenComplete($row);
+            }
+
+            return null;
+        });
+
+        if ($result) {
+            return back()->withErrors(['delivery' => $result])->withInput();
+        }
+
+        $request->session()->put($sessionKey, true);
+
+        return redirect()
+            ->route($this->redirectRoute($request))
+            ->with('status', 'Delivery status updated successfully.');
     }
 
     private function redirectRoute(Request $request): string
@@ -328,8 +397,63 @@ class DispatchDeliveryController extends Controller
                         'Delivered Date' => $row->delivered_at ? $this->formatDateTime($row->delivered_at) : 'N/A',
                         'Status' => $this->label($row->status),
                     ],
+                    'allowed_statuses' => self::STATUS_TRANSITIONS[$row->status] ?? [],
                 ];
             });
+    }
+
+    private function deliveryForUpdate(int $delivery): ?object
+    {
+        return DB::table('deliveries')
+            ->leftJoin('stock_outs', 'stock_outs.delivery_id', '=', 'deliveries.id')
+            ->leftJoin('haul_allocations', 'haul_allocations.id', '=', 'deliveries.haul_allocation_id')
+            ->where('deliveries.id', $delivery)
+            ->where(function (Builder $query): void {
+                $query->where(function (Builder $query): void {
+                    $query->where('deliveries.source_type', 'garage')
+                        ->whereNotNull('stock_outs.id');
+                })->orWhere(function (Builder $query): void {
+                    $query->where('deliveries.source_type', 'depot')
+                        ->whereNotNull('haul_allocations.id');
+                });
+            })
+            ->lockForUpdate()
+            ->first([
+                'deliveries.id',
+                'deliveries.source_type',
+                'deliveries.haul_allocation_id',
+                'deliveries.scheduled_quantity_liters',
+                'deliveries.actual_quantity_liters',
+                'deliveries.status',
+                'haul_allocations.quantity_liters as allocation_quantity_liters',
+            ]);
+    }
+
+    private function markDirectAllocationDeliveredWhenComplete(object $delivery): void
+    {
+        if (! $delivery->haul_allocation_id) {
+            return;
+        }
+
+        DB::table('haul_allocations')
+            ->where('id', $delivery->haul_allocation_id)
+            ->lockForUpdate()
+            ->get(['id']);
+
+        $delivered = (float) DB::table('deliveries')
+            ->where('haul_allocation_id', $delivery->haul_allocation_id)
+            ->where('status', 'delivered')
+            ->selectRaw('COALESCE(SUM(COALESCE(actual_quantity_liters, scheduled_quantity_liters, 0)), 0) as delivered_liters')
+            ->value('delivered_liters');
+
+        if (round($delivered, 2) >= round((float) $delivery->allocation_quantity_liters, 2)) {
+            DB::table('haul_allocations')
+                ->where('id', $delivery->haul_allocation_id)
+                ->update([
+                    'status' => 'delivered',
+                    'updated_at' => now(),
+                ]);
+        }
     }
 
     private function garageStockOutOptions()

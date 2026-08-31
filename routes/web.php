@@ -9,6 +9,7 @@ use App\Http\Controllers\DispatchDeliveryController;
 use App\Http\Controllers\DispatchLiftingStatusController;
 use App\Http\Controllers\DriverDeliveryController;
 use App\Http\Controllers\DriverLiftingStatusController;
+use App\Http\Controllers\HaulTruckAssignmentController;
 use App\Http\Controllers\InventoryOfficerLedgerController;
 use App\Http\Controllers\InventoryOfficerPurchaseController;
 use App\Http\Controllers\SalesOfficerCustomerController;
@@ -41,6 +42,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/fuel-lifting/deliveries', [DispatchDeliveryController::class, 'store'])->name('fuel-lifting.deliveries.store');
         Route::patch('/fuel-lifting/deliveries/{delivery}/assignment', [DispatchDeliveryController::class, 'updateAssignment'])->name('fuel-lifting.deliveries.assignment');
         Route::patch('/fuel-lifting/deliveries/{delivery}/status', [DispatchDeliveryController::class, 'updateStatus'])->name('fuel-lifting.deliveries.status');
+        Route::patch('/fuel-lifting/hauls/{haul}/truck', [HaulTruckAssignmentController::class, 'update'])->name('fuel-lifting.hauls.truck');
         Route::patch('/fuel-lifting/hauls/{haul}/status', [DispatchLiftingStatusController::class, 'updateStatus'])->name('fuel-lifting.hauls.status');
         Route::get('/sales', [AdminMonitoringController::class, 'sales'])->name('sales');
         Route::get('/reports', AdminSalesReportController::class)->name('reports');
@@ -60,6 +62,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/fuel-lifting/deliveries', [DispatchDeliveryController::class, 'store'])->name('fuel-lifting.deliveries.store');
         Route::patch('/fuel-lifting/deliveries/{delivery}/assignment', [DispatchDeliveryController::class, 'updateAssignment'])->name('fuel-lifting.deliveries.assignment');
         Route::patch('/fuel-lifting/deliveries/{delivery}/status', [DispatchDeliveryController::class, 'updateStatus'])->name('fuel-lifting.deliveries.status');
+        Route::patch('/fuel-lifting/hauls/{haul}/truck', [HaulTruckAssignmentController::class, 'update'])->name('fuel-lifting.hauls.truck');
         Route::patch('/fuel-lifting/hauls/{haul}/status', [DispatchLiftingStatusController::class, 'updateStatus'])->name('fuel-lifting.hauls.status');
         Route::get('/fuel-lifting/hauled', [DispatchDeliveryController::class, 'index'])->defaults('state', 'hauled')->name('fuel-lifting.hauled');
         Route::view('/ledger', 'dispatch.ledger')->name('ledger');

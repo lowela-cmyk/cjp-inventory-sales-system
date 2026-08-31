@@ -166,6 +166,8 @@ class AdminMonitoringController extends Controller
             'scheduled' => $rows->whereIn('raw_status', ['scheduled', 'in_transit'])->values(),
             'hauled' => $rows->whereIn('raw_status', ['lifted', 'completed'])->values(),
             'liftingStatusIdempotencyKey' => (string) Str::uuid(),
+            'truckAssignmentIdempotencyKey' => (string) Str::uuid(),
+            'trucks' => $this->haulTruckOptions(),
         ]);
     }
 
@@ -430,6 +432,7 @@ class AdminMonitoringController extends Controller
                 'hauls.hauled_at',
                 'hauls.source_location',
                 'hauls.quantity_liters',
+                'hauls.truck_id',
                 'hauls.status',
                 'purchases.purchase_code',
                 'depots.name as depot_name',
@@ -442,6 +445,7 @@ class AdminMonitoringController extends Controller
             ->map(fn (object $row): array => [
                 'id' => 'lift-detail-'.$row->id,
                 'haul_id' => (int) $row->id,
+                'truck_id' => (int) $row->truck_id,
                 'raw_status' => $row->status,
                 'cells' => [
                     $row->haul_code,
@@ -472,7 +476,17 @@ class AdminMonitoringController extends Controller
                     'Quantity Lift' => $this->formatLiters($row->quantity_liters),
                 ],
                 'allowed_statuses' => DispatchLiftingStatusController::STATUS_TRANSITIONS[$row->status] ?? [],
+                'can_assign_truck' => $row->status === 'scheduled',
             ]);
+    }
+
+    private function haulTruckOptions()
+    {
+        return DB::table('trucks')
+            ->whereIn('truck_type', ['hauling', 'mixed'])
+            ->where('status', 'available')
+            ->orderBy('truck_code')
+            ->get(['id', 'truck_code', 'plate_number', 'capacity_liters']);
     }
 
     /**

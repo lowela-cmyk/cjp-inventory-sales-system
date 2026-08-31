@@ -1,4 +1,8 @@
 @component('layouts.admin', ['title' => 'Fuel Lifting Operations', 'active' => 'fuel-lifting'])
+    @php
+        $trucks = $trucks ?? collect();
+        $truckAssignmentIdempotencyKey = $truckAssignmentIdempotencyKey ?? (string) \Illuminate\Support\Str::uuid();
+    @endphp
     <div data-tabs>
         <h2 class="section-title">Schedule</h2>
         @if (session('status'))
@@ -51,6 +55,27 @@
                     @endforeach
                 </div>
             </div>
+            @if (! empty($row['can_assign_truck']))
+                <form method="POST" action="{{ route('admin.fuel-lifting.hauls.truck', $row['haul_id']) }}">
+                    @csrf
+                    @method('PATCH')
+                    <input type="hidden" name="idempotency_key" value="{{ $truckAssignmentIdempotencyKey }}">
+                    <div class="modal-card" style="margin-top:14px">
+                        <div class="form-row">
+                            <label for="haul_truck_{{ $row['haul_id'] }}">Truck ID</label>
+                            <select id="haul_truck_{{ $row['haul_id'] }}" name="truck_id" required>
+                                @if ($row['truck_id'] && ! $trucks->contains('id', $row['truck_id']))
+                                    <option value="{{ $row['truck_id'] }}" selected>{{ $row['details']['Truck ID'] ?? 'Assigned Truck' }} / {{ $row['details']['Capacity'] ?? 'N/A' }} L</option>
+                                @endif
+                                @foreach ($trucks as $truck)
+                                    <option value="{{ $truck->id }}" @selected((string) old('truck_id', $row['truck_id']) === (string) $truck->id)>{{ $truck->truck_code }}{{ $truck->plate_number ? ' / '.$truck->plate_number : '' }} / {{ number_format((float) $truck->capacity_liters, 2) }} L</option>
+                                @endforeach
+                            </select>
+                        </div>
+                    </div>
+                    <div class="modal-actions"><button class="btn btn-pill btn-secondary" type="submit">Assign Truck</button><button class="btn btn-pill btn-danger" type="button" data-modal-close>Cancel</button></div>
+                </form>
+            @endif
             @if (! empty($row['allowed_statuses']))
                 <form method="POST" action="{{ route('admin.fuel-lifting.hauls.status', $row['haul_id']) }}">
                     @csrf

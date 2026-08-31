@@ -159,6 +159,45 @@ class InventoryOfficerStockOutTest extends TestCase
         ]);
     }
 
+    public function test_direct_depot_delivery_rejects_invalid_purchase_haul_relationship(): void
+    {
+        $records = $this->baseRecords();
+        $this->garageMovement($records, ['quantity_liters' => 9000]);
+        $sale = $this->sale($records, ['quantity_liters' => 10000]);
+        $allocationId = $this->directAllocation($records, $sale, ['quantity_liters' => 10000]);
+        $haulId = DB::table('haul_allocations')->where('id', $allocationId)->value('haul_id');
+        $otherPurchaseId = DB::table('purchases')->insertGetId([
+            'purchase_code' => 'PUR-WRONG-DIRECT',
+            'depot_id' => $records['depotId'],
+            'purchase_date' => '2026-08-29',
+            'payment_status' => 'paid',
+            'status' => 'hauled',
+            'created_by' => $records['inventoryOfficer']->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('hauls')->where('id', $haulId)->update(['purchase_id' => $otherPurchaseId]);
+
+        $this->actingAs($records['inventoryOfficer'])
+            ->from(route('inventory-officer.inventory.stock-out'))
+            ->post(route('inventory-officer.inventory.stock-out.store'), $this->stockOutPayload($records, $sale, [
+                'source_type' => 'depot',
+                'storage_location_id' => null,
+                'haul_allocation_id' => $allocationId,
+                'quantity_liters' => 10000,
+            ]))
+            ->assertRedirect(route('inventory-officer.inventory.stock-out'))
+            ->assertSessionHasErrors('stock_out');
+
+        $this->assertSame(9000.0, $this->garageBalance($records));
+        $this->assertSame(0, DB::table('deliveries')->count());
+        $this->assertDatabaseHas('sale_items', [
+            'id' => $sale['saleItemId'],
+            'fulfilled_quantity_liters' => '0.00',
+        ]);
+    }
+
     public function test_duplicate_stock_out_submission_token_does_not_double_deduct_inventory(): void
     {
         $records = $this->baseRecords();

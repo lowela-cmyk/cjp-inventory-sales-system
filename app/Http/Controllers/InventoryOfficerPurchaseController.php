@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -195,6 +196,10 @@ class InventoryOfficerPurchaseController extends Controller
                 return 'The selected garage does not match the haul allocation destination.';
             }
 
+            if (! $this->haulAllocationsAreWithinQuantity((int) $allocation->haul_id, (float) $allocation->haul_quantity_liters)) {
+                return 'The selected haul has invalid allocation quantities.';
+            }
+
             $remaining = $this->remainingReceivableForAllocation($allocation);
 
             if ((float) $data['quantity_liters'] > $remaining) {
@@ -312,11 +317,41 @@ class InventoryOfficerPurchaseController extends Controller
 
     private function purchaseRows(?string $search)
     {
+        $haulTotals = DB::table('hauls')
+            ->where('status', '!=', 'cancelled')
+            ->selectRaw('purchase_item_id, COALESCE(SUM(quantity_liters), 0) as hauled_liters')
+            ->groupBy('purchase_item_id');
+
+        $allocationTotals = DB::table('haul_allocations')
+            ->join('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')
+            ->where('haul_allocations.status', '!=', 'cancelled')
+            ->where('hauls.status', '!=', 'cancelled')
+            ->selectRaw("
+                hauls.purchase_item_id,
+                COALESCE(SUM(CASE WHEN haul_allocations.destination_type = 'garage' THEN haul_allocations.quantity_liters ELSE 0 END), 0) as garage_allocated_liters,
+                COALESCE(SUM(CASE WHEN haul_allocations.destination_type = 'customer' THEN haul_allocations.quantity_liters ELSE 0 END), 0) as direct_allocated_liters
+            ")
+            ->groupBy('hauls.purchase_item_id');
+
+        $receivedTotals = DB::table('inventory_movements')
+            ->join('haul_allocations', function ($join): void {
+                $join->on('haul_allocations.id', '=', 'inventory_movements.reference_id')
+                    ->where('inventory_movements.reference_type', self::STOCK_IN_REFERENCE_TYPE);
+            })
+            ->join('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')
+            ->where('inventory_movements.direction', 'in')
+            ->where('inventory_movements.movement_type', 'stock_in')
+            ->selectRaw('hauls.purchase_item_id, COALESCE(SUM(inventory_movements.quantity_liters), 0) as received_liters')
+            ->groupBy('hauls.purchase_item_id');
+
         return DB::table('purchase_items')
             ->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
             ->join('depots', 'depots.id', '=', 'purchases.depot_id')
             ->join('fuel_types', 'fuel_types.id', '=', 'purchase_items.fuel_type_id')
             ->leftJoin('users', 'users.id', '=', 'purchases.created_by')
+            ->leftJoinSub($haulTotals, 'haul_totals', 'haul_totals.purchase_item_id', '=', 'purchase_items.id')
+            ->leftJoinSub($allocationTotals, 'allocation_totals', 'allocation_totals.purchase_item_id', '=', 'purchase_items.id')
+            ->leftJoinSub($receivedTotals, 'received_totals', 'received_totals.purchase_item_id', '=', 'purchase_items.id')
             ->whereNull('purchases.deleted_at')
             ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
                 'purchases.purchase_code',
@@ -349,54 +384,75 @@ class InventoryOfficerPurchaseController extends Controller
                 'depots.name as depot_name',
                 'fuel_types.name as fuel_name',
                 'users.name as created_by_name',
+                DB::raw('COALESCE(haul_totals.hauled_liters, 0) as hauled_liters'),
+                DB::raw('COALESCE(allocation_totals.garage_allocated_liters, 0) as garage_allocated_liters'),
+                DB::raw('COALESCE(allocation_totals.direct_allocated_liters, 0) as direct_allocated_liters'),
+                DB::raw('COALESCE(received_totals.received_liters, 0) as received_liters'),
             ])
-            ->map(fn (object $row): array => [
-                'id' => $row->id,
-                'modal_id' => 'io-purchase-edit-'.$row->id,
-                'purchase_code' => $row->purchase_code,
-                'purchase_date' => $row->purchase_date,
-                'depot_id' => $row->depot_id,
-                'fuel_type_id' => $row->fuel_type_id,
-                'quantity_ordered_liters' => $row->quantity_ordered_liters,
-                'unit_cost' => $row->unit_cost,
-                'receipt_reference' => $row->receipt_reference,
-                'receipt_url' => $this->isStoredReceipt($row->receipt_reference) ? route('purchase-receipts.show', $row->purchase_id) : null,
-                'payment_status' => $row->payment_status,
-                'purchase_status' => $row->purchase_status,
-                'has_dependencies' => $this->hasDependentActivity($row),
-                'class' => $this->rowClass($row->payment_status),
-                'cells' => [
-                    $row->purchase_code,
-                    $this->formatDate($row->purchase_date),
-                    $row->fuel_name,
-                    $row->depot_name,
-                    $this->formatNumber($row->quantity_ordered_liters),
-                    $this->formatNumber($row->unit_cost),
-                    $this->formatNumber($row->line_total),
-                    $this->receiptStatus($row->receipt_reference),
-                    $this->label($row->payment_status),
-                ],
-                'details' => [
-                    'Date' => $this->formatDate($row->purchase_date),
-                    'Fuel' => $row->fuel_name,
-                    'Depot' => $row->depot_name,
-                    'Quantity' => $this->formatLiters($row->quantity_ordered_liters),
-                    'Quantity Hauled' => $this->formatLiters($row->quantity_hauled_liters),
-                    'Cost/Liter' => $this->formatNumber($row->unit_cost),
-                    'Total Cost' => $this->formatNumber($row->line_total),
-                    'Delivery Receipt' => $this->receiptStatus($row->receipt_reference),
-                    'Purchase Status' => $this->label($row->purchase_status),
-                    'Item Status' => $this->label($row->item_status),
-                    'Created By' => $row->created_by_name ?: 'N/A',
-                    'Created At' => $this->formatDateTime($row->created_at),
-                    'Updated At' => $this->formatDateTime($row->updated_at),
-                ],
-            ]);
+            ->map(function (object $row): array {
+                $inventoryStatus = $this->inventoryLinkStatus(
+                    (float) $row->garage_allocated_liters,
+                    (float) $row->received_liters,
+                    (float) $row->direct_allocated_liters
+                );
+
+                return [
+                    'id' => $row->id,
+                    'modal_id' => 'io-purchase-edit-'.$row->id,
+                    'purchase_code' => $row->purchase_code,
+                    'purchase_date' => $row->purchase_date,
+                    'depot_id' => $row->depot_id,
+                    'fuel_type_id' => $row->fuel_type_id,
+                    'quantity_ordered_liters' => $row->quantity_ordered_liters,
+                    'unit_cost' => $row->unit_cost,
+                    'receipt_reference' => $row->receipt_reference,
+                    'receipt_url' => $this->isStoredReceipt($row->receipt_reference) ? route('purchase-receipts.show', $row->purchase_id) : null,
+                    'payment_status' => $row->payment_status,
+                    'purchase_status' => $row->purchase_status,
+                    'has_dependencies' => $this->hasDependentActivity($row),
+                    'class' => $this->rowClass($row->payment_status),
+                    'cells' => [
+                        $row->purchase_code,
+                        $this->formatDate($row->purchase_date),
+                        $row->fuel_name,
+                        $row->depot_name,
+                        $this->formatNumber($row->quantity_ordered_liters),
+                        $this->formatNumber($row->hauled_liters),
+                        $this->formatNumber($row->garage_allocated_liters),
+                        $this->formatNumber($row->direct_allocated_liters),
+                        $this->formatNumber($row->received_liters),
+                        $this->label($inventoryStatus),
+                        $this->formatNumber($row->unit_cost),
+                        $this->formatNumber($row->line_total),
+                        $this->receiptStatus($row->receipt_reference),
+                        $this->label($row->payment_status),
+                    ],
+                    'details' => [
+                        'Date' => $this->formatDate($row->purchase_date),
+                        'Fuel' => $row->fuel_name,
+                        'Depot' => $row->depot_name,
+                        'Quantity Purchased' => $this->formatLiters($row->quantity_ordered_liters),
+                        'Quantity Hauled' => $this->formatLiters($row->hauled_liters),
+                        'Garage Allocation' => $this->formatLiters($row->garage_allocated_liters),
+                        'Direct Client Allocation' => $this->formatLiters($row->direct_allocated_liters),
+                        'Received Into Garage' => $this->formatLiters($row->received_liters),
+                        'Inventory Status' => $this->label($inventoryStatus),
+                        'Cost/Liter' => $this->formatNumber($row->unit_cost),
+                        'Total Cost' => $this->formatNumber($row->line_total),
+                        'Delivery Receipt' => $this->receiptStatus($row->receipt_reference),
+                        'Purchase Status' => $this->label($row->purchase_status),
+                        'Item Status' => $this->label($row->item_status),
+                        'Created By' => $row->created_by_name ?: 'N/A',
+                        'Created At' => $this->formatDateTime($row->created_at),
+                        'Updated At' => $this->formatDateTime($row->updated_at),
+                    ],
+                ];
+            });
     }
 
     private function stockInRows(?string $search)
     {
-        return DB::table('inventory_movements')
+        $movements = DB::table('inventory_movements')
             ->join('storage_locations', 'storage_locations.id', '=', 'inventory_movements.storage_location_id')
             ->join('fuel_types', 'fuel_types.id', '=', 'inventory_movements.fuel_type_id')
             ->leftJoin('users', 'users.id', '=', 'inventory_movements.created_by')
@@ -424,12 +480,16 @@ class InventoryOfficerPurchaseController extends Controller
                 'storage_locations.name as location_name',
                 'fuel_types.name as fuel_name',
                 'users.name as created_by_name',
-            ])
+            ]);
+
+        $references = $this->stockInReferenceLabels($movements);
+
+        return $movements
             ->map(fn (object $row): array => [
                 'modal_id' => 'io-stockin-detail-'.$row->id,
                 'class' => 'row-success',
                 'cells' => [
-                    $row->movement_code,
+                    $references[$this->referenceKey($row->reference_type, (int) $row->reference_id)] ?? $row->movement_code,
                     $this->formatDateTime($row->movement_date),
                     $row->fuel_name,
                     $row->location_name,
@@ -447,7 +507,7 @@ class InventoryOfficerPurchaseController extends Controller
                     'Garage' => $row->location_name,
                     'Quantity Received' => $this->formatLiters($row->quantity_liters),
                     'Cost / Liter' => $this->formatNumber($row->unit_cost),
-                    'Source' => $this->label($row->reference_type).' #'.$row->reference_id,
+                    'Source' => $references[$this->referenceKey($row->reference_type, (int) $row->reference_id)] ?? $this->label($row->reference_type).' #'.$row->reference_id,
                     'Received By' => $row->created_by_name ?: 'N/A',
                     'Remarks' => $row->remarks ?: 'N/A',
                     'Status' => 'Confirmed',
@@ -647,7 +707,9 @@ class InventoryOfficerPurchaseController extends Controller
                 'updated_at' => now(),
             ]);
 
-        $this->increaseFulfilledQuantity($saleItem, $quantity);
+        if (! $this->increaseFulfilledQuantity($saleItem, $quantity)) {
+            return 'Quantity released cannot exceed the remaining sale quantity.';
+        }
 
         return null;
     }
@@ -659,6 +721,8 @@ class InventoryOfficerPurchaseController extends Controller
     {
         $allocation = DB::table('haul_allocations')
             ->join('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')
+            ->join('purchase_items', 'purchase_items.id', '=', 'hauls.purchase_item_id')
+            ->join('purchases', 'purchases.id', '=', 'hauls.purchase_id')
             ->where('haul_allocations.id', (int) $data['haul_allocation_id'])
             ->where('haul_allocations.destination_type', 'customer')
             ->where('haul_allocations.sale_id', $saleItem->sale_id)
@@ -666,11 +730,18 @@ class InventoryOfficerPurchaseController extends Controller
             ->where('haul_allocations.fuel_type_id', $saleItem->fuel_type_id)
             ->where('haul_allocations.status', '!=', 'cancelled')
             ->where('hauls.status', '!=', 'cancelled')
+            ->whereNull('purchases.deleted_at')
+            ->whereColumn('hauls.purchase_id', 'purchase_items.purchase_id')
+            ->whereColumn('hauls.depot_id', 'purchases.depot_id')
+            ->whereColumn('hauls.fuel_type_id', 'purchase_items.fuel_type_id')
+            ->whereColumn('haul_allocations.fuel_type_id', 'hauls.fuel_type_id')
             ->lockForUpdate()
             ->first([
                 'haul_allocations.id',
+                'haul_allocations.haul_id',
                 'haul_allocations.quantity_liters',
                 'haul_allocations.status',
+                'hauls.quantity_liters as haul_quantity_liters',
                 'hauls.depot_id',
                 'hauls.truck_id',
                 'hauls.driver_user_id',
@@ -678,6 +749,10 @@ class InventoryOfficerPurchaseController extends Controller
 
         if (! $allocation) {
             return 'The selected direct delivery source does not match this sale.';
+        }
+
+        if (! $this->haulAllocationsAreWithinQuantity((int) $allocation->haul_id, (float) $allocation->haul_quantity_liters)) {
+            return 'The selected haul has invalid allocation quantities.';
         }
 
         $delivered = (float) DB::table('deliveries')
@@ -721,7 +796,9 @@ class InventoryOfficerPurchaseController extends Controller
                 ]);
         }
 
-        $this->increaseFulfilledQuantity($saleItem, $quantity);
+        if (! $this->increaseFulfilledQuantity($saleItem, $quantity)) {
+            return 'Quantity released cannot exceed the remaining sale quantity.';
+        }
 
         return null;
     }
@@ -743,15 +820,15 @@ class InventoryOfficerPurchaseController extends Controller
         return round((float) $balance, 2);
     }
 
-    private function increaseFulfilledQuantity(object $saleItem, float $quantity): void
+    private function increaseFulfilledQuantity(object $saleItem, float $quantity): bool
     {
-        DB::table('sale_items')
+        return DB::table('sale_items')
             ->where('id', $saleItem->id)
             ->where('fulfilled_quantity_liters', '<=', DB::raw('quantity_liters - '.$quantity))
             ->update([
                 'fulfilled_quantity_liters' => DB::raw('fulfilled_quantity_liters + '.$quantity),
                 'updated_at' => now(),
-            ]);
+            ]) === 1;
     }
 
     private function purchaseItemForUpdate(int $purchaseItem): ?object
@@ -778,18 +855,26 @@ class InventoryOfficerPurchaseController extends Controller
         return DB::table('haul_allocations')
             ->join('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')
             ->join('purchase_items', 'purchase_items.id', '=', 'hauls.purchase_item_id')
+            ->join('purchases', 'purchases.id', '=', 'hauls.purchase_id')
             ->where('haul_allocations.id', $allocationId)
             ->where('haul_allocations.destination_type', 'garage')
             ->whereNotNull('haul_allocations.storage_location_id')
             ->where('haul_allocations.status', '!=', 'cancelled')
             ->where('hauls.status', '!=', 'cancelled')
+            ->whereNull('purchases.deleted_at')
+            ->whereColumn('hauls.purchase_id', 'purchase_items.purchase_id')
+            ->whereColumn('hauls.depot_id', 'purchases.depot_id')
+            ->whereColumn('hauls.fuel_type_id', 'purchase_items.fuel_type_id')
+            ->whereColumn('haul_allocations.fuel_type_id', 'hauls.fuel_type_id')
             ->lockForUpdate()
             ->first([
                 'haul_allocations.id',
+                'haul_allocations.haul_id',
                 'haul_allocations.storage_location_id',
                 'haul_allocations.fuel_type_id',
                 'haul_allocations.quantity_liters',
                 'haul_allocations.status',
+                'hauls.quantity_liters as haul_quantity_liters',
                 'purchase_items.unit_cost',
             ]);
     }
@@ -804,6 +889,76 @@ class InventoryOfficerPurchaseController extends Controller
             ->sum('quantity_liters');
 
         return round(max(0, (float) $allocation->quantity_liters - $received), 2);
+    }
+
+    private function haulAllocationsAreWithinQuantity(int $haulId, float $haulQuantity): bool
+    {
+        DB::table('haul_allocations')
+            ->where('haul_id', $haulId)
+            ->lockForUpdate()
+            ->get(['id']);
+
+        $allocated = (float) DB::table('haul_allocations')
+            ->where('haul_id', $haulId)
+            ->where('status', '!=', 'cancelled')
+            ->sum('quantity_liters');
+
+        return round($allocated, 2) <= round($haulQuantity, 2);
+    }
+
+    /**
+     * @param Collection<int, object> $movements
+     * @return array<string, string>
+     */
+    private function stockInReferenceLabels(Collection $movements): array
+    {
+        $allocationIds = $movements
+            ->filter(fn (object $row): bool => $row->reference_type === self::STOCK_IN_REFERENCE_TYPE)
+            ->pluck('reference_id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->unique()
+            ->values();
+
+        if ($allocationIds->isEmpty()) {
+            return [];
+        }
+
+        return DB::table('haul_allocations')
+            ->join('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')
+            ->join('purchases', 'purchases.id', '=', 'hauls.purchase_id')
+            ->leftJoin('depots', 'depots.id', '=', 'hauls.depot_id')
+            ->whereIn('haul_allocations.id', $allocationIds->all())
+            ->get([
+                'haul_allocations.id',
+                'purchases.purchase_code',
+                'hauls.haul_code',
+                'depots.name as depot_name',
+            ])
+            ->mapWithKeys(fn (object $row): array => [
+                $this->referenceKey(self::STOCK_IN_REFERENCE_TYPE, (int) $row->id) => $row->purchase_code.' / '.$row->haul_code.' / '.($row->depot_name ?: 'Depot'),
+            ])
+            ->all();
+    }
+
+    private function inventoryLinkStatus(float $garageAllocated, float $received, float $directAllocated): string
+    {
+        if ($garageAllocated <= 0 && $directAllocated <= 0) {
+            return 'not_allocated';
+        }
+
+        if ($garageAllocated <= 0 && $directAllocated > 0) {
+            return 'direct_to_client';
+        }
+
+        if ($received <= 0) {
+            return 'awaiting_garage_receipt';
+        }
+
+        if (round($received, 2) < round($garageAllocated, 2)) {
+            return 'partially_received';
+        }
+
+        return $directAllocated > 0 ? 'garage_received_with_direct' : 'garage_received';
     }
 
     private function garageAllocationOptions()
@@ -1002,6 +1157,11 @@ class InventoryOfficerPurchaseController extends Controller
     private function label(?string $value): string
     {
         return ucwords(str_replace('_', ' ', (string) $value));
+    }
+
+    private function referenceKey(?string $type, int $id): string
+    {
+        return ((string) $type).':'.$id;
     }
 
     private function formatDate(mixed $date): string

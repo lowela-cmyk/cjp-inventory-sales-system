@@ -32,14 +32,14 @@
             </form>
             <div class="table-wrap">
                 <table class="admin-table">
-                    <thead><tr><th>Purchase-ID</th><th>Date</th><th>Fuel</th><th>Depot</th><th>QTY (L)</th><th>Cost / Liter</th><th>Total Cost</th><th>Delivery Receipt</th><th>Payment Status</th><th>Actions</th></tr></thead>
+                    <thead><tr><th>Purchase-ID</th><th>Date</th><th>Fuel</th><th>Depot</th><th>Purchased (L)</th><th>Hauled (L)</th><th>Garage Allocation</th><th>Direct Allocation</th><th>Received</th><th>Inventory Status</th><th>Cost / Liter</th><th>Total Cost</th><th>Delivery Receipt</th><th>Payment Status</th><th>Actions</th></tr></thead>
                     <tbody>
                         @forelse ($purchases as $row)
                             <tr class="{{ $row['class'] }}">
                                 @foreach ($row['cells'] as $cell)
-                                    @if ($loop->last)
+                                    @if ($loop->last || $loop->index === 9)
                                         <td><x-admin.status-badge :status="$cell" /></td>
-                                    @elseif ($loop->index === 7 && $row['receipt_url'])
+                                    @elseif ($loop->index === 12 && $row['receipt_url'])
                                         <td><a href="{{ $row['receipt_url'] }}">{{ $cell }}</a></td>
                                     @else
                                         <td>{{ $cell }}</td>
@@ -48,7 +48,7 @@
                                 <td><button class="btn btn-secondary" type="button" data-modal-open="{{ $row['modal_id'] }}">Edit</button></td>
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="10">No records found.</td></tr>
+                            <tr><td class="empty-cell" colspan="15">No records found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -67,7 +67,7 @@
             </form>
             <div class="table-wrap">
                 <table class="admin-table">
-                    <thead><tr><th>Purchase-ID</th><th>Order Date</th><th>Fuel</th><th>Depot</th><th>QTY Ordered (L)</th><th>Cost / Liter</th><th>Total Cost</th><th>Current QTY</th><th>Sold QTY</th><th>Status</th><th>Actions</th></tr></thead>
+                    <thead><tr><th>Purchase / Haul</th><th>Received Date</th><th>Fuel</th><th>Garage</th><th>QTY Received (L)</th><th>Cost / Liter</th><th>Total Cost</th><th>Stock In</th><th>Stock Out</th><th>Status</th><th>Actions</th></tr></thead>
                     <tbody>
                         @forelse ($stockIn as $row)
                             <tr class="{{ $row['class'] }}">

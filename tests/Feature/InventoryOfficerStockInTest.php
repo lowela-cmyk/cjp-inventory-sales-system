@@ -203,6 +203,85 @@ class InventoryOfficerStockInTest extends TestCase
         $this->assertSame(0, DB::table('inventory_movements')->count());
     }
 
+    public function test_mixed_haul_allocation_only_adds_garage_quantity_to_inventory(): void
+    {
+        $records = $this->stockInRecords();
+
+        $this->actingAs($records['inventoryOfficer'])
+            ->post(route('inventory-officer.inventory.stock-in.store'), [
+                'haul_allocation_id' => $records['garageAllocationId'],
+                'storage_location_id' => $records['garageId'],
+                'quantity_liters' => 40000,
+                'movement_date' => '2026-08-30 09:15:00',
+                'remarks' => 'Garage portion only',
+            ])
+            ->assertRedirect(route('inventory-officer.inventory.stock-in'));
+
+        $this->assertSame(40000.0, $this->garageBalance($records));
+        $this->assertSame(1, DB::table('inventory_movements')->count());
+
+        $this->actingAs($records['inventoryOfficer'])
+            ->get(route('inventory-officer.inventory'))
+            ->assertOk()
+            ->assertSee('PUR-STOCK-IN')
+            ->assertSee('LFT-STOCK-IN')
+            ->assertSee('40,000.00')
+            ->assertSee('Direct Client Allocation')
+            ->assertSee('Garage Received With Direct');
+    }
+
+    public function test_stock_in_rejects_invalid_purchase_haul_relationship_without_inventory_effect(): void
+    {
+        $records = $this->stockInRecords();
+        $otherPurchaseId = DB::table('purchases')->insertGetId([
+            'purchase_code' => 'PUR-WRONG-LINK',
+            'depot_id' => $records['depotId'],
+            'purchase_date' => '2026-08-29',
+            'payment_status' => 'paid',
+            'status' => 'hauled',
+            'created_by' => $records['inventoryOfficer']->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('hauls')->where('id', $records['haulId'])->update(['purchase_id' => $otherPurchaseId]);
+
+        $this->actingAs($records['inventoryOfficer'])
+            ->from(route('inventory-officer.inventory.stock-in'))
+            ->post(route('inventory-officer.inventory.stock-in.store'), [
+                'haul_allocation_id' => $records['garageAllocationId'],
+                'storage_location_id' => $records['garageId'],
+                'quantity_liters' => 1000,
+                'movement_date' => '2026-08-30 09:15:00',
+            ])
+            ->assertRedirect(route('inventory-officer.inventory.stock-in'))
+            ->assertSessionHasErrors('stock_in');
+
+        $this->assertSame(0, DB::table('inventory_movements')->count());
+    }
+
+    public function test_stock_in_rejects_haul_allocations_that_exceed_hauled_quantity(): void
+    {
+        $records = $this->stockInRecords();
+
+        DB::table('haul_allocations')->where('id', $records['customerAllocationId'])->update([
+            'quantity_liters' => 50000,
+        ]);
+
+        $this->actingAs($records['inventoryOfficer'])
+            ->from(route('inventory-officer.inventory.stock-in'))
+            ->post(route('inventory-officer.inventory.stock-in.store'), [
+                'haul_allocation_id' => $records['garageAllocationId'],
+                'storage_location_id' => $records['garageId'],
+                'quantity_liters' => 1000,
+                'movement_date' => '2026-08-30 09:15:00',
+            ])
+            ->assertRedirect(route('inventory-officer.inventory.stock-in'))
+            ->assertSessionHasErrors('stock_in');
+
+        $this->assertSame(0, DB::table('inventory_movements')->count());
+    }
+
     public function test_stock_in_validation_requires_positive_quantity_and_real_records(): void
     {
         $records = $this->stockInRecords();

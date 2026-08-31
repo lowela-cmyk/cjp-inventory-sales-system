@@ -79,6 +79,41 @@ class DriverDashboardTest extends TestCase
             ->assertDontSee('Other Dashboard Co.');
     }
 
+    public function test_assigned_lifting_task_filters_are_scoped_to_the_authenticated_driver(): void
+    {
+        $records = $this->baseRecords();
+        $other = $this->baseRecords([
+            'driver_name' => 'Other Filter Driver',
+            'driver_code' => 'DRV-FILTER-OTHER',
+            'truck_code' => 'TRK-FILTER-OTHER',
+            'customer_company' => 'Other Filter Co.',
+        ]);
+        $this->directAllocation($records, ['haul_code' => 'LFT-FILTER-GARAGE', 'destination_type' => 'garage']);
+        $this->directAllocation($records, ['haul_code' => 'LFT-FILTER-CLIENT', 'destination_type' => 'customer']);
+        $this->directAllocation($other, ['haul_code' => 'LFT-FILTER-OTHER', 'destination_type' => 'garage']);
+
+        $this->actingAs($records['driver'])
+            ->get(route('driver.fuel-lifting', [
+                'task_status' => 'scheduled',
+                'source_type' => 'depot',
+                'destination_type' => 'garage',
+                'fuel_type_id' => $records['fuelTypeId'],
+                'date_from' => '2026-09-01',
+                'date_to' => '2026-09-01',
+                'driver_user_id' => $other['driver']->id,
+            ]))
+            ->assertOk()
+            ->assertSee('LFT-FILTER-GARAGE')
+            ->assertSee('Dashboard Garage')
+            ->assertDontSee('LFT-FILTER-CLIENT')
+            ->assertDontSee('LFT-FILTER-OTHER')
+            ->assertDontSee('Other Filter Co.');
+
+        $this->actingAs($records['driver'])
+            ->get(route('driver.fuel-lifting', ['task_status' => 'bogus']))
+            ->assertSessionHasErrors('task_status');
+    }
+
     public function test_driver_dashboard_empty_state_authorization_and_read_only_contract(): void
     {
         $records = $this->baseRecords();

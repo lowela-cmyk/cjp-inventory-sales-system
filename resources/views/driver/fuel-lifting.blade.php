@@ -4,6 +4,8 @@
     $summaryCards = $summaryCards ?? [];
     $driverProfile = $driverProfile ?? [];
     $currentAssignment = $currentAssignment ?? null;
+    $filters = $filters ?? [];
+    $filterOptions = $filterOptions ?? ['statuses' => [], 'fuelTypes' => collect()];
 @endphp
 
 @component('layouts.driver', ['title' => 'Fuel Lifting Operations', 'active' => 'fuel-lifting', 'driverName' => $driverName])
@@ -67,9 +69,31 @@
         <section data-tab-panel="schedule" @hidden($activeTab !== 'schedule')>
             <form class="driver-filter-row" method="GET" action="{{ route('driver.fuel-lifting') }}">
                 <input type="search" name="search" placeholder="Search..." aria-label="Search scheduled lifts" value="{{ $search }}">
-                <button class="btn btn-primary" type="submit">Date</button>
-                <button class="btn btn-primary" type="submit">Source</button>
-                <button class="btn btn-primary" type="submit">Fuel Type (All)</button>
+                <select name="task_status" aria-label="Filter by status">
+                    <option value="">Status (All)</option>
+                    @foreach ($filterOptions['statuses'] as $status)
+                        <option value="{{ $status }}" @selected(($filters['task_status'] ?? '') === $status)>{{ ucwords(str_replace('_', ' ', $status)) }}</option>
+                    @endforeach
+                </select>
+                <input type="date" name="date_from" aria-label="Filter from date" value="{{ $filters['date_from'] ?? '' }}">
+                <input type="date" name="date_to" aria-label="Filter to date" value="{{ $filters['date_to'] ?? '' }}">
+                <select name="source_type" aria-label="Filter by source">
+                    <option value="">Source</option>
+                    <option value="depot" @selected(($filters['source_type'] ?? '') === 'depot')>Depot</option>
+                    <option value="garage" @selected(($filters['source_type'] ?? '') === 'garage')>Garage</option>
+                </select>
+                <select name="destination_type" aria-label="Filter by destination">
+                    <option value="">Destination</option>
+                    <option value="garage" @selected(($filters['destination_type'] ?? '') === 'garage')>Garage</option>
+                    <option value="customer" @selected(($filters['destination_type'] ?? '') === 'customer')>Client</option>
+                </select>
+                <select name="fuel_type_id" aria-label="Filter by fuel type">
+                    <option value="">Fuel Type (All)</option>
+                    @foreach ($filterOptions['fuelTypes'] as $fuelType)
+                        <option value="{{ $fuelType->id }}" @selected((string) ($filters['fuel_type_id'] ?? '') === (string) $fuelType->id)>{{ $fuelType->name }}</option>
+                    @endforeach
+                </select>
+                <button class="btn btn-primary" type="submit">Filter</button>
             </form>
 
             <div class="table-wrap driver-table-wrap">
@@ -109,9 +133,31 @@
         <section data-tab-panel="hauled" @hidden($activeTab !== 'hauled')>
             <form class="driver-filter-row" method="GET" action="{{ route('driver.fuel-lifting.hauled') }}">
                 <input type="search" name="search" placeholder="Search..." aria-label="Search hauled lifts" value="{{ $search }}">
-                <button class="btn btn-primary" type="submit">Date</button>
-                <button class="btn btn-primary" type="submit">Source</button>
-                <button class="btn btn-primary" type="submit">Fuel Type (All)</button>
+                <select name="task_status" aria-label="Filter by status">
+                    <option value="">Status (All)</option>
+                    @foreach ($filterOptions['statuses'] as $status)
+                        <option value="{{ $status }}" @selected(($filters['task_status'] ?? '') === $status)>{{ ucwords(str_replace('_', ' ', $status)) }}</option>
+                    @endforeach
+                </select>
+                <input type="date" name="date_from" aria-label="Filter from date" value="{{ $filters['date_from'] ?? '' }}">
+                <input type="date" name="date_to" aria-label="Filter to date" value="{{ $filters['date_to'] ?? '' }}">
+                <select name="source_type" aria-label="Filter by source">
+                    <option value="">Source</option>
+                    <option value="depot" @selected(($filters['source_type'] ?? '') === 'depot')>Depot</option>
+                    <option value="garage" @selected(($filters['source_type'] ?? '') === 'garage')>Garage</option>
+                </select>
+                <select name="destination_type" aria-label="Filter by destination">
+                    <option value="">Destination</option>
+                    <option value="garage" @selected(($filters['destination_type'] ?? '') === 'garage')>Garage</option>
+                    <option value="customer" @selected(($filters['destination_type'] ?? '') === 'customer')>Client</option>
+                </select>
+                <select name="fuel_type_id" aria-label="Filter by fuel type">
+                    <option value="">Fuel Type (All)</option>
+                    @foreach ($filterOptions['fuelTypes'] as $fuelType)
+                        <option value="{{ $fuelType->id }}" @selected((string) ($filters['fuel_type_id'] ?? '') === (string) $fuelType->id)>{{ $fuelType->name }}</option>
+                    @endforeach
+                </select>
+                <button class="btn btn-primary" type="submit">Filter</button>
             </form>
 
             <div class="table-wrap driver-table-wrap">

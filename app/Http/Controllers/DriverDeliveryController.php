@@ -6,23 +6,42 @@ use Carbon\CarbonImmutable;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 class DriverDeliveryController extends Controller
 {
+    private const TASK_STATUSES = ['scheduled', 'in_transit', 'incomplete', 'delivered', 'lifted', 'completed', 'cancelled'];
+
     public function index(Request $request, string $state = 'schedule'): View
     {
         $data = $request->validate([
             'search' => ['nullable', 'string', 'max:100'],
+            'task_status' => ['nullable', Rule::in(self::TASK_STATUSES)],
+            'source_type' => ['nullable', Rule::in(['depot', 'garage'])],
+            'destination_type' => ['nullable', Rule::in(['garage', 'customer'])],
+            'fuel_type_id' => ['nullable', 'integer', Rule::exists('fuel_types', 'id')],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
         ]);
         $search = trim((string) ($data['search'] ?? ''));
+        $filters = [
+            'task_status' => $data['task_status'] ?? null,
+            'source_type' => $data['source_type'] ?? null,
+            'destination_type' => $data['destination_type'] ?? null,
+            'fuel_type_id' => $data['fuel_type_id'] ?? null,
+            'date_from' => $data['date_from'] ?? null,
+            'date_to' => $data['date_to'] ?? null,
+        ];
         $driverId = (int) $request->user()->id;
-        $rows = $this->rows($driverId, $search === '' ? null : $search);
+        $rows = $this->rows($driverId, $search === '' ? null : $search, $filters);
 
         return view('driver.fuel-lifting', [
             'activeTab' => in_array($state, ['hauled', 'no-hauled'], true) ? 'hauled' : 'schedule',
             'driverName' => $request->user()->name,
             'search' => $search === '' ? null : $search,
+            'filters' => $filters,
+            'filterOptions' => $this->filterOptions($driverId),
             'driverProfile' => $this->driverProfile($driverId),
             'summaryCards' => $this->summaryCards($driverId),
             'currentAssignment' => $rows->where('group', 'schedule')->sortBy('sort_at')->first(),
@@ -31,16 +50,22 @@ class DriverDeliveryController extends Controller
         ]);
     }
 
-    private function rows(int $driverId, ?string $search)
+    /**
+     * @param array<string, mixed> $filters
+     */
+    private function rows(int $driverId, ?string $search, array $filters)
     {
-        return $this->deliveryRows($driverId, $search)
-            ->merge($this->haulRows($driverId, $search))
+        return $this->deliveryRows($driverId, $search, $filters)
+            ->merge($this->haulRows($driverId, $search, $filters))
             ->sortByDesc('sort_at')
             ->sortByDesc('id')
             ->values();
     }
 
-    private function deliveryRows(int $driverId, ?string $search)
+    /**
+     * @param array<string, mixed> $filters
+     */
+    private function deliveryRows(int $driverId, ?string $search, array $filters)
     {
         return DB::table('deliveries')
             ->join('customers', 'customers.id', '=', 'deliveries.customer_id')
@@ -66,6 +91,16 @@ class DriverDeliveryController extends Controller
                 'trucks.plate_number',
                 'deliveries.status',
             ]))
+            ->when($filters['task_status'] ?? null, fn (Builder $query, string $status): Builder => $query->where('deliveries.status', $status))
+            ->when($filters['source_type'] ?? null, fn (Builder $query, string $sourceType): Builder => $query->where('deliveries.source_type', $sourceType))
+            ->when($filters['destination_type'] ?? null, function (Builder $query, string $destinationType): Builder {
+                return $destinationType === 'customer'
+                    ? $query
+                    : $query->whereRaw('1 = 0');
+            })
+            ->when($filters['fuel_type_id'] ?? null, fn (Builder $query, mixed $fuelTypeId): Builder => $query->where('deliveries.fuel_type_id', (int) $fuelTypeId))
+            ->when($filters['date_from'] ?? null, fn (Builder $query, string $date): Builder => $query->where('deliveries.scheduled_at', '>=', CarbonImmutable::parse($date)->startOfDay()->toDateTimeString()))
+            ->when($filters['date_to'] ?? null, fn (Builder $query, string $date): Builder => $query->where('deliveries.scheduled_at', '<=', CarbonImmutable::parse($date)->endOfDay()->toDateTimeString()))
             ->orderByDesc('deliveries.scheduled_at')
             ->orderByDesc('deliveries.id')
             ->get([
@@ -150,7 +185,10 @@ class DriverDeliveryController extends Controller
             });
     }
 
-    private function haulRows(int $driverId, ?string $search)
+    /**
+     * @param array<string, mixed> $filters
+     */
+    private function haulRows(int $driverId, ?string $search, array $filters)
     {
         $allocations = DB::table('haul_allocations')
             ->leftJoin('storage_locations', 'storage_locations.id', '=', 'haul_allocations.storage_location_id')
@@ -184,6 +222,21 @@ class DriverDeliveryController extends Controller
                 'allocations.destination_names',
                 'allocations.sale_codes',
             ]))
+            ->when($filters['task_status'] ?? null, fn (Builder $query, string $status): Builder => $query->where('hauls.status', $status))
+            ->when($filters['source_type'] ?? null, function (Builder $query, string $sourceType): Builder {
+                return $sourceType === 'depot'
+                    ? $query
+                    : $query->whereRaw('1 = 0');
+            })
+            ->when($filters['destination_type'] ?? null, fn (Builder $query, string $destinationType): Builder => $query->whereExists(function ($subQuery) use ($destinationType): void {
+                $subQuery->selectRaw('1')
+                    ->from('haul_allocations')
+                    ->whereColumn('haul_allocations.haul_id', 'hauls.id')
+                    ->where('haul_allocations.destination_type', $destinationType);
+            }))
+            ->when($filters['fuel_type_id'] ?? null, fn (Builder $query, mixed $fuelTypeId): Builder => $query->where('hauls.fuel_type_id', (int) $fuelTypeId))
+            ->when($filters['date_from'] ?? null, fn (Builder $query, string $date): Builder => $query->where('hauls.scheduled_at', '>=', CarbonImmutable::parse($date)->startOfDay()->toDateTimeString()))
+            ->when($filters['date_to'] ?? null, fn (Builder $query, string $date): Builder => $query->where('hauls.scheduled_at', '<=', CarbonImmutable::parse($date)->endOfDay()->toDateTimeString()))
             ->orderByDesc('hauls.scheduled_at')
             ->orderByDesc('hauls.id')
             ->get([
@@ -250,6 +303,29 @@ class DriverDeliveryController extends Controller
                     ],
                 ];
             });
+    }
+
+    private function filterOptions(int $driverId): array
+    {
+        $deliveryFuelIds = DB::table('deliveries')
+            ->where('driver_user_id', $driverId)
+            ->pluck('fuel_type_id');
+        $haulFuelIds = DB::table('hauls')
+            ->where('driver_user_id', $driverId)
+            ->pluck('fuel_type_id');
+        $fuelIds = $deliveryFuelIds->merge($haulFuelIds)->unique()->values();
+
+        return [
+            'statuses' => self::TASK_STATUSES,
+            'fuelTypes' => DB::table('fuel_types')
+                ->when(
+                    $fuelIds->isNotEmpty(),
+                    fn (Builder $query): Builder => $query->whereIn('id', $fuelIds),
+                    fn (Builder $query): Builder => $query->whereRaw('1 = 0')
+                )
+                ->orderBy('name')
+                ->get(['id', 'name']),
+        ];
     }
 
     private function driverProfile(int $driverId): array

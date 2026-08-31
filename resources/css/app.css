@@ -983,6 +983,53 @@ select {
     color: #555;
 }
 
+.report-toolbar {
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.report-toolbar .form-control {
+    min-width: 140px;
+}
+
+.report-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.report-metrics {
+    grid-template-columns: repeat(4, minmax(160px, 1fr));
+}
+
+.report-grid {
+    margin-bottom: 20px;
+}
+
+.report-section {
+    border: 1px solid var(--admin-line);
+    border-radius: 8px;
+    background: #fff;
+    margin-bottom: 20px;
+    overflow: hidden;
+}
+
+.report-section .table-wrap {
+    min-height: auto;
+    border: 0;
+    border-radius: 0;
+}
+
+.report-bars {
+    min-height: 210px;
+    align-items: end;
+    overflow-x: auto;
+}
+
+.report-bars .mini-bar {
+    min-width: 96px;
+}
+
 .alert-stack {
     display: grid;
     gap: 18px;

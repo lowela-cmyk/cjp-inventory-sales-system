@@ -3,6 +3,7 @@
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\AdminDashboardController;
 use App\Http\Controllers\AdminMonitoringController;
+use App\Http\Controllers\AdminSalesReportController;
 use App\Http\Controllers\AdminUserManagementController;
 use App\Http\Controllers\InventoryOfficerLedgerController;
 use App\Http\Controllers\InventoryOfficerPurchaseController;
@@ -34,7 +35,8 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/ledger', [AdminMonitoringController::class, 'ledger'])->name('ledger');
         Route::get('/fuel-lifting', [AdminMonitoringController::class, 'fuelLifting'])->name('fuel-lifting');
         Route::get('/sales', [AdminMonitoringController::class, 'sales'])->name('sales');
-        Route::view('/reports', 'admin.reports')->name('reports');
+        Route::get('/reports', AdminSalesReportController::class)->name('reports');
+        Route::get('/reports/export', [AdminSalesReportController::class, 'export'])->name('reports.export');
         Route::get('/alerts', [AdminMonitoringController::class, 'alerts'])->name('alerts');
         Route::get('/user-management', [AdminUserManagementController::class, 'index'])->name('user-management');
         Route::post('/user-management/staff', [AdminUserManagementController::class, 'storeStaff'])->name('user-management.staff.store');

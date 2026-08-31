@@ -14,6 +14,7 @@ use Illuminate\View\View;
 class DispatchDeliveryController extends Controller
 {
     private const ACTIVE_DELIVERY_STATUSES = ['scheduled', 'in_transit', 'incomplete'];
+    private const ACTIVE_HAUL_STATUSES = ['scheduled', 'in_transit', 'lifted'];
     private const ASSIGNABLE_DELIVERY_STATUSES = ['scheduled', 'incomplete'];
     private const DELIVERY_STATUSES = ['scheduled', 'in_transit', 'delivered', 'cancelled', 'incomplete'];
     private const ELIGIBLE_SALE_STATUSES = ['confirmed', 'partially_paid', 'paid', 'unpaid'];
@@ -212,7 +213,15 @@ class DispatchDeliveryController extends Controller
                 return 'The selected driver is not eligible for dispatch assignment.';
             }
 
-            $truck = $this->truckForAssignment((int) $data['truck_id']);
+            if (! $row->truck_id) {
+                return 'A valid assigned truck is required before assigning a driver.';
+            }
+
+            if ((int) $data['truck_id'] !== (int) $row->truck_id) {
+                return 'The submitted truck does not match this delivery assignment.';
+            }
+
+            $truck = $this->truckForAssignment((int) $row->truck_id, true);
 
             if (! $truck) {
                 return 'The selected truck is not eligible for dispatch assignment.';
@@ -246,7 +255,6 @@ class DispatchDeliveryController extends Controller
                 ->where('id', $row->id)
                 ->update([
                     'driver_user_id' => $driver->id,
-                    'truck_id' => $truck->id,
                     'updated_at' => now(),
                 ]);
 
@@ -463,6 +471,7 @@ class DispatchDeliveryController extends Controller
                     'delivery_id' => (int) $row->id,
                     'driver_user_id' => $row->driver_user_id ? (int) $row->driver_user_id : null,
                     'truck_id' => $row->truck_id ? (int) $row->truck_id : null,
+                    'truck_label' => $row->truck_code ? $row->truck_code.' / '.$this->formatLiters($row->capacity_liters) : 'No truck assigned',
                     'raw_status' => $row->status,
                     'status' => $this->label($row->status),
                     'cells' => [
@@ -720,22 +729,44 @@ class DispatchDeliveryController extends Controller
 
     private function driverIsAvailable(int $driverId, CarbonImmutable $scheduledAt, ?int $exceptDeliveryId = null): bool
     {
-        return ! DB::table('deliveries')
+        $hasDeliveryConflict = DB::table('deliveries')
             ->where('driver_user_id', $driverId)
             ->whereIn('status', self::ACTIVE_DELIVERY_STATUSES)
             ->where('scheduled_at', $scheduledAt->toDateTimeString())
             ->when($exceptDeliveryId, fn (Builder $query): Builder => $query->where('id', '!=', $exceptDeliveryId))
             ->lockForUpdate()
             ->exists();
+
+        if ($hasDeliveryConflict) {
+            return false;
+        }
+
+        return ! DB::table('hauls')
+            ->where('driver_user_id', $driverId)
+            ->whereIn('status', self::ACTIVE_HAUL_STATUSES)
+            ->where('scheduled_at', $scheduledAt->toDateTimeString())
+            ->lockForUpdate()
+            ->exists();
     }
 
     private function truckIsAvailable(int $truckId, CarbonImmutable $scheduledAt, ?int $exceptDeliveryId = null): bool
     {
-        return ! DB::table('deliveries')
+        $hasDeliveryConflict = DB::table('deliveries')
             ->where('truck_id', $truckId)
             ->whereIn('status', self::ACTIVE_DELIVERY_STATUSES)
             ->where('scheduled_at', $scheduledAt->toDateTimeString())
             ->when($exceptDeliveryId, fn (Builder $query): Builder => $query->where('id', '!=', $exceptDeliveryId))
+            ->lockForUpdate()
+            ->exists();
+
+        if ($hasDeliveryConflict) {
+            return false;
+        }
+
+        return ! DB::table('hauls')
+            ->where('truck_id', $truckId)
+            ->whereIn('status', self::ACTIVE_HAUL_STATUSES)
+            ->where('scheduled_at', $scheduledAt->toDateTimeString())
             ->lockForUpdate()
             ->exists();
     }

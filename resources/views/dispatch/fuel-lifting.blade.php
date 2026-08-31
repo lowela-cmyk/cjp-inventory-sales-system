@@ -210,8 +210,12 @@
                             </div>
                             <div class="form-row">
                                 <label for="delivery_truck_{{ $row['delivery_id'] }}">Truck ID</label>
-                                <select id="delivery_truck_{{ $row['delivery_id'] }}" name="truck_id" required>
-                                    <option value="">Select truck</option>
+                                <input type="hidden" name="truck_id" value="{{ $row['truck_id'] }}">
+                                <select id="delivery_truck_{{ $row['delivery_id'] }}" disabled>
+                                    <option value="">No truck assigned</option>
+                                    @if ($row['truck_id'] && ! $trucks->contains('id', $row['truck_id']))
+                                        <option value="{{ $row['truck_id'] }}" selected>{{ $row['truck_label'] }}</option>
+                                    @endif
                                     @foreach ($trucks as $truck)
                                         <option value="{{ $truck->id }}" @selected((string) old('truck_id', $row['truck_id']) === (string) $truck->id)>{{ $truck->truck_code }} / {{ number_format((float) $truck->capacity_liters, 2) }} L</option>
                                     @endforeach

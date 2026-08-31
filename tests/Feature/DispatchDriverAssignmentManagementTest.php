@@ -12,10 +12,10 @@ class DispatchDriverAssignmentManagementTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_dispatch_officer_assigns_driver_and_truck_to_garage_delivery_without_side_effects(): void
+    public function test_dispatch_officer_assigns_driver_to_assigned_garage_delivery_without_side_effects(): void
     {
         $records = $this->baseRecords();
-        $deliveryId = $this->garageDelivery($records, ['driver_user_id' => null, 'truck_id' => null]);
+        $deliveryId = $this->garageDelivery($records, ['driver_user_id' => null]);
         $before = $this->sideEffectCounts($records);
 
         $this->actingAs($records['dispatchOfficer'])
@@ -35,7 +35,7 @@ class DispatchDriverAssignmentManagementTest extends TestCase
     {
         $records = $this->baseRecords();
         $allocationId = $this->directAllocation($records);
-        $deliveryId = $this->depotDelivery($records, $allocationId, ['driver_user_id' => null, 'truck_id' => null]);
+        $deliveryId = $this->depotDelivery($records, $allocationId, ['driver_user_id' => null]);
 
         $this->actingAs($records['dispatchOfficer'])
             ->patch(route('dispatch.fuel-lifting.deliveries.assignment', $deliveryId), $this->assignmentPayload($records))
@@ -49,10 +49,10 @@ class DispatchDriverAssignmentManagementTest extends TestCase
         ]);
     }
 
-    public function test_assignment_rejects_invalid_non_driver_inactive_driver_conflicts_and_capacity(): void
+    public function test_assignment_rejects_invalid_non_driver_inactive_driver_conflicts_capacity_and_tampered_truck(): void
     {
         $records = $this->baseRecords();
-        $deliveryId = $this->garageDelivery($records, ['driver_user_id' => null, 'truck_id' => null]);
+        $deliveryId = $this->garageDelivery($records, ['driver_user_id' => null]);
         $salesOfficer = User::factory()->create(['role' => 'sales_officer', 'status' => 'active']);
         $inactiveDriver = User::factory()->create(['role' => 'driver', 'status' => 'inactive']);
         $smallTruckId = DB::table('trucks')->insertGetId([
@@ -78,7 +78,64 @@ class DispatchDriverAssignmentManagementTest extends TestCase
             ->assertRedirect(route('dispatch.fuel-lifting'))
             ->assertSessionHasErrors('delivery');
 
+        DB::table('deliveries')->where('id', $deliveryId)->update(['truck_id' => $smallTruckId]);
+
+        $this->actingAs($records['dispatchOfficer'])
+            ->from(route('dispatch.fuel-lifting'))
+            ->patch(route('dispatch.fuel-lifting.deliveries.assignment', $deliveryId), $this->assignmentPayload($records, ['truck_id' => $smallTruckId]))
+            ->assertRedirect(route('dispatch.fuel-lifting'))
+            ->assertSessionHasErrors('delivery');
+
+        DB::table('deliveries')->where('id', $deliveryId)->update(['truck_id' => $records['truckId']]);
+
         $this->garageDelivery($records, ['delivery_code' => 'DLV-CONFLICT', 'stock_out_code' => 'STO-CONFLICT', 'sale_code' => 'SLS-CONFLICT']);
+
+        $this->actingAs($records['dispatchOfficer'])
+            ->from(route('dispatch.fuel-lifting'))
+            ->patch(route('dispatch.fuel-lifting.deliveries.assignment', $deliveryId), $this->assignmentPayload($records))
+            ->assertRedirect(route('dispatch.fuel-lifting'))
+            ->assertSessionHasErrors('delivery');
+    }
+
+    public function test_assignment_rejects_active_lift_conflicts_for_driver_and_truck(): void
+    {
+        $records = $this->baseRecords();
+        $deliveryId = $this->garageDelivery($records, ['driver_user_id' => null]);
+        $purchaseId = DB::table('purchases')->insertGetId([
+            'purchase_code' => 'PUR-HAUL-CONFLICT',
+            'depot_id' => $records['depotId'],
+            'purchase_date' => '2026-08-31',
+            'payment_status' => 'paid',
+            'status' => 'ordered',
+            'created_by' => $records['inventoryOfficer']->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $purchaseItemId = DB::table('purchase_items')->insertGetId([
+            'purchase_id' => $purchaseId,
+            'fuel_type_id' => $records['fuelTypeId'],
+            'quantity_ordered_liters' => 10000,
+            'unit_cost' => 50,
+            'line_total' => 500000,
+            'quantity_hauled_liters' => 0,
+            'status' => 'unlifted',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('hauls')->insert([
+            'haul_code' => 'LFT-HAUL-CONFLICT',
+            'purchase_id' => $purchaseId,
+            'purchase_item_id' => $purchaseItemId,
+            'depot_id' => $records['depotId'],
+            'fuel_type_id' => $records['fuelTypeId'],
+            'truck_id' => $records['truckId'],
+            'driver_user_id' => $records['driver']->id,
+            'scheduled_at' => '2026-09-01 09:00:00',
+            'quantity_liters' => 10000,
+            'status' => 'scheduled',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
 
         $this->actingAs($records['dispatchOfficer'])
             ->from(route('dispatch.fuel-lifting'))
@@ -120,7 +177,7 @@ class DispatchDriverAssignmentManagementTest extends TestCase
     public function test_dispatch_requires_valid_assignment_and_duplicate_dispatch_is_blocked(): void
     {
         $records = $this->baseRecords();
-        $deliveryId = $this->garageDelivery($records, ['driver_user_id' => null, 'truck_id' => null]);
+        $deliveryId = $this->garageDelivery($records, ['driver_user_id' => null]);
 
         $this->actingAs($records['dispatchOfficer'])
             ->from(route('dispatch.fuel-lifting'))
@@ -146,7 +203,7 @@ class DispatchDriverAssignmentManagementTest extends TestCase
     public function test_authorization_and_driver_visibility_remain_scoped(): void
     {
         $records = $this->baseRecords();
-        $deliveryId = $this->garageDelivery($records, ['driver_user_id' => null, 'truck_id' => null]);
+        $deliveryId = $this->garageDelivery($records, ['driver_user_id' => null]);
 
         foreach (['sales_officer', 'inventory_officer', 'driver'] as $role) {
             $user = User::factory()->create(['role' => $role, 'status' => 'active']);

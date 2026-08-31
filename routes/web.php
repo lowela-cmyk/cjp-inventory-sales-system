@@ -5,6 +5,7 @@ use App\Http\Controllers\AdminDashboardController;
 use App\Http\Controllers\AdminMonitoringController;
 use App\Http\Controllers\AdminSalesReportController;
 use App\Http\Controllers\AdminUserManagementController;
+use App\Http\Controllers\DispatchDeliveryController;
 use App\Http\Controllers\InventoryOfficerLedgerController;
 use App\Http\Controllers\InventoryOfficerPurchaseController;
 use App\Http\Controllers\SalesOfficerCustomerController;
@@ -34,6 +35,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/inventory', [AdminMonitoringController::class, 'inventory'])->name('inventory');
         Route::get('/ledger', [AdminMonitoringController::class, 'ledger'])->name('ledger');
         Route::get('/fuel-lifting', [AdminMonitoringController::class, 'fuelLifting'])->name('fuel-lifting');
+        Route::post('/fuel-lifting/deliveries', [DispatchDeliveryController::class, 'store'])->name('fuel-lifting.deliveries.store');
         Route::get('/sales', [AdminMonitoringController::class, 'sales'])->name('sales');
         Route::get('/reports', AdminSalesReportController::class)->name('reports');
         Route::get('/reports/export', [AdminSalesReportController::class, 'export'])->name('reports.export');
@@ -48,8 +50,9 @@ Route::middleware(['auth'])->group(function () {
 
     Route::redirect('/dispatch', '/dispatch/fuel-lifting')->middleware('role:dispatch_officer')->name('dispatch.shortcut');
     Route::prefix('dispatch')->name('dispatch.')->middleware('role:dispatch_officer')->group(function () {
-        Route::view('/fuel-lifting', 'dispatch.fuel-lifting')->name('fuel-lifting');
-        Route::view('/fuel-lifting/hauled', 'dispatch.fuel-lifting', ['state' => 'hauled'])->name('fuel-lifting.hauled');
+        Route::get('/fuel-lifting', [DispatchDeliveryController::class, 'index'])->name('fuel-lifting');
+        Route::post('/fuel-lifting/deliveries', [DispatchDeliveryController::class, 'store'])->name('fuel-lifting.deliveries.store');
+        Route::get('/fuel-lifting/hauled', [DispatchDeliveryController::class, 'index'])->defaults('state', 'hauled')->name('fuel-lifting.hauled');
         Route::view('/ledger', 'dispatch.ledger')->name('ledger');
         Route::view('/alerts', 'dispatch.alerts')->name('alerts');
     });

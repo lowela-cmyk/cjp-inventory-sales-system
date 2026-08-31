@@ -31,15 +31,34 @@ class DispatchDeliveryController extends Controller
     {
         $data = $request->validate([
             'search' => ['nullable', 'string', 'max:100'],
+            'status' => ['nullable', Rule::in(self::DELIVERY_STATUSES)],
+            'source_type' => ['nullable', Rule::in(['garage', 'depot'])],
+            'fuel_type_id' => ['nullable', 'integer', Rule::exists('fuel_types', 'id')],
+            'driver_user_id' => ['nullable', 'integer', Rule::exists('users', 'id')->where(fn (Builder $query): Builder => $query->where('role', 'driver'))],
+            'truck_id' => ['nullable', 'integer', Rule::exists('trucks', 'id')],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
         ]);
         $search = trim((string) ($data['search'] ?? ''));
-        $rows = $this->deliveryRows($search === '' ? null : $search);
+        $filters = [
+            'status' => $data['status'] ?? null,
+            'source_type' => $data['source_type'] ?? null,
+            'fuel_type_id' => $data['fuel_type_id'] ?? null,
+            'driver_user_id' => $data['driver_user_id'] ?? null,
+            'truck_id' => $data['truck_id'] ?? null,
+            'date_from' => $data['date_from'] ?? null,
+            'date_to' => $data['date_to'] ?? null,
+        ];
+        $rows = $this->deliveryRows($search === '' ? null : $search, $filters);
 
         return view('dispatch.fuel-lifting', [
             'activeTab' => $state === 'hauled' ? 'hauled' : 'schedule',
             'search' => $search === '' ? null : $search,
             'scheduledRows' => $rows->whereIn('raw_status', self::ACTIVE_DELIVERY_STATUSES)->values(),
-            'deliveredRows' => $rows->whereIn('raw_status', ['delivered'])->values(),
+            'deliveredRows' => $rows->whereIn('raw_status', ['delivered', 'cancelled'])->values(),
+            'filters' => $filters,
+            'filterOptions' => $this->deliveryFilterOptions(),
+            'deliverySummary' => $this->deliverySummary($filters, $search === '' ? null : $search),
             'garageStockOuts' => $this->garageStockOutOptions(),
             'directAllocations' => $this->directAllocationOptions(),
             'drivers' => $this->driverOptions(),
@@ -414,7 +433,10 @@ class DispatchDeliveryController extends Controller
         return null;
     }
 
-    private function deliveryRows(?string $search)
+    /**
+     * @param array<string, mixed> $filters
+     */
+    private function deliveryRows(?string $search, array $filters)
     {
         return DB::table('deliveries')
             ->join('customers', 'customers.id', '=', 'deliveries.customer_id')
@@ -424,18 +446,34 @@ class DispatchDeliveryController extends Controller
             ->leftJoin('trucks', 'trucks.id', '=', 'deliveries.truck_id')
             ->leftJoin('stock_outs', 'stock_outs.delivery_id', '=', 'deliveries.id')
             ->leftJoin('haul_allocations', 'haul_allocations.id', '=', 'deliveries.haul_allocation_id')
+            ->leftJoin('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')
+            ->leftJoin('depots', 'depots.id', '=', 'deliveries.depot_id')
+            ->leftJoin('storage_locations', 'storage_locations.id', '=', 'deliveries.storage_location_id')
             ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
                 'deliveries.delivery_code',
                 'sales.sale_code',
                 'stock_outs.stock_out_code',
+                'hauls.haul_code',
                 'customers.name',
                 'customers.company_name',
+                'customers.location',
                 'fuel_types.name',
                 'deliveries.source_type',
+                'depots.name',
+                'storage_locations.name',
                 'drivers.name',
                 'trucks.truck_code',
+                'trucks.plate_number',
                 'deliveries.status',
+                'hauls.status',
             ]))
+            ->when($filters['status'] ?? null, fn (Builder $query, string $status): Builder => $query->where('deliveries.status', $status))
+            ->when($filters['source_type'] ?? null, fn (Builder $query, string $sourceType): Builder => $query->where('deliveries.source_type', $sourceType))
+            ->when($filters['fuel_type_id'] ?? null, fn (Builder $query, mixed $fuelTypeId): Builder => $query->where('deliveries.fuel_type_id', (int) $fuelTypeId))
+            ->when($filters['driver_user_id'] ?? null, fn (Builder $query, mixed $driverUserId): Builder => $query->where('deliveries.driver_user_id', (int) $driverUserId))
+            ->when($filters['truck_id'] ?? null, fn (Builder $query, mixed $truckId): Builder => $query->where('deliveries.truck_id', (int) $truckId))
+            ->when($filters['date_from'] ?? null, fn (Builder $query, string $date): Builder => $query->where('deliveries.scheduled_at', '>=', CarbonImmutable::parse($date)->startOfDay()->toDateTimeString()))
+            ->when($filters['date_to'] ?? null, fn (Builder $query, string $date): Builder => $query->where('deliveries.scheduled_at', '<=', CarbonImmutable::parse($date)->endOfDay()->toDateTimeString()))
             ->orderByDesc('deliveries.scheduled_at')
             ->orderByDesc('deliveries.id')
             ->get([
@@ -457,15 +495,30 @@ class DispatchDeliveryController extends Controller
                 'drivers.name as driver_name',
                 'drivers.phone as driver_phone',
                 'trucks.truck_code',
+                'trucks.plate_number',
                 'trucks.capacity_liters',
                 'stock_outs.stock_out_code',
                 'haul_allocations.id as allocation_id',
+                'haul_allocations.destination_type as allocation_destination_type',
+                'haul_allocations.status as allocation_status',
+                'hauls.haul_code',
+                'hauls.status as lifting_status',
+                'hauls.scheduled_at as lifting_scheduled_at',
+                'hauls.hauled_at',
+                'depots.name as depot_name',
+                'storage_locations.name as garage_name',
             ])
             ->map(function (object $row): array {
                 $quantity = (float) ($row->actual_quantity_liters ?? $row->scheduled_quantity_liters ?? 0);
                 $sourceRef = $row->source_type === 'garage'
                     ? ($row->stock_out_code ?: 'Garage Release')
-                    : ('Allocation #'.($row->allocation_id ?: 'N/A'));
+                    : ($row->haul_code ?: 'Allocation #'.($row->allocation_id ?: 'N/A'));
+                $source = $row->source_type === 'garage'
+                    ? ($row->garage_name ?: 'Garage')
+                    : ($row->depot_name ?: 'Depot');
+                $truck = $row->truck_code
+                    ? trim($row->truck_code.($row->plate_number ? ' / '.$row->plate_number : ''))
+                    : 'N/A';
 
                 return [
                     'id' => 'dispatch-delivery-'.$row->id,
@@ -489,26 +542,99 @@ class DispatchDeliveryController extends Controller
                     ],
                     'details' => [
                         'Delivery Reference' => $row->delivery_code,
+                        'Lift Reference' => $row->haul_code ?: 'N/A',
                         'Sale Reference' => $row->sale_code ?: 'N/A',
                         'Customer' => $row->customer_name,
                         'Company' => $row->company_name,
                         'Fuel Type' => $row->fuel_name,
                         'Source' => $this->label($row->source_type),
+                        'Source Name' => $source,
                         'Source Reference' => $sourceRef,
                         'Destination' => $row->location ?: $row->company_name,
                         'Driver' => $row->driver_name ?: 'N/A',
                         'Driver Contact' => $row->driver_phone ?: 'N/A',
-                        'Truck' => $row->truck_code ?: 'N/A',
+                        'Truck' => $truck,
                         'Truck Capacity' => $this->formatLiters($row->capacity_liters),
                         'Scheduled Quantity' => $this->formatLiters($row->scheduled_quantity_liters),
                         'Actual Quantity' => $row->actual_quantity_liters ? $this->formatLiters($row->actual_quantity_liters) : 'N/A',
                         'Scheduled Date' => $this->formatDateTime($row->scheduled_at),
                         'Delivered Date' => $row->delivered_at ? $this->formatDateTime($row->delivered_at) : 'N/A',
+                        'Lifting Scheduled Date' => $row->lifting_scheduled_at ? $this->formatDateTime($row->lifting_scheduled_at) : 'N/A',
+                        'Lifting Completed Date' => $row->hauled_at ? $this->formatDateTime($row->hauled_at) : 'N/A',
+                        'Lifting Status' => $this->label($row->lifting_status),
+                        'Allocation Status' => $this->label($row->allocation_status),
                         'Status' => $this->label($row->status),
                     ],
                     'allowed_statuses' => self::STATUS_TRANSITIONS[$row->status] ?? [],
                 ];
             });
+    }
+
+    /**
+     * @param array<string, mixed> $filters
+     */
+    private function deliverySummary(array $filters, ?string $search): array
+    {
+        $rows = $this->deliveryBaseQuery($filters, $search)
+            ->selectRaw("
+                COUNT(*) as total,
+                SUM(CASE WHEN deliveries.status = 'scheduled' THEN 1 ELSE 0 END) as scheduled,
+                SUM(CASE WHEN deliveries.status = 'in_transit' THEN 1 ELSE 0 END) as active,
+                SUM(CASE WHEN deliveries.status = 'delivered' THEN 1 ELSE 0 END) as completed,
+                SUM(CASE WHEN deliveries.status = 'cancelled' THEN 1 ELSE 0 END) as cancelled
+            ")
+            ->first();
+
+        return [
+            ['label' => 'Total Deliveries', 'value' => number_format((int) ($rows->total ?? 0))],
+            ['label' => 'Scheduled', 'value' => number_format((int) ($rows->scheduled ?? 0))],
+            ['label' => 'Active', 'value' => number_format((int) ($rows->active ?? 0))],
+            ['label' => 'Completed', 'value' => number_format((int) ($rows->completed ?? 0))],
+            ['label' => 'Cancelled', 'value' => number_format((int) ($rows->cancelled ?? 0))],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $filters
+     */
+    private function deliveryBaseQuery(array $filters, ?string $search): Builder
+    {
+        return DB::table('deliveries')
+            ->join('customers', 'customers.id', '=', 'deliveries.customer_id')
+            ->join('fuel_types', 'fuel_types.id', '=', 'deliveries.fuel_type_id')
+            ->leftJoin('sales', 'sales.id', '=', 'deliveries.sale_id')
+            ->leftJoin('users as drivers', 'drivers.id', '=', 'deliveries.driver_user_id')
+            ->leftJoin('trucks', 'trucks.id', '=', 'deliveries.truck_id')
+            ->leftJoin('stock_outs', 'stock_outs.delivery_id', '=', 'deliveries.id')
+            ->leftJoin('haul_allocations', 'haul_allocations.id', '=', 'deliveries.haul_allocation_id')
+            ->leftJoin('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')
+            ->leftJoin('depots', 'depots.id', '=', 'deliveries.depot_id')
+            ->leftJoin('storage_locations', 'storage_locations.id', '=', 'deliveries.storage_location_id')
+            ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
+                'deliveries.delivery_code',
+                'sales.sale_code',
+                'stock_outs.stock_out_code',
+                'hauls.haul_code',
+                'customers.name',
+                'customers.company_name',
+                'customers.location',
+                'fuel_types.name',
+                'deliveries.source_type',
+                'depots.name',
+                'storage_locations.name',
+                'drivers.name',
+                'trucks.truck_code',
+                'trucks.plate_number',
+                'deliveries.status',
+                'hauls.status',
+            ]))
+            ->when($filters['status'] ?? null, fn (Builder $query, string $status): Builder => $query->where('deliveries.status', $status))
+            ->when($filters['source_type'] ?? null, fn (Builder $query, string $sourceType): Builder => $query->where('deliveries.source_type', $sourceType))
+            ->when($filters['fuel_type_id'] ?? null, fn (Builder $query, mixed $fuelTypeId): Builder => $query->where('deliveries.fuel_type_id', (int) $fuelTypeId))
+            ->when($filters['driver_user_id'] ?? null, fn (Builder $query, mixed $driverUserId): Builder => $query->where('deliveries.driver_user_id', (int) $driverUserId))
+            ->when($filters['truck_id'] ?? null, fn (Builder $query, mixed $truckId): Builder => $query->where('deliveries.truck_id', (int) $truckId))
+            ->when($filters['date_from'] ?? null, fn (Builder $query, string $date): Builder => $query->where('deliveries.scheduled_at', '>=', CarbonImmutable::parse($date)->startOfDay()->toDateTimeString()))
+            ->when($filters['date_to'] ?? null, fn (Builder $query, string $date): Builder => $query->where('deliveries.scheduled_at', '<=', CarbonImmutable::parse($date)->endOfDay()->toDateTimeString()));
     }
 
     private function deliveryForUpdate(int $delivery): ?object
@@ -623,6 +749,23 @@ class DispatchDeliveryController extends Controller
 
                 return $row;
             });
+    }
+
+    private function deliveryFilterOptions(): array
+    {
+        return [
+            'statuses' => self::DELIVERY_STATUSES,
+            'fuelTypes' => DB::table('fuel_types')
+                ->orderBy('name')
+                ->get(['id', 'name']),
+            'drivers' => DB::table('users')
+                ->where('role', 'driver')
+                ->orderBy('name')
+                ->get(['id', 'name']),
+            'trucks' => DB::table('trucks')
+                ->orderBy('truck_code')
+                ->get(['id', 'truck_code', 'plate_number']),
+        ];
     }
 
     private function directAllocationOptions()

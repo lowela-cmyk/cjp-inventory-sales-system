@@ -60,6 +60,7 @@ class SalesOfficerCustomerController extends Controller
         $result = DB::transaction(function () use ($request, $sale, $data): array {
             $saleRow = DB::table('sales')
                 ->join('customers', 'customers.id', '=', 'sales.customer_id')
+                ->leftJoin('receivables', 'receivables.sale_id', '=', 'sales.id')
                 ->where('sales.id', $sale)
                 ->whereNull('sales.deleted_at')
                 ->whereNotIn('sales.status', ['draft', 'cancelled'])
@@ -69,6 +70,7 @@ class SalesOfficerCustomerController extends Controller
                     'sales.sale_code',
                     'sales.customer_id',
                     'sales.status',
+                    'receivables.due_date',
                     'customers.status as customer_status',
                 ]);
 
@@ -137,7 +139,7 @@ class SalesOfficerCustomerController extends Controller
 
             $totalPaid = round($previousPaid + $amount, 2);
             $newStatus = $this->salePaymentStatus($saleTotal, $totalPaid);
-            $newReceivableStatus = $this->receivableStatusForSale($saleTotal, $totalPaid);
+            $newReceivableStatus = $this->receivableStatusForSale($saleTotal, $totalPaid, $saleRow->due_date);
 
             DB::table('sales')
                 ->where('id', $saleRow->id)
@@ -484,6 +486,7 @@ class SalesOfficerCustomerController extends Controller
                     'Date Added' => $this->formatDateTime($row->created_at),
                     'Last Updated' => $this->formatDateTime($row->updated_at),
                     'Transactions' => $this->transactionSummary((int) $row->id),
+                    'Outstanding Receivables' => 'PHP '.$this->formatNumber($this->customerOutstandingTotal((int) $row->id)),
                 ],
             ]);
     }
@@ -528,6 +531,7 @@ class SalesOfficerCustomerController extends Controller
                 'customers.company_name',
                 'items_total.first_fuel_name',
                 'sales.status',
+                'sales.payment_method',
                 'receivables.status',
             ]))
             ->orderByDesc('sales.sale_date')
@@ -554,9 +558,10 @@ class SalesOfficerCustomerController extends Controller
                 $paid = (float) ($row->total_paid ?? 0);
                 $saleTotal = (float) $row->sale_total;
                 $balance = max(0, $saleTotal - $paid);
-                $paymentStatus = $this->salePaymentStatus($saleTotal, $paid);
-                $status = $this->label($paymentStatus);
+                $receivableStatus = $this->receivableStatusForSale($saleTotal, $paid, $row->due_date);
+                $status = $this->receivableStatusLabel($receivableStatus);
                 $saleItems = $this->itemsForSale((int) $row->sale_id);
+                $latestPaymentDate = $this->latestPaymentDateForSale((int) $row->sale_id);
 
                 return [
                     'id' => (int) $row->sale_id,
@@ -569,10 +574,12 @@ class SalesOfficerCustomerController extends Controller
                     'payment_method' => $row->payment_method,
                     'payment_terms' => $row->payment_terms,
                     'status' => $row->status,
+                    'receivable_status' => $receivableStatus,
                     'due_date' => $row->due_date,
+                    'latest_payment_date' => $latestPaymentDate,
                     'has_dependencies' => $this->hasSaleDependentActivity((int) $row->sale_id),
                     'items' => $saleItems,
-                    'class' => $this->rowClass($status),
+                    'class' => $this->rowClass($receivableStatus === 'overdue' ? 'overdue' : $status),
                     'cells' => [
                         $row->sale_code,
                         $this->formatDate($row->sale_date),
@@ -584,6 +591,8 @@ class SalesOfficerCustomerController extends Controller
                         $this->formatNumber($saleTotal),
                         $this->formatNumber($paid),
                         $this->formatNumber($balance),
+                        $row->due_date ? $this->formatDate($row->due_date) : 'N/A',
+                        $latestPaymentDate ? $this->formatDate($latestPaymentDate) : 'N/A',
                         $status,
                     ],
                     'details' => [
@@ -597,6 +606,8 @@ class SalesOfficerCustomerController extends Controller
                         'Total Paid' => $this->formatNumber($paid),
                         'Balance' => $this->formatNumber($balance),
                         'Due Date' => $row->due_date ? $this->formatDate($row->due_date) : 'N/A',
+                        'Latest Payment Date' => $latestPaymentDate ? $this->formatDate($latestPaymentDate) : 'N/A',
+                        'Receivable Status' => $status,
                         'Payment Terms' => $this->label($row->payment_terms),
                         'Payment Method' => $this->paymentMethodLabel($row->payment_method),
                     ],
@@ -829,13 +840,33 @@ class SalesOfficerCustomerController extends Controller
         return round($totalPaid, 2) >= round($saleTotal, 2) ? 'paid' : 'partially_paid';
     }
 
-    private function receivableStatusForSale(float $saleTotal, float $totalPaid): string
+    private function receivableStatusForSale(float $saleTotal, float $totalPaid, mixed $dueDate = null): string
     {
         if ($totalPaid <= 0) {
-            return 'unpaid';
+            return $this->isOverdue($saleTotal, $totalPaid, $dueDate) ? 'overdue' : 'unpaid';
         }
 
-        return round($totalPaid, 2) >= round($saleTotal, 2) ? 'clear' : 'partial';
+        if (round($totalPaid, 2) >= round($saleTotal, 2)) {
+            return 'clear';
+        }
+
+        return $this->isOverdue($saleTotal, $totalPaid, $dueDate) ? 'overdue' : 'partial';
+    }
+
+    private function isOverdue(float $saleTotal, float $totalPaid, mixed $dueDate): bool
+    {
+        return $dueDate
+            && round($totalPaid, 2) < round($saleTotal, 2)
+            && strtotime((string) $dueDate) < strtotime(now()->toDateString());
+    }
+
+    private function latestPaymentDateForSale(int $saleId): ?string
+    {
+        $date = DB::table('payments')
+            ->where('sale_id', $saleId)
+            ->max('payment_date');
+
+        return $date ? (string) $date : null;
     }
 
     private function nextCode(string $table, string $column, string $prefix): string
@@ -1020,6 +1051,26 @@ class SalesOfficerCustomerController extends Controller
         return $sales.' sales / '.$deliveries.' deliveries';
     }
 
+    private function customerOutstandingTotal(int $customerId): float
+    {
+        $payments = DB::table('payments')
+            ->selectRaw('sale_id, COALESCE(SUM(amount), 0) as total_paid')
+            ->groupBy('sale_id');
+
+        $items = DB::table('sale_items')
+            ->selectRaw('sale_id, COALESCE(SUM(line_total), 0) as sale_total')
+            ->groupBy('sale_id');
+
+        return round((float) DB::table('sales')
+            ->joinSub($items, 'items_total', 'items_total.sale_id', '=', 'sales.id')
+            ->leftJoinSub($payments, 'payments_total', 'payments_total.sale_id', '=', 'sales.id')
+            ->where('sales.customer_id', $customerId)
+            ->whereNull('sales.deleted_at')
+            ->where('sales.status', '!=', 'cancelled')
+            ->selectRaw('COALESCE(SUM(CASE WHEN items_total.sale_total > COALESCE(payments_total.total_paid, 0) THEN items_total.sale_total - COALESCE(payments_total.total_paid, 0) ELSE 0 END), 0) as outstanding')
+            ->value('outstanding'), 2);
+    }
+
     private function nextCustomerCode(): string
     {
         $nextId = ((int) DB::table('customers')->max('id')) + 1;
@@ -1037,7 +1088,7 @@ class SalesOfficerCustomerController extends Controller
         return match (strtolower(str_replace(' ', '_', (string) $status))) {
             'unpaid' => 'row-danger',
             'pending', 'partial', 'partially_paid' => 'row-warning',
-            'paid', 'clear' => 'row-success',
+            'paid', 'clear', 'settled' => 'row-success',
             default => '',
         };
     }
@@ -1045,6 +1096,15 @@ class SalesOfficerCustomerController extends Controller
     private function label(?string $value): string
     {
         return ucwords(str_replace('_', ' ', (string) $value));
+    }
+
+    private function receivableStatusLabel(string $status): string
+    {
+        return match ($status) {
+            'clear' => 'Settled',
+            'partial' => 'Partially Paid',
+            default => $this->label($status),
+        };
     }
 
     private function paymentMethodLabel(?string $value): string

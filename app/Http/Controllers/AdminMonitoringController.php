@@ -321,6 +321,7 @@ class AdminMonitoringController extends Controller
                 'customers.company_name',
                 'items_total.first_fuel_name',
                 'sales.status',
+                'sales.payment_method',
                 'receivables.status',
             ]))
             ->orderByDesc('sales.sale_date')
@@ -346,7 +347,9 @@ class AdminMonitoringController extends Controller
                 $paid = (float) ($row->total_paid ?? 0);
                 $saleTotal = (float) $row->sale_total;
                 $balance = max(0, $saleTotal - $paid);
-                $status = $this->label($this->salePaymentStatus($saleTotal, $paid));
+                $receivableStatus = $this->receivableStatusForSale($saleTotal, $paid, $row->due_date);
+                $status = $this->receivableStatusLabel($receivableStatus);
+                $latestPaymentDate = $this->latestPaymentDateForSale((int) $row->sale_id);
 
                 return [
                     'id' => 'sales-detail-'.$row->sale_id,
@@ -362,6 +365,8 @@ class AdminMonitoringController extends Controller
                         $this->formatNumber($saleTotal),
                         $this->formatNumber($paid),
                         $this->formatNumber($balance),
+                        $row->due_date ? $this->formatDate($row->due_date) : 'N/A',
+                        $latestPaymentDate ? $this->formatDate($latestPaymentDate) : 'N/A',
                         $status,
                     ],
                     'status' => $status,
@@ -378,6 +383,8 @@ class AdminMonitoringController extends Controller
                         'Total Paid' => $this->formatNumber($paid),
                         'Balance' => $this->formatNumber($balance),
                         'Due Date' => $row->due_date ? $this->formatDate($row->due_date) : 'N/A',
+                        'Latest Payment Date' => $latestPaymentDate ? $this->formatDate($latestPaymentDate) : 'N/A',
+                        'Receivable Status' => $status,
                         'Payment Terms' => $this->label($row->payment_terms),
                         'Payment Method' => $this->paymentMethodLabel($row->payment_method),
                     ],
@@ -584,6 +591,15 @@ class AdminMonitoringController extends Controller
         return ucwords(str_replace('_', ' ', (string) $value));
     }
 
+    private function receivableStatusLabel(string $status): string
+    {
+        return match ($status) {
+            'clear' => 'Settled',
+            'partial' => 'Partially Paid',
+            default => $this->label($status),
+        };
+    }
+
     private function paymentMethodLabel(?string $value): string
     {
         return match ($value) {
@@ -632,12 +648,41 @@ class AdminMonitoringController extends Controller
         return round($totalPaid, 2) >= round($saleTotal, 2) ? 'paid' : 'partially_paid';
     }
 
+    private function receivableStatusForSale(float $saleTotal, float $totalPaid, mixed $dueDate = null): string
+    {
+        if ($totalPaid <= 0) {
+            return $this->isOverdue($saleTotal, $totalPaid, $dueDate) ? 'overdue' : 'unpaid';
+        }
+
+        if (round($totalPaid, 2) >= round($saleTotal, 2)) {
+            return 'clear';
+        }
+
+        return $this->isOverdue($saleTotal, $totalPaid, $dueDate) ? 'overdue' : 'partial';
+    }
+
+    private function isOverdue(float $saleTotal, float $totalPaid, mixed $dueDate): bool
+    {
+        return $dueDate
+            && round($totalPaid, 2) < round($saleTotal, 2)
+            && strtotime((string) $dueDate) < strtotime(now()->toDateString());
+    }
+
+    private function latestPaymentDateForSale(int $saleId): ?string
+    {
+        $date = DB::table('payments')
+            ->where('sale_id', $saleId)
+            ->max('payment_date');
+
+        return $date ? (string) $date : null;
+    }
+
     private function rowClass(?string $status): string
     {
         return match (strtolower(str_replace(' ', '_', (string) $status))) {
             'unpaid', 'overdue', 'cancelled', 'critical', 'depleted' => 'row-danger',
             'partial', 'partially_paid', 'partially_hauled', 'pending', 'scheduled', 'in_transit', 'low_stock', 'incomplete' => 'row-warning',
-            'paid', 'clear', 'hauled', 'lifted', 'completed', 'delivered', 'available', 'released' => 'row-success',
+            'paid', 'clear', 'settled', 'hauled', 'lifted', 'completed', 'delivered', 'available', 'released' => 'row-success',
             default => '',
         };
     }

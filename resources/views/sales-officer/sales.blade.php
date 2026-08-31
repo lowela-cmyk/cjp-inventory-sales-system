@@ -54,6 +54,8 @@
                             <th>Total</th>
                             <th>Total Paid</th>
                             <th>Balance</th>
+                            <th>Due Date</th>
+                            <th>Latest Payment</th>
                             <th>Status</th>
                             <th>Actions</th>
                         </tr>
@@ -71,7 +73,7 @@
                                 <td><button class="btn btn-secondary" type="button" data-modal-open="{{ $row['modal_id'] }}">Edit</button></td>
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="12">No records found.</td></tr>
+                            <tr><td class="empty-cell" colspan="14">No records found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -197,7 +199,7 @@
                 @method('PATCH')
             </form>
             <div class="modal-card">
-                <span class="detail-status">{{ $row['cells'][10] }}</span>
+                <span class="detail-status">{{ $row['cells'][12] }}</span>
                 <p class="detail-id">{{ $row['sale_code'] }}</p>
                 <div class="detail-grid">
                     @foreach ($row['details'] as $label => $value)
@@ -289,7 +291,7 @@
                     <div class="detail-row"><div class="detail-label">Sale Total</div><div class="detail-value">PHP {{ $row['sale_total'] }}</div></div>
                     <div class="detail-row"><div class="detail-label">Total Paid</div><div class="detail-value">PHP {{ $row['total_paid'] }}</div></div>
                     <div class="detail-row"><div class="detail-label">Remaining Balance</div><div class="detail-value">PHP {{ $row['balance'] }}</div></div>
-                    <div class="detail-row"><div class="detail-label">Payment Status</div><div class="detail-value">{{ $row['cells'][10] }}</div></div>
+                    <div class="detail-row"><div class="detail-label">Payment Status</div><div class="detail-value">{{ $row['cells'][12] }}</div></div>
                 </div>
                 <form method="POST" action="{{ route('sales-officer.sales.payments.store', $row['id']) }}" style="margin-top:18px">
                     @csrf

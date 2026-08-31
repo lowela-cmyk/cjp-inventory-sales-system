@@ -19,7 +19,7 @@
             </form>
             <div class="table-wrap">
                 <table class="admin-table">
-                    <thead><tr><th>Order-ID</th><th>Transaction Date</th><th>Customer Name</th><th>Company Name</th><th>Fuel</th><th>QTY</th><th>Price / Liter</th><th>Total</th><th>Total Paid</th><th>Balance</th><th>Status</th><th>Actions</th></tr></thead>
+                    <thead><tr><th>Order-ID</th><th>Transaction Date</th><th>Customer Name</th><th>Company Name</th><th>Fuel</th><th>QTY</th><th>Price / Liter</th><th>Total</th><th>Total Paid</th><th>Balance</th><th>Due Date</th><th>Latest Payment</th><th>Status</th><th>Actions</th></tr></thead>
                     <tbody>
                         @forelse ($sales as $row)
                             <tr class="{{ $row['class'] }}">
@@ -33,7 +33,7 @@
                                 <td><button class="btn btn-secondary" type="button" data-modal-open="{{ $row['id'] }}">View</button></td>
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="12">No records found.</td></tr>
+                            <tr><td class="empty-cell" colspan="14">No records found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>

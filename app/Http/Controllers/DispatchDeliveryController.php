@@ -17,6 +17,7 @@ class DispatchDeliveryController extends Controller
     private const ACTIVE_HAUL_STATUSES = ['scheduled', 'in_transit', 'lifted'];
     private const ASSIGNABLE_DELIVERY_STATUSES = ['scheduled', 'incomplete'];
     private const DELIVERY_STATUSES = ['scheduled', 'in_transit', 'delivered', 'cancelled', 'incomplete'];
+    private const ELIGIBLE_DIRECT_HAUL_STATUSES = ['completed'];
     private const ELIGIBLE_SALE_STATUSES = ['confirmed', 'partially_paid', 'paid', 'unpaid'];
     private const STATUS_TRANSITIONS = [
         'scheduled' => ['in_transit', 'cancelled'],
@@ -353,7 +354,7 @@ class DispatchDeliveryController extends Controller
             ->whereNotNull('haul_allocations.sale_id')
             ->whereNotNull('haul_allocations.customer_id')
             ->where('haul_allocations.status', '!=', 'cancelled')
-            ->where('hauls.status', '!=', 'cancelled')
+            ->whereIn('hauls.status', self::ELIGIBLE_DIRECT_HAUL_STATUSES)
             ->whereNull('sales.deleted_at')
             ->whereIn('sales.status', self::ELIGIBLE_SALE_STATUSES)
             ->whereNull('purchases.deleted_at')
@@ -641,7 +642,7 @@ class DispatchDeliveryController extends Controller
             ->where('haul_allocations.destination_type', 'customer')
             ->whereNotNull('haul_allocations.sale_id')
             ->where('haul_allocations.status', '!=', 'cancelled')
-            ->where('hauls.status', '!=', 'cancelled')
+            ->whereIn('hauls.status', self::ELIGIBLE_DIRECT_HAUL_STATUSES)
             ->whereNull('sales.deleted_at')
             ->whereIn('sales.status', self::ELIGIBLE_SALE_STATUSES)
             ->orderByDesc('hauls.scheduled_at')

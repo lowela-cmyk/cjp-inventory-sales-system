@@ -47,6 +47,85 @@ class DispatchDeliverySchedulingTest extends TestCase
             ->assertSee('STO-DSP')
             ->assertSee('Scheduled');
 
+        $this->actingAs($records['driver'])
+            ->get(route('driver.fuel-lifting'))
+            ->assertOk()
+            ->assertSee('DLV-000001')
+            ->assertSee('SLS-DSP')
+            ->assertSee('STO-DSP')
+            ->assertSee('Scheduled');
+
+        Carbon::setTestNow();
+    }
+
+    public function test_depot_delivery_assignment_uses_remaining_completed_lift_quantity(): void
+    {
+        Carbon::setTestNow('2026-08-31 08:00:00');
+        $records = $this->baseRecords();
+        $sale = $this->sale($records, ['quantity_liters' => 20000]);
+        $allocationId = $this->directAllocation($records, $sale, ['quantity_liters' => 20000]);
+
+        $this->actingAs($records['dispatchOfficer'])
+            ->post(route('dispatch.fuel-lifting.deliveries.store'), $this->payload($records, [
+                'source_type' => 'depot',
+                'haul_allocation_id' => $allocationId,
+                'quantity_liters' => 8000,
+            ]))
+            ->assertRedirect(route('dispatch.fuel-lifting'));
+
+        $this->actingAs($records['dispatchOfficer'])
+            ->post(route('dispatch.fuel-lifting.deliveries.store'), $this->payload($records, [
+                'source_type' => 'depot',
+                'haul_allocation_id' => $allocationId,
+                'scheduled_at' => '2026-09-01 10:00:00',
+                'quantity_liters' => 12000,
+            ]))
+            ->assertRedirect(route('dispatch.fuel-lifting'));
+
+        $this->actingAs($records['dispatchOfficer'])
+            ->from(route('dispatch.fuel-lifting'))
+            ->post(route('dispatch.fuel-lifting.deliveries.store'), $this->payload($records, [
+                'source_type' => 'depot',
+                'haul_allocation_id' => $allocationId,
+                'scheduled_at' => '2026-09-01 11:00:00',
+                'quantity_liters' => 1,
+            ]))
+            ->assertRedirect(route('dispatch.fuel-lifting'))
+            ->assertSessionHasErrors('delivery');
+
+        $this->assertSame(2, DB::table('deliveries')->where('haul_allocation_id', $allocationId)->count());
+        $this->assertSame('scheduled', DB::table('deliveries')->where('haul_allocation_id', $allocationId)->value('status'));
+
+        Carbon::setTestNow();
+    }
+
+    public function test_depot_delivery_assignment_rejects_non_completed_lift_transaction(): void
+    {
+        Carbon::setTestNow('2026-08-31 08:00:00');
+        $records = $this->baseRecords();
+        $sale = $this->sale($records, ['quantity_liters' => 10000]);
+        $allocationId = $this->directAllocation($records, $sale, [
+            'quantity_liters' => 10000,
+            'haul_status' => 'in_transit',
+        ]);
+
+        $this->actingAs($records['dispatchOfficer'])
+            ->from(route('dispatch.fuel-lifting'))
+            ->post(route('dispatch.fuel-lifting.deliveries.store'), $this->payload($records, [
+                'source_type' => 'depot',
+                'haul_allocation_id' => $allocationId,
+                'quantity_liters' => 10000,
+            ]))
+            ->assertRedirect(route('dispatch.fuel-lifting'))
+            ->assertSessionHasErrors('delivery');
+
+        $this->actingAs($records['dispatchOfficer'])
+            ->get(route('dispatch.fuel-lifting'))
+            ->assertOk()
+            ->assertDontSee('Allocation #'.$allocationId);
+
+        $this->assertSame(0, DB::table('deliveries')->count());
+
         Carbon::setTestNow();
     }
 
@@ -400,7 +479,7 @@ class DispatchDeliverySchedulingTest extends TestCase
             'scheduled_at' => '2026-08-31 06:00:00',
             'hauled_at' => '2026-08-31 07:00:00',
             'quantity_liters' => 20000,
-            'status' => 'completed',
+            'status' => $overrides['haul_status'] ?? 'completed',
             'created_at' => now(),
             'updated_at' => now(),
         ]);

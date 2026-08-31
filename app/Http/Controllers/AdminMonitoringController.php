@@ -382,6 +382,7 @@ class AdminMonitoringController extends Controller
                         'Payment Method' => $this->paymentMethodLabel($row->payment_method),
                     ],
                     'payments' => $this->paymentsForSale((int) $row->sale_id),
+                    'payment_schedules' => $this->paymentSchedulesForSale((int) $row->sale_id),
                     'sale_total' => $this->formatNumber($saleTotal),
                     'total_paid' => $this->formatNumber($paid),
                     'balance' => $this->formatNumber($balance),
@@ -487,26 +488,71 @@ class AdminMonitoringController extends Controller
     {
         return DB::table('payments')
             ->leftJoin('users', 'users.id', '=', 'payments.received_by')
-            ->where('sale_id', $saleId)
+            ->leftJoin('payment_schedules', 'payment_schedules.id', '=', 'payments.payment_schedule_id')
+            ->where('payments.sale_id', $saleId)
             ->orderBy('payment_date')
             ->orderBy('payments.id')
             ->get([
+                'payments.id',
                 'payments.payment_code',
                 'payments.payment_date',
                 'payments.amount',
                 'payments.method',
                 'payments.reference_number',
+                'payment_schedules.due_date as schedule_due_date',
                 'users.name as received_by_name',
             ])
-            ->map(fn (object $row): array => [
+            ->values()
+            ->map(fn (object $row, int $index): array => [
+                'sequence' => 'Installment #'.($index + 1),
                 'code' => $row->payment_code,
                 'date' => $this->formatDate($row->payment_date),
                 'amount' => $this->formatNumber($row->amount),
                 'method' => $this->paymentMethodLabel($row->method),
                 'reference' => $row->reference_number ?: 'N/A',
+                'schedule' => $row->schedule_due_date ? 'Due '.$this->formatDate($row->schedule_due_date) : 'Unscheduled',
                 'recorded_by' => $row->received_by_name ?: 'N/A',
                 'status' => 'Recorded',
             ])
+            ->all();
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function paymentSchedulesForSale(int $saleId): array
+    {
+        $schedulePayments = DB::table('payments')
+            ->selectRaw('payment_schedule_id, COALESCE(SUM(amount), 0) as paid')
+            ->whereNotNull('payment_schedule_id')
+            ->groupBy('payment_schedule_id');
+
+        return DB::table('payment_schedules')
+            ->leftJoinSub($schedulePayments, 'schedule_payments', 'schedule_payments.payment_schedule_id', '=', 'payment_schedules.id')
+            ->where('payment_schedules.sale_id', $saleId)
+            ->orderBy('payment_schedules.due_date')
+            ->orderBy('payment_schedules.id')
+            ->get([
+                'payment_schedules.id',
+                'payment_schedules.due_date',
+                'payment_schedules.amount_due',
+                'payment_schedules.status',
+                DB::raw('COALESCE(schedule_payments.paid, 0) as paid'),
+            ])
+            ->values()
+            ->map(function (object $row, int $index): array {
+                $remaining = max(0, round((float) $row->amount_due - (float) $row->paid, 2));
+
+                return [
+                    'id' => (int) $row->id,
+                    'sequence' => 'Installment #'.($index + 1),
+                    'due_date' => $this->formatDate($row->due_date),
+                    'amount_due' => $this->formatNumber($row->amount_due),
+                    'paid' => $this->formatNumber($row->paid),
+                    'remaining' => $this->formatNumber($remaining),
+                    'status' => $this->label($row->status),
+                ];
+            })
             ->all();
     }
 

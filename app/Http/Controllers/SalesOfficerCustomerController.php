@@ -98,12 +98,33 @@ class SalesOfficerCustomerController extends Controller
                 return ['error' => 'Payment amount cannot exceed the remaining balance.'];
             }
 
+            $paymentSchedule = null;
+
+            if (! empty($data['payment_schedule_id'])) {
+                $paymentSchedule = $this->paymentScheduleForUpdate((int) $data['payment_schedule_id'], (int) $saleRow->id);
+
+                if (! $paymentSchedule) {
+                    return ['error' => 'The selected installment schedule does not belong to this sale.'];
+                }
+
+                $schedulePaid = $this->paidTotalForSchedule((int) $paymentSchedule->id);
+                $scheduleRemaining = round((float) $paymentSchedule->amount_due - $schedulePaid, 2);
+
+                if ($scheduleRemaining <= 0) {
+                    return ['error' => 'The selected installment is already fully paid.'];
+                }
+
+                if ($amount > $scheduleRemaining) {
+                    return ['error' => 'Payment amount cannot exceed the selected installment balance.'];
+                }
+            }
+
             $paymentCode = $this->nextCode('payments', 'payment_code', 'PAY');
 
             DB::table('payments')->insert([
                 'payment_code' => $paymentCode,
                 'sale_id' => $saleRow->id,
-                'payment_schedule_id' => null,
+                'payment_schedule_id' => $paymentSchedule?->id,
                 'payment_date' => $data['payment_date'],
                 'amount' => $amount,
                 'method' => $data['method'],
@@ -134,6 +155,8 @@ class SalesOfficerCustomerController extends Controller
                         'created_at' => now(),
                     ]
                 );
+
+            $this->updatePaymentScheduleStatuses((int) $saleRow->id);
 
             return ['payment_code' => $paymentCode];
         });
@@ -578,6 +601,7 @@ class SalesOfficerCustomerController extends Controller
                         'Payment Method' => $this->paymentMethodLabel($row->payment_method),
                     ],
                     'payments' => $this->paymentsForSale((int) $row->sale_id),
+                    'payment_schedules' => $this->paymentSchedulesForSale((int) $row->sale_id),
                     'sale_total' => $this->formatNumber($saleTotal),
                     'total_paid' => $this->formatNumber($paid),
                     'balance' => $this->formatNumber($balance),
@@ -624,6 +648,7 @@ class SalesOfficerCustomerController extends Controller
             'payment_date' => ['required', 'date'],
             'amount' => ['required', 'numeric', 'gt:0', 'max:999999999999.99'],
             'method' => ['required', Rule::in(self::PAYMENT_METHODS)],
+            'payment_schedule_id' => ['nullable', 'integer', Rule::exists('payment_schedules', 'id')],
             'reference_number' => ['nullable', 'string', 'max:100', 'required_if:method,cheque,bank_transfer'],
             'remarks' => ['nullable', 'string', 'max:1000'],
             'sale_id' => ['prohibited'],
@@ -740,6 +765,61 @@ class SalesOfficerCustomerController extends Controller
             ->sum('amount'), 2);
     }
 
+    private function paymentScheduleForUpdate(int $paymentScheduleId, int $saleId): ?object
+    {
+        return DB::table('payment_schedules')
+            ->where('id', $paymentScheduleId)
+            ->where('sale_id', $saleId)
+            ->lockForUpdate()
+            ->first([
+                'id',
+                'sale_id',
+                'due_date',
+                'amount_due',
+                'status',
+            ]);
+    }
+
+    private function paidTotalForSchedule(int $paymentScheduleId): float
+    {
+        return round((float) DB::table('payments')
+            ->where('payment_schedule_id', $paymentScheduleId)
+            ->sum('amount'), 2);
+    }
+
+    private function updatePaymentScheduleStatuses(int $saleId): void
+    {
+        $schedules = DB::table('payment_schedules')
+            ->where('sale_id', $saleId)
+            ->lockForUpdate()
+            ->get(['id', 'due_date', 'amount_due']);
+
+        foreach ($schedules as $schedule) {
+            $paid = $this->paidTotalForSchedule((int) $schedule->id);
+            $status = $this->paymentScheduleStatus((float) $schedule->amount_due, $paid, (string) $schedule->due_date);
+
+            DB::table('payment_schedules')
+                ->where('id', $schedule->id)
+                ->update([
+                    'status' => $status,
+                    'updated_at' => now(),
+                ]);
+        }
+    }
+
+    private function paymentScheduleStatus(float $amountDue, float $paid, string $dueDate): string
+    {
+        if (round($paid, 2) >= round($amountDue, 2)) {
+            return 'paid';
+        }
+
+        if ($paid > 0) {
+            return 'partial';
+        }
+
+        return strtotime($dueDate) < strtotime(now()->toDateString()) ? 'overdue' : 'pending';
+    }
+
     private function salePaymentStatus(float $saleTotal, float $totalPaid): string
     {
         if ($totalPaid <= 0) {
@@ -844,28 +924,75 @@ class SalesOfficerCustomerController extends Controller
     {
         return DB::table('payments')
             ->leftJoin('users', 'users.id', '=', 'payments.received_by')
-            ->where('sale_id', $saleId)
+            ->leftJoin('payment_schedules', 'payment_schedules.id', '=', 'payments.payment_schedule_id')
+            ->where('payments.sale_id', $saleId)
             ->orderBy('payment_date')
             ->orderBy('payments.id')
             ->get([
+                'payments.id',
                 'payments.payment_code',
                 'payments.payment_date',
                 'payments.amount',
                 'payments.method',
                 'payments.reference_number',
                 'payments.remarks',
+                'payment_schedules.due_date as schedule_due_date',
                 'users.name as received_by_name',
             ])
-            ->map(fn (object $row): array => [
+            ->values()
+            ->map(fn (object $row, int $index): array => [
+                'sequence' => 'Installment #'.($index + 1),
                 'code' => $row->payment_code,
                 'date' => $this->formatDate($row->payment_date),
                 'amount' => $this->formatNumber($row->amount),
                 'method' => $this->paymentMethodLabel($row->method),
                 'reference' => $row->reference_number ?: 'N/A',
+                'schedule' => $row->schedule_due_date ? 'Due '.$this->formatDate($row->schedule_due_date) : 'Unscheduled',
                 'recorded_by' => $row->received_by_name ?: 'N/A',
                 'remarks' => $row->remarks ?: 'N/A',
                 'status' => 'Recorded',
             ])
+            ->all();
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function paymentSchedulesForSale(int $saleId): array
+    {
+        $schedulePayments = DB::table('payments')
+            ->selectRaw('payment_schedule_id, COALESCE(SUM(amount), 0) as paid')
+            ->whereNotNull('payment_schedule_id')
+            ->groupBy('payment_schedule_id');
+
+        return DB::table('payment_schedules')
+            ->leftJoinSub($schedulePayments, 'schedule_payments', 'schedule_payments.payment_schedule_id', '=', 'payment_schedules.id')
+            ->where('payment_schedules.sale_id', $saleId)
+            ->orderBy('payment_schedules.due_date')
+            ->orderBy('payment_schedules.id')
+            ->get([
+                'payment_schedules.id',
+                'payment_schedules.due_date',
+                'payment_schedules.amount_due',
+                'payment_schedules.status',
+                DB::raw('COALESCE(schedule_payments.paid, 0) as paid'),
+            ])
+            ->values()
+            ->map(function (object $row, int $index): array {
+                $remaining = max(0, round((float) $row->amount_due - (float) $row->paid, 2));
+
+                return [
+                    'id' => (int) $row->id,
+                    'sequence' => 'Installment #'.($index + 1),
+                    'due_date' => $this->formatDate($row->due_date),
+                    'amount_due' => $this->formatNumber($row->amount_due),
+                    'paid' => $this->formatNumber($row->paid),
+                    'remaining' => $this->formatNumber($remaining),
+                    'status' => $this->label($row->status),
+                    'is_payable' => $remaining > 0,
+                    'label' => 'Installment #'.($index + 1).' / Due '.$this->formatDate($row->due_date).' / Remaining '.$this->formatNumber($remaining),
+                ];
+            })
             ->all();
     }
 

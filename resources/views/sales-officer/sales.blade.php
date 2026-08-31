@@ -304,20 +304,43 @@
                                 @endforeach
                             </select>
                         </div>
+                        @if (! empty($row['payment_schedules']))
+                            <div class="form-row">
+                                <label for="payment_schedule_{{ $row['id'] }}">Installment</label>
+                                <select id="payment_schedule_{{ $row['id'] }}" name="payment_schedule_id">
+                                    <option value="">Unscheduled Payment</option>
+                                    @foreach ($row['payment_schedules'] as $schedule)
+                                        <option value="{{ $schedule['id'] }}" @selected((string) old('payment_schedule_id') === (string) $schedule['id']) @disabled(! $schedule['is_payable'])>{{ $schedule['label'] }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                        @endif
                         <div class="form-row"><label for="payment_reference_{{ $row['id'] }}">Reference Number</label><input id="payment_reference_{{ $row['id'] }}" name="reference_number" type="text" maxlength="100" value="{{ old('reference_number') }}"></div>
                         <div class="form-row"><label for="payment_date_{{ $row['id'] }}">Payment Date</label><input id="payment_date_{{ $row['id'] }}" name="payment_date" type="date" value="{{ old('payment_date', now()->toDateString()) }}" required></div>
                         <div class="form-row"><label for="payment_remarks_{{ $row['id'] }}">Remarks</label><input id="payment_remarks_{{ $row['id'] }}" name="remarks" type="text" maxlength="1000" value="{{ old('remarks') }}"></div>
                     </div>
                     <div class="modal-actions"><button class="btn btn-pill btn-secondary" type="submit" @disabled((float) str_replace(',', '', $row['balance']) <= 0)>Record Payment</button></div>
                 </form>
+                @if (! empty($row['payment_schedules']))
+                    <div class="table-wrap" style="margin-top:18px;min-height:auto">
+                        <table class="admin-table" style="min-width:640px">
+                            <thead><tr><th>Installment</th><th>Due Date</th><th>Amount Due</th><th>Paid</th><th>Remaining</th><th>Status</th></tr></thead>
+                            <tbody>
+                                @foreach ($row['payment_schedules'] as $schedule)
+                                    <tr><td>{{ $schedule['sequence'] }}</td><td>{{ $schedule['due_date'] }}</td><td>{{ $schedule['amount_due'] }}</td><td>{{ $schedule['paid'] }}</td><td>{{ $schedule['remaining'] }}</td><td><x-admin.status-badge :status="$schedule['status']" /></td></tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @endif
                 <div class="table-wrap" style="margin-top:18px;min-height:auto">
                     <table class="admin-table" style="min-width:560px">
-                        <thead><tr><th>Payment ID</th><th>Date Recorded</th><th>Amount</th><th>Method</th><th>Reference</th><th>Recorded By</th><th>Status</th></tr></thead>
+                        <thead><tr><th>Installment</th><th>Payment ID</th><th>Date Recorded</th><th>Amount</th><th>Method</th><th>Reference</th><th>Recorded By</th><th>Status</th></tr></thead>
                         <tbody>
                             @forelse ($row['payments'] as $payment)
-                                <tr><td>{{ $payment['code'] }}</td><td>{{ $payment['date'] }}</td><td>{{ $payment['amount'] }}</td><td>{{ $payment['method'] }}</td><td>{{ $payment['reference'] }}</td><td>{{ $payment['recorded_by'] }}</td><td>{{ $payment['status'] }}</td></tr>
+                                <tr><td>{{ $payment['sequence'] }}</td><td>{{ $payment['code'] }}</td><td>{{ $payment['date'] }}</td><td>{{ $payment['amount'] }}</td><td>{{ $payment['method'] }}</td><td>{{ $payment['reference'] }}</td><td>{{ $payment['recorded_by'] }}</td><td>{{ $payment['status'] }}</td></tr>
                             @empty
-                                <tr><td class="empty-cell" colspan="7">No payment records found.</td></tr>
+                                <tr><td class="empty-cell" colspan="8">No payment records found.</td></tr>
                             @endforelse
                         </tbody>
                     </table>

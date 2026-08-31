@@ -164,6 +164,153 @@ class SalesOfficerPaymentRecordingTest extends TestCase
         $this->assertSame(0, DB::table('deliveries')->count());
     }
 
+    public function test_sale_can_be_paid_through_multiple_installments_with_different_methods(): void
+    {
+        $records = $this->baseRecords();
+        $saleId = $this->sale($records, [
+            'sale_code' => 'SLS-INSTALLMENTS',
+            'line_total' => 120000,
+            'payment_terms' => 'installment',
+        ]);
+
+        $this->actingAs($records['salesOfficer'])
+            ->post(route('sales-officer.sales.payments.store', $saleId), $this->paymentPayload([
+                'amount' => 20000,
+                'method' => 'cash_on_delivery',
+            ]))
+            ->assertRedirect(route('sales-officer.sales'));
+
+        $this->actingAs($records['salesOfficer'])
+            ->post(route('sales-officer.sales.payments.store', $saleId), $this->paymentPayload([
+                'amount' => 30000,
+                'method' => 'cheque',
+                'reference_number' => 'CHK-INST-002',
+            ]))
+            ->assertRedirect(route('sales-officer.sales'));
+
+        $this->actingAs($records['salesOfficer'])
+            ->post(route('sales-officer.sales.payments.store', $saleId), $this->paymentPayload([
+                'amount' => 70000,
+                'method' => 'bank_transfer',
+                'reference_number' => 'BANK-INST-003',
+            ]))
+            ->assertRedirect(route('sales-officer.sales'));
+
+        $this->assertSame(1, DB::table('sales')->where('id', $saleId)->count());
+        $this->assertSame(3, DB::table('payments')->where('sale_id', $saleId)->count());
+        $this->assertSame(120000.0, $this->paidTotal($saleId));
+        $this->assertDatabaseHas('sales', ['id' => $saleId, 'status' => 'paid']);
+        $this->assertDatabaseHas('receivables', ['sale_id' => $saleId, 'status' => 'clear']);
+
+        $this->actingAs($records['salesOfficer'])
+            ->get(route('sales-officer.sales'))
+            ->assertOk()
+            ->assertSee('Installment #1')
+            ->assertSee('Installment #2')
+            ->assertSee('Installment #3')
+            ->assertSee('0.00');
+    }
+
+    public function test_selected_payment_schedule_tracks_partial_and_final_installments(): void
+    {
+        $records = $this->baseRecords();
+        $saleId = $this->sale($records, [
+            'line_total' => 60000,
+            'payment_terms' => 'installment',
+        ]);
+        $firstScheduleId = $this->paymentSchedule($saleId, [
+            'due_date' => '2026-09-15',
+            'amount_due' => 30000,
+        ]);
+        $secondScheduleId = $this->paymentSchedule($saleId, [
+            'due_date' => '2026-10-15',
+            'amount_due' => 30000,
+        ]);
+
+        $this->actingAs($records['salesOfficer'])
+            ->post(route('sales-officer.sales.payments.store', $saleId), $this->paymentPayload([
+                'payment_schedule_id' => $firstScheduleId,
+                'amount' => 10000,
+            ]))
+            ->assertRedirect(route('sales-officer.sales'));
+
+        $this->assertDatabaseHas('payment_schedules', ['id' => $firstScheduleId, 'status' => 'partial']);
+        $this->assertDatabaseHas('payment_schedules', ['id' => $secondScheduleId, 'status' => 'pending']);
+        $this->assertDatabaseHas('sales', ['id' => $saleId, 'status' => 'partially_paid']);
+
+        $this->actingAs($records['salesOfficer'])
+            ->post(route('sales-officer.sales.payments.store', $saleId), $this->paymentPayload([
+                'payment_schedule_id' => $firstScheduleId,
+                'amount' => 20000,
+                'method' => 'advance_payment',
+            ]))
+            ->assertRedirect(route('sales-officer.sales'));
+
+        $this->assertDatabaseHas('payment_schedules', ['id' => $firstScheduleId, 'status' => 'paid']);
+        $this->assertSame(30000.0, $this->paidTotal($saleId));
+    }
+
+    public function test_installment_payment_cannot_exceed_selected_schedule_or_run_after_fully_paid(): void
+    {
+        $records = $this->baseRecords();
+        $saleId = $this->sale($records, ['line_total' => 40000, 'payment_terms' => 'installment']);
+        $scheduleId = $this->paymentSchedule($saleId, ['amount_due' => 15000]);
+
+        $this->actingAs($records['salesOfficer'])
+            ->from(route('sales-officer.sales'))
+            ->post(route('sales-officer.sales.payments.store', $saleId), $this->paymentPayload([
+                'payment_schedule_id' => $scheduleId,
+                'amount' => 16000,
+            ]))
+            ->assertRedirect(route('sales-officer.sales'))
+            ->assertSessionHasErrors('payment');
+
+        $this->assertSame(0, DB::table('payments')->count());
+        $this->assertDatabaseHas('payment_schedules', ['id' => $scheduleId, 'status' => 'pending']);
+
+        $this->actingAs($records['salesOfficer'])
+            ->post(route('sales-officer.sales.payments.store', $saleId), $this->paymentPayload([
+                'amount' => 40000,
+            ]))
+            ->assertRedirect(route('sales-officer.sales'));
+
+        $this->actingAs($records['salesOfficer'])
+            ->from(route('sales-officer.sales'))
+            ->post(route('sales-officer.sales.payments.store', $saleId), $this->paymentPayload([
+                'amount' => 1,
+            ]))
+            ->assertRedirect(route('sales-officer.sales'))
+            ->assertSessionHasErrors('payment');
+
+        $this->assertSame(1, DB::table('payments')->count());
+        $this->assertSame(40000.0, $this->paidTotal($saleId));
+    }
+
+    public function test_installment_schedule_must_belong_to_selected_sale(): void
+    {
+        $records = $this->baseRecords();
+        $saleId = $this->sale($records, ['line_total' => 50000, 'payment_terms' => 'installment']);
+        $otherSaleId = $this->sale($records, [
+            'sale_code' => 'SLS-OTHER-SCHEDULE',
+            'line_total' => 50000,
+            'payment_terms' => 'installment',
+        ]);
+        $otherScheduleId = $this->paymentSchedule($otherSaleId, ['amount_due' => 25000]);
+
+        $this->actingAs($records['salesOfficer'])
+            ->from(route('sales-officer.sales'))
+            ->post(route('sales-officer.sales.payments.store', $saleId), $this->paymentPayload([
+                'payment_schedule_id' => $otherScheduleId,
+                'amount' => 10000,
+            ]))
+            ->assertRedirect(route('sales-officer.sales'))
+            ->assertSessionHasErrors('payment');
+
+        $this->assertSame(0, DB::table('payments')->count());
+        $this->assertDatabaseHas('sales', ['id' => $saleId, 'status' => 'confirmed']);
+        $this->assertDatabaseHas('receivables', ['sale_id' => $saleId, 'status' => 'pending']);
+    }
+
     public function test_only_sales_officer_role_can_record_payments_in_existing_sales_workflow(): void
     {
         $records = $this->baseRecords();
@@ -243,6 +390,21 @@ class SalesOfficerPaymentRecordingTest extends TestCase
         ]);
 
         return $saleId;
+    }
+
+    /**
+     * @param array<string, mixed> $overrides
+     */
+    private function paymentSchedule(int $saleId, array $overrides = []): int
+    {
+        return DB::table('payment_schedules')->insertGetId(array_merge([
+            'sale_id' => $saleId,
+            'due_date' => '2026-09-30',
+            'amount_due' => 10000,
+            'status' => 'pending',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ], $overrides));
     }
 
     private function paidTotal(int $saleId): float

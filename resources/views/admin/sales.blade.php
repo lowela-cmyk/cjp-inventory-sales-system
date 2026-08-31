@@ -94,14 +94,26 @@
                     <div class="detail-row"><div class="detail-label">Remaining Balance</div><div class="detail-value">PHP {{ $row['balance'] }}</div></div>
                     <div class="detail-row"><div class="detail-label">Payment Status</div><div class="detail-value">{{ $row['status'] }}</div></div>
                 </div>
+                @if (! empty($row['payment_schedules']))
+                    <div class="table-wrap" style="margin-top:18px;min-height:auto">
+                        <table class="admin-table" style="min-width:640px">
+                            <thead><tr><th>Installment</th><th>Due Date</th><th>Amount Due</th><th>Paid</th><th>Remaining</th><th>Status</th></tr></thead>
+                            <tbody>
+                                @foreach ($row['payment_schedules'] as $schedule)
+                                    <tr><td>{{ $schedule['sequence'] }}</td><td>{{ $schedule['due_date'] }}</td><td>{{ $schedule['amount_due'] }}</td><td>{{ $schedule['paid'] }}</td><td>{{ $schedule['remaining'] }}</td><td><x-admin.status-badge :status="$schedule['status']" /></td></tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @endif
                 <div class="table-wrap" style="margin-top: 18px">
                     <table class="admin-table" style="min-width: 560px">
-                        <thead><tr><th>Payment ID</th><th>Date Recorded</th><th>Amount</th><th>Method</th><th>Reference</th><th>Recorded By</th><th>Status</th></tr></thead>
+                        <thead><tr><th>Installment</th><th>Payment ID</th><th>Date Recorded</th><th>Amount</th><th>Method</th><th>Reference</th><th>Recorded By</th><th>Status</th></tr></thead>
                         <tbody>
                             @forelse ($row['payments'] as $payment)
-                                <tr><td>{{ $payment['code'] }}</td><td>{{ $payment['date'] }}</td><td>{{ $payment['amount'] }}</td><td>{{ $payment['method'] }}</td><td>{{ $payment['reference'] }}</td><td>{{ $payment['recorded_by'] }}</td><td>{{ $payment['status'] }}</td></tr>
+                                <tr><td>{{ $payment['sequence'] }}</td><td>{{ $payment['code'] }}</td><td>{{ $payment['date'] }}</td><td>{{ $payment['amount'] }}</td><td>{{ $payment['method'] }}</td><td>{{ $payment['reference'] }}</td><td>{{ $payment['recorded_by'] }}</td><td>{{ $payment['status'] }}</td></tr>
                             @empty
-                                <tr><td class="empty-cell" colspan="7">No payment records found.</td></tr>
+                                <tr><td class="empty-cell" colspan="8">No payment records found.</td></tr>
                             @endforelse
                         </tbody>
                     </table>

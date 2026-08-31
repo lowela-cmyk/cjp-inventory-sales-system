@@ -6,11 +6,20 @@
     $currentAssignment = $currentAssignment ?? null;
     $filters = $filters ?? [];
     $filterOptions = $filterOptions ?? ['statuses' => [], 'fuelTypes' => collect()];
+    $liftingStatusIdempotencyKey = $liftingStatusIdempotencyKey ?? (string) \Illuminate\Support\Str::uuid();
 @endphp
 
 @component('layouts.driver', ['title' => 'Fuel Lifting Operations', 'active' => 'fuel-lifting', 'driverName' => $driverName])
     <div data-tabs>
         <h2 class="section-title" data-driver-heading>{{ $activeTab === 'hauled' ? 'Hauled' : 'Schedule' }}</h2>
+
+        @if (session('status'))
+            <div class="alert-bar alert-success">{{ session('status') }}</div>
+        @endif
+
+        @if ($errors->any())
+            <div class="alert-bar alert-warning">{{ $errors->first() }}</div>
+        @endif
 
         <div class="tabs">
             <button class="tab-button {{ $activeTab === 'schedule' ? 'is-active' : '' }}" type="button" data-tab-target="schedule" data-heading="Schedule">Schedule</button>
@@ -209,6 +218,19 @@
                 </div>
             </div>
             <div class="modal-actions">
+                @if (($row['kind'] ?? '') === 'Lift' && ! empty($row['allowed_driver_statuses']))
+                    <form method="POST" action="{{ route('driver.fuel-lifting.hauls.status', $row['record_id']) }}">
+                        @csrf
+                        @method('PATCH')
+                        <input type="hidden" name="idempotency_key" value="{{ $liftingStatusIdempotencyKey }}">
+                        <select name="lifting_status" aria-label="Update lifting status">
+                            @foreach ($row['allowed_driver_statuses'] as $status)
+                                <option value="{{ $status }}">{{ ucwords(str_replace('_', ' ', $status)) }}</option>
+                            @endforeach
+                        </select>
+                        <button class="btn btn-pill btn-primary" type="submit">Update</button>
+                    </form>
+                @endif
                 <button class="btn btn-pill btn-secondary" type="button" data-modal-close>Close</button>
             </div>
         </x-admin.modal>

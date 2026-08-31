@@ -6,6 +6,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
@@ -47,6 +48,7 @@ class DriverDeliveryController extends Controller
             'currentAssignment' => $rows->where('group', 'schedule')->sortBy('sort_at')->first(),
             'scheduleRows' => $rows->where('group', 'schedule')->values(),
             'hauledRows' => $rows->where('group', 'hauled')->values(),
+            'liftingStatusIdempotencyKey' => (string) Str::uuid(),
         ]);
     }
 
@@ -269,6 +271,7 @@ class DriverDeliveryController extends Controller
                     'record_id' => (int) $row->id,
                     'kind' => 'Lift',
                     'raw_status' => $row->status,
+                    'allowed_driver_statuses' => DriverLiftingStatusController::STATUS_TRANSITIONS[$row->status] ?? [],
                     'group' => in_array($row->status, ['completed', 'cancelled'], true) ? 'hauled' : 'schedule',
                     'sort_at' => (string) ($row->hauled_at ?: $row->scheduled_at ?: $row->id),
                     'cells' => [

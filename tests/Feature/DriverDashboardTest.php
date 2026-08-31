@@ -136,6 +136,149 @@ class DriverDashboardTest extends TestCase
         }
     }
 
+    public function test_driver_can_progress_owned_lifting_status_without_inventory_or_financial_side_effects(): void
+    {
+        $records = $this->baseRecords();
+        $garageHaul = $this->directAllocation($records, ['haul_code' => 'LFT-DRIVER-GARAGE', 'destination_type' => 'garage']);
+        $clientHaul = $this->directAllocation($records, ['haul_code' => 'LFT-DRIVER-CLIENT', 'destination_type' => 'customer']);
+        $before = $this->sideEffectCounts($records);
+        $beforeHauledQuantity = DB::table('purchase_items')->where('id', $garageHaul['purchaseItemId'])->value('quantity_hauled_liters');
+
+        $this->actingAs($records['driver'])
+            ->get(route('driver.fuel-lifting'))
+            ->assertOk()
+            ->assertSee('LFT-DRIVER-GARAGE')
+            ->assertSee('LFT-DRIVER-CLIENT')
+            ->assertSee('Dashboard Garage')
+            ->assertSee('Dashboard Customer Co.')
+            ->assertSee('name="lifting_status"', false)
+            ->assertSee(route('driver.fuel-lifting.hauls.status', $garageHaul['haulId']), false);
+
+        $this->actingAs($records['driver'])
+            ->patch(route('driver.fuel-lifting.hauls.status', $garageHaul['haulId']), $this->liftingStatusPayload('in_transit'))
+            ->assertRedirect(route('driver.fuel-lifting'));
+
+        $this->assertDatabaseHas('hauls', [
+            'id' => $garageHaul['haulId'],
+            'status' => 'in_transit',
+            'hauled_at' => null,
+        ]);
+
+        $this->actingAs($records['driver'])
+            ->patch(route('driver.fuel-lifting.hauls.status', $garageHaul['haulId']), $this->liftingStatusPayload('lifted'))
+            ->assertRedirect(route('driver.fuel-lifting'));
+
+        $this->actingAs($records['driver'])
+            ->patch(route('driver.fuel-lifting.hauls.status', $clientHaul['haulId']), $this->liftingStatusPayload('in_transit'))
+            ->assertRedirect(route('driver.fuel-lifting'));
+
+        $this->assertDatabaseHas('hauls', ['id' => $garageHaul['haulId'], 'status' => 'lifted']);
+        $this->assertDatabaseHas('hauls', ['id' => $clientHaul['haulId'], 'status' => 'in_transit']);
+        $this->assertSame($beforeHauledQuantity, DB::table('purchase_items')->where('id', $garageHaul['purchaseItemId'])->value('quantity_hauled_liters'));
+        $this->assertSame($before, $this->sideEffectCounts($records));
+    }
+
+    public function test_driver_lifting_status_blocks_skipped_transitions_duplicates_and_manipulated_ids(): void
+    {
+        $records = $this->baseRecords();
+        $other = $this->baseRecords([
+            'driver_name' => 'Other Status Driver',
+            'driver_code' => 'DRV-STATUS-OTHER',
+            'truck_code' => 'TRK-STATUS-OTHER',
+            'customer_company' => 'Other Status Co.',
+        ]);
+        $haul = $this->directAllocation($records, ['haul_code' => 'LFT-DRIVER-STATUS']);
+        $otherHaul = $this->directAllocation($other, ['haul_code' => 'LFT-DRIVER-OTHER']);
+        $completedHaul = $this->directAllocation($records, ['haul_code' => 'LFT-DRIVER-DONE', 'haul_status' => 'completed']);
+
+        $this->actingAs($records['driver'])
+            ->from(route('driver.fuel-lifting'))
+            ->patch(route('driver.fuel-lifting.hauls.status', $haul['haulId']), $this->liftingStatusPayload('lifted'))
+            ->assertRedirect(route('driver.fuel-lifting'))
+            ->assertSessionHasErrors('lifting');
+
+        $payload = $this->liftingStatusPayload('in_transit');
+        $this->actingAs($records['driver'])
+            ->patch(route('driver.fuel-lifting.hauls.status', $haul['haulId']), $payload)
+            ->assertRedirect(route('driver.fuel-lifting'));
+        $this->actingAs($records['driver'])
+            ->patch(route('driver.fuel-lifting.hauls.status', $haul['haulId']), $payload)
+            ->assertRedirect(route('driver.fuel-lifting'));
+
+        $this->assertDatabaseHas('hauls', ['id' => $haul['haulId'], 'status' => 'in_transit']);
+
+        $this->actingAs($records['driver'])
+            ->from(route('driver.fuel-lifting'))
+            ->patch(route('driver.fuel-lifting.hauls.status', $haul['haulId']), $this->liftingStatusPayload('in_transit'))
+            ->assertRedirect(route('driver.fuel-lifting'))
+            ->assertSessionHasErrors('lifting');
+
+        foreach ([$otherHaul['haulId'], $completedHaul['haulId'], 999999] as $haulId) {
+            $this->actingAs($records['driver'])
+                ->from(route('driver.fuel-lifting'))
+                ->patch(route('driver.fuel-lifting.hauls.status', $haulId), $this->liftingStatusPayload('in_transit'))
+                ->assertRedirect(route('driver.fuel-lifting'))
+                ->assertSessionHasErrors('lifting');
+        }
+
+        $this->assertDatabaseHas('hauls', ['id' => $otherHaul['haulId'], 'status' => 'scheduled']);
+        $this->assertDatabaseHas('hauls', ['id' => $completedHaul['haulId'], 'status' => 'completed']);
+    }
+
+    public function test_driver_lifting_status_requires_valid_driver_truck_quantity_and_allocations(): void
+    {
+        $records = $this->baseRecords();
+        $badTruckHaul = $this->directAllocation($records, ['haul_code' => 'LFT-DRV-BAD-TRUCK']);
+        DB::table('trucks')->where('id', $records['haulingTruckId'])->update(['status' => 'maintenance']);
+
+        $this->actingAs($records['driver'])
+            ->from(route('driver.fuel-lifting'))
+            ->patch(route('driver.fuel-lifting.hauls.status', $badTruckHaul['haulId']), $this->liftingStatusPayload('in_transit'))
+            ->assertRedirect(route('driver.fuel-lifting'))
+            ->assertSessionHasErrors('lifting');
+
+        $records = $this->baseRecords([
+            'driver_code' => 'DRV-BAD-QTY',
+            'truck_code' => 'TRK-BAD-QTY',
+        ]);
+        $badQuantityHaul = $this->directAllocation($records, ['haul_code' => 'LFT-DRV-BAD-QTY', 'quantity_liters' => 60000]);
+
+        $this->actingAs($records['driver'])
+            ->from(route('driver.fuel-lifting'))
+            ->patch(route('driver.fuel-lifting.hauls.status', $badQuantityHaul['haulId']), $this->liftingStatusPayload('in_transit'))
+            ->assertRedirect(route('driver.fuel-lifting'))
+            ->assertSessionHasErrors('lifting');
+
+        $records = $this->baseRecords([
+            'driver_code' => 'DRV-BAD-ALLOC',
+            'truck_code' => 'TRK-BAD-ALLOC',
+        ]);
+        $badAllocationHaul = $this->directAllocation($records, ['haul_code' => 'LFT-DRV-BAD-ALLOC']);
+        DB::table('haul_allocations')->where('id', $badAllocationHaul['allocationId'])->update(['customer_id' => null]);
+
+        $this->actingAs($records['driver'])
+            ->from(route('driver.fuel-lifting'))
+            ->patch(route('driver.fuel-lifting.hauls.status', $badAllocationHaul['haulId']), $this->liftingStatusPayload('in_transit'))
+            ->assertRedirect(route('driver.fuel-lifting'))
+            ->assertSessionHasErrors('lifting');
+    }
+
+    public function test_only_driver_role_can_update_driver_lifting_status(): void
+    {
+        $records = $this->baseRecords();
+        $haul = $this->directAllocation($records, ['haul_code' => 'LFT-DRIVER-RBAC']);
+
+        foreach (['admin', 'inventory_officer', 'sales_officer', 'dispatch_officer'] as $role) {
+            $user = User::factory()->create(['role' => $role, 'status' => 'active']);
+
+            $this->actingAs($user)
+                ->patch(route('driver.fuel-lifting.hauls.status', $haul['haulId']), $this->liftingStatusPayload('in_transit'))
+                ->assertForbidden();
+        }
+
+        $this->assertDatabaseHas('hauls', ['id' => $haul['haulId'], 'status' => 'scheduled']);
+    }
+
     /**
      * @param array<string, mixed> $records
      * @param array<string, mixed> $overrides
@@ -208,7 +351,7 @@ class DriverDashboardTest extends TestCase
             'scheduled_at' => '2026-09-01 08:00:00',
             'hauled_at' => ($overrides['haul_status'] ?? 'scheduled') === 'completed' ? '2026-09-01 09:00:00' : null,
             'source_location' => 'Dashboard Depot Rack',
-            'quantity_liters' => 10000,
+            'quantity_liters' => $overrides['quantity_liters'] ?? 10000,
             'status' => $overrides['haul_status'] ?? 'scheduled',
             'created_at' => now(),
             'updated_at' => now(),
@@ -220,14 +363,14 @@ class DriverDashboardTest extends TestCase
             'storage_location_id' => ($overrides['destination_type'] ?? 'customer') === 'garage' ? $records['garageId'] : null,
             'customer_id' => ($overrides['destination_type'] ?? 'customer') === 'customer' ? $records['customerId'] : null,
             'sale_id' => ($overrides['destination_type'] ?? 'customer') === 'customer' ? $sale['saleId'] : null,
-            'quantity_liters' => 10000,
+            'quantity_liters' => $overrides['allocation_quantity_liters'] ?? 10000,
             'allocated_at' => '2026-09-01 08:30:00',
             'status' => 'planned',
             'created_at' => now(),
             'updated_at' => now(),
         ]);
 
-        return compact('haulId', 'allocationId');
+        return compact('haulId', 'allocationId', 'purchaseItemId');
     }
 
     /**
@@ -344,6 +487,17 @@ class DriverDashboardTest extends TestCase
                 ->selectRaw("COALESCE(SUM(CASE WHEN direction = 'in' THEN quantity_liters ELSE -quantity_liters END), 0) as balance")
                 ->value('balance'),
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $overrides
+     */
+    private function liftingStatusPayload(string $status, array $overrides = []): array
+    {
+        return array_merge([
+            'idempotency_key' => (string) Str::uuid(),
+            'lifting_status' => $status,
+        ], $overrides);
     }
 
     /**

@@ -8,6 +8,7 @@ use App\Http\Controllers\AdminUserManagementController;
 use App\Http\Controllers\DispatchDeliveryController;
 use App\Http\Controllers\DispatchLiftingStatusController;
 use App\Http\Controllers\DriverDeliveryController;
+use App\Http\Controllers\DriverLiftingStatusController;
 use App\Http\Controllers\InventoryOfficerLedgerController;
 use App\Http\Controllers\InventoryOfficerPurchaseController;
 use App\Http\Controllers\SalesOfficerCustomerController;
@@ -97,6 +98,7 @@ Route::middleware(['auth'])->group(function () {
     Route::redirect('/driver', '/driver/fuel-lifting')->middleware('role:driver')->name('driver.shortcut');
     Route::prefix('driver')->name('driver.')->middleware('role:driver')->group(function () {
         Route::get('/fuel-lifting', [DriverDeliveryController::class, 'index'])->name('fuel-lifting');
+        Route::patch('/fuel-lifting/hauls/{haul}/status', [DriverLiftingStatusController::class, 'updateStatus'])->name('fuel-lifting.hauls.status');
         Route::get('/fuel-lifting/hauled', [DriverDeliveryController::class, 'index'])->defaults('state', 'hauled')->name('fuel-lifting.hauled');
         Route::get('/fuel-lifting/no-schedule', [DriverDeliveryController::class, 'index'])->defaults('state', 'no-schedule')->name('fuel-lifting.no-schedule');
         Route::get('/fuel-lifting/no-hauled', [DriverDeliveryController::class, 'index'])->defaults('state', 'no-hauled')->name('fuel-lifting.no-hauled');

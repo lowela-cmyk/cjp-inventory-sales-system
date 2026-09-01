@@ -110,6 +110,143 @@ class DriverDashboardTest extends TestCase
         }
     }
 
+    public function test_assigned_driver_can_confirm_pickup_without_inventory_financial_or_completion_side_effects(): void
+    {
+        $records = $this->baseRecords();
+        $garageDeliveryId = $this->garageDelivery($records, [
+            'delivery_code' => 'DLV-PICKUP-GARAGE',
+            'stock_out_code' => 'STO-PICKUP-GARAGE',
+            'sale_code' => 'SLS-PICKUP-GARAGE',
+        ]);
+        $allocation = $this->directAllocation($records, [
+            'haul_code' => 'LFT-PICKUP-DEPOT',
+            'haul_status' => 'completed',
+        ]);
+        $depotDeliveryId = $this->depotDelivery($records, $allocation['allocationId'], [
+            'delivery_code' => 'DLV-PICKUP-DEPOT',
+        ]);
+        $before = $this->sideEffectCounts($records);
+        $payload = ['idempotency_key' => (string) Str::uuid()];
+
+        $this->actingAs($records['driver'])
+            ->get(route('driver.assigned-deliveries'))
+            ->assertOk()
+            ->assertSee('Confirm Pickup')
+            ->assertSee(route('driver.assigned-deliveries.pickup', $garageDeliveryId), false)
+            ->assertSee(route('driver.assigned-deliveries.pickup', $depotDeliveryId), false);
+
+        $this->actingAs($records['driver'])
+            ->patch(route('driver.assigned-deliveries.pickup', $garageDeliveryId), $payload)
+            ->assertRedirect(route('driver.assigned-deliveries'));
+
+        $this->assertDatabaseHas('deliveries', [
+            'id' => $garageDeliveryId,
+            'driver_user_id' => $records['driver']->id,
+            'status' => 'in_transit',
+            'delivered_at' => null,
+            'actual_quantity_liters' => null,
+        ]);
+        $this->assertSame($before, $this->sideEffectCounts($records));
+
+        $this->actingAs($records['driver'])
+            ->patch(route('driver.assigned-deliveries.pickup', $garageDeliveryId), $payload)
+            ->assertRedirect(route('driver.assigned-deliveries'));
+
+        $this->actingAs($records['driver'])
+            ->from(route('driver.assigned-deliveries'))
+            ->patch(route('driver.assigned-deliveries.pickup', $garageDeliveryId), ['idempotency_key' => (string) Str::uuid()])
+            ->assertRedirect(route('driver.assigned-deliveries'))
+            ->assertSessionHasErrors('pickup');
+
+        $this->actingAs($records['driver'])
+            ->patch(route('driver.assigned-deliveries.pickup', $depotDeliveryId), ['idempotency_key' => (string) Str::uuid()])
+            ->assertRedirect(route('driver.assigned-deliveries'));
+
+        $this->assertDatabaseHas('deliveries', [
+            'id' => $depotDeliveryId,
+            'source_type' => 'depot',
+            'haul_allocation_id' => $allocation['allocationId'],
+            'driver_user_id' => $records['driver']->id,
+            'status' => 'in_transit',
+            'delivered_at' => null,
+        ]);
+        $this->assertDatabaseHas('hauls', ['id' => $allocation['haulId'], 'status' => 'completed']);
+        $this->assertDatabaseHas('haul_allocations', ['id' => $allocation['allocationId'], 'status' => 'planned']);
+        $this->assertSame($before, $this->sideEffectCounts($records));
+
+        $this->actingAs($records['driver'])
+            ->get(route('driver.assigned-deliveries', ['search' => 'DLV-PICKUP-GARAGE']))
+            ->assertOk()
+            ->assertSee('DLV-PICKUP-GARAGE')
+            ->assertSee('In Transit')
+            ->assertDontSee('Confirm Pickup');
+    }
+
+    public function test_pickup_confirmation_blocks_wrong_driver_cancelled_invalid_and_missing_assignments(): void
+    {
+        $records = $this->baseRecords();
+        $other = $this->baseRecords([
+            'driver_name' => 'Pickup Other Driver',
+            'driver_code' => 'DRV-PICKUP-OTHER',
+            'truck_code' => 'TRK-PICKUP-OTHER',
+            'customer_company' => 'Pickup Other Co.',
+        ]);
+        $deliveryId = $this->garageDelivery($records, [
+            'delivery_code' => 'DLV-PICKUP-OWNED',
+            'stock_out_code' => 'STO-PICKUP-OWNED',
+            'sale_code' => 'SLS-PICKUP-OWNED',
+        ]);
+        $cancelledId = $this->garageDelivery($records, [
+            'delivery_code' => 'DLV-PICKUP-CANCELLED',
+            'stock_out_code' => 'STO-PICKUP-CANCELLED',
+            'sale_code' => 'SLS-PICKUP-CANCELLED',
+            'status' => 'cancelled',
+        ]);
+        $incompleteId = $this->garageDelivery($records, [
+            'delivery_code' => 'DLV-PICKUP-INCOMPLETE',
+            'stock_out_code' => 'STO-PICKUP-INCOMPLETE',
+            'sale_code' => 'SLS-PICKUP-INCOMPLETE',
+            'status' => 'incomplete',
+        ]);
+        $missingTruckId = $this->garageDelivery($records, [
+            'delivery_code' => 'DLV-PICKUP-NO-TRUCK',
+            'stock_out_code' => 'STO-PICKUP-NO-TRUCK',
+            'sale_code' => 'SLS-PICKUP-NO-TRUCK',
+        ]);
+        DB::table('deliveries')->where('id', $missingTruckId)->update(['truck_id' => null]);
+        $before = $this->sideEffectCounts($records);
+
+        $this->actingAs($other['driver'])
+            ->from(route('driver.assigned-deliveries'))
+            ->patch(route('driver.assigned-deliveries.pickup', $deliveryId), ['idempotency_key' => (string) Str::uuid()])
+            ->assertRedirect(route('driver.assigned-deliveries'))
+            ->assertSessionHasErrors('pickup');
+
+        foreach ([$cancelledId, $incompleteId, $missingTruckId, 999999] as $blockedDeliveryId) {
+            $this->actingAs($records['driver'])
+                ->from(route('driver.assigned-deliveries'))
+                ->patch(route('driver.assigned-deliveries.pickup', $blockedDeliveryId), ['idempotency_key' => (string) Str::uuid()])
+                ->assertRedirect(route('driver.assigned-deliveries'))
+                ->assertSessionHasErrors('pickup');
+        }
+
+        foreach ([$deliveryId, $cancelledId, $incompleteId, $missingTruckId] as $unchangedDeliveryId) {
+            $this->assertDatabaseMissing('deliveries', [
+                'id' => $unchangedDeliveryId,
+                'status' => 'in_transit',
+            ]);
+        }
+
+        foreach (['admin', 'inventory_officer', 'sales_officer', 'dispatch_officer'] as $role) {
+            $user = User::factory()->create(['role' => $role, 'status' => 'active']);
+            $this->actingAs($user)
+                ->patch(route('driver.assigned-deliveries.pickup', $deliveryId), ['idempotency_key' => (string) Str::uuid()])
+                ->assertForbidden();
+        }
+
+        $this->assertSame($before, $this->sideEffectCounts($records));
+    }
+
     public function test_driver_completed_assignments_and_search_remain_scoped_to_authenticated_driver(): void
     {
         $records = $this->baseRecords();

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Query\Builder;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -84,7 +85,58 @@ class DriverDeliveryController extends Controller
             'summaryCards' => $this->deliverySummaryCards($driverId),
             'activeRows' => $rows->where('group', 'schedule')->values(),
             'completedRows' => $rows->where('group', 'hauled')->values(),
+            'pickupIdempotencyKey' => (string) Str::uuid(),
         ]);
+    }
+
+    public function confirmPickup(Request $request, int $delivery): RedirectResponse
+    {
+        $data = $request->validate([
+            'idempotency_key' => ['required', 'uuid'],
+        ]);
+        $driverId = (int) $request->user()->id;
+        $sessionKey = 'driver.deliveries.pickup.'.$driverId.'.'.$delivery.'.'.((string) $data['idempotency_key']);
+
+        if ($request->session()->has($sessionKey)) {
+            return redirect()
+                ->route('driver.assigned-deliveries')
+                ->with('status', 'Pickup confirmation was already submitted.');
+        }
+
+        $result = DB::transaction(function () use ($delivery, $driverId): ?string {
+            $row = $this->deliveryForPickup($delivery, $driverId);
+
+            if (! $row) {
+                return 'The selected delivery is not assigned to your driver account.';
+            }
+
+            $validationError = $this->validatePickup($row);
+
+            if ($validationError) {
+                return $validationError;
+            }
+
+            DB::table('deliveries')
+                ->where('id', $row->id)
+                ->where('driver_user_id', $driverId)
+                ->where('status', 'scheduled')
+                ->update([
+                    'status' => 'in_transit',
+                    'updated_at' => now(),
+                ]);
+
+            return null;
+        });
+
+        if ($result) {
+            return back()->withErrors(['pickup' => $result])->withInput();
+        }
+
+        $request->session()->put($sessionKey, true);
+
+        return redirect()
+            ->route('driver.assigned-deliveries')
+            ->with('status', 'Pickup confirmed successfully.');
     }
 
     /**
@@ -230,6 +282,7 @@ class DriverDeliveryController extends Controller
                         'scheduled_at' => $this->formatDateTime($row->scheduled_at),
                         'status' => $this->label($row->status),
                     ],
+                    'can_confirm_pickup' => $row->status === 'scheduled' && $row->truck_code,
                 ];
             });
     }
@@ -475,6 +528,116 @@ class DriverDeliveryController extends Controller
             ['label' => 'Active', 'value' => number_format((int) ($deliveries->active ?? 0))],
             ['label' => 'Completed', 'value' => number_format((int) ($deliveries->completed ?? 0))],
         ];
+    }
+
+    private function deliveryForPickup(int $delivery, int $driverId): ?object
+    {
+        return DB::table('deliveries')
+            ->join('customers', 'customers.id', '=', 'deliveries.customer_id')
+            ->join('fuel_types', 'fuel_types.id', '=', 'deliveries.fuel_type_id')
+            ->join('users as drivers', 'drivers.id', '=', 'deliveries.driver_user_id')
+            ->leftJoin('driver_profiles', 'driver_profiles.user_id', '=', 'drivers.id')
+            ->leftJoin('trucks', 'trucks.id', '=', 'deliveries.truck_id')
+            ->leftJoin('stock_outs', 'stock_outs.delivery_id', '=', 'deliveries.id')
+            ->leftJoin('haul_allocations', 'haul_allocations.id', '=', 'deliveries.haul_allocation_id')
+            ->leftJoin('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')
+            ->leftJoin('sales', 'sales.id', '=', 'deliveries.sale_id')
+            ->where('deliveries.id', $delivery)
+            ->where('deliveries.driver_user_id', $driverId)
+            ->lockForUpdate()
+            ->first([
+                'deliveries.id',
+                'deliveries.source_type',
+                'deliveries.scheduled_at',
+                'deliveries.scheduled_quantity_liters',
+                'deliveries.actual_quantity_liters',
+                'deliveries.status',
+                'deliveries.driver_user_id',
+                'deliveries.truck_id',
+                'stock_outs.id as stock_out_id',
+                'stock_outs.status as stock_out_status',
+                'haul_allocations.id as allocation_id',
+                'haul_allocations.status as allocation_status',
+                'haul_allocations.destination_type',
+                'hauls.id as haul_id',
+                'hauls.status as haul_status',
+                'trucks.truck_type',
+                'trucks.status as truck_status',
+                'trucks.capacity_liters',
+                'drivers.role as driver_role',
+                'drivers.status as driver_status',
+                'driver_profiles.status as profile_status',
+                'customers.status as customer_status',
+                'fuel_types.status as fuel_status',
+                'sales.status as sale_status',
+            ]);
+    }
+
+    private function validatePickup(object $delivery): ?string
+    {
+        if ($delivery->status === 'in_transit') {
+            return 'Pickup has already been confirmed for this delivery.';
+        }
+
+        if ($delivery->status === 'cancelled') {
+            return 'Cancelled deliveries cannot be picked up.';
+        }
+
+        if ($delivery->status === 'delivered') {
+            return 'Delivered deliveries cannot be picked up again.';
+        }
+
+        if ($delivery->status !== 'scheduled') {
+            return 'This delivery is not in a valid status for pickup confirmation.';
+        }
+
+        if (! $delivery->truck_id || ! in_array($delivery->truck_type, ['delivery', 'mixed'], true) || in_array($delivery->truck_status, ['maintenance', 'inactive'], true)) {
+            return 'A valid assigned delivery truck is required before pickup confirmation.';
+        }
+
+        if ($delivery->driver_role !== 'driver' || $delivery->driver_status !== 'active' || $delivery->profile_status === 'inactive') {
+            return 'A valid assigned driver is required before pickup confirmation.';
+        }
+
+        if (! $delivery->scheduled_at) {
+            return 'A scheduled delivery date is required before pickup confirmation.';
+        }
+
+        $quantity = round((float) ($delivery->actual_quantity_liters ?? $delivery->scheduled_quantity_liters ?? 0), 2);
+
+        if ($quantity <= 0 || $quantity > round((float) $delivery->capacity_liters, 2)) {
+            return 'Delivery quantity must be positive and cannot exceed the assigned truck capacity.';
+        }
+
+        if ($delivery->customer_status === 'inactive') {
+            return 'A valid customer is required before pickup confirmation.';
+        }
+
+        if ($delivery->fuel_status !== 'active') {
+            return 'A valid fuel type is required before pickup confirmation.';
+        }
+
+        if ($delivery->sale_status === 'cancelled') {
+            return 'Cancelled sales cannot be picked up.';
+        }
+
+        if ($delivery->source_type === 'garage') {
+            return $delivery->stock_out_id && $delivery->stock_out_status === 'released'
+                ? null
+                : 'A released garage stock-out is required before pickup confirmation.';
+        }
+
+        if ($delivery->source_type === 'depot') {
+            if (! $delivery->allocation_id || $delivery->destination_type !== 'customer') {
+                return 'A direct depot-to-client allocation is required before pickup confirmation.';
+            }
+
+            return $delivery->haul_id && $delivery->haul_status === 'completed'
+                ? null
+                : 'A completed lifting transaction is required before depot pickup confirmation.';
+        }
+
+        return 'This delivery source is not eligible for pickup confirmation.';
     }
 
     /**

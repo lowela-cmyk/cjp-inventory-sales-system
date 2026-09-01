@@ -4,11 +4,20 @@
     $summaryCards = $summaryCards ?? [];
     $filters = $filters ?? [];
     $filterOptions = $filterOptions ?? ['statuses' => [], 'fuelTypes' => collect()];
+    $pickupIdempotencyKey = $pickupIdempotencyKey ?? (string) \Illuminate\Support\Str::uuid();
 @endphp
 
 @component('layouts.driver', ['title' => 'Assigned Deliveries', 'active' => 'assigned-deliveries', 'driverName' => $driverName])
     <div data-tabs>
         <h2 class="section-title" data-driver-heading>{{ $activeTab === 'completed' ? 'Completed Deliveries' : 'Assigned Deliveries' }}</h2>
+
+        @if (session('status'))
+            <div class="alert-bar alert-success">{{ session('status') }}</div>
+        @endif
+
+        @if ($errors->any())
+            <div class="alert-bar alert-warning">{{ $errors->first() }}</div>
+        @endif
 
         <div class="tabs">
             <button class="tab-button {{ $activeTab === 'active' ? 'is-active' : '' }}" type="button" data-tab-target="active" data-heading="Assigned Deliveries">Active</button>
@@ -101,6 +110,14 @@
                 </div>
             </div>
             <div class="modal-actions">
+                @if (! empty($row['can_confirm_pickup']))
+                    <form method="POST" action="{{ route('driver.assigned-deliveries.pickup', $row['record_id']) }}" onsubmit="return confirm('Confirm pickup for {{ $row['delivery']['reference'] }}?');">
+                        @csrf
+                        @method('PATCH')
+                        <input type="hidden" name="idempotency_key" value="{{ $pickupIdempotencyKey }}">
+                        <button class="btn btn-pill btn-primary" type="submit">Confirm Pickup</button>
+                    </form>
+                @endif
                 <button class="btn btn-pill btn-secondary" type="button" data-modal-close>Close</button>
             </div>
         </x-admin.modal>

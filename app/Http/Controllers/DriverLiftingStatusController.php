@@ -52,13 +52,20 @@ class DriverLiftingStatusController extends Controller
                 return $validationError;
             }
 
+            $updates = [
+                'status' => $nextStatus,
+                'updated_at' => now(),
+            ];
+
+            if ($nextStatus === 'lifted') {
+                $updates['hauled_at'] = $row->hauled_at ?: now();
+            }
+
             DB::table('hauls')
                 ->where('id', $row->id)
                 ->where('driver_user_id', $driverId)
-                ->update([
-                    'status' => $nextStatus,
-                    'updated_at' => now(),
-                ]);
+                ->where('status', $row->status)
+                ->update($updates);
 
             return null;
         });
@@ -100,6 +107,7 @@ class DriverLiftingStatusController extends Controller
                 'hauls.truck_id',
                 'hauls.driver_user_id',
                 'hauls.scheduled_at',
+                'hauls.hauled_at',
                 'hauls.quantity_liters',
                 'hauls.status',
                 'purchases.status as purchase_status',

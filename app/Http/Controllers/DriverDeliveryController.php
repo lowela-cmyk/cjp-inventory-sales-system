@@ -372,7 +372,7 @@ class DriverDeliveryController extends Controller
                     'kind' => 'Lift',
                     'raw_status' => $row->status,
                     'allowed_driver_statuses' => DriverLiftingStatusController::STATUS_TRANSITIONS[$row->status] ?? [],
-                    'group' => in_array($row->status, ['completed', 'cancelled'], true) ? 'hauled' : 'schedule',
+                    'group' => in_array($row->status, ['lifted', 'completed', 'cancelled'], true) ? 'hauled' : 'schedule',
                     'sort_at' => (string) ($row->hauled_at ?: $row->scheduled_at ?: $row->id),
                     'cells' => [
                         $row->haul_code,

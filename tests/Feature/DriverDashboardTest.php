@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -341,6 +342,7 @@ class DriverDashboardTest extends TestCase
 
     public function test_driver_can_progress_owned_lifting_status_without_inventory_or_financial_side_effects(): void
     {
+        Carbon::setTestNow('2026-09-01 11:15:00');
         $records = $this->baseRecords();
         $garageHaul = $this->directAllocation($records, ['haul_code' => 'LFT-DRIVER-GARAGE', 'destination_type' => 'garage']);
         $clientHaul = $this->directAllocation($records, ['haul_code' => 'LFT-DRIVER-CLIENT', 'destination_type' => 'customer']);
@@ -377,8 +379,27 @@ class DriverDashboardTest extends TestCase
 
         $this->assertDatabaseHas('hauls', ['id' => $garageHaul['haulId'], 'status' => 'lifted']);
         $this->assertDatabaseHas('hauls', ['id' => $clientHaul['haulId'], 'status' => 'in_transit']);
+        $this->assertSame('2026-09-01 11:15:00', DB::table('hauls')->where('id', $garageHaul['haulId'])->value('hauled_at'));
         $this->assertSame($beforeHauledQuantity, DB::table('purchase_items')->where('id', $garageHaul['purchaseItemId'])->value('quantity_hauled_liters'));
         $this->assertSame($before, $this->sideEffectCounts($records));
+
+        $this->actingAs($records['driver'])
+            ->get(route('driver.fuel-lifting.hauled', ['search' => 'LFT-DRIVER-GARAGE']))
+            ->assertOk()
+            ->assertSee('No Schedules')
+            ->assertSee('LFT-DRIVER-GARAGE')
+            ->assertSee('Lifted')
+            ->assertDontSee('name="lifting_status"', false);
+
+        $admin = User::factory()->create(['role' => 'admin', 'status' => 'active']);
+        $this->actingAs($admin)
+            ->get(route('admin.fuel-lifting', ['search' => 'LFT-DRIVER-GARAGE']))
+            ->assertOk()
+            ->assertSee('LFT-DRIVER-GARAGE')
+            ->assertSee('Lifted')
+            ->assertSee('9/1/2026 11:15 AM');
+
+        Carbon::setTestNow();
     }
 
     public function test_driver_lifting_status_blocks_skipped_transitions_duplicates_and_manipulated_ids(): void
@@ -393,6 +414,7 @@ class DriverDashboardTest extends TestCase
         $haul = $this->directAllocation($records, ['haul_code' => 'LFT-DRIVER-STATUS']);
         $otherHaul = $this->directAllocation($other, ['haul_code' => 'LFT-DRIVER-OTHER']);
         $completedHaul = $this->directAllocation($records, ['haul_code' => 'LFT-DRIVER-DONE', 'haul_status' => 'completed']);
+        $cancelledHaul = $this->directAllocation($records, ['haul_code' => 'LFT-DRIVER-CANCELLED', 'haul_status' => 'cancelled']);
 
         $this->actingAs($records['driver'])
             ->from(route('driver.fuel-lifting'))
@@ -412,11 +434,11 @@ class DriverDashboardTest extends TestCase
 
         $this->actingAs($records['driver'])
             ->from(route('driver.fuel-lifting'))
-            ->patch(route('driver.fuel-lifting.hauls.status', $haul['haulId']), $this->liftingStatusPayload('in_transit'))
+            ->patch(route('driver.fuel-lifting.hauls.status', $haul['haulId']), $this->liftingStatusPayload('completed'))
             ->assertRedirect(route('driver.fuel-lifting'))
             ->assertSessionHasErrors('lifting');
 
-        foreach ([$otherHaul['haulId'], $completedHaul['haulId'], 999999] as $haulId) {
+        foreach ([$otherHaul['haulId'], $completedHaul['haulId'], $cancelledHaul['haulId'], 999999] as $haulId) {
             $this->actingAs($records['driver'])
                 ->from(route('driver.fuel-lifting'))
                 ->patch(route('driver.fuel-lifting.hauls.status', $haulId), $this->liftingStatusPayload('in_transit'))
@@ -426,6 +448,7 @@ class DriverDashboardTest extends TestCase
 
         $this->assertDatabaseHas('hauls', ['id' => $otherHaul['haulId'], 'status' => 'scheduled']);
         $this->assertDatabaseHas('hauls', ['id' => $completedHaul['haulId'], 'status' => 'completed']);
+        $this->assertDatabaseHas('hauls', ['id' => $cancelledHaul['haulId'], 'status' => 'cancelled']);
     }
 
     public function test_driver_lifting_status_requires_valid_driver_truck_quantity_and_allocations(): void

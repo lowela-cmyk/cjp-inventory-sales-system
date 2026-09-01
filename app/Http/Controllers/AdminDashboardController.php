@@ -15,6 +15,7 @@ class AdminDashboardController extends Controller
         $filters = $request->validate([
             'trend_period' => ['nullable', Rule::in(DashboardSummaryService::SALES_TREND_PERIODS)],
             'trend_year' => ['nullable', 'integer', 'between:2000,2100'],
+            'expected_year' => ['nullable', 'integer', 'between:2000,2100'],
         ]);
 
         return view('admin.dashboard', $dashboard->data($filters));

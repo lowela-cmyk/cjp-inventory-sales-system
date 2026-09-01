@@ -496,7 +496,8 @@ select {
 
 .sales-trend-chart,
 .stock-level-chart,
-.receivables-chart {
+.receivables-chart,
+.expected-revenue-chart {
     position: relative;
     min-height: 255px;
     padding: 22px 18px 18px;
@@ -504,14 +505,16 @@ select {
 
 .sales-trend-chart canvas,
 .stock-level-chart canvas,
-.receivables-chart canvas {
+.receivables-chart canvas,
+.expected-revenue-chart canvas {
     width: 100%;
     min-height: 255px;
 }
 
 .sales-trend-fallback,
 .stock-level-fallback,
-.receivables-fallback {
+.receivables-fallback,
+.expected-revenue-fallback {
     padding-top: 26px;
 }
 
@@ -706,6 +709,36 @@ select {
     color: #6b7280;
     font-size: 11px;
     text-transform: uppercase;
+}
+
+.dashboard-kpi-strip {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin: 0 18px 18px;
+}
+
+.dashboard-kpi-strip div {
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+}
+
+.dashboard-kpi-strip span {
+    display: block;
+    color: #6b7280;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.dashboard-kpi-strip strong {
+    display: block;
+    margin-top: 4px;
+    font-size: 14px;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
 }
 
 .mock-line-path::after {

@@ -56,14 +56,24 @@
         </section>
 
         <section class="chart-panel">
-            <div class="chart-header"><h2>Predicted Revenue Trend (Next 5 Years)</h2></div>
-            @if ($hasRevenueProjection)
-                <div class="mock-chart-line">
-                    <div class="mock-line-grid"></div>
+            <div class="chart-header"><h2>Expected Revenue ({{ $expectedRevenue['period'] }})</h2></div>
+            <div class="expected-revenue-chart">
+                <canvas data-expected-revenue-chart data-chart='@json($expectedRevenueChart)' aria-label="Expected revenue by month" role="img"></canvas>
+                <div class="sales-bars expected-revenue-fallback">
+                    @foreach ($expectedRevenue['bars'] as $bar)
+                        <div class="mini-bar">
+                            <strong>{{ $bar['value'] }}</strong>
+                            <i style="--bar-height: {{ $bar['height'] }}px"></i>
+                            <span>{{ $bar['label'] }}</span>
+                        </div>
+                    @endforeach
                 </div>
-            @else
-                <div class="dashboard-empty-state">No data available</div>
-            @endif
+            </div>
+            <div class="dashboard-kpi-strip">
+                <div><span>Expected</span><strong>{{ $expectedRevenue['formattedTotalExpected'] }}</strong></div>
+                <div><span>Collected</span><strong>{{ $expectedRevenue['formattedTotalCollected'] }}</strong></div>
+                <div><span>Due Outstanding</span><strong>{{ $expectedRevenue['formattedTotalDueOutstanding'] }}</strong></div>
+            </div>
             <div class="chart-header"><h2>Revenue vs Receivables</h2></div>
             <div class="receivables-chart">
                 <canvas data-receivables-chart data-chart='@json($receivablesChart)' aria-label="Payments collected versus outstanding receivables" role="img"></canvas>

@@ -186,3 +186,12 @@ document.querySelectorAll('[data-receivables-chart]').forEach((canvas) => {
         (value) => `PHP ${Number(value || 0).toLocaleString()}`,
     );
 });
+
+document.querySelectorAll('[data-expected-revenue-chart]').forEach((canvas) => {
+    renderDashboardBarChart(
+        canvas,
+        '.expected-revenue-fallback',
+        (value) => `PHP ${Number(value).toLocaleString()}`,
+        (value) => `PHP ${Number(value || 0).toLocaleString()}`,
+    );
+});

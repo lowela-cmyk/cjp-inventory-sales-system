@@ -222,6 +222,72 @@ class DashboardSummaryService
         ];
     }
 
+    /**
+     * Expected revenue is deterministic expected collectible cash for a year:
+     * payments actually collected in the year plus still-outstanding receivables due in that year.
+     *
+     * @return array<string, mixed>
+     */
+    public function expectedRevenue(?int $year = null): array
+    {
+        $year = $year ?: CarbonImmutable::now()->year;
+        $labels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        $collectedByMonth = $this->collectedRevenueByPaymentMonth($year);
+        $dueOutstandingByMonth = $this->outstandingReceivablesByDueMonth($year);
+
+        $collectedValues = array_map(fn (int $month): float => (float) ($collectedByMonth[$month] ?? 0), range(1, 12));
+        $dueOutstandingValues = array_map(fn (int $month): float => (float) ($dueOutstandingByMonth[$month] ?? 0), range(1, 12));
+        $expectedValues = array_map(
+            fn (float $collected, float $dueOutstanding): float => round($collected + $dueOutstanding, 2),
+            $collectedValues,
+            $dueOutstandingValues
+        );
+        $formattedValues = array_map(fn (float $value): string => $this->formatMoney($value), $expectedValues);
+        $totalCollected = array_sum($collectedValues);
+        $totalDueOutstanding = array_sum($dueOutstandingValues);
+        $totalExpected = array_sum($expectedValues);
+        $collectionRate = $totalExpected > 0 ? round(($totalCollected / $totalExpected) * 100, 1) : 0.0;
+        $max = max([1, ...array_map(fn (float $value): float => abs($value), $expectedValues)]);
+
+        return [
+            'year' => $year,
+            'period' => (string) $year,
+            'labels' => $labels,
+            'values' => $expectedValues,
+            'collectedValues' => $collectedValues,
+            'dueOutstandingValues' => $dueOutstandingValues,
+            'formattedValues' => $formattedValues,
+            'totalExpected' => $totalExpected,
+            'totalCollected' => $totalCollected,
+            'totalDueOutstanding' => $totalDueOutstanding,
+            'formattedTotalExpected' => $this->formatMoney($totalExpected),
+            'formattedTotalCollected' => $this->formatMoney($totalCollected),
+            'formattedTotalDueOutstanding' => $this->formatMoney($totalDueOutstanding),
+            'collectionRate' => $collectionRate,
+            'formattedCollectionRate' => number_format($collectionRate, 1).'%',
+            'formula' => 'Expected Revenue = collected payments within the year + outstanding receivable balances due within the year.',
+            'bars' => collect($labels)
+                ->map(fn (string $label, int $index): array => [
+                    'label' => $label,
+                    'value' => $formattedValues[$index],
+                    'height' => $expectedValues[$index] === 0.0 ? 6 : max(6, (int) round((abs($expectedValues[$index]) / $max) * 96)),
+                ])
+                ->all(),
+            'chart' => [
+                'labels' => $labels,
+                'datasets' => [[
+                    'label' => 'Expected Revenue',
+                    'data' => $expectedValues,
+                    'formattedData' => $formattedValues,
+                    'backgroundColor' => '#0d1424',
+                    'borderColor' => '#0d1424',
+                    'borderWidth' => 1,
+                    'borderRadius' => 5,
+                ]],
+            ],
+        ];
+    }
+
     public function totalInventoryLiters(): float
     {
         return (float) DB::table('fuel_types')
@@ -421,6 +487,39 @@ class DashboardSummaryService
                 'receivables.status as receivable_status',
             ])
             ->selectRaw('sale_totals.total as sale_total, COALESCE(payment_totals.paid, 0) as total_paid, sale_totals.total - COALESCE(payment_totals.paid, 0) as balance');
+    }
+
+    /**
+     * @return array<int, float>
+     */
+    private function collectedRevenueByPaymentMonth(int $year): array
+    {
+        return DB::table('payments')
+            ->join('sales', 'sales.id', '=', 'payments.sale_id')
+            ->whereNull('sales.deleted_at')
+            ->whereIn('sales.status', self::VALID_SALE_STATUSES)
+            ->whereBetween('payments.payment_date', [$year.'-01-01', $year.'-12-31'])
+            ->selectRaw('CAST(SUBSTR(payments.payment_date, 6, 2) AS INTEGER) as month_number, COALESCE(SUM(payments.amount), 0) as total')
+            ->groupByRaw('CAST(SUBSTR(payments.payment_date, 6, 2) AS INTEGER)')
+            ->get()
+            ->mapWithKeys(fn (object $row): array => [(int) $row->month_number => (float) $row->total])
+            ->all();
+    }
+
+    /**
+     * @return array<int, float>
+     */
+    private function outstandingReceivablesByDueMonth(int $year): array
+    {
+        return DB::query()
+            ->fromSub($this->outstandingReceivableRowsQuery(), 'outstanding_receivables')
+            ->whereNotNull('due_date')
+            ->whereBetween('due_date', [$year.'-01-01', $year.'-12-31'])
+            ->selectRaw('CAST(SUBSTR(due_date, 6, 2) AS INTEGER) as month_number, COALESCE(SUM(balance), 0) as total')
+            ->groupByRaw('CAST(SUBSTR(due_date, 6, 2) AS INTEGER)')
+            ->get()
+            ->mapWithKeys(fn (object $row): array => [(int) $row->month_number => (float) $row->total])
+            ->all();
     }
 
     /**

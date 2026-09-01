@@ -381,6 +381,126 @@ class DashboardSummaryCardsTest extends TestCase
         Carbon::setTestNow();
     }
 
+    public function test_expected_revenue_uses_collected_payments_and_due_receivables_by_year(): void
+    {
+        Carbon::setTestNow('2026-09-01 10:00:00');
+        $records = $this->records();
+
+        $installmentSaleId = $this->sale($records, 'SLS-EXP-INSTALLMENT', '2026-01-10', 'partially_paid', 100000);
+        DB::table('sale_items')->insert([
+            'sale_id' => $installmentSaleId,
+            'fuel_type_id' => $records['fuelTypeId'],
+            'quantity_liters' => 100,
+            'unit_price' => 50,
+            'line_total' => 5000,
+            'fulfilled_quantity_liters' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('receivables')->where('sale_id', $installmentSaleId)->update(['due_date' => '2026-03-15']);
+        $firstScheduleId = DB::table('payment_schedules')->insertGetId([
+            'sale_id' => $installmentSaleId,
+            'due_date' => '2026-01-31',
+            'amount_due' => 50000,
+            'status' => 'partial',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $secondScheduleId = DB::table('payment_schedules')->insertGetId([
+            'sale_id' => $installmentSaleId,
+            'due_date' => '2026-02-28',
+            'amount_due' => 50000,
+            'status' => 'pending',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $methodOnlySaleId = $this->sale($records, 'SLS-EXP-METHOD-ONLY', '2026-04-05', 'confirmed', 60000);
+        DB::table('sales')->where('id', $methodOnlySaleId)->update(['payment_method' => 'cash_on_delivery']);
+        DB::table('receivables')->where('sale_id', $methodOnlySaleId)->update(['due_date' => '2026-04-30']);
+
+        $paidSaleId = $this->sale($records, 'SLS-EXP-PAID', '2026-05-02', 'paid', 40000);
+        DB::table('receivables')->where('sale_id', $paidSaleId)->update(['due_date' => '2026-05-31']);
+
+        $cancelledSaleId = $this->sale($records, 'SLS-EXP-CANCELLED', '2026-06-01', 'cancelled', 999999);
+        DB::table('receivables')->where('sale_id', $cancelledSaleId)->update(['due_date' => '2026-06-30']);
+
+        DB::table('payments')->insert([
+            array_merge($this->payment($records, $installmentSaleId, 'PAY-EXP-JAN', 30000), [
+                'payment_schedule_id' => $firstScheduleId,
+                'payment_date' => '2026-01-20',
+            ]),
+            array_merge($this->payment($records, $installmentSaleId, 'PAY-EXP-FEB', 20000), [
+                'payment_schedule_id' => $secondScheduleId,
+                'payment_date' => '2026-02-20',
+            ]),
+            array_merge($this->payment($records, $paidSaleId, 'PAY-EXP-PAID', 40000), [
+                'payment_schedule_id' => null,
+                'payment_date' => '2026-05-05',
+            ]),
+            array_merge($this->payment($records, $cancelledSaleId, 'PAY-EXP-CANCELLED', 999999), [
+                'payment_schedule_id' => null,
+                'payment_date' => '2026-06-05',
+            ]),
+        ]);
+
+        /** @var DashboardSummaryService $summary */
+        $summary = app(DashboardSummaryService::class);
+        $expected = $summary->expectedRevenue(2026);
+        $emptyYear = $summary->expectedRevenue(2027);
+
+        $this->assertSame('Expected Revenue = collected payments within the year + outstanding receivable balances due within the year.', $expected['formula']);
+        $this->assertSame(['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'], $expected['labels']);
+        $this->assertSame(30000.0, $expected['values'][0]);
+        $this->assertSame(20000.0, $expected['values'][1]);
+        $this->assertSame(55000.0, $expected['values'][2]);
+        $this->assertSame(60000.0, $expected['values'][3]);
+        $this->assertSame(40000.0, $expected['values'][4]);
+        $this->assertSame(0.0, $expected['values'][5]);
+        $this->assertSame(205000.0, $expected['totalExpected']);
+        $this->assertSame(90000.0, $expected['totalCollected']);
+        $this->assertSame(115000.0, $expected['totalDueOutstanding']);
+        $this->assertSame('43.9%', $expected['formattedCollectionRate']);
+        $this->assertSame('Expected Revenue', $expected['chart']['datasets'][0]['label']);
+        $this->assertSame($expected['values'], $expected['chart']['datasets'][0]['data']);
+        $this->assertSame('PHP 60,000', $expected['chart']['datasets'][0]['formattedData'][3]);
+        $this->assertSame([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], $emptyYear['values']);
+        $this->assertSame('PHP 0', $emptyYear['formattedTotalExpected']);
+
+        $this->assertSame(205000.0, $summary->totalSalesRevenue());
+        $this->assertSame(90000.0, $summary->collectedRevenue());
+        $this->assertSame(115000.0, $summary->outstandingReceivables());
+        $this->assertSame(205000.0, $summary->salesTrend('month', 2026)['total']);
+        $this->assertSame(115000.0, $summary->receivablesMonitoring()['totalOutstanding']);
+
+        $before = $this->databaseCounts();
+
+        $this->actingAs($records['admin'])
+            ->get(route('admin.dashboard', ['expected_year' => 2026]))
+            ->assertOk()
+            ->assertSee('data-expected-revenue-chart', false)
+            ->assertSee('Expected Revenue (2026)')
+            ->assertSee('PHP 205,000')
+            ->assertSee('PHP 90,000')
+            ->assertSee('PHP 115,000')
+            ->assertSee('60000')
+            ->assertDontSee('999999');
+
+        $this->actingAs($records['admin'])
+            ->from(route('admin.dashboard'))
+            ->get(route('admin.dashboard', ['expected_year' => 1999]))
+            ->assertRedirect(route('admin.dashboard'))
+            ->assertSessionHasErrors('expected_year');
+
+        $this->assertSame($before, $this->databaseCounts());
+
+        $this->actingAs(User::factory()->create(['role' => 'driver', 'status' => 'active']))
+            ->get(route('admin.dashboard', ['expected_year' => 2026]))
+            ->assertForbidden();
+
+        Carbon::setTestNow();
+    }
+
     /**
      * @return array<string, mixed>
      */

@@ -27,6 +27,9 @@ class AdminDashboardService
         $outstandingBalance = $summary['outstandingReceivables'];
         $stockLevels = $this->summary->stockLevels();
         $receivablesMonitoring = $this->summary->receivablesMonitoring();
+        $expectedRevenue = $this->summary->expectedRevenue(
+            isset($filters['expected_year']) ? (int) $filters['expected_year'] : null
+        );
         $salesTrend = $this->summary->salesTrend(
             (string) ($filters['trend_period'] ?? 'week'),
             isset($filters['trend_year']) ? (int) $filters['trend_year'] : null
@@ -45,10 +48,11 @@ class AdminDashboardService
             'receivablesMonitoring' => $receivablesMonitoring,
             'receivableRows' => $receivablesMonitoring['rows'],
             'receivablesChart' => $receivablesMonitoring['chart'],
+            'expectedRevenue' => $expectedRevenue,
+            'expectedRevenueChart' => $expectedRevenue['chart'],
             'revenueBars' => $this->revenueBars($totalSalesRevenue, $collectedRevenue, $outstandingBalance),
             'demandDays' => $this->demandByDay(),
             'demandMonths' => $this->demandByMonth(),
-            'hasRevenueProjection' => false,
         ];
     }
 

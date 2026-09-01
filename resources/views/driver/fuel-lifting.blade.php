@@ -75,7 +75,7 @@
             </div>
         </div>
 
-        <section data-tab-panel="schedule" @hidden($activeTab !== 'schedule')>
+        <section data-tab-panel="schedule" {{ $activeTab !== 'schedule' ? 'hidden' : '' }}>
             <form class="driver-filter-row" method="GET" action="{{ route('driver.fuel-lifting') }}">
                 <input type="search" name="search" placeholder="Search..." aria-label="Search scheduled lifts" value="{{ $search }}">
                 <select name="task_status" aria-label="Filter by status">
@@ -139,7 +139,7 @@
             </div>
         </section>
 
-        <section data-tab-panel="hauled" @hidden($activeTab !== 'hauled')>
+        <section data-tab-panel="hauled" {{ $activeTab !== 'hauled' ? 'hidden' : '' }}>
             <form class="driver-filter-row" method="GET" action="{{ route('driver.fuel-lifting.hauled') }}">
                 <input type="search" name="search" placeholder="Search..." aria-label="Search hauled lifts" value="{{ $search }}">
                 <select name="task_status" aria-label="Filter by status">

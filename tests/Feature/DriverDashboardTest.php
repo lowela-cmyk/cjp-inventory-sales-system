@@ -44,6 +44,72 @@ class DriverDashboardTest extends TestCase
             ->assertSee('Lifting Status');
     }
 
+    public function test_assigned_deliveries_page_shows_only_authenticated_driver_delivery_assignments(): void
+    {
+        $records = $this->baseRecords();
+        $other = $this->baseRecords([
+            'driver_name' => 'Other Assigned Delivery Driver',
+            'driver_code' => 'DRV-AD-OTHER',
+            'truck_code' => 'TRK-AD-OTHER',
+            'customer_company' => 'Other Assigned Delivery Co.',
+        ]);
+        $this->garageDelivery($records, [
+            'delivery_code' => 'DLV-AD-GARAGE',
+            'stock_out_code' => 'STO-AD-GARAGE',
+            'sale_code' => 'SLS-AD-GARAGE',
+        ]);
+        $allocation = $this->directAllocation($records, ['haul_code' => 'LFT-AD-DEPOT', 'haul_status' => 'completed']);
+        $this->depotDelivery($records, $allocation['allocationId'], [
+            'delivery_code' => 'DLV-AD-DEPOT',
+            'status' => 'in_transit',
+        ]);
+        $this->garageDelivery($other, [
+            'delivery_code' => 'DLV-AD-OTHER',
+            'stock_out_code' => 'STO-AD-OTHER',
+        ]);
+        $this->directAllocation($records, ['haul_code' => 'LFT-AD-LIFT-ONLY']);
+        $before = $this->sideEffectCounts($records);
+
+        $this->actingAs($records['driver'])
+            ->get(route('driver.assigned-deliveries', [
+                'search' => 'AD',
+                'source_type' => 'depot',
+                'fuel_type_id' => $records['fuelTypeId'],
+                'driver_user_id' => $other['driver']->id,
+            ]))
+            ->assertOk()
+            ->assertSee('Assigned Deliveries')
+            ->assertSee('Delivery Ref')
+            ->assertSee('Lift Ref')
+            ->assertSee('Fuel Type')
+            ->assertSee('DLV-AD-DEPOT')
+            ->assertSee('LFT-AD-DEPOT')
+            ->assertSee('Dashboard Customer Co.')
+            ->assertSee('Diesel Dashboard')
+            ->assertSee('TRK-DRV-DLV')
+            ->assertSee('Dashboard Depot')
+            ->assertSee('Dashboard, Pampanga')
+            ->assertSee('In Transit')
+            ->assertDontSee('DLV-AD-GARAGE')
+            ->assertDontSee('DLV-AD-OTHER')
+            ->assertDontSee('Other Assigned Delivery Co.')
+            ->assertDontSee('LFT-AD-LIFT-ONLY');
+
+        $this->assertSame($before, $this->sideEffectCounts($records));
+
+        $this->actingAs($records['driver'])
+            ->get(route('driver.assigned-deliveries.completed', ['search' => 'AD-GARAGE']))
+            ->assertOk()
+            ->assertSee('No completed deliveries');
+
+        foreach (['admin', 'inventory_officer', 'sales_officer', 'dispatch_officer'] as $role) {
+            $user = User::factory()->create(['role' => $role, 'status' => 'active']);
+            $this->actingAs($user)
+                ->get(route('driver.assigned-deliveries'))
+                ->assertForbidden();
+        }
+    }
+
     public function test_driver_completed_assignments_and_search_remain_scoped_to_authenticated_driver(): void
     {
         $records = $this->baseRecords();

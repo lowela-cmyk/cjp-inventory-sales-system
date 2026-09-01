@@ -100,6 +100,8 @@ Route::middleware(['auth'])->group(function () {
 
     Route::redirect('/driver', '/driver/fuel-lifting')->middleware('role:driver')->name('driver.shortcut');
     Route::prefix('driver')->name('driver.')->middleware('role:driver')->group(function () {
+        Route::get('/assigned-deliveries', [DriverDeliveryController::class, 'assignedDeliveries'])->name('assigned-deliveries');
+        Route::get('/assigned-deliveries/completed', [DriverDeliveryController::class, 'assignedDeliveries'])->defaults('state', 'completed')->name('assigned-deliveries.completed');
         Route::get('/fuel-lifting', [DriverDeliveryController::class, 'index'])->name('fuel-lifting');
         Route::patch('/fuel-lifting/hauls/{haul}/status', [DriverLiftingStatusController::class, 'updateStatus'])->name('fuel-lifting.hauls.status');
         Route::get('/fuel-lifting/hauled', [DriverDeliveryController::class, 'index'])->defaults('state', 'hauled')->name('fuel-lifting.hauled');

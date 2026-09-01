@@ -12,6 +12,7 @@ use Illuminate\View\View;
 
 class DriverDeliveryController extends Controller
 {
+    private const DELIVERY_STATUSES = ['scheduled', 'in_transit', 'incomplete', 'delivered', 'cancelled'];
     private const TASK_STATUSES = ['scheduled', 'in_transit', 'incomplete', 'delivered', 'lifted', 'completed', 'cancelled'];
 
     public function index(Request $request, string $state = 'schedule'): View
@@ -49,6 +50,40 @@ class DriverDeliveryController extends Controller
             'scheduleRows' => $rows->where('group', 'schedule')->values(),
             'hauledRows' => $rows->where('group', 'hauled')->values(),
             'liftingStatusIdempotencyKey' => (string) Str::uuid(),
+        ]);
+    }
+
+    public function assignedDeliveries(Request $request, string $state = 'active'): View
+    {
+        $data = $request->validate([
+            'search' => ['nullable', 'string', 'max:100'],
+            'task_status' => ['nullable', Rule::in(self::DELIVERY_STATUSES)],
+            'source_type' => ['nullable', Rule::in(['depot', 'garage'])],
+            'fuel_type_id' => ['nullable', 'integer', Rule::exists('fuel_types', 'id')],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
+        ]);
+        $search = trim((string) ($data['search'] ?? ''));
+        $filters = [
+            'task_status' => $data['task_status'] ?? null,
+            'source_type' => $data['source_type'] ?? null,
+            'destination_type' => 'customer',
+            'fuel_type_id' => $data['fuel_type_id'] ?? null,
+            'date_from' => $data['date_from'] ?? null,
+            'date_to' => $data['date_to'] ?? null,
+        ];
+        $driverId = (int) $request->user()->id;
+        $rows = $this->deliveryRows($driverId, $search === '' ? null : $search, $filters);
+
+        return view('driver.assigned-deliveries', [
+            'activeTab' => $state === 'completed' ? 'completed' : 'active',
+            'driverName' => $request->user()->name,
+            'search' => $search === '' ? null : $search,
+            'filters' => $filters,
+            'filterOptions' => $this->deliveryFilterOptions($driverId),
+            'summaryCards' => $this->deliverySummaryCards($driverId),
+            'activeRows' => $rows->where('group', 'schedule')->values(),
+            'completedRows' => $rows->where('group', 'hauled')->values(),
         ]);
     }
 
@@ -182,6 +217,18 @@ class DriverDeliveryController extends Controller
                         'Lifting Status' => $this->label($row->lifting_status),
                         'Allocation Status' => $this->label($row->allocation_status),
                         'Status' => $this->label($row->status),
+                    ],
+                    'delivery' => [
+                        'reference' => $row->delivery_code,
+                        'lift_reference' => $row->haul_code ?: 'N/A',
+                        'customer' => $row->company_name,
+                        'fuel_type' => $row->fuel_name,
+                        'quantity' => $this->formatNumber($quantity),
+                        'source' => $sourceName,
+                        'destination' => $row->location ?: $row->company_name,
+                        'truck' => $truck,
+                        'scheduled_at' => $this->formatDateTime($row->scheduled_at),
+                        'status' => $this->label($row->status),
                     ],
                 ];
             });
@@ -331,6 +378,27 @@ class DriverDeliveryController extends Controller
         ];
     }
 
+    private function deliveryFilterOptions(int $driverId): array
+    {
+        $fuelIds = DB::table('deliveries')
+            ->where('driver_user_id', $driverId)
+            ->pluck('fuel_type_id')
+            ->unique()
+            ->values();
+
+        return [
+            'statuses' => self::DELIVERY_STATUSES,
+            'fuelTypes' => DB::table('fuel_types')
+                ->when(
+                    $fuelIds->isNotEmpty(),
+                    fn (Builder $query): Builder => $query->whereIn('id', $fuelIds),
+                    fn (Builder $query): Builder => $query->whereRaw('1 = 0')
+                )
+                ->orderBy('name')
+                ->get(['id', 'name']),
+        ];
+    }
+
     private function driverProfile(int $driverId): array
     {
         $row = DB::table('users')
@@ -386,6 +454,26 @@ class DriverDeliveryController extends Controller
             ['label' => 'Scheduled', 'value' => number_format((int) ($deliveries->scheduled ?? 0) + (int) ($hauls->scheduled ?? 0))],
             ['label' => 'Active', 'value' => number_format((int) ($deliveries->active ?? 0) + (int) ($hauls->active ?? 0))],
             ['label' => 'Completed', 'value' => number_format((int) ($deliveries->completed ?? 0) + (int) ($hauls->completed ?? 0))],
+        ];
+    }
+
+    private function deliverySummaryCards(int $driverId): array
+    {
+        $deliveries = DB::table('deliveries')
+            ->where('driver_user_id', $driverId)
+            ->selectRaw("
+                COUNT(*) as total,
+                SUM(CASE WHEN status = 'scheduled' THEN 1 ELSE 0 END) as scheduled,
+                SUM(CASE WHEN status IN ('in_transit', 'incomplete') THEN 1 ELSE 0 END) as active,
+                SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END) as completed
+            ")
+            ->first();
+
+        return [
+            ['label' => 'Assigned', 'value' => number_format((int) ($deliveries->total ?? 0))],
+            ['label' => 'Scheduled', 'value' => number_format((int) ($deliveries->scheduled ?? 0))],
+            ['label' => 'Active', 'value' => number_format((int) ($deliveries->active ?? 0))],
+            ['label' => 'Completed', 'value' => number_format((int) ($deliveries->completed ?? 0))],
         ];
     }
 

@@ -176,6 +176,52 @@ class DashboardSummaryService
         ];
     }
 
+    /**
+     * @return array{
+     *     rows: array<int, array<string, mixed>>,
+     *     customerTotals: array<int, array<string, mixed>>,
+     *     chart: array{labels: array<int, string>, datasets: array<int, array<string, mixed>>},
+     *     totalOutstanding: float,
+     *     formattedTotalOutstanding: string,
+     *     outstandingSalesCount: int
+     * }
+     */
+    public function receivablesMonitoring(int $limit = 5): array
+    {
+        $rows = $this->outstandingReceivableRowsQuery()
+            ->orderByRaw('(sale_totals.total - COALESCE(payment_totals.paid, 0)) desc')
+            ->orderBy('sales.sale_date')
+            ->orderBy('sales.id')
+            ->limit($limit)
+            ->get()
+            ->map(fn (object $row): array => $this->formatReceivableRow($row))
+            ->all();
+
+        $customerTotals = $this->receivableCustomerTotals($limit);
+        $paid = $this->collectedRevenue();
+        $outstanding = $this->outstandingReceivables();
+
+        return [
+            'rows' => $rows,
+            'customerTotals' => $customerTotals,
+            'chart' => [
+                'labels' => ['Payments Collected', 'Outstanding Receivables'],
+                'datasets' => [[
+                    'label' => 'Receivables Monitoring',
+                    'data' => [$paid, $outstanding],
+                    'formattedData' => [$this->formatMoney($paid), $this->formatMoney($outstanding)],
+                    'backgroundColor' => ['#238636', '#a7191d'],
+                    'borderColor' => '#ffffff',
+                    'borderWidth' => 1,
+                    'borderRadius' => 5,
+                ]],
+            ],
+            'totalOutstanding' => $outstanding,
+            'formattedTotalOutstanding' => $this->formatMoney($outstanding),
+            'outstandingSalesCount' => $this->outstandingSalesCount(),
+        ];
+    }
+
     public function totalInventoryLiters(): float
     {
         return (float) DB::table('fuel_types')
@@ -208,6 +254,11 @@ class DashboardSummaryService
             ->leftJoinSub($this->paymentTotalsQuery(), 'payment_totals', 'payment_totals.sale_id', '=', 'sale_totals.sale_id')
             ->selectRaw('COALESCE(SUM(CASE WHEN sale_totals.total > COALESCE(payment_totals.paid, 0) THEN sale_totals.total - COALESCE(payment_totals.paid, 0) ELSE 0 END), 0) as total')
             ->value('total');
+    }
+
+    public function outstandingSalesCount(): int
+    {
+        return $this->outstandingReceivableRowsQuery()->count();
     }
 
     public function unliftedFuelLiters(): float
@@ -347,6 +398,111 @@ class DashboardSummaryService
             ->whereDate('movement_date', $date->toDateString())
             ->selectRaw('COALESCE(SUM(quantity_liters), 0) as total')
             ->value('total');
+    }
+
+    private function outstandingReceivableRowsQuery(): Builder
+    {
+        return DB::table('sales')
+            ->joinSub($this->saleTotalsQuery(), 'sale_totals', 'sale_totals.sale_id', '=', 'sales.id')
+            ->join('customers', 'customers.id', '=', 'sales.customer_id')
+            ->leftJoin('receivables', 'receivables.sale_id', '=', 'sales.id')
+            ->leftJoinSub($this->paymentTotalsQuery(), 'payment_totals', 'payment_totals.sale_id', '=', 'sales.id')
+            ->whereNull('sales.deleted_at')
+            ->whereIn('sales.status', self::VALID_SALE_STATUSES)
+            ->whereRaw('sale_totals.total > COALESCE(payment_totals.paid, 0)')
+            ->select([
+                'sales.id',
+                'sales.sale_code',
+                'sales.sale_date',
+                'sales.status as sale_status',
+                'customers.name as customer_name',
+                'customers.company_name',
+                'receivables.due_date',
+                'receivables.status as receivable_status',
+            ])
+            ->selectRaw('sale_totals.total as sale_total, COALESCE(payment_totals.paid, 0) as total_paid, sale_totals.total - COALESCE(payment_totals.paid, 0) as balance');
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function receivableCustomerTotals(int $limit): array
+    {
+        return DB::query()
+            ->fromSub($this->outstandingReceivableRowsQuery(), 'outstanding_receivables')
+            ->select([
+                'customer_name',
+                'company_name',
+            ])
+            ->selectRaw('COUNT(*) as sales_count, COALESCE(SUM(sale_total), 0) as sale_total, COALESCE(SUM(total_paid), 0) as total_paid, COALESCE(SUM(balance), 0) as balance')
+            ->groupBy('customer_name', 'company_name')
+            ->orderByDesc('balance')
+            ->orderBy('customer_name')
+            ->limit($limit)
+            ->get()
+            ->map(fn (object $row): array => [
+                'customer_name' => $row->customer_name,
+                'company_name' => $row->company_name,
+                'sales_count' => (int) $row->sales_count,
+                'sale_total' => (float) $row->sale_total,
+                'paid' => (float) $row->total_paid,
+                'balance' => (float) $row->balance,
+                'formatted_sale_total' => $this->formatMoney((float) $row->sale_total),
+                'formatted_paid' => $this->formatMoney((float) $row->total_paid),
+                'formatted_balance' => $this->formatMoney((float) $row->balance),
+            ])
+            ->all();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function formatReceivableRow(object $row): array
+    {
+        $saleTotal = (float) $row->sale_total;
+        $paid = (float) $row->total_paid;
+        $balance = max(0, (float) $row->balance);
+        $status = $this->receivableStatusForSale($saleTotal, $paid, $row->due_date);
+
+        return [
+            'sale_id' => (int) $row->id,
+            'sale_code' => $row->sale_code,
+            'sale_date' => $row->sale_date,
+            'customer_name' => $row->customer_name,
+            'company_name' => $row->company_name,
+            'sale_total' => $saleTotal,
+            'paid' => $paid,
+            'balance' => $balance,
+            'due_date' => $row->due_date,
+            'status' => $status,
+            'status_label' => $this->receivableStatusLabel($status),
+            'formatted_sale_total' => $this->formatMoney($saleTotal),
+            'formatted_paid' => $this->formatMoney($paid),
+            'formatted_balance' => $this->formatMoney($balance),
+            'formatted_due_date' => $row->due_date ? CarbonImmutable::parse($row->due_date)->format('M d, Y') : 'N/A',
+        ];
+    }
+
+    private function receivableStatusForSale(float $saleTotal, float $totalPaid, mixed $dueDate = null): string
+    {
+        if (round($totalPaid, 2) >= round($saleTotal, 2)) {
+            return 'clear';
+        }
+
+        if ($dueDate && CarbonImmutable::parse($dueDate)->lt(CarbonImmutable::now()->startOfDay())) {
+            return 'overdue';
+        }
+
+        return $totalPaid > 0 ? 'partial' : 'unpaid';
+    }
+
+    private function receivableStatusLabel(string $status): string
+    {
+        return match ($status) {
+            'clear' => 'Settled',
+            'partial' => 'Partially Paid',
+            default => ucwords(str_replace('_', ' ', $status)),
+        };
     }
 
     private function inventoryBalancesByFuelQuery(): Builder

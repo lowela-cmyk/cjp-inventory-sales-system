@@ -26,6 +26,7 @@ class AdminDashboardService
         $collectedRevenue = $summary['collectedRevenue'];
         $outstandingBalance = $summary['outstandingReceivables'];
         $stockLevels = $this->summary->stockLevels();
+        $receivablesMonitoring = $this->summary->receivablesMonitoring();
         $salesTrend = $this->summary->salesTrend(
             (string) ($filters['trend_period'] ?? 'week'),
             isset($filters['trend_year']) ? (int) $filters['trend_year'] : null
@@ -41,6 +42,9 @@ class AdminDashboardService
             ],
             'stockByFuelType' => $stockLevels['bars'],
             'stockLevelChart' => $stockLevels['chart'],
+            'receivablesMonitoring' => $receivablesMonitoring,
+            'receivableRows' => $receivablesMonitoring['rows'],
+            'receivablesChart' => $receivablesMonitoring['chart'],
             'revenueBars' => $this->revenueBars($totalSalesRevenue, $collectedRevenue, $outstandingBalance),
             'demandDays' => $this->demandByDay(),
             'demandMonths' => $this->demandByMonth(),

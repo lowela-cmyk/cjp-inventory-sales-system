@@ -290,6 +290,97 @@ class DashboardSummaryCardsTest extends TestCase
         Carbon::setTestNow();
     }
 
+    public function test_receivables_monitoring_uses_real_sales_payments_and_customer_balances(): void
+    {
+        Carbon::setTestNow('2026-09-01 10:00:00');
+        $records = $this->records();
+        $secondCustomerId = DB::table('customers')->insertGetId([
+            'customer_code' => 'CUS-REC-SECOND',
+            'name' => 'Second Receivable Customer',
+            'company_name' => 'Second Receivable Co.',
+            'payment_status' => 'partial',
+            'status' => 'active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $unpaidSaleId = $this->sale($records, 'SLS-REC-UNPAID', '2026-08-01', 'confirmed', 40000);
+        DB::table('sales')->where('id', $unpaidSaleId)->update(['payment_method' => 'advance_payment']);
+        DB::table('receivables')->where('sale_id', $unpaidSaleId)->update(['due_date' => '2026-08-15']);
+
+        $partialSaleId = $this->sale($records, 'SLS-REC-PARTIAL', '2026-09-01', 'partially_paid', 100000);
+        DB::table('sales')->where('id', $partialSaleId)->update(['customer_id' => $secondCustomerId]);
+        DB::table('receivables')->where('sale_id', $partialSaleId)->update(['due_date' => '2026-09-30']);
+
+        $paidSaleId = $this->sale($records, 'SLS-REC-PAID', '2026-09-01', 'paid', 50000);
+        $cancelledSaleId = $this->sale($records, 'SLS-REC-CANCELLED', '2026-09-01', 'cancelled', 999999);
+
+        DB::table('payments')->insert([
+            $this->payment($records, $partialSaleId, 'PAY-REC-PARTIAL-ONE', 25000),
+            $this->payment($records, $partialSaleId, 'PAY-REC-PARTIAL-TWO', 15000),
+            $this->payment($records, $paidSaleId, 'PAY-REC-PAID', 50000),
+            $this->payment($records, $cancelledSaleId, 'PAY-REC-CANCELLED', 999999),
+        ]);
+
+        /** @var DashboardSummaryService $summary */
+        $summary = app(DashboardSummaryService::class);
+        $monitoring = $summary->receivablesMonitoring();
+        $rowsByCode = collect($monitoring['rows'])->keyBy('sale_code');
+        $customersByName = collect($monitoring['customerTotals'])->keyBy('customer_name');
+
+        $this->assertSame(100000.0, $summary->outstandingReceivables());
+        $this->assertSame(2, $monitoring['outstandingSalesCount']);
+        $this->assertSame(60000.0, $rowsByCode['SLS-REC-PARTIAL']['balance']);
+        $this->assertSame(40000.0, $rowsByCode['SLS-REC-UNPAID']['balance']);
+        $this->assertSame(40000.0, $rowsByCode['SLS-REC-PARTIAL']['paid']);
+        $this->assertSame('Partially Paid', $rowsByCode['SLS-REC-PARTIAL']['status_label']);
+        $this->assertSame('Overdue', $rowsByCode['SLS-REC-UNPAID']['status_label']);
+        $this->assertFalse($rowsByCode->has('SLS-REC-PAID'));
+        $this->assertFalse($rowsByCode->has('SLS-REC-CANCELLED'));
+        $this->assertSame(60000.0, $customersByName['Second Receivable Customer']['balance']);
+        $this->assertSame(40000.0, $customersByName['Dashboard Customer']['balance']);
+        $this->assertSame(['Payments Collected', 'Outstanding Receivables'], $monitoring['chart']['labels']);
+        $this->assertSame([90000.0, 100000.0], $monitoring['chart']['datasets'][0]['data']);
+        $this->assertSame('Receivables Monitoring', $monitoring['chart']['datasets'][0]['label']);
+        $this->assertSame('PHP 100,000', $monitoring['chart']['datasets'][0]['formattedData'][1]);
+
+        $before = $this->databaseCounts();
+
+        $this->actingAs($records['admin'])
+            ->get(route('admin.dashboard'))
+            ->assertOk()
+            ->assertSee('data-receivables-chart', false)
+            ->assertSee('Revenue vs Receivables')
+            ->assertSee('SLS-REC-PARTIAL')
+            ->assertSee('SLS-REC-UNPAID')
+            ->assertSee('Second Receivable Customer')
+            ->assertSee('PHP 60,000')
+            ->assertSee('PHP 40,000')
+            ->assertSee('Partially Paid')
+            ->assertSee('Overdue')
+            ->assertSee('Outstanding Balance')
+            ->assertSee('PHP 100,000')
+            ->assertDontSee('SLS-REC-PAID')
+            ->assertDontSee('SLS-REC-CANCELLED')
+            ->assertDontSee('999999');
+
+        $this->actingAs($records['salesOfficer'])
+            ->get(route('sales-officer.sales'))
+            ->assertOk()
+            ->assertSee('SLS-REC-PARTIAL')
+            ->assertSee('60,000.00')
+            ->assertSee('SLS-REC-UNPAID')
+            ->assertSee('40,000.00');
+
+        $this->assertSame($before, $this->databaseCounts());
+
+        $this->actingAs(User::factory()->create(['role' => 'driver', 'status' => 'active']))
+            ->get(route('admin.dashboard'))
+            ->assertForbidden();
+
+        Carbon::setTestNow();
+    }
+
     /**
      * @return array<string, mixed>
      */

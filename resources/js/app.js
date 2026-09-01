@@ -177,3 +177,12 @@ document.querySelectorAll('[data-stock-level-chart]').forEach((canvas) => {
         (value) => `${Number(value || 0).toLocaleString()} L`,
     );
 });
+
+document.querySelectorAll('[data-receivables-chart]').forEach((canvas) => {
+    renderDashboardBarChart(
+        canvas,
+        '.receivables-fallback',
+        (value) => `PHP ${Number(value).toLocaleString()}`,
+        (value) => `PHP ${Number(value || 0).toLocaleString()}`,
+    );
+});

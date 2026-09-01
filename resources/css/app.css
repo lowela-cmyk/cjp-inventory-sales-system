@@ -495,20 +495,23 @@ select {
 }
 
 .sales-trend-chart,
-.stock-level-chart {
+.stock-level-chart,
+.receivables-chart {
     position: relative;
     min-height: 255px;
     padding: 22px 18px 18px;
 }
 
 .sales-trend-chart canvas,
-.stock-level-chart canvas {
+.stock-level-chart canvas,
+.receivables-chart canvas {
     width: 100%;
     min-height: 255px;
 }
 
 .sales-trend-fallback,
-.stock-level-fallback {
+.stock-level-fallback,
+.receivables-fallback {
     padding-top: 26px;
 }
 
@@ -673,6 +676,36 @@ select {
     padding: 24px;
     color: #6b7280;
     font-weight: 700;
+}
+
+.dashboard-empty-state-small {
+    min-height: 88px;
+    margin-top: 8px;
+}
+
+.dashboard-mini-table {
+    margin-top: 8px;
+    overflow-x: auto;
+}
+
+.dashboard-mini-table table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+
+.dashboard-mini-table th,
+.dashboard-mini-table td {
+    padding: 8px 6px;
+    border-top: 1px solid #e5e7eb;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.dashboard-mini-table th {
+    color: #6b7280;
+    font-size: 11px;
+    text-transform: uppercase;
 }
 
 .mock-line-path::after {

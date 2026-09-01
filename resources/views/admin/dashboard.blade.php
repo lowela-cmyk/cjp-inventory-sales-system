@@ -65,15 +65,38 @@
                 <div class="dashboard-empty-state">No data available</div>
             @endif
             <div class="chart-header"><h2>Revenue vs Receivables</h2></div>
-            <div class="revenue-bars">
-                @foreach ($revenueBars as $bar)
-                    <div class="revenue-bar">
-                        <strong>{{ $bar['value'] }}</strong>
-                        <i style="--h: {{ $bar['height'] }}px; --c: {{ $bar['color'] }}"></i>
-                        <span>{{ $bar['label'] }}</span>
-                    </div>
-                @endforeach
+            <div class="receivables-chart">
+                <canvas data-receivables-chart data-chart='@json($receivablesChart)' aria-label="Payments collected versus outstanding receivables" role="img"></canvas>
+                <div class="revenue-bars receivables-fallback">
+                    @foreach ($revenueBars as $bar)
+                        <div class="revenue-bar">
+                            <strong>{{ $bar['value'] }}</strong>
+                            <i style="--h: {{ $bar['height'] }}px; --c: {{ $bar['color'] }}"></i>
+                            <span>{{ $bar['label'] }}</span>
+                        </div>
+                    @endforeach
+                </div>
             </div>
+            @if (! empty($receivableRows))
+                <div class="dashboard-mini-table">
+                    <table>
+                        <thead><tr><th>Customer</th><th>Reference</th><th>Paid</th><th>Balance</th><th>Status</th></tr></thead>
+                        <tbody>
+                            @foreach ($receivableRows as $row)
+                                <tr>
+                                    <td>{{ $row['customer_name'] }}</td>
+                                    <td>{{ $row['sale_code'] }}</td>
+                                    <td>{{ $row['formatted_paid'] }}</td>
+                                    <td>{{ $row['formatted_balance'] }}</td>
+                                    <td>{{ $row['status_label'] }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            @else
+                <div class="dashboard-empty-state dashboard-empty-state-small">{{ $receivablesMonitoring['formattedTotalOutstanding'] }}</div>
+            @endif
         </section>
 
         <section class="chart-panel">

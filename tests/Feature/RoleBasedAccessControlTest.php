@@ -124,6 +124,8 @@ class RoleBasedAccessControlTest extends TestCase
             ],
             'driver' => [
                 '/driver',
+                '/driver/assigned-deliveries',
+                '/driver/assigned-deliveries/completed',
                 '/driver/fuel-lifting',
                 '/driver/fuel-lifting/hauled',
                 '/driver/fuel-lifting/no-schedule',

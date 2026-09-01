@@ -693,6 +693,176 @@ class DriverDashboardTest extends TestCase
         $this->assertDatabaseHas('hauls', ['id' => $haul['haulId'], 'status' => 'scheduled']);
     }
 
+    public function test_driver_routes_require_authenticated_active_driver_accounts(): void
+    {
+        $records = $this->baseRecords();
+        $deliveryId = $this->garageDelivery($records, ['delivery_code' => 'DLV-AUTH-DRIVER']);
+        $haul = $this->directAllocation($records, ['haul_code' => 'LFT-AUTH-DRIVER']);
+
+        $this->get(route('driver.assigned-deliveries'))
+            ->assertRedirect(route('login'));
+        $this->get(route('driver.fuel-lifting'))
+            ->assertRedirect(route('login'));
+        $this->patch(route('driver.assigned-deliveries.pickup', $deliveryId), ['idempotency_key' => (string) Str::uuid()])
+            ->assertRedirect(route('login'));
+        $this->patch(route('driver.assigned-deliveries.status', $deliveryId), ['idempotency_key' => (string) Str::uuid(), 'status' => 'delivered'])
+            ->assertRedirect(route('login'));
+        $this->patch(route('driver.fuel-lifting.hauls.status', $haul['haulId']), $this->liftingStatusPayload('in_transit'))
+            ->assertRedirect(route('login'));
+
+        $inactiveDriver = User::factory()->create(['role' => 'driver', 'status' => 'inactive']);
+
+        $this->actingAs($inactiveDriver)
+            ->get(route('driver.assigned-deliveries'))
+            ->assertForbidden();
+        $this->assertGuest();
+
+        $this->actingAs($records['driver'])
+            ->get(route('driver.assigned-deliveries'))
+            ->assertOk();
+        $this->actingAs($records['driver'])
+            ->get(route('driver.fuel-lifting'))
+            ->assertOk();
+    }
+
+    public function test_driver_access_restrictions_block_idor_request_tampering_and_cross_module_writes(): void
+    {
+        $records = $this->baseRecords();
+        $other = $this->baseRecords([
+            'driver_name' => 'Restricted Other Driver',
+            'driver_code' => 'DRV-ACCESS-OTHER',
+            'truck_code' => 'TRK-ACCESS-OTHER',
+            'customer_company' => 'Restricted Other Customer Co.',
+        ]);
+        $ownedDeliveryId = $this->garageDelivery($records, [
+            'delivery_code' => 'DLV-ACCESS-OWN',
+            'status' => 'in_transit',
+        ]);
+        $otherScheduledDeliveryId = $this->garageDelivery($other, [
+            'delivery_code' => 'DLV-ACCESS-OTHER-PICKUP',
+        ]);
+        $otherActiveDeliveryId = $this->garageDelivery($other, [
+            'delivery_code' => 'DLV-ACCESS-OTHER-STATUS',
+            'status' => 'in_transit',
+        ]);
+        $ownedHaul = $this->directAllocation($records, ['haul_code' => 'LFT-ACCESS-OWN']);
+        $otherHaul = $this->directAllocation($other, ['haul_code' => 'LFT-ACCESS-OTHER']);
+        $before = $this->sideEffectCounts($records);
+
+        $this->actingAs($records['driver'])
+            ->get(route('driver.assigned-deliveries', [
+                'driver_user_id' => $other['driver']->id,
+                'user_id' => $other['driver']->id,
+                'search' => 'ACCESS-OTHER',
+            ]))
+            ->assertOk()
+            ->assertDontSee('DLV-ACCESS-OTHER-PICKUP')
+            ->assertDontSee('DLV-ACCESS-OTHER-STATUS')
+            ->assertDontSee('Restricted Other Customer Co.');
+
+        $this->actingAs($records['driver'])
+            ->get(route('driver.fuel-lifting', [
+                'driver_user_id' => $other['driver']->id,
+                'user_id' => $other['driver']->id,
+                'search' => 'ACCESS-OTHER',
+            ]))
+            ->assertOk()
+            ->assertDontSee('LFT-ACCESS-OTHER')
+            ->assertDontSee('Restricted Other Driver')
+            ->assertDontSee(route('driver.fuel-lifting.hauls.status', $otherHaul['haulId']), false);
+
+        $tamperedPayload = [
+            'idempotency_key' => (string) Str::uuid(),
+            'driver_user_id' => $records['driver']->id,
+            'user_id' => $records['driver']->id,
+            'truck_id' => $records['truckId'],
+        ];
+
+        $this->actingAs($records['driver'])
+            ->from(route('driver.assigned-deliveries'))
+            ->patch(route('driver.assigned-deliveries.pickup', $otherScheduledDeliveryId), $tamperedPayload)
+            ->assertRedirect(route('driver.assigned-deliveries'))
+            ->assertSessionHasErrors('pickup');
+
+        $this->actingAs($records['driver'])
+            ->from(route('driver.assigned-deliveries'))
+            ->patch(route('driver.assigned-deliveries.status', $otherActiveDeliveryId), array_merge($tamperedPayload, ['status' => 'delivered']))
+            ->assertRedirect(route('driver.assigned-deliveries'))
+            ->assertSessionHasErrors('delivery');
+
+        $this->actingAs($records['driver'])
+            ->from(route('driver.fuel-lifting'))
+            ->patch(route('driver.fuel-lifting.hauls.status', $otherHaul['haulId']), array_merge($tamperedPayload, ['lifting_status' => 'in_transit']))
+            ->assertRedirect(route('driver.fuel-lifting'))
+            ->assertSessionHasErrors('lifting');
+
+        $this->actingAs($records['driver'])
+            ->from(route('driver.assigned-deliveries'))
+            ->patch(route('driver.assigned-deliveries.status', $ownedDeliveryId), array_merge($tamperedPayload, ['status' => 'cancelled']))
+            ->assertRedirect(route('driver.assigned-deliveries'))
+            ->assertSessionHasErrors('delivery');
+
+        $this->actingAs($records['driver'])
+            ->from(route('driver.assigned-deliveries'))
+            ->patch(route('driver.assigned-deliveries.status', $ownedDeliveryId), array_merge($tamperedPayload, ['status' => 'bogus']))
+            ->assertRedirect(route('driver.assigned-deliveries'))
+            ->assertSessionHasErrors('status');
+
+        $this->actingAs($records['driver'])
+            ->patch(route('dispatch.fuel-lifting.deliveries.assignment', $ownedDeliveryId), ['driver_user_id' => $other['driver']->id])
+            ->assertForbidden();
+        $this->actingAs($records['driver'])
+            ->patch(route('dispatch.fuel-lifting.hauls.truck', $ownedHaul['haulId']), ['truck_id' => $other['haulingTruckId']])
+            ->assertForbidden();
+        $this->actingAs($records['driver'])
+            ->post(route('inventory-officer.inventory.stock-out.store'), ['driver_user_id' => $records['driver']->id])
+            ->assertForbidden();
+        $this->actingAs($records['driver'])
+            ->post(route('sales-officer.sales.store'), ['customer_id' => $records['customerId']])
+            ->assertForbidden();
+        $this->actingAs($records['driver'])
+            ->post(route('admin.user-management.drivers.store'), ['email' => 'tamper@example.com'])
+            ->assertForbidden();
+
+        $this->assertDatabaseHas('deliveries', ['id' => $otherScheduledDeliveryId, 'status' => 'scheduled']);
+        $this->assertDatabaseHas('deliveries', ['id' => $otherActiveDeliveryId, 'status' => 'in_transit']);
+        $this->assertDatabaseHas('deliveries', ['id' => $ownedDeliveryId, 'status' => 'in_transit']);
+        $this->assertDatabaseHas('hauls', ['id' => $otherHaul['haulId'], 'status' => 'scheduled']);
+        $this->assertSame($before, $this->sideEffectCounts($records));
+    }
+
+    public function test_driver_views_expose_only_driver_actions_and_no_assignment_controls(): void
+    {
+        $records = $this->baseRecords();
+        $deliveryId = $this->garageDelivery($records, [
+            'delivery_code' => 'DLV-VIEW-DRIVER',
+            'status' => 'in_transit',
+        ]);
+        $haul = $this->directAllocation($records, ['haul_code' => 'LFT-VIEW-DRIVER']);
+
+        $this->actingAs($records['driver'])
+            ->get(route('driver.assigned-deliveries', ['search' => 'DLV-VIEW-DRIVER']))
+            ->assertOk()
+            ->assertSee(route('driver.assigned-deliveries.status', $deliveryId), false)
+            ->assertDontSee(route('dispatch.fuel-lifting.deliveries.status', $deliveryId), false)
+            ->assertDontSee(route('admin.fuel-lifting.deliveries.status', $deliveryId), false)
+            ->assertDontSee('name="driver_user_id"', false)
+            ->assertDontSee('name="user_id"', false)
+            ->assertDontSee('name="truck_id"', false);
+
+        $this->actingAs($records['driver'])
+            ->get(route('driver.fuel-lifting', ['search' => 'LFT-VIEW-DRIVER']))
+            ->assertOk()
+            ->assertSee(route('driver.fuel-lifting.hauls.status', $haul['haulId']), false)
+            ->assertDontSee(route('dispatch.fuel-lifting.hauls.status', $haul['haulId']), false)
+            ->assertDontSee(route('admin.fuel-lifting.hauls.status', $haul['haulId']), false)
+            ->assertDontSee(route('dispatch.fuel-lifting.hauls.truck', $haul['haulId']), false)
+            ->assertDontSee(route('admin.fuel-lifting.hauls.truck', $haul['haulId']), false)
+            ->assertDontSee('name="driver_user_id"', false)
+            ->assertDontSee('name="user_id"', false)
+            ->assertDontSee('name="truck_id"', false);
+    }
+
     /**
      * @param array<string, mixed> $records
      * @param array<string, mixed> $overrides

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\DashboardSummaryService;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
@@ -19,7 +20,7 @@ class SalesOfficerCustomerController extends Controller
     private const PAYMENT_METHODS = ['cash_on_delivery', 'cheque', 'advance_payment', 'bank_transfer'];
     private const PAYMENT_TERMS = ['cod', 'installment', 'advance'];
 
-    public function index(Request $request, string $state = 'receivables'): View
+    public function index(Request $request, DashboardSummaryService $dashboardSummary, string $state = 'receivables'): View
     {
         $data = $request->validate([
             'search' => ['nullable', 'string', 'max:100'],
@@ -31,6 +32,7 @@ class SalesOfficerCustomerController extends Controller
         return view('sales-officer.sales', [
             'activeTab' => $state === 'customers' ? 'customers' : 'receivables',
             'search' => $normalizedSearch,
+            'summaryCards' => $dashboardSummary->salesCards(),
             'sales' => $this->salesRows($normalizedSearch),
             'customers' => $this->customerRows($normalizedSearch),
             'customerOptions' => $this->customerOptions($state === 'customers' ? $normalizedSearch : null),

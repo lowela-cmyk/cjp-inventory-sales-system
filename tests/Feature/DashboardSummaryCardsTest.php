@@ -1,0 +1,332 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\User;
+use Carbon\Carbon;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Tests\TestCase;
+
+class DashboardSummaryCardsTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_dashboard_summary_cards_use_real_authoritative_records(): void
+    {
+        Carbon::setTestNow('2026-09-01 10:00:00');
+        $records = $this->records();
+        $this->dashboardData($records);
+
+        $this->actingAs($records['admin'])
+            ->get(route('admin.dashboard'))
+            ->assertOk()
+            ->assertSee('Total Inventory (KL)')
+            ->assertSee('45 KL')
+            ->assertSee('Total Sales Revenue')
+            ->assertSee('PHP 150,000')
+            ->assertSee('Outstanding Balance')
+            ->assertSee('PHP 50,000')
+            ->assertSee('Unlifted Fuel (KL)')
+            ->assertSee('50 KL')
+            ->assertSee('Active Deliveries')
+            ->assertSee('3');
+
+        $this->actingAs($records['inventoryOfficer'])
+            ->get(route('inventory-officer.inventory'))
+            ->assertOk()
+            ->assertSee('Total Inventory')
+            ->assertSee('45,000 L')
+            ->assertSee('Stock-In Today')
+            ->assertSee('50,000 L')
+            ->assertSee('Stock-Out Today')
+            ->assertSee('10,000 L')
+            ->assertSee('Unlifted Fuel')
+            ->assertSee('50,000 L')
+            ->assertSee('Open Purchases');
+
+        $this->actingAs($records['salesOfficer'])
+            ->get(route('sales-officer.sales'))
+            ->assertOk()
+            ->assertSee('Total Sales')
+            ->assertSee('PHP 150,000')
+            ->assertSee("Today's Sales")
+            ->assertSee('PHP 120,000')
+            ->assertSee('Payments Collected')
+            ->assertSee('PHP 100,000')
+            ->assertSee('Outstanding Receivables')
+            ->assertSee('PHP 50,000')
+            ->assertSee('Active Customers')
+            ->assertSee('1');
+
+        $this->actingAs($records['dispatchOfficer'])
+            ->get(route('dispatch.fuel-lifting'))
+            ->assertOk()
+            ->assertSee('Total Deliveries')
+            ->assertSee('Scheduled')
+            ->assertSee('Active')
+            ->assertSee('Completed')
+            ->assertSee('Cancelled')
+            ->assertSee('2');
+
+        Carbon::setTestNow();
+    }
+
+    public function test_dashboard_summary_cards_show_zero_empty_states_without_mock_values(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin', 'status' => 'active']);
+        $inventoryOfficer = User::factory()->create(['role' => 'inventory_officer', 'status' => 'active']);
+        $salesOfficer = User::factory()->create(['role' => 'sales_officer', 'status' => 'active']);
+
+        $this->actingAs($admin)
+            ->get(route('admin.dashboard'))
+            ->assertOk()
+            ->assertSee('0 KL')
+            ->assertSee('PHP 0')
+            ->assertSee('No data available')
+            ->assertDontSee('Premium')
+            ->assertDontSee('Diesel')
+            ->assertDontSee('PHP 4,580,000')
+            ->assertDontSee('PHP10.5M');
+
+        $this->actingAs($inventoryOfficer)
+            ->get(route('inventory-officer.inventory'))
+            ->assertOk()
+            ->assertSee('Total Inventory')
+            ->assertSee('0 L')
+            ->assertSee('Open Purchases')
+            ->assertSee('No records found.');
+
+        $this->actingAs($salesOfficer)
+            ->get(route('sales-officer.sales'))
+            ->assertOk()
+            ->assertSee('Total Sales')
+            ->assertSee('PHP 0')
+            ->assertSee('Active Customers')
+            ->assertSee('No records found.');
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function records(): array
+    {
+        $admin = User::factory()->create(['role' => 'admin', 'status' => 'active']);
+        $inventoryOfficer = User::factory()->create(['role' => 'inventory_officer', 'status' => 'active']);
+        $salesOfficer = User::factory()->create(['role' => 'sales_officer', 'status' => 'active']);
+        $dispatchOfficer = User::factory()->create(['role' => 'dispatch_officer', 'status' => 'active']);
+        $driver = User::factory()->create(['role' => 'driver', 'status' => 'active']);
+        $depotId = DB::table('depots')->insertGetId([
+            'depot_code' => 'DEP-DASH',
+            'name' => 'Dashboard Depot',
+            'status' => 'active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $garageId = DB::table('storage_locations')->insertGetId([
+            'location_code' => 'GAR-DASH',
+            'name' => 'Dashboard Garage',
+            'type' => 'garage',
+            'status' => 'active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $fuelTypeId = DB::table('fuel_types')->insertGetId([
+            'code' => 'DSL-DASH',
+            'name' => 'Dashboard Diesel',
+            'status' => 'active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $customerId = DB::table('customers')->insertGetId([
+            'customer_code' => 'CUS-DASH',
+            'name' => 'Dashboard Customer',
+            'company_name' => 'Dashboard Customer Co.',
+            'payment_status' => 'partial',
+            'status' => 'active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('customers')->insert([
+            'customer_code' => 'CUS-DASH-INACTIVE',
+            'name' => 'Inactive Dashboard Customer',
+            'company_name' => 'Inactive Dashboard Co.',
+            'payment_status' => 'clear',
+            'status' => 'inactive',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $truckId = DB::table('trucks')->insertGetId([
+            'truck_code' => 'TRK-DASH',
+            'capacity_liters' => 30000,
+            'truck_type' => 'delivery',
+            'status' => 'assigned',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return compact('admin', 'inventoryOfficer', 'salesOfficer', 'dispatchOfficer', 'driver', 'depotId', 'garageId', 'fuelTypeId', 'customerId', 'truckId');
+    }
+
+    /**
+     * @param array<string, mixed> $records
+     */
+    private function dashboardData(array $records): void
+    {
+        DB::table('inventory_movements')->insert([
+            $this->inventoryMovement($records, 'MOV-DASH-IN', 'in', 50000, '2026-09-01 08:00:00'),
+            $this->inventoryMovement($records, 'MOV-DASH-OUT', 'out', 10000, '2026-09-01 09:00:00'),
+            $this->inventoryMovement($records, 'MOV-DASH-OLD', 'in', 5000, '2026-08-31 09:00:00'),
+        ]);
+
+        $purchaseId = DB::table('purchases')->insertGetId([
+            'purchase_code' => 'PUR-DASH-OPEN',
+            'depot_id' => $records['depotId'],
+            'purchase_date' => '2026-08-30',
+            'payment_status' => 'partial',
+            'status' => 'partially_hauled',
+            'created_by' => $records['inventoryOfficer']->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('purchase_items')->insert([
+            'purchase_id' => $purchaseId,
+            'fuel_type_id' => $records['fuelTypeId'],
+            'quantity_ordered_liters' => 80000,
+            'unit_cost' => 50,
+            'line_total' => 4000000,
+            'quantity_hauled_liters' => 30000,
+            'status' => 'partial',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $cancelledPurchaseId = DB::table('purchases')->insertGetId([
+            'purchase_code' => 'PUR-DASH-CANCELLED',
+            'depot_id' => $records['depotId'],
+            'purchase_date' => '2026-08-30',
+            'payment_status' => 'unpaid',
+            'status' => 'cancelled',
+            'created_by' => $records['inventoryOfficer']->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('purchase_items')->insert([
+            'purchase_id' => $cancelledPurchaseId,
+            'fuel_type_id' => $records['fuelTypeId'],
+            'quantity_ordered_liters' => 999999,
+            'unit_cost' => 50,
+            'line_total' => 49999950,
+            'quantity_hauled_liters' => 0,
+            'status' => 'unlifted',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $todaySaleId = $this->sale($records, 'SLS-DASH-TODAY', '2026-09-01', 'partially_paid', 120000);
+        $oldSaleId = $this->sale($records, 'SLS-DASH-OLD', '2026-08-30', 'paid', 30000);
+        $cancelledSaleId = $this->sale($records, 'SLS-DASH-CANCELLED', '2026-09-01', 'cancelled', 999999);
+
+        DB::table('payments')->insert([
+            $this->payment($records, $todaySaleId, 'PAY-DASH-TODAY', 70000),
+            $this->payment($records, $oldSaleId, 'PAY-DASH-OLD', 30000),
+            $this->payment($records, $cancelledSaleId, 'PAY-DASH-CANCELLED', 999999),
+        ]);
+
+        foreach (['scheduled', 'in_transit', 'incomplete', 'delivered', 'cancelled'] as $status) {
+            DB::table('deliveries')->insert([
+                'delivery_code' => 'DLV-DASH-'.strtoupper($status),
+                'sale_id' => $todaySaleId,
+                'customer_id' => $records['customerId'],
+                'fuel_type_id' => $records['fuelTypeId'],
+                'source_type' => 'garage',
+                'storage_location_id' => $records['garageId'],
+                'truck_id' => $records['truckId'],
+                'driver_user_id' => $records['driver']->id,
+                'scheduled_at' => '2026-09-01 12:00:00',
+                'scheduled_quantity_liters' => 1000,
+                'status' => $status,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $records
+     */
+    private function inventoryMovement(array $records, string $code, string $direction, float $quantity, string $date): array
+    {
+        return [
+            'movement_code' => $code,
+            'storage_location_id' => $records['garageId'],
+            'fuel_type_id' => $records['fuelTypeId'],
+            'movement_type' => $direction === 'in' ? 'stock_in' : 'stock_out',
+            'direction' => $direction,
+            'quantity_liters' => $quantity,
+            'unit_cost' => 50,
+            'reference_type' => 'dashboard_test',
+            'reference_id' => 1,
+            'movement_date' => $date,
+            'created_by' => $records['inventoryOfficer']->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $records
+     */
+    private function sale(array $records, string $code, string $date, string $status, float $lineTotal): int
+    {
+        $saleId = DB::table('sales')->insertGetId([
+            'sale_code' => $code,
+            'customer_id' => $records['customerId'],
+            'sale_date' => $date,
+            'payment_method' => 'bank_transfer',
+            'payment_terms' => 'installment',
+            'status' => $status,
+            'created_by' => $records['salesOfficer']->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('sale_items')->insert([
+            'sale_id' => $saleId,
+            'fuel_type_id' => $records['fuelTypeId'],
+            'quantity_liters' => 1000,
+            'unit_price' => $lineTotal / 1000,
+            'line_total' => $lineTotal,
+            'fulfilled_quantity_liters' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('receivables')->insert([
+            'sale_id' => $saleId,
+            'due_date' => '2026-09-30',
+            'status' => $status === 'paid' ? 'clear' : 'partial',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return $saleId;
+    }
+
+    /**
+     * @param array<string, mixed> $records
+     */
+    private function payment(array $records, int $saleId, string $code, float $amount): array
+    {
+        return [
+            'payment_code' => $code,
+            'sale_id' => $saleId,
+            'payment_date' => '2026-09-01',
+            'amount' => $amount,
+            'method' => 'bank_transfer',
+            'received_by' => $records['salesOfficer']->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ];
+    }
+}

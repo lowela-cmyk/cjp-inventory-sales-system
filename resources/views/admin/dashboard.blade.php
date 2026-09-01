@@ -34,15 +34,19 @@
             <div class="chart-header">
                 <h2>Current Stock By Fuel Type</h2>
             </div>
-            <div class="stock-bars">
-                @foreach ($stockByFuelType as $stock)
-                    <div class="stock-bar">
-                        <strong>{{ $stock['value'] }}</strong>
-                        <i style="--bar-height: {{ $stock['height'] }}px; --bar-color: {{ $stock['color'] }}"></i>
-                        <span>{{ $stock['label'] }}</span>
-                    </div>
-                @endforeach
-            </div>
+            @if (! empty($stockByFuelType))
+                <div class="stock-bars">
+                    @foreach ($stockByFuelType as $stock)
+                        <div class="stock-bar">
+                            <strong>{{ $stock['value'] }}</strong>
+                            <i style="--bar-height: {{ $stock['height'] }}px; --bar-color: {{ $stock['color'] }}"></i>
+                            <span>{{ $stock['label'] }}</span>
+                        </div>
+                    @endforeach
+                </div>
+            @else
+                <div class="dashboard-empty-state">No data available</div>
+            @endif
         </section>
 
         <section class="chart-panel">

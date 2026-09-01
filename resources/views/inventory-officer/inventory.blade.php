@@ -21,6 +21,18 @@
         </div>
         <div class="actions-right"><button class="btn btn-secondary" type="button">Export</button></div>
 
+        @if (! empty($summaryCards))
+            <div class="metric-row">
+                @foreach ($summaryCards as $card)
+                    <div class="metric-card">
+                        <em>{{ $card['label'] }}</em>
+                        <strong>{{ $card['value'] }}</strong>
+                        <span>{{ $card['caption'] }}</span>
+                    </div>
+                @endforeach
+            </div>
+        @endif
+
         <section data-tab-panel="purchases" @hidden($activeTab !== 'purchases')>
             <form class="toolbar" method="GET" action="{{ route('inventory-officer.inventory') }}">
                 <input type="search" name="search" placeholder="Search..." aria-label="Search purchases" value="{{ $search }}">

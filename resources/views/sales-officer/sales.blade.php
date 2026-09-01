@@ -32,6 +32,18 @@
             <button class="btn btn-secondary" type="button">Export</button>
         </div>
 
+        @if (! empty($summaryCards))
+            <div class="metric-row">
+                @foreach ($summaryCards as $card)
+                    <div class="metric-card">
+                        <em>{{ $card['label'] }}</em>
+                        <strong>{{ $card['value'] }}</strong>
+                        <span>{{ $card['caption'] }}</span>
+                    </div>
+                @endforeach
+            </div>
+        @endif
+
         <section data-tab-panel="receivables" @hidden($activeTab !== 'receivables')>
             <form class="toolbar toolbar-narrow" method="GET" action="{{ route('sales-officer.sales') }}">
                 <input type="search" name="search" placeholder="Search..." aria-label="Search receivables" value="{{ $search }}">

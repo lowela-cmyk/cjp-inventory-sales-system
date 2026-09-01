@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\DashboardSummaryService;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -21,7 +22,7 @@ class InventoryOfficerPurchaseController extends Controller
     private const STOCK_OUT_REFERENCE_TYPE = 'stock_out';
     private const ELIGIBLE_SALE_STATUSES = ['confirmed', 'partially_paid', 'paid', 'unpaid'];
 
-    public function index(Request $request, string $state = 'purchases'): View
+    public function index(Request $request, DashboardSummaryService $dashboardSummary, string $state = 'purchases'): View
     {
         $data = $request->validate([
             'search' => ['nullable', 'string', 'max:100'],
@@ -33,6 +34,7 @@ class InventoryOfficerPurchaseController extends Controller
         return view('inventory-officer.inventory', [
             'activeTab' => $activeTab,
             'search' => $search === '' ? null : $search,
+            'summaryCards' => $dashboardSummary->inventoryCards(),
             'purchases' => $this->purchaseRows($search === '' ? null : $search),
             'stockIn' => $this->stockInRows($search === '' ? null : $search),
             'stockOut' => $this->stockOutRows($search === '' ? null : $search),

@@ -8,26 +8,22 @@ use Illuminate\Support\Facades\DB;
 
 class AdminDashboardService
 {
-    private const VALID_SALE_STATUSES = ['confirmed', 'partially_paid', 'paid', 'unpaid'];
+    public function __construct(private DashboardSummaryService $summary)
+    {
+    }
 
     /**
      * @return array<string, mixed>
      */
     public function data(): array
     {
-        $totalInventoryLiters = $this->totalInventoryLiters();
-        $totalSalesRevenue = $this->totalSalesRevenue();
-        $collectedRevenue = $this->collectedRevenue();
-        $outstandingBalance = $totalSalesRevenue - $collectedRevenue;
+        $summary = $this->summary->adminSummary();
+        $totalSalesRevenue = $summary['totalSalesRevenue'];
+        $collectedRevenue = $summary['collectedRevenue'];
+        $outstandingBalance = $summary['outstandingReceivables'];
 
         return [
-            'metricCards' => [
-                ['Total Inventory (KL)', $this->formatKiloliters($totalInventoryLiters), 'Across all depots', ''],
-                ['Total Sales Revenue', $this->formatMoney($totalSalesRevenue), 'Cumulative', ''],
-                ['Outstanding Balance', $this->formatMoney($outstandingBalance), 'Receivables', 'color:#a31318'],
-                ['Unlifted Fuel (KL)', $this->formatKiloliters($this->unliftedFuelLiters()), 'Pending lifting', ''],
-                ['Active Deliveries', number_format($this->activeDeliveries()), 'Scheduled / in transit', ''],
-            ],
+            'metricCards' => $summary['metricCards'],
             'salesTrend' => $this->weeklySalesTrend(),
             'stockByFuelType' => $this->stockByFuelType(),
             'revenueBars' => $this->revenueBars($totalSalesRevenue, $collectedRevenue, $outstandingBalance),
@@ -35,46 +31,6 @@ class AdminDashboardService
             'demandMonths' => $this->demandByMonth(),
             'hasRevenueProjection' => false,
         ];
-    }
-
-    private function totalInventoryLiters(): float
-    {
-        return (float) DB::table('inventory_movements')
-            ->selectRaw("COALESCE(SUM(CASE WHEN direction = 'in' THEN quantity_liters ELSE -quantity_liters END), 0) as total")
-            ->value('total');
-    }
-
-    private function totalSalesRevenue(): float
-    {
-        return (float) DB::query()
-            ->fromSub($this->saleTotalsQuery(), 'sale_totals')
-            ->selectRaw('COALESCE(SUM(total), 0) as total')
-            ->value('total');
-    }
-
-    private function collectedRevenue(): float
-    {
-        return (float) DB::query()
-            ->fromSub($this->paymentTotalsQuery(), 'payment_totals')
-            ->selectRaw('COALESCE(SUM(paid), 0) as total')
-            ->value('total');
-    }
-
-    private function unliftedFuelLiters(): float
-    {
-        return (float) DB::table('purchase_items')
-            ->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
-            ->whereNull('purchases.deleted_at')
-            ->where('purchases.status', '!=', 'cancelled')
-            ->selectRaw('COALESCE(SUM(quantity_ordered_liters - quantity_hauled_liters), 0) as total')
-            ->value('total');
-    }
-
-    private function activeDeliveries(): int
-    {
-        return DB::table('deliveries')
-            ->whereIn('status', ['scheduled', 'in_transit', 'incomplete'])
-            ->count();
     }
 
     /**
@@ -88,7 +44,7 @@ class AdminDashboardService
         $totals = DB::table('sales')
             ->join('sale_items', 'sale_items.sale_id', '=', 'sales.id')
             ->whereNull('sales.deleted_at')
-            ->whereIn('sales.status', self::VALID_SALE_STATUSES)
+            ->whereIn('sales.status', DashboardSummaryService::VALID_SALE_STATUSES)
             ->whereBetween('sales.sale_date', [$start->toDateString(), $end->toDateString()])
             ->selectRaw('sales.sale_date as sale_date, COALESCE(SUM(sale_items.line_total), 0) as total')
             ->groupBy('sales.sale_date')
@@ -125,15 +81,7 @@ class AdminDashboardService
             ->orderBy('fuel_types.name')
             ->get();
 
-        if ($rows->isEmpty()) {
-            $rows = collect([
-                (object) ['name' => 'Premium', 'liters' => 0],
-                (object) ['name' => 'Diesel', 'liters' => 0],
-                (object) ['name' => 'Unleaded', 'liters' => 0],
-            ]);
-        }
-
-        $max = max(1, ...$rows->map(fn (object $row): float => abs((float) $row->liters))->all());
+        $max = max([1, ...$rows->map(fn (object $row): float => abs((float) $row->liters))->all()]);
 
         return $rows
             ->values()
@@ -200,7 +148,7 @@ class AdminDashboardService
         return DB::table('sales')
             ->join('sale_items', 'sale_items.sale_id', '=', 'sales.id')
             ->whereNull('sales.deleted_at')
-            ->whereIn('sales.status', self::VALID_SALE_STATUSES)
+            ->whereIn('sales.status', DashboardSummaryService::VALID_SALE_STATUSES)
             ->selectRaw('sales.sale_date as sale_date, COALESCE(SUM(sale_items.quantity_liters), 0) as quantity')
             ->groupBy('sales.sale_date')
             ->get();
@@ -231,36 +179,26 @@ class AdminDashboardService
 
     private function saleTotalsQuery()
     {
-        return DB::table('sales')
-            ->join('sale_items', 'sale_items.sale_id', '=', 'sales.id')
-            ->whereNull('sales.deleted_at')
-            ->whereIn('sales.status', self::VALID_SALE_STATUSES)
-            ->selectRaw('sales.id as sale_id, COALESCE(SUM(sale_items.line_total), 0) as total')
-            ->groupBy('sales.id');
+        return $this->summary->saleTotalsQuery();
     }
 
     private function paymentTotalsQuery()
     {
-        return DB::table('payments')
-            ->join('sales', 'sales.id', '=', 'payments.sale_id')
-            ->whereNull('sales.deleted_at')
-            ->whereIn('sales.status', self::VALID_SALE_STATUSES)
-            ->selectRaw('payments.sale_id, COALESCE(SUM(payments.amount), 0) as paid')
-            ->groupBy('payments.sale_id');
+        return $this->summary->paymentTotalsQuery();
     }
 
     private function formatMoney(float $value, bool $withSpace = true): string
     {
-        return 'PHP'.($withSpace ? ' ' : '').number_format($value, 0);
+        return $this->summary->formatMoney($value, $withSpace);
     }
 
     private function formatLiters(float $value): string
     {
-        return number_format($value, 0).' L';
+        return $this->summary->formatLiters($value);
     }
 
     private function formatKiloliters(float $liters): string
     {
-        return number_format($liters / 1000, 0).' KL';
+        return $this->summary->formatKiloliters($liters);
     }
 }

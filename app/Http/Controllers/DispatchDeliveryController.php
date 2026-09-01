@@ -579,7 +579,7 @@ class DispatchDeliveryController extends Controller
             ->selectRaw("
                 COUNT(*) as total,
                 SUM(CASE WHEN deliveries.status = 'scheduled' THEN 1 ELSE 0 END) as scheduled,
-                SUM(CASE WHEN deliveries.status = 'in_transit' THEN 1 ELSE 0 END) as active,
+                SUM(CASE WHEN deliveries.status IN ('in_transit', 'incomplete') THEN 1 ELSE 0 END) as active,
                 SUM(CASE WHEN deliveries.status = 'delivered' THEN 1 ELSE 0 END) as completed,
                 SUM(CASE WHEN deliveries.status = 'cancelled' THEN 1 ELSE 0 END) as cancelled
             ")

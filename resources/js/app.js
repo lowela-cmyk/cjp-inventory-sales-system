@@ -126,9 +126,9 @@ document.addEventListener('keydown', (event) => {
     }
 });
 
-document.querySelectorAll('[data-sales-trend-chart]').forEach((canvas) => {
+const renderDashboardBarChart = (canvas, fallbackSelector, yTickFormatter, fallbackFormatter) => {
     const chartData = JSON.parse(canvas.dataset.chart || '{"labels":[],"datasets":[]}');
-    const fallback = canvas.parentElement?.querySelector('.sales-trend-fallback');
+    const fallback = canvas.parentElement?.querySelector(fallbackSelector);
 
     new Chart(canvas, {
         type: 'bar',
@@ -140,7 +140,7 @@ document.querySelectorAll('[data-sales-trend-chart]').forEach((canvas) => {
                 legend: { display: false },
                 tooltip: {
                     callbacks: {
-                        label: (context) => context.dataset.formattedData?.[context.dataIndex] || `PHP ${Number(context.raw || 0).toLocaleString()}`,
+                        label: (context) => context.dataset.formattedData?.[context.dataIndex] || fallbackFormatter(context.raw),
                     },
                 },
             },
@@ -148,7 +148,7 @@ document.querySelectorAll('[data-sales-trend-chart]').forEach((canvas) => {
                 y: {
                     beginAtZero: true,
                     ticks: {
-                        callback: (value) => `PHP ${Number(value).toLocaleString()}`,
+                        callback: yTickFormatter,
                     },
                 },
             },
@@ -158,4 +158,22 @@ document.querySelectorAll('[data-sales-trend-chart]').forEach((canvas) => {
     if (fallback) {
         fallback.hidden = true;
     }
+};
+
+document.querySelectorAll('[data-sales-trend-chart]').forEach((canvas) => {
+    renderDashboardBarChart(
+        canvas,
+        '.sales-trend-fallback',
+        (value) => `PHP ${Number(value).toLocaleString()}`,
+        (value) => `PHP ${Number(value || 0).toLocaleString()}`,
+    );
+});
+
+document.querySelectorAll('[data-stock-level-chart]').forEach((canvas) => {
+    renderDashboardBarChart(
+        canvas,
+        '.stock-level-fallback',
+        (value) => `${Number(value).toLocaleString()} L`,
+        (value) => `${Number(value || 0).toLocaleString()} L`,
+    );
 });

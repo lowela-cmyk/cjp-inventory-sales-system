@@ -158,6 +158,138 @@ class DashboardSummaryCardsTest extends TestCase
         Carbon::setTestNow();
     }
 
+    public function test_stock_level_chart_uses_authoritative_inventory_movements_by_fuel_type(): void
+    {
+        Carbon::setTestNow('2026-09-01 10:00:00');
+        $records = $this->records();
+        $gasolineFuelId = DB::table('fuel_types')->insertGetId([
+            'code' => 'GAS-DASH',
+            'name' => 'Dashboard Gasoline',
+            'status' => 'active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('fuel_types')->insert([
+            'code' => 'E10-DASH',
+            'name' => 'Dashboard E10',
+            'status' => 'active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $retiredFuelId = DB::table('fuel_types')->insertGetId([
+            'code' => 'RET-DASH',
+            'name' => 'Dashboard Retired Fuel',
+            'status' => 'inactive',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('inventory_movements')->insert([
+            $this->inventoryMovement($records, 'MOV-STOCK-DIESEL-IN', 'in', 50000, '2026-09-01 08:00:00'),
+            array_merge($this->inventoryMovement($records, 'MOV-STOCK-GAS-IN', 'in', 20000, '2026-09-01 08:15:00'), [
+                'fuel_type_id' => $gasolineFuelId,
+            ]),
+            array_merge($this->inventoryMovement($records, 'MOV-STOCK-RETIRED-IN', 'in', 999999, '2026-09-01 08:30:00'), [
+                'fuel_type_id' => $retiredFuelId,
+            ]),
+        ]);
+
+        $saleId = $this->sale($records, 'SLS-STOCK-DASH', '2026-09-01', 'confirmed', 120000);
+        $saleItemId = DB::table('sale_items')->where('sale_id', $saleId)->value('id');
+        $releasedStockOutId = $this->stockOut($records, $saleId, (int) $saleItemId, 'STO-STOCK-RELEASED', 10000, 'released');
+        $cancelledStockOutId = $this->stockOut($records, $saleId, (int) $saleItemId, 'STO-STOCK-CANCELLED', 9000, 'cancelled');
+
+        DB::table('inventory_movements')->insert([
+            array_merge($this->inventoryMovement($records, 'MOV-STOCK-RELEASED-OUT', 'out', 10000, '2026-09-01 09:00:00'), [
+                'reference_type' => 'stock_out',
+                'reference_id' => $releasedStockOutId,
+            ]),
+            array_merge($this->inventoryMovement($records, 'MOV-STOCK-CANCELLED-OUT', 'out', 9000, '2026-09-01 09:15:00'), [
+                'reference_type' => 'stock_out',
+                'reference_id' => $cancelledStockOutId,
+            ]),
+        ]);
+
+        $purchaseId = DB::table('purchases')->insertGetId([
+            'purchase_code' => 'PUR-STOCK-NOT-RECEIVED',
+            'depot_id' => $records['depotId'],
+            'purchase_date' => '2026-09-01',
+            'payment_status' => 'paid',
+            'status' => 'ordered',
+            'created_by' => $records['inventoryOfficer']->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('purchase_items')->insert([
+            'purchase_id' => $purchaseId,
+            'fuel_type_id' => $records['fuelTypeId'],
+            'quantity_ordered_liters' => 888888,
+            'unit_cost' => 50,
+            'line_total' => 44444400,
+            'quantity_hauled_liters' => 0,
+            'status' => 'unlifted',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('deliveries')->insert([
+            'delivery_code' => 'DLV-STOCK-DIRECT',
+            'customer_id' => $records['customerId'],
+            'fuel_type_id' => $records['fuelTypeId'],
+            'source_type' => 'depot',
+            'depot_id' => $records['depotId'],
+            'truck_id' => $records['truckId'],
+            'driver_user_id' => $records['driver']->id,
+            'scheduled_at' => '2026-09-01 10:00:00',
+            'delivered_at' => '2026-09-01 11:00:00',
+            'scheduled_quantity_liters' => 77777,
+            'actual_quantity_liters' => 77777,
+            'status' => 'delivered',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        /** @var DashboardSummaryService $summary */
+        $summary = app(DashboardSummaryService::class);
+        $stockLevels = $summary->stockLevels();
+        $stockByLabel = collect($stockLevels['rows'])->keyBy('label');
+
+        $this->assertSame(60000.0, $summary->totalInventoryLiters());
+        $this->assertSame(60000.0, $stockLevels['totalLiters']);
+        $this->assertSame(40000.0, $stockByLabel['Dashboard Diesel']['liters']);
+        $this->assertSame(0.0, $stockByLabel['Dashboard E10']['liters']);
+        $this->assertSame(20000.0, $stockByLabel['Dashboard Gasoline']['liters']);
+        $this->assertFalse($stockByLabel->has('Dashboard Retired Fuel'));
+        $this->assertSame(['Dashboard Diesel', 'Dashboard E10', 'Dashboard Gasoline'], $stockLevels['chart']['labels']);
+        $this->assertSame([40000.0, 0.0, 20000.0], $stockLevels['chart']['datasets'][0]['data']);
+        $this->assertSame('Available Stock', $stockLevels['chart']['datasets'][0]['label']);
+        $this->assertSame('40,000 L', $stockLevels['chart']['datasets'][0]['formattedData'][0]);
+
+        $before = $this->databaseCounts();
+
+        $this->actingAs($records['admin'])
+            ->get(route('admin.dashboard'))
+            ->assertOk()
+            ->assertSee('data-stock-level-chart', false)
+            ->assertSee('Current Stock By Fuel Type')
+            ->assertSee('Dashboard Diesel')
+            ->assertSee('Dashboard E10')
+            ->assertSee('Dashboard Gasoline')
+            ->assertSee('40,000 L')
+            ->assertSee('20,000 L')
+            ->assertSee('Total Inventory (KL)')
+            ->assertSee('60 KL')
+            ->assertDontSee('Dashboard Retired Fuel')
+            ->assertDontSee('888888');
+
+        $this->assertSame($before, $this->databaseCounts());
+
+        $this->actingAs(User::factory()->create(['role' => 'driver', 'status' => 'active']))
+            ->get(route('admin.dashboard'))
+            ->assertForbidden();
+
+        Carbon::setTestNow();
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -379,6 +511,43 @@ class DashboardSummaryCardsTest extends TestCase
             'received_by' => $records['salesOfficer']->id,
             'created_at' => now(),
             'updated_at' => now(),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $records
+     */
+    private function stockOut(array $records, int $saleId, int $saleItemId, string $code, float $quantity, string $status): int
+    {
+        return DB::table('stock_outs')->insertGetId([
+            'stock_out_code' => $code,
+            'sale_id' => $saleId,
+            'sale_item_id' => $saleItemId,
+            'customer_id' => $records['customerId'],
+            'fuel_type_id' => $records['fuelTypeId'],
+            'storage_location_id' => $records['garageId'],
+            'quantity_liters' => $quantity,
+            'stock_out_at' => '2026-09-01 09:00:00',
+            'status' => $status,
+            'created_by' => $records['inventoryOfficer']->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    /**
+     * @return array<string, int>
+     */
+    private function databaseCounts(): array
+    {
+        return [
+            'inventory_movements' => DB::table('inventory_movements')->count(),
+            'purchases' => DB::table('purchases')->count(),
+            'purchase_items' => DB::table('purchase_items')->count(),
+            'deliveries' => DB::table('deliveries')->count(),
+            'stock_outs' => DB::table('stock_outs')->count(),
+            'sales' => DB::table('sales')->count(),
+            'payments' => DB::table('payments')->count(),
         ];
     }
 }

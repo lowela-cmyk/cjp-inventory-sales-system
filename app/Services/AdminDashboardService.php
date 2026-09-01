@@ -25,6 +25,7 @@ class AdminDashboardService
         $totalSalesRevenue = $summary['totalSalesRevenue'];
         $collectedRevenue = $summary['collectedRevenue'];
         $outstandingBalance = $summary['outstandingReceivables'];
+        $stockLevels = $this->summary->stockLevels();
         $salesTrend = $this->summary->salesTrend(
             (string) ($filters['trend_period'] ?? 'week'),
             isset($filters['trend_year']) ? (int) $filters['trend_year'] : null
@@ -38,44 +39,13 @@ class AdminDashboardService
                 'period' => $salesTrend['period'],
                 'year' => $salesTrend['year'],
             ],
-            'stockByFuelType' => $this->stockByFuelType(),
+            'stockByFuelType' => $stockLevels['bars'],
+            'stockLevelChart' => $stockLevels['chart'],
             'revenueBars' => $this->revenueBars($totalSalesRevenue, $collectedRevenue, $outstandingBalance),
             'demandDays' => $this->demandByDay(),
             'demandMonths' => $this->demandByMonth(),
             'hasRevenueProjection' => false,
         ];
-    }
-
-    /**
-     * @return array<int, array{label: string, value: string, height: int, color: string}>
-     */
-    private function stockByFuelType(): array
-    {
-        $colors = ['#f7043a', '#3b9a35', '#e28a22', '#0d1424', '#6b7280'];
-
-        $rows = DB::table('fuel_types')
-            ->leftJoin('inventory_movements', 'inventory_movements.fuel_type_id', '=', 'fuel_types.id')
-            ->where('fuel_types.status', 'active')
-            ->selectRaw("fuel_types.name, COALESCE(SUM(CASE WHEN inventory_movements.direction = 'in' THEN inventory_movements.quantity_liters WHEN inventory_movements.direction = 'out' THEN -inventory_movements.quantity_liters ELSE 0 END), 0) as liters")
-            ->groupBy('fuel_types.id', 'fuel_types.name')
-            ->orderBy('fuel_types.name')
-            ->get();
-
-        $max = max([1, ...$rows->map(fn (object $row): float => abs((float) $row->liters))->all()]);
-
-        return $rows
-            ->values()
-            ->map(function (object $row, int $index) use ($colors, $max): array {
-                $liters = (float) $row->liters;
-
-                return [
-                    'label' => $row->name,
-                    'value' => $this->formatLiters($liters),
-                    'height' => $liters === 0.0 ? 2 : max(2, (int) round((abs($liters) / $max) * 100)),
-                    'color' => $colors[$index % count($colors)],
-                ];
-            })
-            ->all();
     }
 
     /**

@@ -11,6 +11,7 @@ class DashboardSummaryService
     public const VALID_SALE_STATUSES = ['confirmed', 'partially_paid', 'paid', 'unpaid'];
     public const SALES_TREND_PERIODS = ['week', 'month', 'year'];
     private const ACTIVE_DELIVERY_STATUSES = ['scheduled', 'in_transit', 'incomplete'];
+    private const STOCK_LEVEL_COLORS = ['#f7043a', '#3b9a35', '#e28a22', '#0d1424', '#6b7280'];
 
     /**
      * @return array<string, mixed>
@@ -113,10 +114,74 @@ class DashboardSummaryService
         ];
     }
 
+    /**
+     * @return array{
+     *     rows: array<int, array{fuel_type_id: int, label: string, liters: float, formatted_liters: string}>,
+     *     bars: array<int, array{label: string, value: string, height: int, color: string}>,
+     *     chart: array{labels: array<int, string>, datasets: array<int, array<string, mixed>>},
+     *     totalLiters: float,
+     *     formattedTotal: string
+     * }
+     */
+    public function stockLevels(): array
+    {
+        $rows = DB::table('fuel_types')
+            ->leftJoinSub($this->inventoryBalancesByFuelQuery(), 'inventory_balances', 'inventory_balances.fuel_type_id', '=', 'fuel_types.id')
+            ->where('fuel_types.status', 'active')
+            ->selectRaw('fuel_types.id, fuel_types.name, COALESCE(inventory_balances.liters, 0) as liters')
+            ->groupBy('fuel_types.id', 'fuel_types.name', 'inventory_balances.liters')
+            ->orderBy('fuel_types.name')
+            ->get();
+
+        $values = $rows->map(fn (object $row): float => round((float) $row->liters, 2))->all();
+        $labels = $rows->pluck('name')->map(fn (string $name): string => $name)->all();
+        $formattedValues = array_map(fn (float $liters): string => $this->formatLiters($liters), $values);
+        $max = max([1, ...array_map(fn (float $value): float => abs($value), $values)]);
+
+        return [
+            'rows' => $rows
+                ->values()
+                ->map(fn (object $row): array => [
+                    'fuel_type_id' => (int) $row->id,
+                    'label' => $row->name,
+                    'liters' => round((float) $row->liters, 2),
+                    'formatted_liters' => $this->formatLiters((float) $row->liters),
+                ])
+                ->all(),
+            'bars' => collect($labels)
+                ->map(fn (string $label, int $index): array => [
+                    'label' => $label,
+                    'value' => $formattedValues[$index],
+                    'height' => $values[$index] === 0.0 ? 2 : max(2, (int) round((abs($values[$index]) / $max) * 100)),
+                    'color' => self::STOCK_LEVEL_COLORS[$index % count(self::STOCK_LEVEL_COLORS)],
+                ])
+                ->all(),
+            'chart' => [
+                'labels' => $labels,
+                'datasets' => [[
+                    'label' => 'Available Stock',
+                    'data' => $values,
+                    'formattedData' => $formattedValues,
+                    'backgroundColor' => array_map(
+                        fn (int $index): string => self::STOCK_LEVEL_COLORS[$index % count(self::STOCK_LEVEL_COLORS)],
+                        array_keys($labels)
+                    ),
+                    'borderColor' => '#ffffff',
+                    'borderWidth' => 1,
+                    'borderRadius' => 5,
+                ]],
+            ],
+            'totalLiters' => array_sum($values),
+            'formattedTotal' => $this->formatLiters(array_sum($values)),
+        ];
+    }
+
     public function totalInventoryLiters(): float
     {
-        return (float) DB::table('inventory_movements')
-            ->selectRaw("COALESCE(SUM(CASE WHEN direction = 'in' THEN quantity_liters WHEN direction = 'out' THEN -quantity_liters ELSE 0 END), 0) as total")
+        return (float) DB::table('fuel_types')
+            ->leftJoinSub($this->inventoryBalancesByFuelQuery(), 'inventory_balances', 'inventory_balances.fuel_type_id', '=', 'fuel_types.id')
+            ->where('fuel_types.status', 'active')
+            ->selectRaw('COALESCE(SUM(inventory_balances.liters), 0) as total')
             ->value('total');
     }
 
@@ -277,9 +342,43 @@ class DashboardSummaryService
     {
         return (float) DB::table('inventory_movements')
             ->where('direction', $direction)
+            ->whereNotExists($this->cancelledStockOutExists())
+            ->whereNotExists($this->cancelledHaulAllocationExists())
             ->whereDate('movement_date', $date->toDateString())
             ->selectRaw('COALESCE(SUM(quantity_liters), 0) as total')
             ->value('total');
+    }
+
+    private function inventoryBalancesByFuelQuery(): Builder
+    {
+        return DB::table('inventory_movements')
+            ->whereIn('direction', ['in', 'out'])
+            ->whereNotExists($this->cancelledStockOutExists())
+            ->whereNotExists($this->cancelledHaulAllocationExists())
+            ->selectRaw("fuel_type_id, COALESCE(SUM(CASE WHEN direction = 'in' THEN quantity_liters WHEN direction = 'out' THEN -quantity_liters ELSE 0 END), 0) as liters")
+            ->groupBy('fuel_type_id');
+    }
+
+    private function cancelledStockOutExists(): \Closure
+    {
+        return function (Builder $query): void {
+            $query->selectRaw('1')
+                ->from('stock_outs')
+                ->whereColumn('stock_outs.id', 'inventory_movements.reference_id')
+                ->where('inventory_movements.reference_type', 'stock_out')
+                ->where('stock_outs.status', 'cancelled');
+        };
+    }
+
+    private function cancelledHaulAllocationExists(): \Closure
+    {
+        return function (Builder $query): void {
+            $query->selectRaw('1')
+                ->from('haul_allocations')
+                ->whereColumn('haul_allocations.id', 'inventory_movements.reference_id')
+                ->where('inventory_movements.reference_type', 'haul_allocation')
+                ->where('haul_allocations.status', 'cancelled');
+        };
     }
 
     private function openPurchases(): int

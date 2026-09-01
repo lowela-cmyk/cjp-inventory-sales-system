@@ -15,55 +15,35 @@ class AdminDashboardService
     /**
      * @return array<string, mixed>
      */
-    public function data(): array
+    /**
+     * @param array<string, mixed> $filters
+     * @return array<string, mixed>
+     */
+    public function data(array $filters = []): array
     {
         $summary = $this->summary->adminSummary();
         $totalSalesRevenue = $summary['totalSalesRevenue'];
         $collectedRevenue = $summary['collectedRevenue'];
         $outstandingBalance = $summary['outstandingReceivables'];
+        $salesTrend = $this->summary->salesTrend(
+            (string) ($filters['trend_period'] ?? 'week'),
+            isset($filters['trend_year']) ? (int) $filters['trend_year'] : null
+        );
 
         return [
             'metricCards' => $summary['metricCards'],
-            'salesTrend' => $this->weeklySalesTrend(),
+            'salesTrend' => $salesTrend['bars'],
+            'salesTrendChart' => $salesTrend['chart'],
+            'salesTrendFilters' => [
+                'period' => $salesTrend['period'],
+                'year' => $salesTrend['year'],
+            ],
             'stockByFuelType' => $this->stockByFuelType(),
             'revenueBars' => $this->revenueBars($totalSalesRevenue, $collectedRevenue, $outstandingBalance),
             'demandDays' => $this->demandByDay(),
             'demandMonths' => $this->demandByMonth(),
             'hasRevenueProjection' => false,
         ];
-    }
-
-    /**
-     * @return array<int, array{label: string, value: string, height: int}>
-     */
-    private function weeklySalesTrend(): array
-    {
-        $start = CarbonImmutable::now()->startOfWeek();
-        $end = $start->endOfWeek();
-
-        $totals = DB::table('sales')
-            ->join('sale_items', 'sale_items.sale_id', '=', 'sales.id')
-            ->whereNull('sales.deleted_at')
-            ->whereIn('sales.status', DashboardSummaryService::VALID_SALE_STATUSES)
-            ->whereBetween('sales.sale_date', [$start->toDateString(), $end->toDateString()])
-            ->selectRaw('sales.sale_date as sale_date, COALESCE(SUM(sale_items.line_total), 0) as total')
-            ->groupBy('sales.sale_date')
-            ->get()
-            ->mapWithKeys(fn (object $row): array => [CarbonImmutable::parse($row->sale_date)->format('D') => (float) $row->total]);
-
-        $max = max(1, (float) $totals->max());
-
-        return collect(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'])
-            ->map(function (string $day) use ($totals, $max): array {
-                $value = (float) ($totals[$day] ?? 0);
-
-                return [
-                    'label' => $day,
-                    'value' => $this->formatMoney($value),
-                    'height' => $value === 0.0 ? 6 : max(6, (int) round(($value / $max) * 96)),
-                ];
-            })
-            ->all();
     }
 
     /**

@@ -1,4 +1,5 @@
 import './bootstrap';
+import Chart from 'chart.js/auto';
 
 const closeModal = (modal) => {
     modal?.classList.remove('is-open');
@@ -122,5 +123,39 @@ document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
         document.querySelectorAll('.modal-backdrop.is-open').forEach(closeModal);
         document.body.classList.remove('sidebar-open');
+    }
+});
+
+document.querySelectorAll('[data-sales-trend-chart]').forEach((canvas) => {
+    const chartData = JSON.parse(canvas.dataset.chart || '{"labels":[],"datasets":[]}');
+    const fallback = canvas.parentElement?.querySelector('.sales-trend-fallback');
+
+    new Chart(canvas, {
+        type: 'bar',
+        data: chartData,
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: (context) => context.dataset.formattedData?.[context.dataIndex] || `PHP ${Number(context.raw || 0).toLocaleString()}`,
+                    },
+                },
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: (value) => `PHP ${Number(value).toLocaleString()}`,
+                    },
+                },
+            },
+        },
+    });
+
+    if (fallback) {
+        fallback.hidden = true;
     }
 });

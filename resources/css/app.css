@@ -479,10 +479,12 @@ select {
     background: #f3f3f3;
 }
 
-.chart-tabs span {
+.chart-tabs span,
+.chart-tabs a {
     padding: 6px 16px;
     color: #626c7b;
     font-weight: 700;
+    text-decoration: none;
 }
 
 .chart-tabs .is-selected {
@@ -490,6 +492,21 @@ select {
     background: #fff;
     border-radius: 4px;
     box-shadow: 0 1px 4px #ccc;
+}
+
+.sales-trend-chart {
+    position: relative;
+    min-height: 255px;
+    padding: 22px 18px 18px;
+}
+
+.sales-trend-chart canvas {
+    width: 100%;
+    min-height: 255px;
+}
+
+.sales-trend-fallback {
+    padding-top: 26px;
 }
 
 .sales-bars,

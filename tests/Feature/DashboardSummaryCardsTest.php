@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Services\DashboardSummaryService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -104,6 +105,57 @@ class DashboardSummaryCardsTest extends TestCase
             ->assertSee('PHP 0')
             ->assertSee('Active Customers')
             ->assertSee('No records found.');
+    }
+
+    public function test_sales_trend_chart_uses_real_sales_with_zero_filled_periods(): void
+    {
+        Carbon::setTestNow('2026-09-01 10:00:00');
+        $records = $this->records();
+        $this->dashboardData($records);
+
+        /** @var DashboardSummaryService $summary */
+        $summary = app(DashboardSummaryService::class);
+        $monthlyTrend = $summary->salesTrend('month', 2026);
+        $yearlyTrend = $summary->salesTrend('year', 2026);
+
+        $this->assertSame(['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'], $monthlyTrend['labels']);
+        $this->assertSame(0.0, $monthlyTrend['values'][0]);
+        $this->assertSame(30000.0, $monthlyTrend['values'][7]);
+        $this->assertSame(120000.0, $monthlyTrend['values'][8]);
+        $this->assertSame(0.0, $monthlyTrend['values'][9]);
+        $this->assertSame(150000.0, $monthlyTrend['total']);
+        $this->assertSame('PHP 150,000', $monthlyTrend['formattedTotal']);
+
+        $this->assertSame(['2022', '2023', '2024', '2025', '2026'], $yearlyTrend['labels']);
+        $this->assertSame([0.0, 0.0, 0.0, 0.0, 150000.0], $yearlyTrend['values']);
+        $this->assertSame('Sales Revenue', $monthlyTrend['chart']['datasets'][0]['label']);
+        $this->assertSame($monthlyTrend['values'], $monthlyTrend['chart']['datasets'][0]['data']);
+        $this->assertSame('PHP120,000', $monthlyTrend['chart']['datasets'][0]['formattedData'][8]);
+
+        $this->actingAs($records['admin'])
+            ->get(route('admin.dashboard', ['trend_period' => 'month', 'trend_year' => 2026]))
+            ->assertOk()
+            ->assertSee('data-sales-trend-chart', false)
+            ->assertSee('Per Month')
+            ->assertSee('Jan')
+            ->assertSee('Aug')
+            ->assertSee('Sep')
+            ->assertSee('120000')
+            ->assertSee('PHP120,000')
+            ->assertSee('Total Sales Revenue')
+            ->assertSee('PHP 150,000');
+
+        $this->actingAs($records['admin'])
+            ->from(route('admin.dashboard'))
+            ->get(route('admin.dashboard', ['trend_period' => 'bogus']))
+            ->assertRedirect(route('admin.dashboard'))
+            ->assertSessionHasErrors('trend_period');
+
+        $this->actingAs(User::factory()->create(['role' => 'driver', 'status' => 'active']))
+            ->get(route('admin.dashboard', ['trend_period' => 'month']))
+            ->assertForbidden();
+
+        Carbon::setTestNow();
     }
 
     /**

@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\DB;
 class DashboardSummaryService
 {
     public const VALID_SALE_STATUSES = ['confirmed', 'partially_paid', 'paid', 'unpaid'];
+    public const SALES_TREND_PERIODS = ['week', 'month', 'year'];
     private const ACTIVE_DELIVERY_STATUSES = ['scheduled', 'in_transit', 'incomplete'];
 
     /**
@@ -61,6 +62,54 @@ class DashboardSummaryService
             ['label' => 'Payments Collected', 'value' => $this->formatMoney($this->collectedRevenue()), 'caption' => 'Recorded payments'],
             ['label' => 'Outstanding Receivables', 'value' => $this->formatMoney($this->outstandingReceivables()), 'caption' => 'Unpaid balances'],
             ['label' => 'Active Customers', 'value' => number_format($this->activeCustomers()), 'caption' => 'Customer records'],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function salesTrend(string $period = 'week', ?int $year = null): array
+    {
+        $period = in_array($period, self::SALES_TREND_PERIODS, true) ? $period : 'week';
+        $year = $year ?: CarbonImmutable::now()->year;
+
+        [$labels, $values] = match ($period) {
+            'month' => $this->monthlySalesTrend($year),
+            'year' => $this->yearlySalesTrend($year),
+            default => $this->weeklySalesTrend(),
+        };
+
+        $max = max([1, ...array_map(fn (float $value): float => abs($value), $values)]);
+        $formattedValues = array_map(fn (float $value): string => $this->formatMoney($value, false), $values);
+
+        return [
+            'period' => $period,
+            'year' => $year,
+            'labels' => $labels,
+            'values' => $values,
+            'formattedValues' => $formattedValues,
+            'total' => array_sum($values),
+            'formattedTotal' => $this->formatMoney(array_sum($values)),
+            'datasetLabel' => 'Sales Revenue',
+            'bars' => collect($labels)
+                ->map(fn (string $label, int $index): array => [
+                    'label' => $label,
+                    'value' => $formattedValues[$index],
+                    'height' => $values[$index] === 0.0 ? 6 : max(6, (int) round((abs($values[$index]) / $max) * 96)),
+                ])
+                ->all(),
+            'chart' => [
+                'labels' => $labels,
+                'datasets' => [[
+                    'label' => 'Sales Revenue',
+                    'data' => $values,
+                    'formattedData' => $formattedValues,
+                    'backgroundColor' => '#0d1424',
+                    'borderColor' => '#0d1424',
+                    'borderWidth' => 1,
+                    'borderRadius' => 5,
+                ]],
+            ],
         ];
     }
 
@@ -146,6 +195,71 @@ class DashboardSummaryService
     public function formatKiloliters(float $liters): string
     {
         return number_format($liters / 1000, 0).' KL';
+    }
+
+    /**
+     * @return array{0: array<int, string>, 1: array<int, float>}
+     */
+    private function weeklySalesTrend(): array
+    {
+        $start = CarbonImmutable::now()->startOfWeek();
+        $end = $start->endOfWeek();
+        $labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+        $totals = DB::table('sales')
+            ->join('sale_items', 'sale_items.sale_id', '=', 'sales.id')
+            ->whereNull('sales.deleted_at')
+            ->whereIn('sales.status', self::VALID_SALE_STATUSES)
+            ->whereBetween('sales.sale_date', [$start->toDateString(), $end->toDateString()])
+            ->selectRaw('sales.sale_date as sale_date, COALESCE(SUM(sale_items.line_total), 0) as total')
+            ->groupBy('sales.sale_date')
+            ->get()
+            ->mapWithKeys(fn (object $row): array => [CarbonImmutable::parse($row->sale_date)->format('D') => (float) $row->total]);
+
+        return [$labels, array_map(fn (string $label): float => (float) ($totals[$label] ?? 0), $labels)];
+    }
+
+    /**
+     * @return array{0: array<int, string>, 1: array<int, float>}
+     */
+    private function monthlySalesTrend(int $year): array
+    {
+        $labels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+        $totals = DB::table('sales')
+            ->join('sale_items', 'sale_items.sale_id', '=', 'sales.id')
+            ->whereNull('sales.deleted_at')
+            ->whereIn('sales.status', self::VALID_SALE_STATUSES)
+            ->whereBetween('sales.sale_date', [$year.'-01-01', $year.'-12-31'])
+            ->selectRaw('CAST(SUBSTR(sales.sale_date, 6, 2) AS INTEGER) as month_number, COALESCE(SUM(sale_items.line_total), 0) as total')
+            ->groupByRaw('CAST(SUBSTR(sales.sale_date, 6, 2) AS INTEGER)')
+            ->get()
+            ->mapWithKeys(fn (object $row): array => [(int) $row->month_number => (float) $row->total]);
+
+        return [$labels, array_map(fn (int $month): float => (float) ($totals[$month] ?? 0), range(1, 12))];
+    }
+
+    /**
+     * @return array{0: array<int, string>, 1: array<int, float>}
+     */
+    private function yearlySalesTrend(int $endYear): array
+    {
+        $years = range($endYear - 4, $endYear);
+
+        $totals = DB::table('sales')
+            ->join('sale_items', 'sale_items.sale_id', '=', 'sales.id')
+            ->whereNull('sales.deleted_at')
+            ->whereIn('sales.status', self::VALID_SALE_STATUSES)
+            ->whereBetween('sales.sale_date', [$years[0].'-01-01', $endYear.'-12-31'])
+            ->selectRaw('CAST(SUBSTR(sales.sale_date, 1, 4) AS INTEGER) as sale_year, COALESCE(SUM(sale_items.line_total), 0) as total')
+            ->groupByRaw('CAST(SUBSTR(sales.sale_date, 1, 4) AS INTEGER)')
+            ->get()
+            ->mapWithKeys(fn (object $row): array => [(int) $row->sale_year => (float) $row->total]);
+
+        return [
+            array_map(fn (int $year): string => (string) $year, $years),
+            array_map(fn (int $year): float => (float) ($totals[$year] ?? 0), $years),
+        ];
     }
 
     private function salesRevenueForDate(CarbonImmutable $date): float

@@ -14,19 +14,22 @@
             <div class="chart-header">
                 <h2>Sales Trend</h2>
                 <div class="chart-tabs" aria-label="Sales period">
-                    <span class="is-selected">Per Week</span>
-                    <span>Per Month</span>
-                    <span>Per Year</span>
+                    @foreach (['week' => 'Per Week', 'month' => 'Per Month', 'year' => 'Per Year'] as $period => $label)
+                        <a href="{{ route('admin.dashboard', array_filter(['trend_period' => $period, 'trend_year' => $salesTrendFilters['year'] ?? now()->year])) }}" class="{{ ($salesTrendFilters['period'] ?? 'week') === $period ? 'is-selected' : '' }}">{{ $label }}</a>
+                    @endforeach
                 </div>
             </div>
-            <div class="sales-bars">
-                @foreach ($salesTrend as $day)
-                    <div class="mini-bar">
-                        <strong>{{ $day['value'] }}</strong>
-                        <i style="--bar-height: {{ $day['height'] }}px"></i>
-                        <span>{{ $day['label'] }}</span>
-                    </div>
-                @endforeach
+            <div class="sales-trend-chart">
+                <canvas data-sales-trend-chart data-chart='@json($salesTrendChart)' aria-label="Sales revenue trend" role="img"></canvas>
+                <div class="sales-bars sales-trend-fallback">
+                    @foreach ($salesTrend as $day)
+                        <div class="mini-bar">
+                            <strong>{{ $day['value'] }}</strong>
+                            <i style="--bar-height: {{ $day['height'] }}px"></i>
+                            <span>{{ $day['label'] }}</span>
+                        </div>
+                    @endforeach
+                </div>
             </div>
         </section>
 

@@ -5,6 +5,7 @@
     $filters = $filters ?? [];
     $filterOptions = $filterOptions ?? ['statuses' => [], 'fuelTypes' => collect()];
     $pickupIdempotencyKey = $pickupIdempotencyKey ?? (string) \Illuminate\Support\Str::uuid();
+    $deliveryStatusIdempotencyKey = $deliveryStatusIdempotencyKey ?? (string) \Illuminate\Support\Str::uuid();
 @endphp
 
 @component('layouts.driver', ['title' => 'Assigned Deliveries', 'active' => 'assigned-deliveries', 'driverName' => $driverName])
@@ -116,6 +117,19 @@
                         @method('PATCH')
                         <input type="hidden" name="idempotency_key" value="{{ $pickupIdempotencyKey }}">
                         <button class="btn btn-pill btn-primary" type="submit">Confirm Pickup</button>
+                    </form>
+                @endif
+                @if (! empty($row['allowed_driver_delivery_statuses']))
+                    <form method="POST" action="{{ route('driver.assigned-deliveries.status', $row['record_id']) }}" onsubmit="return confirm('Update delivery status for {{ $row['delivery']['reference'] }}?');">
+                        @csrf
+                        @method('PATCH')
+                        <input type="hidden" name="idempotency_key" value="{{ $deliveryStatusIdempotencyKey }}">
+                        <select name="status" aria-label="Update delivery status">
+                            @foreach ($row['allowed_driver_delivery_statuses'] as $status)
+                                <option value="{{ $status }}">{{ ucwords(str_replace('_', ' ', $status)) }}</option>
+                            @endforeach
+                        </select>
+                        <button class="btn btn-pill btn-primary" type="submit">Update Status</button>
                     </form>
                 @endif
                 <button class="btn btn-pill btn-secondary" type="button" data-modal-close>Close</button>

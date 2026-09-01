@@ -103,6 +103,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/assigned-deliveries', [DriverDeliveryController::class, 'assignedDeliveries'])->name('assigned-deliveries');
         Route::get('/assigned-deliveries/completed', [DriverDeliveryController::class, 'assignedDeliveries'])->defaults('state', 'completed')->name('assigned-deliveries.completed');
         Route::patch('/assigned-deliveries/{delivery}/pickup', [DriverDeliveryController::class, 'confirmPickup'])->name('assigned-deliveries.pickup');
+        Route::patch('/assigned-deliveries/{delivery}/status', [DriverDeliveryController::class, 'updateDeliveryStatus'])->name('assigned-deliveries.status');
         Route::get('/fuel-lifting', [DriverDeliveryController::class, 'index'])->name('fuel-lifting');
         Route::patch('/fuel-lifting/hauls/{haul}/status', [DriverLiftingStatusController::class, 'updateStatus'])->name('fuel-lifting.hauls.status');
         Route::get('/fuel-lifting/hauled', [DriverDeliveryController::class, 'index'])->defaults('state', 'hauled')->name('fuel-lifting.hauled');

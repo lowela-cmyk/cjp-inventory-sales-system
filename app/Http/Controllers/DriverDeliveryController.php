@@ -14,6 +14,13 @@ use Illuminate\View\View;
 class DriverDeliveryController extends Controller
 {
     private const DELIVERY_STATUSES = ['scheduled', 'in_transit', 'incomplete', 'delivered', 'cancelled'];
+    private const DRIVER_DELIVERY_STATUS_TRANSITIONS = [
+        'scheduled' => [],
+        'in_transit' => ['delivered', 'incomplete'],
+        'incomplete' => ['in_transit'],
+        'delivered' => [],
+        'cancelled' => [],
+    ];
     private const TASK_STATUSES = ['scheduled', 'in_transit', 'incomplete', 'delivered', 'lifted', 'completed', 'cancelled'];
 
     public function index(Request $request, string $state = 'schedule'): View
@@ -86,6 +93,7 @@ class DriverDeliveryController extends Controller
             'activeRows' => $rows->where('group', 'schedule')->values(),
             'completedRows' => $rows->where('group', 'hauled')->values(),
             'pickupIdempotencyKey' => (string) Str::uuid(),
+            'deliveryStatusIdempotencyKey' => (string) Str::uuid(),
         ]);
     }
 
@@ -116,7 +124,7 @@ class DriverDeliveryController extends Controller
                 return $validationError;
             }
 
-            DB::table('deliveries')
+            $updated = DB::table('deliveries')
                 ->where('id', $row->id)
                 ->where('driver_user_id', $driverId)
                 ->where('status', 'scheduled')
@@ -124,6 +132,10 @@ class DriverDeliveryController extends Controller
                     'status' => 'in_transit',
                     'updated_at' => now(),
                 ]);
+
+            if ($updated !== 1) {
+                return 'Delivery status changed while your pickup confirmation was being processed. Please refresh and try again.';
+            }
 
             return null;
         });
@@ -137,6 +149,79 @@ class DriverDeliveryController extends Controller
         return redirect()
             ->route('driver.assigned-deliveries')
             ->with('status', 'Pickup confirmed successfully.');
+    }
+
+    public function updateDeliveryStatus(Request $request, int $delivery): RedirectResponse
+    {
+        $data = $request->validate([
+            'idempotency_key' => ['required', 'uuid'],
+            'status' => ['required', Rule::in(self::DELIVERY_STATUSES)],
+        ]);
+        $driverId = (int) $request->user()->id;
+        $nextStatus = (string) $data['status'];
+        $sessionKey = 'driver.deliveries.status.'.$driverId.'.'.$delivery.'.'.$nextStatus.'.'.((string) $data['idempotency_key']);
+
+        if ($request->session()->has($sessionKey)) {
+            return redirect()
+                ->route('driver.assigned-deliveries')
+                ->with('status', 'Delivery status update was already submitted.');
+        }
+
+        $result = DB::transaction(function () use ($delivery, $driverId, $nextStatus): ?string {
+            $row = $this->deliveryForPickup($delivery, $driverId);
+
+            if (! $row) {
+                return 'The selected delivery is not assigned to your driver account.';
+            }
+
+            $allowed = self::DRIVER_DELIVERY_STATUS_TRANSITIONS[$row->status] ?? [];
+
+            if (! in_array($nextStatus, $allowed, true)) {
+                return 'The selected delivery status transition is not allowed.';
+            }
+
+            $validationError = $this->validateDeliveryStatusUpdate($row, $nextStatus);
+
+            if ($validationError) {
+                return $validationError;
+            }
+
+            $updates = [
+                'status' => $nextStatus,
+                'updated_at' => now(),
+            ];
+
+            if ($nextStatus === 'delivered') {
+                $updates['delivered_at'] = now();
+                $updates['actual_quantity_liters'] = round((float) ($row->actual_quantity_liters ?? $row->scheduled_quantity_liters), 2);
+            }
+
+            $updated = DB::table('deliveries')
+                ->where('id', $row->id)
+                ->where('driver_user_id', $driverId)
+                ->where('status', $row->status)
+                ->update($updates);
+
+            if ($updated !== 1) {
+                return 'Delivery status changed while your update was being processed. Please refresh and try again.';
+            }
+
+            if ($nextStatus === 'delivered' && $row->source_type === 'depot') {
+                $this->markDirectAllocationDeliveredWhenComplete($row);
+            }
+
+            return null;
+        });
+
+        if ($result) {
+            return back()->withErrors(['delivery' => $result])->withInput();
+        }
+
+        $request->session()->put($sessionKey, true);
+
+        return redirect()
+            ->route('driver.assigned-deliveries')
+            ->with('status', 'Delivery status updated successfully.');
     }
 
     /**
@@ -283,6 +368,7 @@ class DriverDeliveryController extends Controller
                         'status' => $this->label($row->status),
                     ],
                     'can_confirm_pickup' => $row->status === 'scheduled' && $row->truck_code,
+                    'allowed_driver_delivery_statuses' => self::DRIVER_DELIVERY_STATUS_TRANSITIONS[$row->status] ?? [],
                 ];
             });
     }
@@ -549,6 +635,7 @@ class DriverDeliveryController extends Controller
                 'deliveries.id',
                 'deliveries.source_type',
                 'deliveries.scheduled_at',
+                'deliveries.delivered_at',
                 'deliveries.scheduled_quantity_liters',
                 'deliveries.actual_quantity_liters',
                 'deliveries.status',
@@ -557,6 +644,7 @@ class DriverDeliveryController extends Controller
                 'stock_outs.id as stock_out_id',
                 'stock_outs.status as stock_out_status',
                 'haul_allocations.id as allocation_id',
+                'haul_allocations.quantity_liters as allocation_quantity_liters',
                 'haul_allocations.status as allocation_status',
                 'haul_allocations.destination_type',
                 'hauls.id as haul_id',
@@ -638,6 +726,111 @@ class DriverDeliveryController extends Controller
         }
 
         return 'This delivery source is not eligible for pickup confirmation.';
+    }
+
+    private function validateDeliveryStatusUpdate(object $delivery, string $nextStatus): ?string
+    {
+        $pickupError = $this->validatePickupPrerequisites($delivery);
+
+        if ($pickupError) {
+            return $pickupError;
+        }
+
+        if ($delivery->status === 'cancelled') {
+            return 'Cancelled deliveries cannot be updated.';
+        }
+
+        if ($delivery->status === 'delivered') {
+            return 'Delivered deliveries cannot be updated again.';
+        }
+
+        if ($delivery->status === 'scheduled') {
+            return 'Pickup must be confirmed before updating delivery status.';
+        }
+
+        if ($nextStatus === 'delivered' && $delivery->delivered_at) {
+            return 'This delivery has already been completed.';
+        }
+
+        return null;
+    }
+
+    private function validatePickupPrerequisites(object $delivery): ?string
+    {
+        if (! $delivery->truck_id || ! in_array($delivery->truck_type, ['delivery', 'mixed'], true) || in_array($delivery->truck_status, ['maintenance', 'inactive'], true)) {
+            return 'A valid assigned delivery truck is required before updating delivery status.';
+        }
+
+        if ($delivery->driver_role !== 'driver' || $delivery->driver_status !== 'active' || $delivery->profile_status === 'inactive') {
+            return 'A valid assigned driver is required before updating delivery status.';
+        }
+
+        if (! $delivery->scheduled_at) {
+            return 'A scheduled delivery date is required before updating delivery status.';
+        }
+
+        $quantity = round((float) ($delivery->actual_quantity_liters ?? $delivery->scheduled_quantity_liters ?? 0), 2);
+
+        if ($quantity <= 0 || $quantity > round((float) $delivery->capacity_liters, 2)) {
+            return 'Delivery quantity must be positive and cannot exceed the assigned truck capacity.';
+        }
+
+        if ($delivery->customer_status === 'inactive') {
+            return 'A valid customer is required before updating delivery status.';
+        }
+
+        if ($delivery->fuel_status !== 'active') {
+            return 'A valid fuel type is required before updating delivery status.';
+        }
+
+        if ($delivery->sale_status === 'cancelled') {
+            return 'Cancelled sales cannot be delivered.';
+        }
+
+        if ($delivery->source_type === 'garage') {
+            return $delivery->stock_out_id && $delivery->stock_out_status === 'released'
+                ? null
+                : 'A released garage stock-out is required before updating delivery status.';
+        }
+
+        if ($delivery->source_type === 'depot') {
+            if (! $delivery->allocation_id || $delivery->destination_type !== 'customer') {
+                return 'A direct depot-to-client allocation is required before updating delivery status.';
+            }
+
+            return $delivery->haul_id && $delivery->haul_status === 'completed'
+                ? null
+                : 'A completed lifting transaction is required before updating delivery status.';
+        }
+
+        return 'This delivery source is not eligible for delivery status updates.';
+    }
+
+    private function markDirectAllocationDeliveredWhenComplete(object $delivery): void
+    {
+        if (! $delivery->allocation_id) {
+            return;
+        }
+
+        DB::table('haul_allocations')
+            ->where('id', $delivery->allocation_id)
+            ->lockForUpdate()
+            ->get(['id']);
+
+        $delivered = (float) DB::table('deliveries')
+            ->where('haul_allocation_id', $delivery->allocation_id)
+            ->where('status', 'delivered')
+            ->selectRaw('COALESCE(SUM(COALESCE(actual_quantity_liters, scheduled_quantity_liters, 0)), 0) as delivered_liters')
+            ->value('delivered_liters');
+
+        if (round($delivered, 2) >= round((float) $delivery->allocation_quantity_liters, 2)) {
+            DB::table('haul_allocations')
+                ->where('id', $delivery->allocation_id)
+                ->update([
+                    'status' => 'delivered',
+                    'updated_at' => now(),
+                ]);
+        }
     }
 
     /**

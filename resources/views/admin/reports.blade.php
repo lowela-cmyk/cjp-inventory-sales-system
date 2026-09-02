@@ -19,6 +19,32 @@
             <button class="btn btn-secondary" type="button" onclick="window.print()">Print</button>
         </div>
     </form>
+    <section class="report-section ai-insight-panel">
+        <div class="chart-header">
+            <h2>Revenue AI Insight</h2>
+            <form method="POST" action="{{ route('admin.reports.revenue-insight') }}">
+                @csrf
+                <input type="hidden" name="period" value="{{ $filters['period'] }}">
+                <input type="hidden" name="date" value="{{ $filters['date'] }}">
+                <input type="hidden" name="start_date" value="{{ $filters['start_date'] }}">
+                <input type="hidden" name="end_date" value="{{ $filters['end_date'] }}">
+                <input type="hidden" name="month" value="{{ $filters['month'] }}">
+                <input type="hidden" name="year" value="{{ $filters['year'] }}">
+                <button class="btn btn-primary" type="submit">Generate Insight</button>
+            </form>
+        </div>
+        <div class="ai-insight-body">
+            @if (session('revenueInsight'))
+                <div class="ai-insight-text">{!! nl2br(e(session('revenueInsight.text'))) !!}</div>
+                <p>AI-assisted business insight based on system records. Use it to support, not replace, management judgment.</p>
+                <span>Generated {{ session('revenueInsight.generated_at') }}</span>
+            @elseif (session('revenueInsightNotice'))
+                <div class="dashboard-empty-state dashboard-empty-state-small">{{ session('revenueInsightNotice') }}</div>
+            @else
+                <div class="dashboard-empty-state dashboard-empty-state-small">Generate a revenue insight from the current report values.</div>
+            @endif
+        </div>
+    </section>
     <section class="report-panel">
         <div class="report-intro">
             <strong>Sales report generated from current database records.</strong>

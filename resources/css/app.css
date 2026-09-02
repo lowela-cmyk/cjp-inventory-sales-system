@@ -1162,6 +1162,34 @@ select {
     border-radius: 0;
 }
 
+.ai-insight-panel {
+    margin-bottom: 20px;
+}
+
+.ai-insight-body {
+    padding: 18px 22px;
+}
+
+.ai-insight-text {
+    color: #222;
+    line-height: 1.6;
+    white-space: normal;
+}
+
+.ai-insight-body p {
+    margin: 14px 0 0;
+    color: #555;
+    font-size: 12px;
+}
+
+.ai-insight-body span {
+    display: block;
+    margin-top: 8px;
+    color: #6b7280;
+    font-size: 12px;
+    font-weight: 700;
+}
+
 .report-bars {
     min-height: 210px;
     align-items: end;

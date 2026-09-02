@@ -1,10 +1,11 @@
 <?php
 
-use App\Http\Controllers\AuthController;
 use App\Http\Controllers\AdminDashboardController;
 use App\Http\Controllers\AdminMonitoringController;
+use App\Http\Controllers\AdminRevenueInsightController;
 use App\Http\Controllers\AdminSalesReportController;
 use App\Http\Controllers\AdminUserManagementController;
+use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DispatchDeliveryController;
 use App\Http\Controllers\DispatchLiftingStatusController;
 use App\Http\Controllers\DriverDeliveryController;
@@ -46,6 +47,7 @@ Route::middleware(['auth'])->group(function () {
         Route::patch('/fuel-lifting/hauls/{haul}/status', [DispatchLiftingStatusController::class, 'updateStatus'])->name('fuel-lifting.hauls.status');
         Route::get('/sales', [AdminMonitoringController::class, 'sales'])->name('sales');
         Route::get('/reports', AdminSalesReportController::class)->name('reports');
+        Route::post('/reports/revenue-insight', AdminRevenueInsightController::class)->name('reports.revenue-insight');
         Route::get('/reports/export', [AdminSalesReportController::class, 'export'])->name('reports.export');
         Route::get('/alerts', [AdminMonitoringController::class, 'alerts'])->name('alerts');
         Route::get('/user-management', [AdminUserManagementController::class, 'index'])->name('user-management');

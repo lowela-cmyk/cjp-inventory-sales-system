@@ -27,6 +27,14 @@ class AdminDashboardService
         $outstandingBalance = $summary['outstandingReceivables'];
         $stockLevels = $this->summary->stockLevels();
         $receivablesMonitoring = $this->summary->receivablesMonitoring();
+        $unliftedFilters = [
+            'date_from' => $filters['unlifted_date_from'] ?? null,
+            'date_to' => $filters['unlifted_date_to'] ?? null,
+            'depot_id' => $filters['unlifted_depot_id'] ?? null,
+            'fuel_type_id' => $filters['unlifted_fuel_type_id'] ?? null,
+            'lifting_status' => $filters['unlifted_lifting_status'] ?? null,
+        ];
+        $unliftedMonitoring = $this->summary->unliftedFuelMonitoring($unliftedFilters);
         $expectedRevenue = $this->summary->expectedRevenue(
             isset($filters['expected_year']) ? (int) $filters['expected_year'] : null
         );
@@ -48,6 +56,11 @@ class AdminDashboardService
             'receivablesMonitoring' => $receivablesMonitoring,
             'receivableRows' => $receivablesMonitoring['rows'],
             'receivablesChart' => $receivablesMonitoring['chart'],
+            'unliftedMonitoring' => $unliftedMonitoring,
+            'unliftedFuelRows' => $unliftedMonitoring['rows'],
+            'unliftedFuelChart' => $unliftedMonitoring['chart'],
+            'unliftedFuelFilters' => $unliftedFilters,
+            'unliftedFuelFilterOptions' => $this->summary->unliftedFilterOptions(),
             'expectedRevenue' => $expectedRevenue,
             'expectedRevenueChart' => $expectedRevenue['chart'],
             'revenueBars' => $this->revenueBars($totalSalesRevenue, $collectedRevenue, $outstandingBalance),

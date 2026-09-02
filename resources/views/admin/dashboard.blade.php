@@ -56,6 +56,95 @@
         </section>
 
         <section class="chart-panel">
+            <div class="chart-header"><h2>Unlifted Fuel Monitoring</h2></div>
+            <form class="dashboard-filter-row" method="GET" action="{{ route('admin.dashboard') }}">
+                <input type="date" name="unlifted_date_from" value="{{ $unliftedFuelFilters['date_from'] ?? '' }}" aria-label="Purchase date from">
+                <input type="date" name="unlifted_date_to" value="{{ $unliftedFuelFilters['date_to'] ?? '' }}" aria-label="Purchase date to">
+                <select name="unlifted_depot_id" aria-label="Filter by depot">
+                    <option value="">Depot (All)</option>
+                    @foreach ($unliftedFuelFilterOptions['depots'] as $depot)
+                        <option value="{{ $depot->id }}" @selected((string) ($unliftedFuelFilters['depot_id'] ?? '') === (string) $depot->id)>{{ $depot->name }}</option>
+                    @endforeach
+                </select>
+                <select name="unlifted_fuel_type_id" aria-label="Filter by fuel type">
+                    <option value="">Fuel Type (All)</option>
+                    @foreach ($unliftedFuelFilterOptions['fuelTypes'] as $fuelType)
+                        <option value="{{ $fuelType->id }}" @selected((string) ($unliftedFuelFilters['fuel_type_id'] ?? '') === (string) $fuelType->id)>{{ $fuelType->name }}</option>
+                    @endforeach
+                </select>
+                <select name="unlifted_lifting_status" aria-label="Filter by lifting status">
+                    <option value="">Lifting Status (All)</option>
+                    @foreach ($unliftedFuelFilterOptions['statuses'] as $status)
+                        <option value="{{ $status }}" @selected(($unliftedFuelFilters['lifting_status'] ?? '') === $status)>{{ $status === 'partial' ? 'Partially Lifted' : ($status === 'lifted' ? 'Fully Lifted' : 'Unlifted') }}</option>
+                    @endforeach
+                </select>
+                <button class="btn btn-primary" type="submit">Apply</button>
+            </form>
+            <div class="unlifted-fuel-chart">
+                <canvas data-unlifted-fuel-chart data-chart='@json($unliftedFuelChart)' aria-label="Purchased lifted and unlifted fuel" role="img"></canvas>
+                <div class="revenue-bars unlifted-fuel-fallback">
+                    @foreach ([
+                        ['Purchased', $unliftedMonitoring['summary']['formatted_purchased'], 120, '#0d1424'],
+                        ['Lifted', $unliftedMonitoring['summary']['formatted_lifted'], 120, '#3b9a35'],
+                        ['Unlifted', $unliftedMonitoring['summary']['formatted_remaining'], 120, '#f7043a'],
+                    ] as $bar)
+                        <div class="revenue-bar">
+                            <strong>{{ $bar[1] }}</strong>
+                            <i style="--h: {{ $bar[2] }}px; --c: {{ $bar[3] }}"></i>
+                            <span>{{ $bar[0] }}</span>
+                        </div>
+                    @endforeach
+                </div>
+            </div>
+            <div class="dashboard-kpi-strip">
+                <div><span>Total Lifted</span><strong>{{ $unliftedMonitoring['summary']['formatted_lifted'] }}</strong></div>
+                <div><span>Partially Lifted</span><strong>{{ number_format($unliftedMonitoring['summary']['partial_count']) }}</strong></div>
+                <div><span>Fully Unlifted</span><strong>{{ number_format($unliftedMonitoring['summary']['unlifted_count']) }}</strong></div>
+            </div>
+            @if (! empty($unliftedFuelRows))
+                <div class="dashboard-mini-table">
+                    <table>
+                        <thead><tr><th>Purchase</th><th>Depot</th><th>Fuel</th><th>Purchased</th><th>Lifted</th><th>Unlifted</th><th>Status</th><th>Date</th></tr></thead>
+                        <tbody>
+                            @foreach ($unliftedFuelRows as $row)
+                                <tr>
+                                    <td>{{ $row['purchase_code'] }}</td>
+                                    <td>{{ $row['depot_name'] }}</td>
+                                    <td>{{ $row['fuel_name'] }}</td>
+                                    <td>{{ $row['formatted_purchased'] }}</td>
+                                    <td>{{ $row['formatted_lifted'] }}</td>
+                                    <td>{{ $row['formatted_remaining'] }}</td>
+                                    <td>{{ $row['lift_status_label'] }}</td>
+                                    <td>{{ $row['formatted_purchase_date'] }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            @else
+                <div class="dashboard-empty-state dashboard-empty-state-small">0 L</div>
+            @endif
+            <div class="dashboard-breakdown-grid">
+                <div>
+                    <h3>By Fuel Type</h3>
+                    @forelse ($unliftedMonitoring['fuelBreakdown'] as $row)
+                        <div class="demand-row"><span>{{ $row['label'] }}</span><span class="demand-track"><i class="demand-fill" style="--p:{{ $unliftedMonitoring['summary']['remaining_liters'] > 0 ? round(($row['liters'] / $unliftedMonitoring['summary']['remaining_liters']) * 100) : 0 }}%"></i></span><strong>{{ $row['formatted_liters'] }}</strong></div>
+                    @empty
+                        <div class="dashboard-empty-state dashboard-empty-state-small">No data available</div>
+                    @endforelse
+                </div>
+                <div>
+                    <h3>By Depot</h3>
+                    @forelse ($unliftedMonitoring['depotBreakdown'] as $row)
+                        <div class="demand-row"><span>{{ $row['label'] }}</span><span class="demand-track"><i class="demand-fill" style="--p:{{ $unliftedMonitoring['summary']['remaining_liters'] > 0 ? round(($row['liters'] / $unliftedMonitoring['summary']['remaining_liters']) * 100) : 0 }}%"></i></span><strong>{{ $row['formatted_liters'] }}</strong></div>
+                    @empty
+                        <div class="dashboard-empty-state dashboard-empty-state-small">No data available</div>
+                    @endforelse
+                </div>
+            </div>
+        </section>
+
+        <section class="chart-panel">
             <div class="chart-header"><h2>Expected Revenue ({{ $expectedRevenue['period'] }})</h2></div>
             <div class="expected-revenue-chart">
                 <canvas data-expected-revenue-chart data-chart='@json($expectedRevenueChart)' aria-label="Expected revenue by month" role="img"></canvas>

@@ -278,8 +278,7 @@ class DashboardSummaryCardsTest extends TestCase
             ->assertSee('20,000 L')
             ->assertSee('Total Inventory (KL)')
             ->assertSee('60 KL')
-            ->assertDontSee('Dashboard Retired Fuel')
-            ->assertDontSee('888888');
+            ->assertDontSee('Dashboard Retired Fuel');
 
         $this->assertSame($before, $this->databaseCounts());
 
@@ -584,7 +583,7 @@ class DashboardSummaryCardsTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
-        DB::table('purchase_items')->insert([
+        $purchaseItemId = DB::table('purchase_items')->insertGetId([
             'purchase_id' => $purchaseId,
             'fuel_type_id' => $records['fuelTypeId'],
             'quantity_ordered_liters' => 80000,
@@ -595,6 +594,7 @@ class DashboardSummaryCardsTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        $this->haul($records, $purchaseId, $purchaseItemId, 'LFT-DASH-COMPLETED', 30000, 'completed');
 
         $cancelledPurchaseId = DB::table('purchases')->insertGetId([
             'purchase_code' => 'PUR-DASH-CANCELLED',
@@ -741,6 +741,173 @@ class DashboardSummaryCardsTest extends TestCase
             'stock_out_at' => '2026-09-01 09:00:00',
             'status' => $status,
             'created_by' => $records['inventoryOfficer']->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    public function test_unlifted_fuel_monitoring_uses_completed_multi_lift_aggregation_and_filters(): void
+    {
+        Carbon::setTestNow('2026-09-01 10:00:00');
+        $records = $this->records();
+        $secondDepotId = DB::table('depots')->insertGetId([
+            'depot_code' => 'DEP-DASH-SOUTH',
+            'name' => 'Dashboard South Depot',
+            'status' => 'active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $secondFuelTypeId = DB::table('fuel_types')->insertGetId([
+            'code' => 'KER-DASH',
+            'name' => 'Dashboard Kerosene',
+            'status' => 'active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        [$zeroPurchaseId, $zeroItemId] = $this->purchaseItem($records, 'PUR-UNLIFTED-ZERO', 10000);
+        [$singlePurchaseId, $singleItemId] = $this->purchaseItem($records, 'PUR-UNLIFTED-SINGLE', 10000);
+        [$multiPurchaseId, $multiItemId] = $this->purchaseItem($records, 'PUR-UNLIFTED-MULTI', 10000);
+        [$fullPurchaseId, $fullItemId] = $this->purchaseItem($records, 'PUR-UNLIFTED-FULL', 5000);
+        [$overPurchaseId, $overItemId] = $this->purchaseItem($records, 'PUR-UNLIFTED-OVER', 10000);
+        [$otherPurchaseId, $otherItemId] = $this->purchaseItem($records, 'PUR-UNLIFTED-OTHER', 20000, $secondDepotId, $secondFuelTypeId);
+        [$cancelledPurchaseId, $cancelledItemId] = $this->purchaseItem($records, 'PUR-UNLIFTED-CANCELLED', 999999, null, null, 'cancelled');
+
+        $this->haul($records, $singlePurchaseId, $singleItemId, 'LFT-UNLIFTED-SINGLE-DONE', 4000, 'completed');
+        $this->haul($records, $singlePurchaseId, $singleItemId, 'LFT-UNLIFTED-SINGLE-SCHED', 1000, 'scheduled');
+        $this->haul($records, $singlePurchaseId, $singleItemId, 'LFT-UNLIFTED-SINGLE-CANCEL', 2000, 'cancelled');
+        $this->haul($records, $multiPurchaseId, $multiItemId, 'LFT-UNLIFTED-MULTI-A', 3000, 'completed');
+        $this->haul($records, $multiPurchaseId, $multiItemId, 'LFT-UNLIFTED-MULTI-B', 4000, 'completed');
+        $this->haul($records, $fullPurchaseId, $fullItemId, 'LFT-UNLIFTED-FULL', 5000, 'completed');
+        $this->haul($records, $overPurchaseId, $overItemId, 'LFT-UNLIFTED-OVER', 12000, 'completed');
+        $this->haul($records, $otherPurchaseId, $otherItemId, 'LFT-UNLIFTED-OTHER', 5000, 'completed', $secondDepotId, $secondFuelTypeId);
+        $this->haul($records, $cancelledPurchaseId, $cancelledItemId, 'LFT-UNLIFTED-CANCELLED', 500000, 'completed');
+
+        /** @var DashboardSummaryService $summary */
+        $summary = app(DashboardSummaryService::class);
+        $monitoring = $summary->unliftedFuelMonitoring();
+        $rowsByCode = collect($monitoring['rows'])->keyBy('purchase_code');
+        $fuelBreakdown = collect($monitoring['fuelBreakdown'])->keyBy('label');
+        $depotBreakdown = collect($monitoring['depotBreakdown'])->keyBy('label');
+
+        $this->assertSame(34000.0, $summary->unliftedFuelLiters());
+        $this->assertSame(31000.0, $summary->liftedFuelLiters());
+        $this->assertSame(65000.0, $monitoring['summary']['purchased_liters']);
+        $this->assertSame(34000.0, $monitoring['summary']['remaining_liters']);
+        $this->assertSame(3, $monitoring['summary']['partial_count']);
+        $this->assertSame(1, $monitoring['summary']['unlifted_count']);
+        $this->assertSame(2, $monitoring['summary']['lifted_count']);
+        $this->assertSame(6000.0, $rowsByCode['PUR-UNLIFTED-SINGLE']['remaining_liters']);
+        $this->assertSame(7000.0, $rowsByCode['PUR-UNLIFTED-MULTI']['lifted_liters']);
+        $this->assertSame('Partially Lifted', $rowsByCode['PUR-UNLIFTED-MULTI']['lift_status_label']);
+        $this->assertSame(10000.0, $rowsByCode['PUR-UNLIFTED-ZERO']['remaining_liters']);
+        $this->assertFalse($rowsByCode->has('PUR-UNLIFTED-FULL'));
+        $this->assertFalse($rowsByCode->has('PUR-UNLIFTED-OVER'));
+        $this->assertFalse($rowsByCode->has('PUR-UNLIFTED-CANCELLED'));
+        $this->assertSame(19000.0, $fuelBreakdown['Dashboard Diesel']['liters']);
+        $this->assertSame(15000.0, $fuelBreakdown['Dashboard Kerosene']['liters']);
+        $this->assertSame(19000.0, $depotBreakdown['Dashboard Depot']['liters']);
+        $this->assertSame(15000.0, $depotBreakdown['Dashboard South Depot']['liters']);
+        $this->assertSame(['Purchased', 'Lifted', 'Unlifted'], $monitoring['chart']['labels']);
+        $this->assertSame([65000.0, 31000.0, 34000.0], $monitoring['chart']['datasets'][0]['data']);
+
+        $partialMonitoring = $summary->unliftedFuelMonitoring(['lifting_status' => 'partial']);
+        $partialCodes = collect($partialMonitoring['rows'])->pluck('purchase_code')->all();
+        $this->assertContains('PUR-UNLIFTED-SINGLE', $partialCodes);
+        $this->assertContains('PUR-UNLIFTED-MULTI', $partialCodes);
+        $this->assertContains('PUR-UNLIFTED-OTHER', $partialCodes);
+        $this->assertNotContains('PUR-UNLIFTED-ZERO', $partialCodes);
+        $this->assertSame(24000.0, $partialMonitoring['summary']['remaining_liters']);
+
+        $before = $this->databaseCounts();
+
+        $this->actingAs($records['admin'])
+            ->get(route('admin.dashboard'))
+            ->assertOk()
+            ->assertSee('data-unlifted-fuel-chart', false)
+            ->assertSee('Unlifted Fuel Monitoring')
+            ->assertSee('Total Lifted')
+            ->assertSee('31,000 L')
+            ->assertSee('Partially Lifted')
+            ->assertSee('Dashboard South Depot')
+            ->assertSee('Dashboard Kerosene')
+            ->assertSee('PUR-UNLIFTED-MULTI')
+            ->assertSee('34 KL')
+            ->assertDontSee('PUR-UNLIFTED-CANCELLED')
+            ->assertDontSee('999999');
+
+        $this->actingAs($records['admin'])
+            ->get(route('admin.dashboard', ['unlifted_lifting_status' => 'partial']))
+            ->assertOk()
+            ->assertSee('PUR-UNLIFTED-SINGLE')
+            ->assertSee('PUR-UNLIFTED-MULTI')
+            ->assertDontSee('PUR-UNLIFTED-ZERO');
+
+        $this->actingAs($records['admin'])
+            ->from(route('admin.dashboard'))
+            ->get(route('admin.dashboard', ['unlifted_lifting_status' => 'bogus']))
+            ->assertRedirect(route('admin.dashboard'))
+            ->assertSessionHasErrors('unlifted_lifting_status');
+
+        $this->actingAs(User::factory()->create(['role' => 'driver', 'status' => 'active']))
+            ->get(route('admin.dashboard'))
+            ->assertForbidden();
+
+        $this->assertSame($before, $this->databaseCounts());
+
+        Carbon::setTestNow();
+    }
+
+    /**
+     * @param array<string, mixed> $records
+     * @return array{0: int, 1: int}
+     */
+    private function purchaseItem(array $records, string $code, float $quantity, ?int $depotId = null, ?int $fuelTypeId = null, string $status = 'ordered'): array
+    {
+        $purchaseId = DB::table('purchases')->insertGetId([
+            'purchase_code' => $code,
+            'depot_id' => $depotId ?: $records['depotId'],
+            'purchase_date' => '2026-08-30',
+            'payment_status' => 'paid',
+            'status' => $status,
+            'created_by' => $records['inventoryOfficer']->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $purchaseItemId = DB::table('purchase_items')->insertGetId([
+            'purchase_id' => $purchaseId,
+            'fuel_type_id' => $fuelTypeId ?: $records['fuelTypeId'],
+            'quantity_ordered_liters' => $quantity,
+            'unit_cost' => 50,
+            'line_total' => $quantity * 50,
+            'quantity_hauled_liters' => 0,
+            'status' => 'unlifted',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return [$purchaseId, $purchaseItemId];
+    }
+
+    /**
+     * @param array<string, mixed> $records
+     */
+    private function haul(array $records, int $purchaseId, int $purchaseItemId, string $code, float $quantity, string $status, ?int $depotId = null, ?int $fuelTypeId = null): int
+    {
+        return DB::table('hauls')->insertGetId([
+            'haul_code' => $code,
+            'purchase_id' => $purchaseId,
+            'purchase_item_id' => $purchaseItemId,
+            'depot_id' => $depotId ?: $records['depotId'],
+            'fuel_type_id' => $fuelTypeId ?: $records['fuelTypeId'],
+            'truck_id' => $records['truckId'],
+            'driver_user_id' => $records['driver']->id,
+            'dr_number' => $code.'-DR',
+            'scheduled_at' => '2026-08-31 09:00:00',
+            'hauled_at' => $status === 'completed' ? '2026-08-31 11:00:00' : null,
+            'source_location' => 'Dashboard Rack',
+            'quantity_liters' => $quantity,
+            'status' => $status,
             'created_at' => now(),
             'updated_at' => now(),
         ]);

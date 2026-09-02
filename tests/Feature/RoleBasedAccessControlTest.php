@@ -505,7 +505,7 @@ class RoleBasedAccessControlTest extends TestCase
             'updated_at' => now(),
         ]);
 
-        DB::table('purchase_items')->insert([
+        $purchaseItemId = DB::table('purchase_items')->insertGetId([
             'purchase_id' => $purchaseId,
             'fuel_type_id' => $premiumId,
             'quantity_ordered_liters' => 100000,
@@ -513,6 +513,24 @@ class RoleBasedAccessControlTest extends TestCase
             'line_total' => 4500000,
             'quantity_hauled_liters' => 40000,
             'status' => 'partial',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('hauls')->insert([
+            'haul_code' => 'LFT-TEST',
+            'purchase_id' => $purchaseId,
+            'purchase_item_id' => $purchaseItemId,
+            'depot_id' => $depotId,
+            'fuel_type_id' => $premiumId,
+            'truck_id' => $truckId,
+            'driver_user_id' => $driver->id,
+            'dr_number' => 'DR-TEST',
+            'scheduled_at' => now(),
+            'hauled_at' => now(),
+            'source_location' => 'Test Depot Rack',
+            'quantity_liters' => 40000,
+            'status' => 'completed',
             'created_at' => now(),
             'updated_at' => now(),
         ]);

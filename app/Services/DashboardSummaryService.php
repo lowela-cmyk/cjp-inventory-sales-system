@@ -10,6 +10,7 @@ class DashboardSummaryService
 {
     public const VALID_SALE_STATUSES = ['confirmed', 'partially_paid', 'paid', 'unpaid'];
     public const SALES_TREND_PERIODS = ['week', 'month', 'year'];
+    public const LIFTING_PROGRESS_STATUSES = ['unlifted', 'partial', 'lifted'];
     private const ACTIVE_DELIVERY_STATUSES = ['scheduled', 'in_transit', 'incomplete'];
     private const STOCK_LEVEL_COLORS = ['#f7043a', '#3b9a35', '#e28a22', '#0d1424', '#6b7280'];
 
@@ -223,6 +224,99 @@ class DashboardSummaryService
     }
 
     /**
+     * @param array<string, mixed> $filters
+     * @return array<string, mixed>
+     */
+    public function unliftedFuelMonitoring(array $filters = [], int $limit = 6): array
+    {
+        $base = $this->unliftedPurchaseItemsQuery($filters);
+        $summary = DB::query()
+            ->fromSub(clone $base, 'unlifted_items')
+            ->selectRaw("
+                COALESCE(SUM(purchased_liters), 0) as purchased_liters,
+                COALESCE(SUM(lifted_liters), 0) as lifted_liters,
+                COALESCE(SUM(remaining_liters), 0) as remaining_liters,
+                COALESCE(SUM(CASE WHEN lift_status = 'partial' THEN 1 ELSE 0 END), 0) as partial_count,
+                COALESCE(SUM(CASE WHEN lift_status = 'unlifted' THEN 1 ELSE 0 END), 0) as unlifted_count,
+                COALESCE(SUM(CASE WHEN lift_status = 'lifted' THEN 1 ELSE 0 END), 0) as lifted_count
+            ")
+            ->first();
+
+        $rows = DB::query()
+            ->fromSub(clone $base, 'unlifted_items')
+            ->where('remaining_liters', '>', 0)
+            ->orderByDesc('purchase_date')
+            ->orderBy('purchase_code')
+            ->limit($limit)
+            ->get()
+            ->map(fn (object $row): array => $this->formatUnliftedFuelRow($row))
+            ->all();
+
+        $fuelBreakdown = DB::query()
+            ->fromSub(clone $base, 'unlifted_items')
+            ->where('remaining_liters', '>', 0)
+            ->selectRaw('fuel_type_id, fuel_name as label, COALESCE(SUM(remaining_liters), 0) as liters')
+            ->groupBy('fuel_type_id', 'fuel_name')
+            ->orderBy('fuel_name')
+            ->get()
+            ->map(fn (object $row): array => [
+                'fuel_type_id' => (int) $row->fuel_type_id,
+                'label' => $row->label,
+                'liters' => round((float) $row->liters, 2),
+                'formatted_liters' => $this->formatLiters((float) $row->liters),
+            ])
+            ->all();
+
+        $depotBreakdown = DB::query()
+            ->fromSub(clone $base, 'unlifted_items')
+            ->where('remaining_liters', '>', 0)
+            ->selectRaw('depot_id, depot_name as label, COALESCE(SUM(remaining_liters), 0) as liters')
+            ->groupBy('depot_id', 'depot_name')
+            ->orderBy('depot_name')
+            ->get()
+            ->map(fn (object $row): array => [
+                'depot_id' => (int) $row->depot_id,
+                'label' => $row->label,
+                'liters' => round((float) $row->liters, 2),
+                'formatted_liters' => $this->formatLiters((float) $row->liters),
+            ])
+            ->all();
+
+        $purchased = round((float) ($summary->purchased_liters ?? 0), 2);
+        $lifted = round((float) ($summary->lifted_liters ?? 0), 2);
+        $remaining = round((float) ($summary->remaining_liters ?? 0), 2);
+
+        return [
+            'summary' => [
+                'purchased_liters' => $purchased,
+                'lifted_liters' => $lifted,
+                'remaining_liters' => $remaining,
+                'partial_count' => (int) ($summary->partial_count ?? 0),
+                'unlifted_count' => (int) ($summary->unlifted_count ?? 0),
+                'lifted_count' => (int) ($summary->lifted_count ?? 0),
+                'formatted_purchased' => $this->formatLiters($purchased),
+                'formatted_lifted' => $this->formatLiters($lifted),
+                'formatted_remaining' => $this->formatLiters($remaining),
+            ],
+            'rows' => $rows,
+            'fuelBreakdown' => $fuelBreakdown,
+            'depotBreakdown' => $depotBreakdown,
+            'chart' => [
+                'labels' => ['Purchased', 'Lifted', 'Unlifted'],
+                'datasets' => [[
+                    'label' => 'Purchased vs Lifted vs Unlifted',
+                    'data' => [$purchased, $lifted, $remaining],
+                    'formattedData' => [$this->formatLiters($purchased), $this->formatLiters($lifted), $this->formatLiters($remaining)],
+                    'backgroundColor' => ['#0d1424', '#3b9a35', '#f7043a'],
+                    'borderColor' => '#ffffff',
+                    'borderWidth' => 1,
+                    'borderRadius' => 5,
+                ]],
+            ],
+        ];
+    }
+
+    /**
      * Expected revenue is deterministic expected collectible cash for a year:
      * payments actually collected in the year plus still-outstanding receivables due in that year.
      *
@@ -329,12 +423,36 @@ class DashboardSummaryService
 
     public function unliftedFuelLiters(): float
     {
-        return (float) DB::table('purchase_items')
-            ->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
-            ->whereNull('purchases.deleted_at')
-            ->where('purchases.status', '!=', 'cancelled')
-            ->selectRaw('COALESCE(SUM(CASE WHEN quantity_ordered_liters > quantity_hauled_liters THEN quantity_ordered_liters - quantity_hauled_liters ELSE 0 END), 0) as total')
+        return (float) DB::query()
+            ->fromSub($this->unliftedPurchaseItemsQuery(), 'unlifted_items')
+            ->selectRaw('COALESCE(SUM(remaining_liters), 0) as total')
             ->value('total');
+    }
+
+    public function liftedFuelLiters(): float
+    {
+        return (float) DB::query()
+            ->fromSub($this->unliftedPurchaseItemsQuery(), 'unlifted_items')
+            ->selectRaw('COALESCE(SUM(lifted_liters), 0) as total')
+            ->value('total');
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function unliftedFilterOptions(): array
+    {
+        return [
+            'statuses' => self::LIFTING_PROGRESS_STATUSES,
+            'fuelTypes' => DB::table('fuel_types')
+                ->where('status', 'active')
+                ->orderBy('name')
+                ->get(['id', 'name']),
+            'depots' => DB::table('depots')
+                ->where('status', 'active')
+                ->orderBy('name')
+                ->get(['id', 'name']),
+        ];
     }
 
     public function activeDeliveries(): int
@@ -612,6 +730,97 @@ class DashboardSummaryService
             ->whereNotExists($this->cancelledHaulAllocationExists())
             ->selectRaw("fuel_type_id, COALESCE(SUM(CASE WHEN direction = 'in' THEN quantity_liters WHEN direction = 'out' THEN -quantity_liters ELSE 0 END), 0) as liters")
             ->groupBy('fuel_type_id');
+    }
+
+    /**
+     * @param array<string, mixed> $filters
+     */
+    private function unliftedPurchaseItemsQuery(array $filters = []): Builder
+    {
+        $completedHauls = DB::table('hauls')
+            ->where('status', 'completed')
+            ->selectRaw('purchase_item_id, COALESCE(SUM(quantity_liters), 0) as completed_liters')
+            ->groupBy('purchase_item_id');
+
+        $query = DB::table('purchase_items')
+            ->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
+            ->join('depots', 'depots.id', '=', 'purchases.depot_id')
+            ->join('fuel_types', 'fuel_types.id', '=', 'purchase_items.fuel_type_id')
+            ->leftJoinSub($completedHauls, 'completed_hauls', 'completed_hauls.purchase_item_id', '=', 'purchase_items.id')
+            ->whereNull('purchases.deleted_at')
+            ->where('purchases.status', '!=', 'cancelled')
+            ->when($filters['date_from'] ?? null, fn (Builder $query, string $date): Builder => $query->where('purchases.purchase_date', '>=', $date))
+            ->when($filters['date_to'] ?? null, fn (Builder $query, string $date): Builder => $query->where('purchases.purchase_date', '<=', $date))
+            ->when($filters['depot_id'] ?? null, fn (Builder $query, mixed $depotId): Builder => $query->where('purchases.depot_id', (int) $depotId))
+            ->when($filters['fuel_type_id'] ?? null, fn (Builder $query, mixed $fuelTypeId): Builder => $query->where('purchase_items.fuel_type_id', (int) $fuelTypeId));
+
+        $status = $filters['lifting_status'] ?? null;
+        if (in_array($status, self::LIFTING_PROGRESS_STATUSES, true)) {
+            $query->whereRaw($this->liftStatusSql().' = ?', [$status]);
+        }
+
+        return $query->select([
+            'purchase_items.id as purchase_item_id',
+            'purchase_items.purchase_id',
+            'purchase_items.fuel_type_id',
+            'purchases.depot_id',
+            'purchases.purchase_code',
+            'purchases.purchase_date',
+            'purchases.status as purchase_status',
+            'depots.name as depot_name',
+            'fuel_types.name as fuel_name',
+        ])->selectRaw('ROUND(purchase_items.quantity_ordered_liters, 2) as purchased_liters')
+            ->selectRaw($this->liftedLitersSql().' as lifted_liters')
+            ->selectRaw($this->remainingLitersSql().' as remaining_liters')
+            ->selectRaw($this->liftStatusSql().' as lift_status');
+    }
+
+    private function liftedLitersSql(): string
+    {
+        return 'ROUND(CASE WHEN COALESCE(completed_hauls.completed_liters, 0) > purchase_items.quantity_ordered_liters THEN purchase_items.quantity_ordered_liters ELSE COALESCE(completed_hauls.completed_liters, 0) END, 2)';
+    }
+
+    private function remainingLitersSql(): string
+    {
+        return 'ROUND(CASE WHEN purchase_items.quantity_ordered_liters > COALESCE(completed_hauls.completed_liters, 0) THEN purchase_items.quantity_ordered_liters - COALESCE(completed_hauls.completed_liters, 0) ELSE 0 END, 2)';
+    }
+
+    private function liftStatusSql(): string
+    {
+        return "CASE WHEN COALESCE(completed_hauls.completed_liters, 0) <= 0 THEN 'unlifted' WHEN ROUND(COALESCE(completed_hauls.completed_liters, 0), 2) >= ROUND(purchase_items.quantity_ordered_liters, 2) THEN 'lifted' ELSE 'partial' END";
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function formatUnliftedFuelRow(object $row): array
+    {
+        return [
+            'purchase_item_id' => (int) $row->purchase_item_id,
+            'purchase_id' => (int) $row->purchase_id,
+            'purchase_code' => $row->purchase_code,
+            'purchase_date' => $row->purchase_date,
+            'depot_name' => $row->depot_name,
+            'fuel_name' => $row->fuel_name,
+            'purchased_liters' => round((float) $row->purchased_liters, 2),
+            'lifted_liters' => round((float) $row->lifted_liters, 2),
+            'remaining_liters' => round((float) $row->remaining_liters, 2),
+            'lift_status' => $row->lift_status,
+            'lift_status_label' => $this->liftStatusLabel((string) $row->lift_status),
+            'formatted_purchased' => $this->formatLiters((float) $row->purchased_liters),
+            'formatted_lifted' => $this->formatLiters((float) $row->lifted_liters),
+            'formatted_remaining' => $this->formatLiters((float) $row->remaining_liters),
+            'formatted_purchase_date' => $row->purchase_date ? CarbonImmutable::parse($row->purchase_date)->format('M d, Y') : 'N/A',
+        ];
+    }
+
+    private function liftStatusLabel(string $status): string
+    {
+        return match ($status) {
+            'partial' => 'Partially Lifted',
+            'lifted' => 'Fully Lifted',
+            default => 'Unlifted',
+        };
     }
 
     private function cancelledStockOutExists(): \Closure

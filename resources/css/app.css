@@ -497,7 +497,8 @@ select {
 .sales-trend-chart,
 .stock-level-chart,
 .receivables-chart,
-.expected-revenue-chart {
+.expected-revenue-chart,
+.unlifted-fuel-chart {
     position: relative;
     min-height: 255px;
     padding: 22px 18px 18px;
@@ -506,7 +507,8 @@ select {
 .sales-trend-chart canvas,
 .stock-level-chart canvas,
 .receivables-chart canvas,
-.expected-revenue-chart canvas {
+.expected-revenue-chart canvas,
+.unlifted-fuel-chart canvas {
     width: 100%;
     min-height: 255px;
 }
@@ -514,7 +516,8 @@ select {
 .sales-trend-fallback,
 .stock-level-fallback,
 .receivables-fallback,
-.expected-revenue-fallback {
+.expected-revenue-fallback,
+.unlifted-fuel-fallback {
     padding-top: 26px;
 }
 
@@ -739,6 +742,44 @@ select {
     font-size: 14px;
     line-height: 1.2;
     overflow-wrap: anywhere;
+}
+
+.dashboard-filter-row {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 8px;
+    padding: 12px 14px 0;
+}
+
+.dashboard-filter-row input,
+.dashboard-filter-row select {
+    min-width: 0;
+    height: 34px;
+    border: 1px solid var(--admin-ink);
+    border-radius: 4px;
+    padding: 0 10px;
+    background: var(--admin-ink);
+    color: #fff;
+    font-size: 12px;
+}
+
+.dashboard-breakdown-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+    padding: 16px 18px 18px;
+}
+
+.dashboard-breakdown-grid h3 {
+    margin: 0 0 10px;
+    color: #6b7280;
+    font-size: 12px;
+    text-transform: uppercase;
+}
+
+.dashboard-breakdown-grid .demand-row {
+    grid-template-columns: minmax(90px, 120px) minmax(100px, 1fr) minmax(74px, auto);
+    font-size: 12px;
 }
 
 .mock-line-path::after {
@@ -1352,7 +1393,9 @@ select {
     }
 
     .dashboard-grid,
-    .metric-row {
+    .metric-row,
+    .dashboard-filter-row,
+    .dashboard-breakdown-grid {
         grid-template-columns: 1fr;
     }
 

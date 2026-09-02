@@ -187,6 +187,15 @@ document.querySelectorAll('[data-unlifted-fuel-chart]').forEach((canvas) => {
     );
 });
 
+document.querySelectorAll('[data-inventory-variance-chart]').forEach((canvas) => {
+    renderDashboardBarChart(
+        canvas,
+        '.inventory-variance-fallback',
+        (value) => Number(value).toLocaleString(),
+        (value) => Number(value || 0).toLocaleString(),
+    );
+});
+
 document.querySelectorAll('[data-receivables-chart]').forEach((canvas) => {
     renderDashboardBarChart(
         canvas,

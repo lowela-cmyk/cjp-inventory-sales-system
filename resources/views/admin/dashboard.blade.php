@@ -145,6 +145,92 @@
         </section>
 
         <section class="chart-panel">
+            <div class="chart-header"><h2>Inventory Variance</h2></div>
+            <form class="dashboard-filter-row dashboard-filter-row-variance" method="GET" action="{{ route('admin.dashboard') }}">
+                <input type="date" name="variance_date_from" value="{{ $inventoryVarianceFilters['date_from'] ?? '' }}" aria-label="Sale date from">
+                <input type="date" name="variance_date_to" value="{{ $inventoryVarianceFilters['date_to'] ?? '' }}" aria-label="Sale date to">
+                <select name="variance_fuel_type_id" aria-label="Filter variance by fuel type">
+                    <option value="">Fuel Type (All)</option>
+                    @foreach ($inventoryVarianceFilterOptions['fuelTypes'] as $fuelType)
+                        <option value="{{ $fuelType->id }}" @selected((string) ($inventoryVarianceFilters['fuel_type_id'] ?? '') === (string) $fuelType->id)>{{ $fuelType->name }}</option>
+                    @endforeach
+                </select>
+                <select name="variance_customer_id" aria-label="Filter variance by customer">
+                    <option value="">Customer (All)</option>
+                    @foreach ($inventoryVarianceFilterOptions['customers'] as $customer)
+                        <option value="{{ $customer->id }}" @selected((string) ($inventoryVarianceFilters['customer_id'] ?? '') === (string) $customer->id)>{{ $customer->company_name ?: $customer->name }}</option>
+                    @endforeach
+                </select>
+                <select name="variance_status" aria-label="Filter variance status">
+                    <option value="">Variance Status (All)</option>
+                    @foreach ($inventoryVarianceFilterOptions['statuses'] as $status)
+                        <option value="{{ $status }}" @selected(($inventoryVarianceFilters['variance_status'] ?? '') === $status)>{{ $status === 'matched' ? 'Matched' : 'Requires Verification' }}</option>
+                    @endforeach
+                </select>
+                <button class="btn btn-primary" type="submit">Apply</button>
+            </form>
+            <div class="inventory-variance-chart">
+                <canvas data-inventory-variance-chart data-chart='@json($inventoryVarianceChart)' aria-label="Matched stock-out and receivable transactions versus variances" role="img"></canvas>
+                <div class="revenue-bars inventory-variance-fallback">
+                    @foreach ([
+                        ['Matched', number_format($inventoryVariance['summary']['matched_count']), 120, '#3b9a35'],
+                        ['Requires Verification', number_format($inventoryVariance['summary']['variance_count']), 120, '#f7043a'],
+                    ] as $bar)
+                        <div class="revenue-bar">
+                            <strong>{{ $bar[1] }}</strong>
+                            <i style="--h: {{ $bar[2] }}px; --c: {{ $bar[3] }}"></i>
+                            <span>{{ $bar[0] }}</span>
+                        </div>
+                    @endforeach
+                </div>
+            </div>
+            <div class="dashboard-kpi-strip dashboard-kpi-strip-variance">
+                <div><span>Checked</span><strong>{{ number_format($inventoryVariance['summary']['total_checked']) }}</strong></div>
+                <div><span>Variance Rate</span><strong>{{ $inventoryVariance['summary']['formatted_variance_rate'] }}</strong></div>
+                <div><span>Quantity Variance</span><strong>{{ $inventoryVariance['summary']['formatted_quantity_variance'] }}</strong></div>
+            </div>
+            @if (! empty($inventoryVarianceRows))
+                <div class="dashboard-mini-table">
+                    <table>
+                        <thead><tr><th>Reference</th><th>Customer</th><th>Fuel</th><th>Sale Qty</th><th>Stock-Out Qty</th><th>Difference</th><th>Receivable</th><th>Reason</th><th>Date</th></tr></thead>
+                        <tbody>
+                            @foreach ($inventoryVarianceRows as $row)
+                                <tr>
+                                    <td>{{ $row['transaction_reference'] }}</td>
+                                    <td>{{ $row['company_name'] ?: $row['customer_name'] }}</td>
+                                    <td>{{ $row['fuel_name'] }}</td>
+                                    <td>{{ $row['formatted_sale_quantity'] }}</td>
+                                    <td>{{ $row['formatted_stock_out_quantity'] }}</td>
+                                    <td>{{ $row['formatted_quantity_variance'] }}</td>
+                                    <td>{{ $row['receivable_status_label'] }}</td>
+                                    <td>{{ $row['reason'] }}</td>
+                                    <td>{{ $row['formatted_transaction_date'] }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            @else
+                <div class="dashboard-empty-state dashboard-empty-state-small">No variance detected</div>
+            @endif
+            <div class="dashboard-breakdown-grid dashboard-breakdown-grid-compact">
+                <div>
+                    <h3>Reasons</h3>
+                    @forelse ($inventoryVariance['reasonBreakdown'] as $row)
+                        <div class="demand-row"><span>{{ $row['label'] }}</span><span class="demand-track"><i class="demand-fill" style="--p:{{ $inventoryVariance['summary']['variance_count'] > 0 ? round(($row['count'] / $inventoryVariance['summary']['variance_count']) * 100) : 0 }}%"></i></span><strong>{{ number_format($row['count']) }}</strong></div>
+                    @empty
+                        <div class="dashboard-empty-state dashboard-empty-state-small">0</div>
+                    @endforelse
+                </div>
+                <div>
+                    <h3>Status</h3>
+                    <div class="demand-row"><span>Matched</span><span class="demand-track"><i class="demand-fill" style="--p:{{ $inventoryVariance['summary']['total_checked'] > 0 ? round(($inventoryVariance['summary']['matched_count'] / $inventoryVariance['summary']['total_checked']) * 100) : 0 }}%"></i></span><strong>{{ number_format($inventoryVariance['summary']['matched_count']) }}</strong></div>
+                    <div class="demand-row"><span>Requires Verification</span><span class="demand-track"><i class="demand-fill" style="--p:{{ $inventoryVariance['summary']['total_checked'] > 0 ? round(($inventoryVariance['summary']['variance_count'] / $inventoryVariance['summary']['total_checked']) * 100) : 0 }}%"></i></span><strong>{{ number_format($inventoryVariance['summary']['variance_count']) }}</strong></div>
+                </div>
+            </div>
+        </section>
+
+        <section class="chart-panel">
             <div class="chart-header"><h2>Expected Revenue ({{ $expectedRevenue['period'] }})</h2></div>
             <div class="expected-revenue-chart">
                 <canvas data-expected-revenue-chart data-chart='@json($expectedRevenueChart)' aria-label="Expected revenue by month" role="img"></canvas>

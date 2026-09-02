@@ -21,6 +21,11 @@ class AdminDashboardController extends Controller
             'unlifted_depot_id' => ['nullable', 'integer', Rule::exists('depots', 'id')],
             'unlifted_fuel_type_id' => ['nullable', 'integer', Rule::exists('fuel_types', 'id')],
             'unlifted_lifting_status' => ['nullable', Rule::in(DashboardSummaryService::LIFTING_PROGRESS_STATUSES)],
+            'variance_date_from' => ['nullable', 'date'],
+            'variance_date_to' => ['nullable', 'date', 'after_or_equal:variance_date_from'],
+            'variance_fuel_type_id' => ['nullable', 'integer', Rule::exists('fuel_types', 'id')],
+            'variance_customer_id' => ['nullable', 'integer', Rule::exists('customers', 'id')],
+            'variance_status' => ['nullable', Rule::in(DashboardSummaryService::INVENTORY_VARIANCE_STATUSES)],
         ]);
 
         return view('admin.dashboard', $dashboard->data($filters));

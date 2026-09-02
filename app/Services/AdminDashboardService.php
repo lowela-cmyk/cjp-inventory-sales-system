@@ -35,6 +35,14 @@ class AdminDashboardService
             'lifting_status' => $filters['unlifted_lifting_status'] ?? null,
         ];
         $unliftedMonitoring = $this->summary->unliftedFuelMonitoring($unliftedFilters);
+        $varianceFilters = [
+            'date_from' => $filters['variance_date_from'] ?? null,
+            'date_to' => $filters['variance_date_to'] ?? null,
+            'fuel_type_id' => $filters['variance_fuel_type_id'] ?? null,
+            'customer_id' => $filters['variance_customer_id'] ?? null,
+            'variance_status' => $filters['variance_status'] ?? null,
+        ];
+        $inventoryVariance = $this->summary->inventoryVarianceMonitoring($varianceFilters);
         $expectedRevenue = $this->summary->expectedRevenue(
             isset($filters['expected_year']) ? (int) $filters['expected_year'] : null
         );
@@ -61,6 +69,11 @@ class AdminDashboardService
             'unliftedFuelChart' => $unliftedMonitoring['chart'],
             'unliftedFuelFilters' => $unliftedFilters,
             'unliftedFuelFilterOptions' => $this->summary->unliftedFilterOptions(),
+            'inventoryVariance' => $inventoryVariance,
+            'inventoryVarianceRows' => $inventoryVariance['rows'],
+            'inventoryVarianceChart' => $inventoryVariance['chart'],
+            'inventoryVarianceFilters' => $varianceFilters,
+            'inventoryVarianceFilterOptions' => $this->summary->inventoryVarianceFilterOptions(),
             'expectedRevenue' => $expectedRevenue,
             'expectedRevenueChart' => $expectedRevenue['chart'],
             'revenueBars' => $this->revenueBars($totalSalesRevenue, $collectedRevenue, $outstandingBalance),

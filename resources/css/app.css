@@ -498,7 +498,8 @@ select {
 .stock-level-chart,
 .receivables-chart,
 .expected-revenue-chart,
-.unlifted-fuel-chart {
+.unlifted-fuel-chart,
+.inventory-variance-chart {
     position: relative;
     min-height: 255px;
     padding: 22px 18px 18px;
@@ -508,7 +509,8 @@ select {
 .stock-level-chart canvas,
 .receivables-chart canvas,
 .expected-revenue-chart canvas,
-.unlifted-fuel-chart canvas {
+.unlifted-fuel-chart canvas,
+.inventory-variance-chart canvas {
     width: 100%;
     min-height: 255px;
 }
@@ -517,7 +519,8 @@ select {
 .stock-level-fallback,
 .receivables-fallback,
 .expected-revenue-fallback,
-.unlifted-fuel-fallback {
+.unlifted-fuel-fallback,
+.inventory-variance-fallback {
     padding-top: 26px;
 }
 
@@ -780,6 +783,18 @@ select {
 .dashboard-breakdown-grid .demand-row {
     grid-template-columns: minmax(90px, 120px) minmax(100px, 1fr) minmax(74px, auto);
     font-size: 12px;
+}
+
+.dashboard-filter-row-variance {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.dashboard-kpi-strip-variance {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.dashboard-breakdown-grid-compact {
+    align-items: start;
 }
 
 .mock-line-path::after {

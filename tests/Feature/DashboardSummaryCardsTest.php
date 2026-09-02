@@ -320,6 +320,9 @@ class DashboardSummaryCardsTest extends TestCase
             $this->payment($records, $paidSaleId, 'PAY-REC-PAID', 50000),
             $this->payment($records, $cancelledSaleId, 'PAY-REC-CANCELLED', 999999),
         ]);
+        $this->stockOutForSale($records, $unpaidSaleId, (int) DB::table('sale_items')->where('sale_id', $unpaidSaleId)->value('id'), 'STO-REC-UNPAID', 1000);
+        $this->stockOutForSale($records, $partialSaleId, (int) DB::table('sale_items')->where('sale_id', $partialSaleId)->value('id'), 'STO-REC-PARTIAL', 1000, null, null, $secondCustomerId);
+        $this->stockOutForSale($records, $paidSaleId, (int) DB::table('sale_items')->where('sale_id', $paidSaleId)->value('id'), 'STO-REC-PAID', 1000);
 
         /** @var DashboardSummaryService $summary */
         $summary = app(DashboardSummaryService::class);
@@ -858,6 +861,164 @@ class DashboardSummaryCardsTest extends TestCase
         Carbon::setTestNow();
     }
 
+    public function test_inventory_variance_monitoring_uses_stock_out_vs_receivable_reconciliation(): void
+    {
+        Carbon::setTestNow('2026-09-02 10:00:00');
+        $records = $this->records();
+        $secondFuelTypeId = DB::table('fuel_types')->insertGetId([
+            'code' => 'VAR-GAS',
+            'name' => 'Variance Gasoline',
+            'status' => 'active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $secondCustomerId = DB::table('customers')->insertGetId([
+            'customer_code' => 'CUS-VAR-SECOND',
+            'name' => 'Variance Second Customer',
+            'company_name' => 'Variance Second Co.',
+            'payment_status' => 'partial',
+            'status' => 'active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        [$matchedSaleId, $matchedItemId] = $this->saleWithItem($records, 'SLS-VAR-MATCHED', 1000, 50, 'paid');
+        $this->paymentForSale($records, $matchedSaleId, 'PAY-VAR-MATCHED', 50000);
+        $this->stockOutForSale($records, $matchedSaleId, $matchedItemId, 'STO-VAR-MATCHED', 1000);
+
+        [$missingStockOutSaleId] = $this->saleWithItem($records, 'SLS-VAR-MISSING-STOCK', 2000, 40, 'unpaid');
+
+        [$mismatchSaleId, $mismatchItemId] = $this->saleWithItem($records, 'SLS-VAR-QTY-MISMATCH', 3000, 45, 'confirmed', null, $secondFuelTypeId);
+        $this->stockOutForSale($records, $mismatchSaleId, $mismatchItemId, 'STO-VAR-QTY-MISMATCH', 1000, null, $secondFuelTypeId);
+
+        [$unpaidSaleId, $unpaidItemId] = $this->saleWithItem($records, 'SLS-VAR-UNPAID-VALID', 4000, 55, 'unpaid');
+        $this->stockOutForSale($records, $unpaidSaleId, $unpaidItemId, 'STO-VAR-UNPAID-VALID', 4000);
+
+        [$partialSaleId, $partialItemId] = $this->saleWithItem($records, 'SLS-VAR-INSTALLMENT', 5000, 60, 'partially_paid', $secondCustomerId);
+        $scheduleId = DB::table('payment_schedules')->insertGetId([
+            'sale_id' => $partialSaleId,
+            'due_date' => '2026-09-30',
+            'amount_due' => 300000,
+            'status' => 'partial',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $this->paymentForSale($records, $partialSaleId, 'PAY-VAR-INSTALLMENT', 120000, $scheduleId);
+        $this->stockOutForSale($records, $partialSaleId, $partialItemId, 'STO-VAR-INSTALLMENT', 5000, null, null, $secondCustomerId);
+
+        [$duplicateSaleId, $duplicateItemId] = $this->saleWithItem($records, 'SLS-VAR-DUPLICATE', 6000, 30, 'confirmed');
+        $deliveryId = $this->deliveryForSale($records, $duplicateSaleId, $duplicateItemId, 6000);
+        $this->stockOutForSale($records, $duplicateSaleId, $duplicateItemId, 'STO-VAR-DUP-A', 3000, $deliveryId);
+        $this->stockOutForSale($records, $duplicateSaleId, $duplicateItemId, 'STO-VAR-DUP-B', 3000, $deliveryId);
+
+        [$missingReceivableSaleId, $missingReceivableItemId] = $this->saleWithItem($records, 'SLS-VAR-MISSING-REC', 1500, 70, 'confirmed');
+        DB::table('receivables')->where('sale_id', $missingReceivableSaleId)->delete();
+        $this->stockOutForSale($records, $missingReceivableSaleId, $missingReceivableItemId, 'STO-VAR-MISSING-REC', 1500);
+
+        [$cancelledSaleId, $cancelledItemId] = $this->saleWithItem($records, 'SLS-VAR-CANCELLED', 999999, 1, 'cancelled');
+        $this->stockOutForSale($records, $cancelledSaleId, $cancelledItemId, 'STO-VAR-CANCELLED', 999999, null, null, null, 'cancelled');
+
+        $invalidSaleId = DB::table('sales')->insertGetId([
+            'sale_code' => 'SLS-VAR-INVALID-LINK',
+            'customer_id' => $records['customerId'],
+            'sale_date' => '2026-09-02',
+            'payment_method' => 'bank_transfer',
+            'payment_terms' => 'cod',
+            'status' => 'confirmed',
+            'created_by' => $records['salesOfficer']->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('receivables')->insert([
+            'sale_id' => $invalidSaleId,
+            'due_date' => '2026-09-30',
+            'status' => 'unpaid',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $invalidStockOutId = DB::table('stock_outs')->insertGetId([
+            'stock_out_code' => 'STO-VAR-INVALID-LINK',
+            'sale_id' => $invalidSaleId,
+            'sale_item_id' => null,
+            'customer_id' => $records['customerId'],
+            'fuel_type_id' => $records['fuelTypeId'],
+            'storage_location_id' => $records['garageId'],
+            'quantity_liters' => 750,
+            'stock_out_at' => '2026-09-02 08:00:00',
+            'status' => 'released',
+            'created_by' => $records['inventoryOfficer']->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        /** @var DashboardSummaryService $summary */
+        $summary = app(DashboardSummaryService::class);
+        $monitoring = $summary->inventoryVarianceMonitoring();
+        $rowsByCode = collect($monitoring['rows'])->keyBy('sale_code');
+
+        $this->assertSame(8, $monitoring['summary']['total_checked']);
+        $this->assertSame(3, $monitoring['summary']['matched_count']);
+        $this->assertSame(5, $monitoring['summary']['variance_count']);
+        $this->assertSame(62.5, $monitoring['summary']['variance_rate']);
+        $this->assertSame(-3250.0, $monitoring['summary']['quantity_variance_liters']);
+        $this->assertSame('Quantity Mismatch', $rowsByCode['SLS-VAR-QTY-MISMATCH']['reason']);
+        $this->assertSame('Missing Stock-Out', $rowsByCode['SLS-VAR-MISSING-STOCK']['reason']);
+        $this->assertSame('Duplicate Relationship', $rowsByCode['SLS-VAR-DUPLICATE']['reason']);
+        $this->assertSame('Missing Sale/Receivable', $rowsByCode['SLS-VAR-MISSING-REC']['reason']);
+        $this->assertFalse($rowsByCode->has('SLS-VAR-UNPAID-VALID'));
+        $this->assertFalse($rowsByCode->has('SLS-VAR-INSTALLMENT'));
+        $this->assertFalse($rowsByCode->has('SLS-VAR-MATCHED'));
+        $this->assertFalse($rowsByCode->has('SLS-VAR-CANCELLED'));
+        $this->assertTrue(collect($monitoring['rows'])->contains(fn (array $row): bool => $row['stock_out_code'] === 'STO-VAR-INVALID-LINK'));
+        $this->assertDatabaseHas('stock_outs', ['id' => $invalidStockOutId, 'status' => 'released']);
+
+        $matchedOnly = $summary->inventoryVarianceMonitoring(['variance_status' => 'matched']);
+        $this->assertSame(3, $matchedOnly['summary']['total_checked']);
+        $this->assertSame(0, $matchedOnly['summary']['variance_count']);
+
+        $fuelFiltered = $summary->inventoryVarianceMonitoring(['fuel_type_id' => $secondFuelTypeId]);
+        $this->assertSame(1, $fuelFiltered['summary']['total_checked']);
+        $this->assertSame(1, $fuelFiltered['summary']['variance_count']);
+        $this->assertSame(-2000.0, $fuelFiltered['summary']['quantity_variance_liters']);
+
+        $before = $this->databaseCounts();
+
+        $this->actingAs($records['admin'])
+            ->get(route('admin.dashboard'))
+            ->assertOk()
+            ->assertSee('data-inventory-variance-chart', false)
+            ->assertSee('Inventory Variance')
+            ->assertSee('62.5%')
+            ->assertSee('-3,250 L')
+            ->assertSee('SLS-VAR-QTY-MISMATCH')
+            ->assertSee('SLS-VAR-MISSING-STOCK')
+            ->assertSee('Missing Stock-Out')
+            ->assertSee('Quantity Mismatch')
+            ->assertSee('Duplicate Relationship')
+            ->assertSee('Invalid Transaction Link')
+            ->assertDontSee('SLS-VAR-CANCELLED')
+            ->assertDontSee('999999');
+
+        $this->actingAs($records['admin'])
+            ->get(route('admin.dashboard', ['variance_status' => 'matched']))
+            ->assertOk()
+            ->assertSee('No variance detected');
+
+        $this->actingAs($records['admin'])
+            ->from(route('admin.dashboard'))
+            ->get(route('admin.dashboard', ['variance_status' => 'bogus']))
+            ->assertRedirect(route('admin.dashboard'))
+            ->assertSessionHasErrors('variance_status');
+
+        $this->actingAs(User::factory()->create(['role' => 'driver', 'status' => 'active']))
+            ->get(route('admin.dashboard'))
+            ->assertForbidden();
+
+        $this->assertSame($before, $this->databaseCounts());
+
+        Carbon::setTestNow();
+    }
+
     /**
      * @param array<string, mixed> $records
      * @return array{0: int, 1: int}
@@ -908,6 +1069,110 @@ class DashboardSummaryCardsTest extends TestCase
             'source_location' => 'Dashboard Rack',
             'quantity_liters' => $quantity,
             'status' => $status,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    /**
+     * @param array<string, mixed> $records
+     * @return array{0: int, 1: int}
+     */
+    private function saleWithItem(array $records, string $code, float $quantity, float $unitPrice, string $status, ?int $customerId = null, ?int $fuelTypeId = null): array
+    {
+        $saleId = DB::table('sales')->insertGetId([
+            'sale_code' => $code,
+            'customer_id' => $customerId ?: $records['customerId'],
+            'sale_date' => '2026-09-02',
+            'payment_method' => 'bank_transfer',
+            'payment_terms' => 'installment',
+            'status' => $status,
+            'created_by' => $records['salesOfficer']->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $saleItemId = DB::table('sale_items')->insertGetId([
+            'sale_id' => $saleId,
+            'fuel_type_id' => $fuelTypeId ?: $records['fuelTypeId'],
+            'quantity_liters' => $quantity,
+            'unit_price' => $unitPrice,
+            'line_total' => $quantity * $unitPrice,
+            'fulfilled_quantity_liters' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('receivables')->insert([
+            'sale_id' => $saleId,
+            'due_date' => '2026-09-30',
+            'status' => $status === 'paid' ? 'clear' : ($status === 'partially_paid' ? 'partial' : 'unpaid'),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return [$saleId, $saleItemId];
+    }
+
+    /**
+     * @param array<string, mixed> $records
+     */
+    private function paymentForSale(array $records, int $saleId, string $code, float $amount, ?int $scheduleId = null): void
+    {
+        DB::table('payments')->insert([
+            'payment_code' => $code,
+            'sale_id' => $saleId,
+            'payment_schedule_id' => $scheduleId,
+            'payment_date' => '2026-09-02',
+            'amount' => $amount,
+            'method' => 'bank_transfer',
+            'reference_number' => $code.'-REF',
+            'received_by' => $records['salesOfficer']->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    /**
+     * @param array<string, mixed> $records
+     */
+    private function deliveryForSale(array $records, int $saleId, int $saleItemId, float $quantity): int
+    {
+        return DB::table('deliveries')->insertGetId([
+            'delivery_code' => 'DLV-VAR-'.$saleItemId,
+            'sale_id' => $saleId,
+            'sale_item_id' => $saleItemId,
+            'customer_id' => $records['customerId'],
+            'fuel_type_id' => $records['fuelTypeId'],
+            'source_type' => 'garage',
+            'storage_location_id' => $records['garageId'],
+            'truck_id' => $records['truckId'],
+            'driver_user_id' => $records['driver']->id,
+            'scheduled_at' => '2026-09-02 08:00:00',
+            'delivered_at' => '2026-09-02 09:00:00',
+            'scheduled_quantity_liters' => $quantity,
+            'actual_quantity_liters' => $quantity,
+            'status' => 'delivered',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    /**
+     * @param array<string, mixed> $records
+     */
+    private function stockOutForSale(array $records, int $saleId, int $saleItemId, string $code, float $quantity, ?int $deliveryId = null, ?int $fuelTypeId = null, ?int $customerId = null, string $status = 'released'): int
+    {
+        return DB::table('stock_outs')->insertGetId([
+            'stock_out_code' => $code,
+            'sale_id' => $saleId,
+            'sale_item_id' => $saleItemId,
+            'customer_id' => $customerId ?: $records['customerId'],
+            'fuel_type_id' => $fuelTypeId ?: $records['fuelTypeId'],
+            'storage_location_id' => $records['garageId'],
+            'delivery_id' => $deliveryId,
+            'quantity_liters' => $quantity,
+            'stock_out_at' => '2026-09-02 08:00:00',
+            'status' => $status,
+            'created_by' => $records['inventoryOfficer']->id,
             'created_at' => now(),
             'updated_at' => now(),
         ]);

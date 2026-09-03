@@ -126,6 +126,70 @@ class DispatchLiftingStatusManagementTest extends TestCase
         Carbon::setTestNow();
     }
 
+    public function test_partial_and_multiple_lifts_cannot_exceed_available_purchase_fuel(): void
+    {
+        Carbon::setTestNow('2026-08-31 10:00:00');
+        $records = $this->baseRecords();
+        $firstHaulId = $this->haul($records, ['haul_code' => 'LFT-PARTIAL-ONE', 'quantity_liters' => 20000]);
+        $secondHaulId = $this->haul($records, ['haul_code' => 'LFT-PARTIAL-TWO', 'quantity_liters' => 30000]);
+        $overLimitHaulId = $this->haul($records, ['haul_code' => 'LFT-PARTIAL-OVER', 'quantity_liters' => 10000]);
+        $before = $this->sideEffectCounts();
+
+        foreach ([$firstHaulId, $secondHaulId] as $haulId) {
+            foreach (['in_transit', 'lifted', 'completed'] as $status) {
+                $this->actingAs($records['dispatchOfficer'])
+                    ->patch(route('dispatch.fuel-lifting.hauls.status', $haulId), $this->statusPayload($status))
+                    ->assertRedirect(route('dispatch.fuel-lifting'));
+            }
+        }
+
+        foreach (['in_transit', 'lifted'] as $status) {
+            $this->actingAs($records['dispatchOfficer'])
+                ->patch(route('dispatch.fuel-lifting.hauls.status', $overLimitHaulId), $this->statusPayload($status))
+                ->assertRedirect(route('dispatch.fuel-lifting'));
+        }
+
+        $this->actingAs($records['dispatchOfficer'])
+            ->from(route('dispatch.fuel-lifting'))
+            ->patch(route('dispatch.fuel-lifting.hauls.status', $overLimitHaulId), $this->statusPayload('completed'))
+            ->assertRedirect(route('dispatch.fuel-lifting'))
+            ->assertSessionHasErrors('lifting');
+
+        $this->assertDatabaseHas('purchase_items', [
+            'id' => $records['purchaseItemId'],
+            'quantity_hauled_liters' => '50000.00',
+            'status' => 'lifted',
+        ]);
+        $this->assertDatabaseHas('purchases', ['id' => $records['purchaseId'], 'status' => 'hauled']);
+        $this->assertDatabaseHas('hauls', ['id' => $overLimitHaulId, 'status' => 'lifted']);
+        $this->assertSame($before, $this->sideEffectCounts());
+
+        Carbon::setTestNow();
+    }
+
+    public function test_cancelled_lifts_do_not_reduce_available_purchase_fuel(): void
+    {
+        Carbon::setTestNow('2026-08-31 10:00:00');
+        $records = $this->baseRecords();
+        $this->haul($records, ['haul_code' => 'LFT-CANCELLED-AVAILABLE', 'quantity_liters' => 45000, 'status' => 'cancelled']);
+        $validHaulId = $this->haul($records, ['haul_code' => 'LFT-AFTER-CANCELLED', 'quantity_liters' => 50000]);
+
+        foreach (['in_transit', 'lifted', 'completed'] as $status) {
+            $this->actingAs($records['dispatchOfficer'])
+                ->patch(route('dispatch.fuel-lifting.hauls.status', $validHaulId), $this->statusPayload($status))
+                ->assertRedirect(route('dispatch.fuel-lifting'));
+        }
+
+        $this->assertDatabaseHas('hauls', ['id' => $validHaulId, 'status' => 'completed']);
+        $this->assertDatabaseHas('purchase_items', [
+            'id' => $records['purchaseItemId'],
+            'quantity_hauled_liters' => '50000.00',
+            'status' => 'lifted',
+        ]);
+
+        Carbon::setTestNow();
+    }
+
     public function test_stale_concurrent_status_update_is_rejected_after_locked_row_changes(): void
     {
         $records = $this->baseRecords();

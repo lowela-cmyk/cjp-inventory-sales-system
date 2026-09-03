@@ -154,7 +154,27 @@ class DriverLiftingStatusController extends Controller
             return 'A scheduled lifting date is required before progressing this lift.';
         }
 
+        if ($nextStatus === 'lifted' && $quantity > $this->remainingPurchaseItemLiftQuantity($haul)) {
+            return 'Lift quantity cannot exceed the remaining available purchase fuel.';
+        }
+
         return $this->validateAllocations((int) $haul->id, (int) $haul->fuel_type_id, $quantity);
+    }
+
+    private function remainingPurchaseItemLiftQuantity(object $haul): float
+    {
+        DB::table('hauls')
+            ->where('purchase_item_id', $haul->purchase_item_id)
+            ->lockForUpdate()
+            ->get(['id']);
+
+        $completedOrLiftedLiters = (float) DB::table('hauls')
+            ->where('purchase_item_id', $haul->purchase_item_id)
+            ->where('id', '!=', $haul->id)
+            ->whereIn('status', ['lifted', 'completed'])
+            ->sum('quantity_liters');
+
+        return round(max(0, (float) $haul->quantity_ordered_liters - $completedOrLiftedLiters), 2);
     }
 
     private function validateAllocations(int $haulId, int $fuelTypeId, float $haulQuantity): ?string

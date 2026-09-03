@@ -677,6 +677,42 @@ class DriverDashboardTest extends TestCase
             ->assertSessionHasErrors('lifting');
     }
 
+    public function test_driver_cannot_lift_more_than_remaining_purchase_fuel(): void
+    {
+        $records = $this->baseRecords();
+        $completedHaul = $this->directAllocation($records, [
+            'haul_code' => 'LFT-DRV-COMMITTED',
+            'quantity_liters' => 15000,
+            'allocation_quantity_liters' => 15000,
+            'haul_status' => 'completed',
+        ]);
+        $overLimitHaul = $this->directAllocation($records, [
+            'haul_code' => 'LFT-DRV-OVER-REMAINING',
+            'quantity_liters' => 10000,
+            'allocation_quantity_liters' => 10000,
+        ]);
+        DB::table('hauls')->where('id', $overLimitHaul['haulId'])->update([
+            'purchase_id' => $completedHaul['purchaseId'],
+            'purchase_item_id' => $completedHaul['purchaseItemId'],
+        ]);
+
+        $this->actingAs($records['driver'])
+            ->patch(route('driver.fuel-lifting.hauls.status', $overLimitHaul['haulId']), $this->liftingStatusPayload('in_transit'))
+            ->assertRedirect(route('driver.fuel-lifting'));
+
+        $this->actingAs($records['driver'])
+            ->from(route('driver.fuel-lifting'))
+            ->patch(route('driver.fuel-lifting.hauls.status', $overLimitHaul['haulId']), $this->liftingStatusPayload('lifted'))
+            ->assertRedirect(route('driver.fuel-lifting'))
+            ->assertSessionHasErrors('lifting');
+
+        $this->assertDatabaseHas('hauls', [
+            'id' => $overLimitHaul['haulId'],
+            'status' => 'in_transit',
+        ]);
+        $this->assertSame(0, DB::table('inventory_movements')->count());
+    }
+
     public function test_only_driver_role_can_update_driver_lifting_status(): void
     {
         $records = $this->baseRecords();
@@ -954,7 +990,7 @@ class DriverDashboardTest extends TestCase
             'updated_at' => now(),
         ]);
 
-        return compact('haulId', 'allocationId', 'purchaseItemId');
+        return compact('haulId', 'allocationId', 'purchaseId', 'purchaseItemId');
     }
 
     /**

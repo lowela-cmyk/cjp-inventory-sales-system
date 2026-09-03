@@ -656,6 +656,14 @@ class InventoryOfficerPurchaseController extends Controller
             return 'Garage inventory is insufficient for this stock-out.';
         }
 
+        if ($this->duplicateGarageStockOutExists($saleItem, $garageId, $quantity, (string) $data['stock_out_at'])) {
+            return 'This stock-out release has already been recorded.';
+        }
+
+        if (! $this->increaseFulfilledQuantity($saleItem, $quantity)) {
+            return 'Quantity released cannot exceed the remaining sale quantity.';
+        }
+
         $deliveryId = DB::table('deliveries')->insertGetId([
             'delivery_code' => $this->nextCode('deliveries', 'delivery_code', 'DLV'),
             'sale_id' => $saleItem->sale_id,
@@ -714,10 +722,6 @@ class InventoryOfficerPurchaseController extends Controller
                 'updated_at' => now(),
             ]);
 
-        if (! $this->increaseFulfilledQuantity($saleItem, $quantity)) {
-            return 'Quantity released cannot exceed the remaining sale quantity.';
-        }
-
         return null;
     }
 
@@ -736,7 +740,7 @@ class InventoryOfficerPurchaseController extends Controller
             ->where('haul_allocations.customer_id', $saleItem->customer_id)
             ->where('haul_allocations.fuel_type_id', $saleItem->fuel_type_id)
             ->where('haul_allocations.status', '!=', 'cancelled')
-            ->where('hauls.status', '!=', 'cancelled')
+            ->where('hauls.status', 'completed')
             ->whereNull('purchases.deleted_at')
             ->whereColumn('hauls.purchase_id', 'purchase_items.purchase_id')
             ->whereColumn('hauls.depot_id', 'purchases.depot_id')
@@ -774,6 +778,14 @@ class InventoryOfficerPurchaseController extends Controller
             return 'Quantity released cannot exceed the remaining direct depot allocation.';
         }
 
+        if ($this->duplicateDirectDepotReleaseExists($allocation, $saleItem, $quantity, (string) $data['stock_out_at'])) {
+            return 'This direct depot release has already been recorded.';
+        }
+
+        if (! $this->increaseFulfilledQuantity($saleItem, $quantity)) {
+            return 'Quantity released cannot exceed the remaining sale quantity.';
+        }
+
         DB::table('deliveries')->insert([
             'delivery_code' => $this->nextCode('deliveries', 'delivery_code', 'DLV'),
             'sale_id' => $saleItem->sale_id,
@@ -801,10 +813,6 @@ class InventoryOfficerPurchaseController extends Controller
                     'status' => 'delivered',
                     'updated_at' => now(),
                 ]);
-        }
-
-        if (! $this->increaseFulfilledQuantity($saleItem, $quantity)) {
-            return 'Quantity released cannot exceed the remaining sale quantity.';
         }
 
         return null;
@@ -840,6 +848,37 @@ class InventoryOfficerPurchaseController extends Controller
                 'fulfilled_quantity_liters' => DB::raw('fulfilled_quantity_liters + '.$quantity),
                 'updated_at' => now(),
             ]) === 1;
+    }
+
+    private function duplicateGarageStockOutExists(object $saleItem, int $garageId, float $quantity, string $stockOutAt): bool
+    {
+        return DB::table('stock_outs')
+            ->where('sale_id', $saleItem->sale_id)
+            ->where('sale_item_id', $saleItem->id)
+            ->where('customer_id', $saleItem->customer_id)
+            ->where('fuel_type_id', $saleItem->fuel_type_id)
+            ->where('storage_location_id', $garageId)
+            ->where('quantity_liters', $quantity)
+            ->where('stock_out_at', $stockOutAt)
+            ->where('status', '!=', 'cancelled')
+            ->lockForUpdate()
+            ->first(['id']) !== null;
+    }
+
+    private function duplicateDirectDepotReleaseExists(object $allocation, object $saleItem, float $quantity, string $stockOutAt): bool
+    {
+        return DB::table('deliveries')
+            ->where('sale_id', $saleItem->sale_id)
+            ->where('sale_item_id', $saleItem->id)
+            ->where('customer_id', $saleItem->customer_id)
+            ->where('fuel_type_id', $saleItem->fuel_type_id)
+            ->where('source_type', 'depot')
+            ->where('haul_allocation_id', $allocation->id)
+            ->where('actual_quantity_liters', $quantity)
+            ->where('delivered_at', $stockOutAt)
+            ->where('status', '!=', 'cancelled')
+            ->lockForUpdate()
+            ->first(['id']) !== null;
     }
 
     private function purchaseItemForUpdate(int $purchaseItem): ?object

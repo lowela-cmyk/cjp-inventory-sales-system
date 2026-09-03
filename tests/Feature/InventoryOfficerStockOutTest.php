@@ -259,6 +259,99 @@ class InventoryOfficerStockOutTest extends TestCase
         ]);
     }
 
+    public function test_duplicate_garage_stock_out_physical_release_is_rejected(): void
+    {
+        $records = $this->baseRecords();
+        $this->garageMovement($records, ['quantity_liters' => 30000]);
+        $sale = $this->sale($records, ['quantity_liters' => 30000]);
+        $payload = $this->stockOutPayload($records, $sale, [
+            'quantity_liters' => 10000,
+            'stock_out_at' => '2026-08-30 11:00:00',
+        ]);
+
+        $this->actingAs($records['inventoryOfficer'])
+            ->post(route('inventory-officer.inventory.stock-out.store'), $payload)
+            ->assertRedirect(route('inventory-officer.inventory.stock-out'));
+
+        $this->actingAs($records['inventoryOfficer'])
+            ->from(route('inventory-officer.inventory.stock-out'))
+            ->post(route('inventory-officer.inventory.stock-out.store'), array_merge($payload, [
+                'idempotency_key' => (string) Str::uuid(),
+            ]))
+            ->assertRedirect(route('inventory-officer.inventory.stock-out'))
+            ->assertSessionHasErrors('stock_out');
+
+        $this->actingAs($records['inventoryOfficer'])
+            ->post(route('inventory-officer.inventory.stock-out.store'), array_merge($payload, [
+                'idempotency_key' => (string) Str::uuid(),
+                'stock_out_at' => '2026-08-30 12:00:00',
+            ]))
+            ->assertRedirect(route('inventory-officer.inventory.stock-out'));
+
+        $this->assertSame(10000.0, $this->garageBalance($records));
+        $this->assertSame(2, DB::table('stock_outs')->count());
+        $this->assertSame(3, DB::table('inventory_movements')->count());
+        $this->assertDatabaseHas('sale_items', [
+            'id' => $sale['saleItemId'],
+            'fulfilled_quantity_liters' => '20000.00',
+        ]);
+    }
+
+    public function test_direct_depot_stock_out_requires_completed_lift_and_rejects_duplicate_physical_release(): void
+    {
+        $records = $this->baseRecords();
+        $this->garageMovement($records, ['quantity_liters' => 9000]);
+        $pendingSale = $this->sale($records, ['quantity_liters' => 10000]);
+        $pendingAllocationId = $this->directAllocation($records, $pendingSale, [
+            'haul_status' => 'in_transit',
+        ]);
+
+        $this->actingAs($records['inventoryOfficer'])
+            ->from(route('inventory-officer.inventory.stock-out'))
+            ->post(route('inventory-officer.inventory.stock-out.store'), $this->stockOutPayload($records, $pendingSale, [
+                'source_type' => 'depot',
+                'storage_location_id' => null,
+                'haul_allocation_id' => $pendingAllocationId,
+                'quantity_liters' => 10000,
+            ]))
+            ->assertRedirect(route('inventory-officer.inventory.stock-out'))
+            ->assertSessionHasErrors('stock_out');
+
+        $sale = $this->sale($records, ['quantity_liters' => 20000]);
+        $allocationId = $this->directAllocation($records, $sale, ['quantity_liters' => 20000]);
+        $payload = $this->stockOutPayload($records, $sale, [
+            'source_type' => 'depot',
+            'storage_location_id' => null,
+            'haul_allocation_id' => $allocationId,
+            'quantity_liters' => 10000,
+            'stock_out_at' => '2026-08-30 11:00:00',
+        ]);
+
+        $this->actingAs($records['inventoryOfficer'])
+            ->post(route('inventory-officer.inventory.stock-out.store'), $payload)
+            ->assertRedirect(route('inventory-officer.inventory.stock-out'));
+
+        $this->actingAs($records['inventoryOfficer'])
+            ->from(route('inventory-officer.inventory.stock-out'))
+            ->post(route('inventory-officer.inventory.stock-out.store'), array_merge($payload, [
+                'idempotency_key' => (string) Str::uuid(),
+            ]))
+            ->assertRedirect(route('inventory-officer.inventory.stock-out'))
+            ->assertSessionHasErrors('stock_out');
+
+        $this->assertSame(9000.0, $this->garageBalance($records));
+        $this->assertSame(0, DB::table('stock_outs')->count());
+        $this->assertSame(1, DB::table('deliveries')->where('source_type', 'depot')->count());
+        $this->assertDatabaseHas('sale_items', [
+            'id' => $pendingSale['saleItemId'],
+            'fulfilled_quantity_liters' => '0.00',
+        ]);
+        $this->assertDatabaseHas('sale_items', [
+            'id' => $sale['saleItemId'],
+            'fulfilled_quantity_liters' => '10000.00',
+        ]);
+    }
+
     public function test_non_inventory_roles_cannot_create_stock_out(): void
     {
         $records = $this->baseRecords();
@@ -366,12 +459,15 @@ class InventoryOfficerStockOutTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        $quantity = $overrides['quantity_liters'] ?? 10000;
+        $haulStatus = $overrides['haul_status'] ?? 'completed';
+        $isCompletedHaul = $haulStatus === 'completed';
         $purchaseId = DB::table('purchases')->insertGetId([
             'purchase_code' => 'PUR-'.Str::upper(Str::random(8)),
             'depot_id' => $records['depotId'],
             'purchase_date' => '2026-08-29',
             'payment_status' => 'paid',
-            'status' => 'hauled',
+            'status' => $isCompletedHaul ? 'hauled' : 'partially_hauled',
             'created_by' => $records['inventoryOfficer']->id,
             'created_at' => now(),
             'updated_at' => now(),
@@ -379,11 +475,11 @@ class InventoryOfficerStockOutTest extends TestCase
         $purchaseItemId = DB::table('purchase_items')->insertGetId([
             'purchase_id' => $purchaseId,
             'fuel_type_id' => $records['fuelTypeId'],
-            'quantity_ordered_liters' => 10000,
+            'quantity_ordered_liters' => $quantity,
             'unit_cost' => 50,
-            'line_total' => 500000,
-            'quantity_hauled_liters' => 10000,
-            'status' => 'lifted',
+            'line_total' => $quantity * 50,
+            'quantity_hauled_liters' => $isCompletedHaul ? $quantity : 0,
+            'status' => $isCompletedHaul ? 'lifted' : 'unlifted',
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -396,8 +492,8 @@ class InventoryOfficerStockOutTest extends TestCase
             'truck_id' => $truckId,
             'driver_user_id' => $driver->id,
             'scheduled_at' => '2026-08-30 07:00:00',
-            'quantity_liters' => 10000,
-            'status' => 'completed',
+            'quantity_liters' => $quantity,
+            'status' => $haulStatus,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -413,7 +509,7 @@ class InventoryOfficerStockOutTest extends TestCase
             'status' => 'delivered',
             'created_at' => now(),
             'updated_at' => now(),
-        ], $overrides));
+        ], collect($overrides)->except('haul_status')->all()));
     }
 
     /**

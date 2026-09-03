@@ -17,6 +17,8 @@ class InventoryLedgerService
             ->join('storage_locations', 'storage_locations.id', '=', 'inventory_movements.storage_location_id')
             ->join('fuel_types', 'fuel_types.id', '=', 'inventory_movements.fuel_type_id')
             ->leftJoin('users', 'users.id', '=', 'inventory_movements.created_by')
+            ->whereNotExists($this->cancelledStockOutExists())
+            ->whereNotExists($this->cancelledHaulAllocationExists())
             ->select([
                 'inventory_movements.id',
                 'inventory_movements.movement_code',
@@ -184,6 +186,8 @@ class InventoryLedgerService
     private function latestBalances(): array
     {
         return DB::table('inventory_movements')
+            ->whereNotExists($this->cancelledStockOutExists())
+            ->whereNotExists($this->cancelledHaulAllocationExists())
             ->selectRaw("storage_location_id, fuel_type_id, COALESCE(SUM(CASE WHEN direction = 'in' THEN quantity_liters ELSE -quantity_liters END), 0) as balance")
             ->groupBy('storage_location_id', 'fuel_type_id')
             ->get()
@@ -191,6 +195,28 @@ class InventoryLedgerService
                 $row->storage_location_id.'-'.$row->fuel_type_id => round((float) $row->balance, 2),
             ])
             ->all();
+    }
+
+    private function cancelledStockOutExists(): \Closure
+    {
+        return function (Builder $query): void {
+            $query->selectRaw('1')
+                ->from('stock_outs')
+                ->whereColumn('stock_outs.id', 'inventory_movements.reference_id')
+                ->where('inventory_movements.reference_type', 'stock_out')
+                ->where('stock_outs.status', 'cancelled');
+        };
+    }
+
+    private function cancelledHaulAllocationExists(): \Closure
+    {
+        return function (Builder $query): void {
+            $query->selectRaw('1')
+                ->from('haul_allocations')
+                ->whereColumn('haul_allocations.id', 'inventory_movements.reference_id')
+                ->where('inventory_movements.reference_type', 'haul_allocation')
+                ->where('haul_allocations.status', 'cancelled');
+        };
     }
 
     /**

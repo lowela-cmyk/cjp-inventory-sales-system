@@ -815,12 +815,16 @@ class InventoryOfficerPurchaseController extends Controller
         DB::table('inventory_movements')
             ->where('storage_location_id', $garageId)
             ->where('fuel_type_id', $fuelTypeId)
+            ->whereNotExists($this->cancelledStockOutExists())
+            ->whereNotExists($this->cancelledHaulAllocationExists())
             ->lockForUpdate()
             ->get(['id']);
 
         $balance = DB::table('inventory_movements')
             ->where('storage_location_id', $garageId)
             ->where('fuel_type_id', $fuelTypeId)
+            ->whereNotExists($this->cancelledStockOutExists())
+            ->whereNotExists($this->cancelledHaulAllocationExists())
             ->selectRaw("COALESCE(SUM(CASE WHEN direction = 'in' THEN quantity_liters ELSE -quantity_liters END), 0) as balance")
             ->value('balance');
 
@@ -867,7 +871,7 @@ class InventoryOfficerPurchaseController extends Controller
             ->where('haul_allocations.destination_type', 'garage')
             ->whereNotNull('haul_allocations.storage_location_id')
             ->where('haul_allocations.status', '!=', 'cancelled')
-            ->where('hauls.status', '!=', 'cancelled')
+            ->where('hauls.status', 'completed')
             ->whereNull('purchases.deleted_at')
             ->whereColumn('hauls.purchase_id', 'purchase_items.purchase_id')
             ->whereColumn('hauls.depot_id', 'purchases.depot_id')
@@ -911,6 +915,28 @@ class InventoryOfficerPurchaseController extends Controller
             ->where('movement_date', $movementDate)
             ->lockForUpdate()
             ->first(['id']) !== null;
+    }
+
+    private function cancelledStockOutExists(): \Closure
+    {
+        return function (Builder $query): void {
+            $query->selectRaw('1')
+                ->from('stock_outs')
+                ->whereColumn('stock_outs.id', 'inventory_movements.reference_id')
+                ->where('inventory_movements.reference_type', self::STOCK_OUT_REFERENCE_TYPE)
+                ->where('stock_outs.status', 'cancelled');
+        };
+    }
+
+    private function cancelledHaulAllocationExists(): \Closure
+    {
+        return function (Builder $query): void {
+            $query->selectRaw('1')
+                ->from('haul_allocations')
+                ->whereColumn('haul_allocations.id', 'inventory_movements.reference_id')
+                ->where('inventory_movements.reference_type', self::STOCK_IN_REFERENCE_TYPE)
+                ->where('haul_allocations.status', 'cancelled');
+        };
     }
 
     private function haulAllocationsAreWithinQuantity(int $haulId, float $haulQuantity): bool
@@ -1000,7 +1026,7 @@ class InventoryOfficerPurchaseController extends Controller
             ->leftJoinSub($received, 'received', 'received.reference_id', '=', 'haul_allocations.id')
             ->where('haul_allocations.destination_type', 'garage')
             ->where('haul_allocations.status', '!=', 'cancelled')
-            ->where('hauls.status', '!=', 'cancelled')
+            ->where('hauls.status', 'completed')
             ->whereNull('purchases.deleted_at')
             ->selectRaw('haul_allocations.id, haul_allocations.storage_location_id, hauls.haul_code, purchases.purchase_code, fuel_types.name as fuel_name, storage_locations.name as garage_name, haul_allocations.quantity_liters, COALESCE(received.received_liters, 0) as received_liters')
             ->orderByDesc('hauls.scheduled_at')

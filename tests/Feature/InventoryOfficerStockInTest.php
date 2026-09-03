@@ -193,6 +193,27 @@ class InventoryOfficerStockInTest extends TestCase
         ]);
     }
 
+    public function test_stock_in_rejects_pending_haul_without_inventory_effect(): void
+    {
+        $records = $this->stockInRecords();
+
+        DB::table('hauls')->where('id', $records['haulId'])->update(['status' => 'in_transit']);
+
+        $this->actingAs($records['inventoryOfficer'])
+            ->from(route('inventory-officer.inventory.stock-in'))
+            ->post(route('inventory-officer.inventory.stock-in.store'), [
+                'haul_allocation_id' => $records['garageAllocationId'],
+                'storage_location_id' => $records['garageId'],
+                'quantity_liters' => 10000,
+                'movement_date' => '2026-08-30 09:15:00',
+            ])
+            ->assertRedirect(route('inventory-officer.inventory.stock-in'))
+            ->assertSessionHasErrors('stock_in');
+
+        $this->assertSame(0.0, $this->garageBalance($records));
+        $this->assertSame(0, DB::table('inventory_movements')->count());
+    }
+
     public function test_stock_in_rejects_invalid_garage_client_and_cancelled_sources(): void
     {
         $records = $this->stockInRecords();

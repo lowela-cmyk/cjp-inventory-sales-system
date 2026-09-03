@@ -228,6 +228,26 @@ class InventoryLedgerTest extends TestCase
             ->assertSee('40,000.00');
     }
 
+    public function test_cancelled_stock_in_source_does_not_contribute_to_ledger_balance(): void
+    {
+        $records = $this->stockInRecords();
+
+        $this->movement($records, [
+            'movement_code' => 'MOV-CANCELLED-STOCK-IN',
+            'quantity_liters' => 10000,
+            'reference_type' => 'haul_allocation',
+            'reference_id' => $records['garageAllocationId'],
+        ]);
+        DB::table('haul_allocations')->where('id', $records['garageAllocationId'])->update(['status' => 'cancelled']);
+
+        $this->actingAs($records['inventoryOfficer'])
+            ->get(route('inventory-officer.ledger'))
+            ->assertOk()
+            ->assertSee('No inventory movements found.')
+            ->assertDontSee('MOV-CANCELLED-STOCK-IN')
+            ->assertDontSee('10,000.00');
+    }
+
     /**
      * @param array<string, mixed> $records
      * @param array<string, mixed> $overrides

@@ -159,6 +159,41 @@ class InventoryOfficerStockOutTest extends TestCase
         ]);
     }
 
+    public function test_cancelled_stock_in_source_is_not_available_for_garage_stock_out(): void
+    {
+        $records = $this->baseRecords();
+        $sale = $this->sale($records, ['quantity_liters' => 5000]);
+        $allocationId = $this->directAllocation($records, $sale, [
+            'destination_type' => 'garage',
+            'storage_location_id' => $records['garageId'],
+            'customer_id' => null,
+            'sale_id' => null,
+            'quantity_liters' => 10000,
+            'status' => 'received',
+        ]);
+
+        $this->garageMovement($records, [
+            'quantity_liters' => 10000,
+            'reference_type' => 'haul_allocation',
+            'reference_id' => $allocationId,
+        ]);
+        DB::table('haul_allocations')->where('id', $allocationId)->update(['status' => 'cancelled']);
+
+        $this->actingAs($records['inventoryOfficer'])
+            ->from(route('inventory-officer.inventory.stock-out'))
+            ->post(route('inventory-officer.inventory.stock-out.store'), $this->stockOutPayload($records, $sale, [
+                'quantity_liters' => 5000,
+            ]))
+            ->assertRedirect(route('inventory-officer.inventory.stock-out'))
+            ->assertSessionHasErrors('stock_out');
+
+        $this->assertSame(0, DB::table('stock_outs')->count());
+        $this->assertDatabaseHas('sale_items', [
+            'id' => $sale['saleItemId'],
+            'fulfilled_quantity_liters' => '0.00',
+        ]);
+    }
+
     public function test_direct_depot_delivery_rejects_invalid_purchase_haul_relationship(): void
     {
         $records = $this->baseRecords();

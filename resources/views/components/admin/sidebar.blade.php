@@ -25,7 +25,7 @@
 
     <nav class="side-nav" aria-label="Admin navigation">
         @foreach ($links as $link)
-            <a class="side-link {{ request()->routeIs($link['route']) ? 'is-active' : '' }}" href="{{ route($link['route']) }}">
+            <a class="side-link {{ request()->routeIs($link['route']) || request()->routeIs($link['route'] . '.*') ? 'is-active' : '' }}" href="{{ route($link['route']) }}">
                 {{ $link['label'] }}
             </a>
         @endforeach

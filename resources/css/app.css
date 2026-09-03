@@ -23,6 +23,7 @@
     --warning-soft: #f0c28f;
     --success: #3b9a35;
     --success-soft: #e7f5e7;
+    --admin-red: var(--danger);
 }
 
 * {
@@ -155,6 +156,7 @@ select {
     justify-content: space-between;
     align-items: center;
     padding: 20px 30px;
+    gap: 18px;
 }
 
 .admin-header h1 {
@@ -285,6 +287,17 @@ select {
     cursor: pointer;
     white-space: nowrap;
     font-size: 14px;
+}
+
+.btn:disabled,
+.btn[aria-disabled="true"],
+button:disabled {
+    cursor: not-allowed;
+    opacity: .62;
+}
+
+form[aria-busy="true"] {
+    cursor: progress;
 }
 
 .btn-primary {
@@ -464,6 +477,8 @@ select {
     justify-content: space-between;
     align-items: center;
     padding: 14px;
+    gap: 12px;
+    flex-wrap: wrap;
 }
 
 .chart-header h2 {
@@ -477,6 +492,7 @@ select {
     padding: 4px;
     border-radius: 6px;
     background: #f3f3f3;
+    flex-wrap: wrap;
 }
 
 .chart-tabs span,
@@ -1090,6 +1106,8 @@ select {
 
 .detail-value {
     font-size: 19px;
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 .detail-status {
@@ -1104,6 +1122,10 @@ select {
     gap: 12px;
     flex-wrap: wrap;
     margin-bottom: 14px;
+}
+
+.filter-row > * {
+    min-width: 0;
 }
 
 .report-panel {
@@ -1494,6 +1516,7 @@ select {
         min-height: 82px;
         padding-left: 72px;
         gap: 16px;
+        flex-wrap: wrap;
     }
 
     .header-profile {

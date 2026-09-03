@@ -30,7 +30,7 @@
             <button class="tab-button {{ $activeTab === 'hauled' ? 'is-active' : '' }}" type="button" data-tab-target="hauled">Hauled</button>
         </div>
         <div class="actions-right">
-            <button class="btn btn-secondary" type="button" onclick="window.print()">Export</button>
+            <button class="btn btn-secondary" type="button" data-print-page>Export</button>
         </div>
 
         @if (! empty($deliverySummary))

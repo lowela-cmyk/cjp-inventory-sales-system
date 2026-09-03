@@ -59,6 +59,11 @@ document.addEventListener('click', (event) => {
         document.body.classList.toggle('sidebar-open');
     }
 
+    const printButton = event.target.closest('[data-print-page]');
+    if (printButton) {
+        window.print();
+    }
+
     const addSaleItemButton = event.target.closest('[data-sales-item-add]');
     if (addSaleItemButton) {
         const modal = addSaleItemButton.closest('.modal-backdrop');
@@ -126,49 +131,89 @@ document.addEventListener('keydown', (event) => {
     }
 });
 
-document.querySelectorAll('[data-ai-generate-form]').forEach((form) => {
-    form.addEventListener('submit', (event) => {
-        if (form.dataset.submitted === 'true') {
-            event.preventDefault();
+document.addEventListener('submit', (event) => {
+    const form = event.target;
 
-            return;
-        }
+    if (!(form instanceof HTMLFormElement)) {
+        return;
+    }
 
-        form.dataset.submitted = 'true';
-        form.querySelectorAll('button[type="submit"]').forEach((button) => {
-            button.disabled = true;
-        });
+    const confirmation = form.dataset.confirmMessage;
+    if (confirmation && ! window.confirm(confirmation)) {
+        event.preventDefault();
+
+        return;
+    }
+
+    const shouldPreventDoubleSubmit = form.matches('[data-ai-generate-form], [data-prevent-double-submit]')
+        || form.method.toLowerCase() !== 'get';
+
+    if (! shouldPreventDoubleSubmit) {
+        return;
+    }
+
+    if (form.dataset.submitted === 'true') {
+        event.preventDefault();
+
+        return;
+    }
+
+    form.dataset.submitted = 'true';
+    form.setAttribute('aria-busy', 'true');
+    form.querySelectorAll('button[type="submit"]').forEach((button) => {
+        button.disabled = true;
+        button.setAttribute('aria-disabled', 'true');
     });
 });
 
 const renderDashboardBarChart = (canvas, fallbackSelector, yTickFormatter, fallbackFormatter) => {
-    const chartData = JSON.parse(canvas.dataset.chart || '{"labels":[],"datasets":[]}');
+    if (canvas.dataset.chartRendered === 'true') {
+        return;
+    }
+
+    let chartData;
+    try {
+        chartData = JSON.parse(canvas.dataset.chart || '{"labels":[],"datasets":[]}');
+    } catch (error) {
+        canvas.hidden = true;
+
+        return;
+    }
+
     const fallback = canvas.parentElement?.querySelector(fallbackSelector);
 
-    new Chart(canvas, {
-        type: 'bar',
-        data: chartData,
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: { display: false },
-                tooltip: {
-                    callbacks: {
-                        label: (context) => context.dataset.formattedData?.[context.dataIndex] || fallbackFormatter(context.raw),
+    try {
+        new Chart(canvas, {
+            type: 'bar',
+            data: chartData,
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: (context) => context.dataset.formattedData?.[context.dataIndex] || fallbackFormatter(context.raw),
+                        },
+                    },
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: yTickFormatter,
+                        },
                     },
                 },
             },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: {
-                        callback: yTickFormatter,
-                    },
-                },
-            },
-        },
-    });
+        });
+    } catch (error) {
+        canvas.hidden = true;
+
+        return;
+    }
+
+    canvas.dataset.chartRendered = 'true';
 
     if (fallback) {
         fallback.hidden = true;

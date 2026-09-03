@@ -26,7 +26,7 @@
         </div>
 
         <div class="actions-right">
-            <button class="btn btn-secondary" type="button" onclick="window.print()">Export</button>
+            <button class="btn btn-secondary" type="button" data-print-page>Export</button>
         </div>
 
         @if (! empty($summaryCards))
@@ -112,7 +112,7 @@
             </div>
             <div class="modal-actions">
                 @if (! empty($row['can_confirm_pickup']))
-                    <form method="POST" action="{{ route('driver.assigned-deliveries.pickup', $row['record_id']) }}" onsubmit="return confirm('Confirm pickup for {{ $row['delivery']['reference'] }}?');">
+                    <form method="POST" action="{{ route('driver.assigned-deliveries.pickup', $row['record_id']) }}" data-confirm-message="Confirm pickup for {{ $row['delivery']['reference'] }}?">
                         @csrf
                         @method('PATCH')
                         <input type="hidden" name="idempotency_key" value="{{ $pickupIdempotencyKey }}">
@@ -120,7 +120,7 @@
                     </form>
                 @endif
                 @if (! empty($row['allowed_driver_delivery_statuses']))
-                    <form method="POST" action="{{ route('driver.assigned-deliveries.status', $row['record_id']) }}" onsubmit="return confirm('Update delivery status for {{ $row['delivery']['reference'] }}?');">
+                    <form method="POST" action="{{ route('driver.assigned-deliveries.status', $row['record_id']) }}" data-confirm-message="Update delivery status for {{ $row['delivery']['reference'] }}?">
                         @csrf
                         @method('PATCH')
                         <input type="hidden" name="idempotency_key" value="{{ $deliveryStatusIdempotencyKey }}">

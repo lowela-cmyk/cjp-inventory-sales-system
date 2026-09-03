@@ -16,7 +16,7 @@
         <div class="report-actions">
             <button class="btn btn-primary" type="submit">Generate</button>
             <a class="btn btn-secondary" href="{{ route('admin.reports.export', request()->query()) }}">Export</a>
-            <button class="btn btn-secondary" type="button" onclick="window.print()">Print</button>
+            <button class="btn btn-secondary" type="button" data-print-page>Print</button>
         </div>
     </form>
     <section class="report-section ai-insight-panel">

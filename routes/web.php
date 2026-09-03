@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AdminBusinessInsightController;
 use App\Http\Controllers\AdminDashboardController;
 use App\Http\Controllers\AdminInventoryVarianceExplanationController;
 use App\Http\Controllers\AdminMonitoringController;
@@ -50,6 +51,7 @@ Route::middleware(['auth'])->group(function () {
         Route::patch('/fuel-lifting/hauls/{haul}/status', [DispatchLiftingStatusController::class, 'updateStatus'])->name('fuel-lifting.hauls.status');
         Route::get('/sales', [AdminMonitoringController::class, 'sales'])->name('sales');
         Route::get('/reports', AdminSalesReportController::class)->name('reports');
+        Route::post('/reports/business-insight', AdminBusinessInsightController::class)->name('reports.business-insight');
         Route::post('/reports/revenue-insight', AdminRevenueInsightController::class)->name('reports.revenue-insight');
         Route::post('/reports/sales-trend-summary', AdminSalesTrendSummaryController::class)->name('reports.sales-trend-summary');
         Route::get('/reports/export', [AdminSalesReportController::class, 'export'])->name('reports.export');

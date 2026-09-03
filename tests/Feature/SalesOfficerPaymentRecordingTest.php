@@ -164,6 +164,72 @@ class SalesOfficerPaymentRecordingTest extends TestCase
         $this->assertSame(0, DB::table('deliveries')->count());
     }
 
+    public function test_duplicate_physical_payment_with_new_token_is_rejected(): void
+    {
+        $records = $this->baseRecords();
+        $saleId = $this->sale($records, ['line_total' => 50000]);
+
+        $this->actingAs($records['salesOfficer'])
+            ->post(route('sales-officer.sales.payments.store', $saleId), $this->paymentPayload([
+                'amount' => 15000,
+                'payment_date' => '2026-08-31',
+                'method' => 'cash_on_delivery',
+            ]))
+            ->assertRedirect(route('sales-officer.sales'));
+
+        $this->actingAs($records['salesOfficer'])
+            ->from(route('sales-officer.sales'))
+            ->post(route('sales-officer.sales.payments.store', $saleId), $this->paymentPayload([
+                'amount' => 15000,
+                'payment_date' => '2026-08-31',
+                'method' => 'cash_on_delivery',
+            ]))
+            ->assertRedirect(route('sales-officer.sales'))
+            ->assertSessionHasErrors('payment');
+
+        $this->actingAs($records['salesOfficer'])
+            ->post(route('sales-officer.sales.payments.store', $saleId), $this->paymentPayload([
+                'amount' => 15000,
+                'payment_date' => '2026-09-01',
+                'method' => 'cash_on_delivery',
+            ]))
+            ->assertRedirect(route('sales-officer.sales'));
+
+        $this->assertSame(2, DB::table('payments')->where('sale_id', $saleId)->count());
+        $this->assertSame(30000.0, $this->paidTotal($saleId));
+        $this->assertDatabaseHas('sales', ['id' => $saleId, 'status' => 'partially_paid']);
+        $this->assertDatabaseHas('receivables', ['sale_id' => $saleId, 'status' => 'partial']);
+        $this->assertSame(0, DB::table('inventory_movements')->count());
+        $this->assertSame(0, DB::table('stock_outs')->count());
+    }
+
+    public function test_payment_method_on_sale_does_not_count_as_payment_until_money_is_recorded(): void
+    {
+        $records = $this->baseRecords();
+        $saleId = $this->sale($records, [
+            'line_total' => 40000,
+            'payment_method' => 'advance_payment',
+            'payment_terms' => 'advance',
+        ]);
+
+        $this->assertSame(0, DB::table('payments')->where('sale_id', $saleId)->count());
+        $this->assertSame(0.0, $this->paidTotal($saleId));
+        $this->assertDatabaseHas('sales', ['id' => $saleId, 'status' => 'confirmed']);
+        $this->assertDatabaseHas('receivables', ['sale_id' => $saleId, 'status' => 'pending']);
+
+        $this->actingAs($records['salesOfficer'])
+            ->post(route('sales-officer.sales.payments.store', $saleId), $this->paymentPayload([
+                'amount' => 40000,
+                'method' => 'advance_payment',
+            ]))
+            ->assertRedirect(route('sales-officer.sales'));
+
+        $this->assertSame(40000.0, $this->paidTotal($saleId));
+        $this->assertDatabaseHas('sales', ['id' => $saleId, 'status' => 'paid']);
+        $this->assertDatabaseHas('receivables', ['sale_id' => $saleId, 'status' => 'clear']);
+        $this->assertSame(0, DB::table('inventory_movements')->count());
+    }
+
     public function test_sale_can_be_paid_through_multiple_installments_with_different_methods(): void
     {
         $records = $this->baseRecords();

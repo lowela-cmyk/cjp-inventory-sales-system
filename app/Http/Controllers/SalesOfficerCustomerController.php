@@ -123,6 +123,21 @@ class SalesOfficerCustomerController extends Controller
                 }
             }
 
+            $referenceNumber = isset($data['reference_number']) && trim((string) $data['reference_number']) !== ''
+                ? trim((string) $data['reference_number'])
+                : null;
+
+            if ($this->duplicatePaymentExists(
+                (int) $saleRow->id,
+                $paymentSchedule?->id ? (int) $paymentSchedule->id : null,
+                (string) $data['payment_date'],
+                $amount,
+                (string) $data['method'],
+                $referenceNumber
+            )) {
+                return ['error' => 'This payment has already been recorded.'];
+            }
+
             $paymentCode = $this->nextCode('payments', 'payment_code', 'PAY');
 
             DB::table('payments')->insert([
@@ -132,7 +147,7 @@ class SalesOfficerCustomerController extends Controller
                 'payment_date' => $data['payment_date'],
                 'amount' => $amount,
                 'method' => $data['method'],
-                'reference_number' => $data['reference_number'] ?? null,
+                'reference_number' => $referenceNumber,
                 'remarks' => $data['remarks'] ?? null,
                 'received_by' => $request->user()->id,
                 'created_at' => now(),
@@ -798,6 +813,35 @@ class SalesOfficerCustomerController extends Controller
         return round((float) DB::table('payments')
             ->where('payment_schedule_id', $paymentScheduleId)
             ->sum('amount'), 2);
+    }
+
+    private function duplicatePaymentExists(
+        int $saleId,
+        ?int $paymentScheduleId,
+        string $paymentDate,
+        float $amount,
+        string $method,
+        ?string $referenceNumber
+    ): bool {
+        $query = DB::table('payments')
+            ->where('sale_id', $saleId)
+            ->where('payment_date', $paymentDate)
+            ->where('amount', $amount)
+            ->where('method', $method);
+
+        if ($paymentScheduleId) {
+            $query->where('payment_schedule_id', $paymentScheduleId);
+        } else {
+            $query->whereNull('payment_schedule_id');
+        }
+
+        if ($referenceNumber === null) {
+            $query->whereNull('reference_number');
+        } else {
+            $query->where('reference_number', $referenceNumber);
+        }
+
+        return $query->exists();
     }
 
     private function updatePaymentScheduleStatuses(int $saleId): void

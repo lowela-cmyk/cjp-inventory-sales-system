@@ -110,7 +110,7 @@ class RevenueInsightsTest extends TestCase
         Carbon::setTestNow();
     }
 
-    public function test_api_rate_limit_and_malformed_response_show_friendly_fallbacks(): void
+    public function test_api_rate_limit_shows_usage_limit_message(): void
     {
         Carbon::setTestNow('2026-09-02 10:00:00');
         $records = $this->records();
@@ -118,22 +118,76 @@ class RevenueInsightsTest extends TestCase
         $this->payment($records, $saleId, 10000);
         config($this->aiConfig());
 
-        foreach ([
-            Http::response(['error' => ['message' => 'rate limit detail']], 429),
-            Http::response(['unexpected' => true]),
-        ] as $fakeResponse) {
-            Http::fake(['api.groq.com/*' => $fakeResponse]);
+        Http::fake(['api.groq.com/*' => Http::response(['error' => ['message' => 'rate limit detail']], 429)]);
 
-            $this->actingAs($records['admin'])
-                ->post(route('admin.reports.revenue-insight'), [
-                    'period' => 'date',
-                    'date' => '2026-09-02',
-                    'month' => '2026-09',
-                    'year' => '2026',
-                ])
-                ->assertRedirect()
-                ->assertSessionHas('revenueInsightNotice', 'AI revenue insight is temporarily unavailable. Existing reports remain available.');
-        }
+        $this->actingAs($records['admin'])
+            ->post(route('admin.reports.revenue-insight'), [
+                'period' => 'date',
+                'date' => '2026-09-02',
+                'month' => '2026-09',
+                'year' => '2026',
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('revenueInsightNotice', 'AI service usage limit reached. Please try again later.');
+
+        Carbon::setTestNow();
+    }
+
+    public function test_malformed_ai_response_shows_friendly_fallback(): void
+    {
+        Carbon::setTestNow('2026-09-02 10:00:00');
+        $records = $this->records();
+        $saleId = $this->sale($records, 'SLS-REV-MALFORMED', '2026-09-02', 50000);
+        $this->payment($records, $saleId, 10000);
+        config($this->aiConfig());
+
+        Http::fake(['api.groq.com/*' => Http::response(['unexpected' => true])]);
+
+        $this->actingAs($records['admin'])
+            ->post(route('admin.reports.revenue-insight'), [
+                'period' => 'date',
+                'date' => '2026-09-02',
+                'month' => '2026-09',
+                'year' => '2026',
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('revenueInsightNotice', 'AI insights are temporarily unavailable. System analytics are still available.');
+
+        Carbon::setTestNow();
+    }
+
+    public function test_ai_output_with_script_like_text_is_escaped_in_reports(): void
+    {
+        Carbon::setTestNow('2026-09-02 10:00:00');
+        $records = $this->records();
+        $saleId = $this->sale($records, 'SLS-REV-HTML', '2026-09-02', 50000);
+        $this->payment($records, $saleId, 10000);
+        Http::fake([
+            'api.groq.com/*' => Http::response([
+                'choices' => [[
+                    'message' => [
+                        'content' => "Revenue Summary\n<script>alert('x')</script>",
+                    ],
+                ]],
+            ]),
+        ]);
+        config($this->aiConfig());
+
+        $this->actingAs($records['admin'])
+            ->post(route('admin.reports.revenue-insight'), [
+                'period' => 'date',
+                'date' => '2026-09-02',
+                'month' => '2026-09',
+                'year' => '2026',
+            ])
+            ->assertRedirect();
+
+        $this->followingRedirects()
+            ->actingAs($records['admin'])
+            ->get(route('admin.reports', ['period' => 'date', 'date' => '2026-09-02', 'month' => '2026-09', 'year' => '2026']))
+            ->assertOk()
+            ->assertSee('&lt;script&gt;alert(&#039;x&#039;)&lt;/script&gt;', false)
+            ->assertDontSee("<script>alert('x')</script>", false);
 
         Carbon::setTestNow();
     }

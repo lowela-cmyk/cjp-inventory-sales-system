@@ -61,7 +61,7 @@ Do not make automatic business decisions. Provide decision-support insights only
         if (! $result['ok']) {
             return [
                 'ok' => false,
-                'text' => 'AI business insights are temporarily unavailable. Existing analytics remain available.',
+                'text' => $result['message'],
                 'skipped' => false,
                 'error' => $result['error'],
             ];

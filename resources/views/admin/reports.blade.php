@@ -22,7 +22,7 @@
     <section class="report-section ai-insight-panel">
         <div class="chart-header">
             <h2>Revenue AI Insight</h2>
-            <form method="POST" action="{{ route('admin.reports.revenue-insight') }}">
+            <form method="POST" action="{{ route('admin.reports.revenue-insight') }}" data-ai-generate-form>
                 @csrf
                 <input type="hidden" name="period" value="{{ $filters['period'] }}">
                 <input type="hidden" name="date" value="{{ $filters['date'] }}">
@@ -48,7 +48,7 @@
     <section class="report-section ai-insight-panel">
         <div class="chart-header">
             <h2>Business AI Insights</h2>
-            <form method="POST" action="{{ route('admin.reports.business-insight') }}">
+            <form method="POST" action="{{ route('admin.reports.business-insight') }}" data-ai-generate-form>
                 @csrf
                 <input type="hidden" name="period" value="{{ $filters['period'] }}">
                 <input type="hidden" name="date" value="{{ $filters['date'] }}">
@@ -74,7 +74,7 @@
     <section class="report-section ai-insight-panel">
         <div class="chart-header">
             <h2>Sales Trend AI Summary</h2>
-            <form method="POST" action="{{ route('admin.reports.sales-trend-summary') }}">
+            <form method="POST" action="{{ route('admin.reports.sales-trend-summary') }}" data-ai-generate-form>
                 @csrf
                 <input type="hidden" name="period" value="{{ $filters['period'] }}">
                 <input type="hidden" name="date" value="{{ $filters['date'] }}">

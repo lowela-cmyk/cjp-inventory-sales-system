@@ -4,13 +4,19 @@ namespace App\Services;
 
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 class AIService
 {
+    private const SAFE_FALLBACK_MESSAGE = 'AI insights are temporarily unavailable. System analytics are still available.';
+    private const RATE_LIMIT_MESSAGE = 'AI service usage limit reached. Please try again later.';
+    private const CONFIGURATION_MESSAGE = 'AI service is currently unavailable.';
+    private const MAX_TEXT_LENGTH = 6000;
+
     /**
      * @param  string|array<int, array{role?: string, content?: string}>  $messages
-     * @return array{ok: bool, text: ?string, error: ?string, status: ?int, provider: string, model: string}
+     * @return array{ok: bool, success: bool, text: ?string, message: string, error: ?string, error_type: ?string, status: ?int, provider: string, model: string}
      */
     public function generateText(string|array $messages, array $options = []): array
     {
@@ -18,52 +24,79 @@ class AIService
         $model = (string) config('services.ai.model', 'openai/gpt-oss-20b');
 
         if (! in_array($provider, ['gemini', 'groq'], true)) {
-            return $this->failure('Unsupported AI provider configured.', null, $provider, $model);
+            return $this->failure('Unsupported AI provider configured.', 'configuration_error', null, $provider, $model);
+        }
+
+        if (trim($model) === '') {
+            return $this->failure('AI model is not configured.', 'configuration_error', null, $provider, $model);
         }
 
         $apiKey = (string) config('services.ai.api_key', '');
         if (trim($apiKey) === '') {
-            return $this->failure('AI API key is not configured.', null, $provider, $model);
+            return $this->failure('AI API key is not configured.', 'configuration_error', null, $provider, $model);
         }
 
         $baseUrl = rtrim((string) config('services.ai.base_url', $this->defaultBaseUrl($provider)), '/');
         $timeout = max(1, (int) config('services.ai.timeout', 20));
         $url = $provider === 'groq' ? $baseUrl.'/chat/completions' : $baseUrl.'/interactions';
+        $attempts = max(1, min(2, (int) ($options['attempts'] ?? 2)));
+        $response = null;
 
-        try {
-            $request = Http::timeout($timeout)
-                ->acceptJson()
-                ->asJson();
+        for ($attempt = 1; $attempt <= $attempts; $attempt++) {
+            try {
+                $request = Http::timeout($timeout)
+                    ->connectTimeout(min(10, $timeout))
+                    ->acceptJson()
+                    ->asJson();
 
-            $response = $provider === 'groq'
-                ? $request->withToken($apiKey)->post($url, $this->groqPayload($messages, $model, $options))
-                : $request->withHeader('x-goog-api-key', $apiKey)->post($url, $this->geminiPayload($messages, $model));
-        } catch (ConnectionException) {
-            return $this->failure('AI provider connection timed out or the network is unavailable.', null, $provider, $model);
-        } catch (Throwable) {
-            return $this->failure('AI provider request failed before a response was received.', null, $provider, $model);
+                $response = $provider === 'groq'
+                    ? $request->withToken($apiKey)->post($url, $this->groqPayload($messages, $model, $options))
+                    : $request->withHeader('x-goog-api-key', $apiKey)->post($url, $this->geminiPayload($messages, $model));
+            } catch (ConnectionException $exception) {
+                if ($attempt < $attempts) {
+                    continue;
+                }
+
+                return $this->failure('AI provider connection timed out or the network is unavailable.', $this->networkErrorType($exception), null, $provider, $model);
+            } catch (Throwable) {
+                return $this->failure('AI provider request failed before a response was received.', 'network_error', null, $provider, $model);
+            }
+
+            if (! $response->serverError() || $attempt === $attempts) {
+                break;
+            }
         }
 
         if ($response->failed()) {
-            return $this->failure($this->errorForStatus($response->status()), $response->status(), $provider, $model);
+            return $this->failure($this->errorForStatus($response->status()), $this->errorTypeForStatus($response->status()), $response->status(), $provider, $model);
         }
 
-        $json = $response->json();
+        try {
+            $json = $response->json();
+        } catch (Throwable) {
+            return $this->failure('AI provider returned malformed JSON.', 'invalid_response', $response->status(), $provider, $model);
+        }
+
         if (! is_array($json)) {
-            return $this->failure('AI provider returned a malformed response.', $response->status(), $provider, $model);
+            return $this->failure('AI provider returned a malformed response.', 'invalid_response', $response->status(), $provider, $model);
         }
 
         $text = $provider === 'groq'
             ? $this->extractGroqText($json)
             : $this->extractGeminiText($json);
         if ($text === '') {
-            return $this->failure('AI provider returned no usable text.', $response->status(), $provider, $model);
+            return $this->failure('AI provider returned no usable text.', 'invalid_response', $response->status(), $provider, $model);
         }
+
+        $text = $this->safeOutput($text);
 
         return [
             'ok' => true,
+            'success' => true,
             'text' => $text,
+            'message' => 'AI response generated successfully.',
             'error' => null,
+            'error_type' => null,
             'status' => $response->status(),
             'provider' => $provider,
             'model' => $model,
@@ -71,7 +104,7 @@ class AIService
     }
 
     /**
-     * @return array{ok: bool, text: ?string, error: ?string, status: ?int, provider: string, model: string}
+     * @return array{ok: bool, success: bool, text: ?string, message: string, error: ?string, error_type: ?string, status: ?int, provider: string, model: string}
      */
     public function testConnection(): array
     {
@@ -221,6 +254,7 @@ class AIService
     private function errorForStatus(int $status): string
     {
         return match (true) {
+            $status === 400 => 'AI provider rejected the request.',
             $status === 401 || $status === 403 => 'AI API key is invalid or not authorized.',
             $status === 404 => 'AI model or provider endpoint is invalid.',
             $status === 429 => 'AI provider rate limit was reached.',
@@ -229,15 +263,62 @@ class AIService
         };
     }
 
-    /**
-     * @return array{ok: false, text: null, error: string, status: ?int, provider: string, model: string}
-     */
-    private function failure(string $error, ?int $status, string $provider, string $model): array
+    private function errorTypeForStatus(int $status): string
     {
+        return match (true) {
+            $status === 401 || $status === 403 => 'authentication_error',
+            $status === 404 => 'configuration_error',
+            $status === 429 => 'rate_limit',
+            $status >= 500 => 'provider_error',
+            default => 'provider_error',
+        };
+    }
+
+    private function networkErrorType(ConnectionException $exception): string
+    {
+        $message = strtolower($exception->getMessage());
+
+        return str_contains($message, 'timed out') || str_contains($message, 'timeout')
+            ? 'timeout'
+            : 'network_error';
+    }
+
+    private function safeMessageFor(string $errorType): string
+    {
+        return match ($errorType) {
+            'configuration_error', 'authentication_error' => self::CONFIGURATION_MESSAGE,
+            'rate_limit' => self::RATE_LIMIT_MESSAGE,
+            default => self::SAFE_FALLBACK_MESSAGE,
+        };
+    }
+
+    private function safeOutput(string $text): string
+    {
+        $text = preg_replace('/[^\P{C}\t\n\r]+/u', '', $text) ?? '';
+
+        return mb_substr(trim($text), 0, self::MAX_TEXT_LENGTH);
+    }
+
+    /**
+     * @return array{ok: false, success: false, text: null, message: string, error: string, error_type: string, status: ?int, provider: string, model: string}
+     */
+    private function failure(string $error, string $errorType, ?int $status, string $provider, string $model): array
+    {
+        Log::warning('AI request failed.', [
+            'error_type' => $errorType,
+            'provider' => $provider,
+            'model' => $model,
+            'status' => $status,
+            'error' => $error,
+        ]);
+
         return [
             'ok' => false,
+            'success' => false,
             'text' => null,
+            'message' => $this->safeMessageFor($errorType),
             'error' => $error,
+            'error_type' => $errorType,
             'status' => $status,
             'provider' => $provider,
             'model' => $model,

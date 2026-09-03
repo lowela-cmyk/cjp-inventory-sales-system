@@ -126,6 +126,21 @@ document.addEventListener('keydown', (event) => {
     }
 });
 
+document.querySelectorAll('[data-ai-generate-form]').forEach((form) => {
+    form.addEventListener('submit', (event) => {
+        if (form.dataset.submitted === 'true') {
+            event.preventDefault();
+
+            return;
+        }
+
+        form.dataset.submitted = 'true';
+        form.querySelectorAll('button[type="submit"]').forEach((button) => {
+            button.disabled = true;
+        });
+    });
+});
+
 const renderDashboardBarChart = (canvas, fallbackSelector, yTickFormatter, fallbackFormatter) => {
     const chartData = JSON.parse(canvas.dataset.chart || '{"labels":[],"datasets":[]}');
     const fallback = canvas.parentElement?.querySelector(fallbackSelector);

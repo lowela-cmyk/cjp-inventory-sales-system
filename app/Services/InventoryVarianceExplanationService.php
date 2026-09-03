@@ -59,7 +59,7 @@ Provide concise and professional explanations that help management understand wh
         if (! $result['ok']) {
             return [
                 'ok' => false,
-                'text' => 'AI inventory variance explanation is temporarily unavailable. Existing variance analytics remain available.',
+                'text' => $result['message'],
                 'skipped' => false,
                 'error' => $result['error'],
             ];

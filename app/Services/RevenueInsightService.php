@@ -59,7 +59,7 @@ Provide concise, professional, actionable business insights.';
         if (! $result['ok']) {
             return [
                 'ok' => false,
-                'text' => 'AI revenue insight is temporarily unavailable. Existing reports remain available.',
+                'text' => $result['message'],
                 'skipped' => false,
                 'error' => $result['error'],
             ];

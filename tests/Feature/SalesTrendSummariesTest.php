@@ -164,7 +164,7 @@ class SalesTrendSummariesTest extends TestCase
                 'year' => '2026',
             ])
             ->assertRedirect()
-            ->assertSessionHas('salesTrendSummaryNotice', 'AI sales trend summary is temporarily unavailable. Existing Sales Trends reports remain available.');
+            ->assertSessionHas('salesTrendSummaryNotice', 'AI insights are temporarily unavailable. System analytics are still available.');
 
         Carbon::setTestNow();
     }

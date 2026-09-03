@@ -170,7 +170,7 @@ class InventoryVarianceExplanationsTest extends TestCase
                     'variance_date_to' => '2026-09-02',
                 ])
                 ->assertRedirect()
-                ->assertSessionHas('inventoryVarianceExplanationNotice', 'AI inventory variance explanation is temporarily unavailable. Existing variance analytics remain available.');
+                ->assertSessionHas('inventoryVarianceExplanationNotice', 'AI insights are temporarily unavailable. System analytics are still available.');
         }
 
         Carbon::setTestNow();

@@ -59,7 +59,7 @@ Keep the summary concise, professional, and useful for management decision-makin
         if (! $result['ok']) {
             return [
                 'ok' => false,
-                'text' => 'AI sales trend summary is temporarily unavailable. Existing Sales Trends reports remain available.',
+                'text' => $result['message'],
                 'skipped' => false,
                 'error' => $result['error'],
             ];

@@ -168,7 +168,7 @@ class BusinessInsightsTest extends TestCase
                     'year' => '2026',
                 ])
                 ->assertRedirect()
-                ->assertSessionHas('businessInsightNotice', 'AI business insights are temporarily unavailable. Existing analytics remain available.');
+                ->assertSessionHas('businessInsightNotice', 'AI insights are temporarily unavailable. System analytics are still available.');
         }
 
         Carbon::setTestNow();

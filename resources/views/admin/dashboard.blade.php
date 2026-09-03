@@ -231,7 +231,7 @@
             <div class="ai-insight-panel" style="margin-top:18px">
                 <div class="chart-header">
                     <h2>Inventory Variance AI Explanation</h2>
-                    <form method="POST" action="{{ route('admin.dashboard.inventory-variance-explanation') }}">
+                    <form method="POST" action="{{ route('admin.dashboard.inventory-variance-explanation') }}" data-ai-generate-form>
                         @csrf
                         <input type="hidden" name="variance_date_from" value="{{ $inventoryVarianceFilters['date_from'] ?? '' }}">
                         <input type="hidden" name="variance_date_to" value="{{ $inventoryVarianceFilters['date_to'] ?? '' }}">

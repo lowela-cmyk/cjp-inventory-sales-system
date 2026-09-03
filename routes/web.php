@@ -4,6 +4,7 @@ use App\Http\Controllers\AdminDashboardController;
 use App\Http\Controllers\AdminMonitoringController;
 use App\Http\Controllers\AdminRevenueInsightController;
 use App\Http\Controllers\AdminSalesReportController;
+use App\Http\Controllers\AdminSalesTrendSummaryController;
 use App\Http\Controllers\AdminUserManagementController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DispatchDeliveryController;
@@ -48,6 +49,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/sales', [AdminMonitoringController::class, 'sales'])->name('sales');
         Route::get('/reports', AdminSalesReportController::class)->name('reports');
         Route::post('/reports/revenue-insight', AdminRevenueInsightController::class)->name('reports.revenue-insight');
+        Route::post('/reports/sales-trend-summary', AdminSalesTrendSummaryController::class)->name('reports.sales-trend-summary');
         Route::get('/reports/export', [AdminSalesReportController::class, 'export'])->name('reports.export');
         Route::get('/alerts', [AdminMonitoringController::class, 'alerts'])->name('alerts');
         Route::get('/user-management', [AdminUserManagementController::class, 'index'])->name('user-management');

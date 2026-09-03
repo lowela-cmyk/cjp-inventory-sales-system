@@ -52,7 +52,13 @@ class AIDataPreparationServiceTest extends TestCase
         $september = collect($payload['sales_trends']['series'])->firstWhere('label', 'Sep');
         $this->assertSame(195000.0, $september['sales_total']);
         $this->assertSame(3500.0, $september['quantity_sold_liters']);
-        $this->assertNull($payload['sales_trends']['previous_period_comparison']);
+        $this->assertSame(3500.0, $payload['sales_trends']['total_quantity_sold_liters']);
+        $this->assertSame(2, $payload['sales_trends']['valid_sales_count']);
+        $this->assertSame(195000.0, $payload['sales_trends']['previous_period_comparison']['current_period_sales']);
+        $this->assertSame(0.0, $payload['sales_trends']['previous_period_comparison']['previous_period_sales']);
+        $this->assertNull($payload['sales_trends']['previous_period_comparison']['percentage_change']);
+        $this->assertSame('increase', $payload['sales_trends']['previous_period_comparison']['direction']);
+        $this->assertSame('Sep', $payload['sales_trends']['peak_period']['label']);
         $fuelSales = collect($payload['sales_trends']['fuel_type_breakdown'])->keyBy('fuel_type');
         $this->assertSame(3000.0, $fuelSales['AI Diesel']['quantity_liters']);
         $this->assertSame(160000.0, $fuelSales['AI Diesel']['sales_total']);

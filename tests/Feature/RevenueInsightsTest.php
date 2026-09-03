@@ -77,8 +77,10 @@ class RevenueInsightsTest extends TestCase
                 && str_contains($promptText, '"total_valid_sales": 100000')
                 && str_contains($promptText, '"collected_revenue": 40000')
                 && str_contains($promptText, '"outstanding_receivables": 60000')
-                && str_contains($promptText, '"previous_period_comparison": null')
-                && str_contains($promptText, 'Previous-period comparison is not yet calculated')
+                && str_contains($promptText, '"previous_period_comparison"')
+                && str_contains($promptText, '"current_period_sales": 100000')
+                && str_contains($promptText, '"previous_period_sales": 0')
+                && str_contains($promptText, 'previous period had zero sales')
                 && ! str_contains($promptText, 'Revenue Insight Customer')
                 && ! str_contains($promptText, 'revenue@example.com')
                 && ! array_key_exists('key', $body);

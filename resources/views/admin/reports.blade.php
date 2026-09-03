@@ -45,6 +45,32 @@
             @endif
         </div>
     </section>
+    <section class="report-section ai-insight-panel">
+        <div class="chart-header">
+            <h2>Sales Trend AI Summary</h2>
+            <form method="POST" action="{{ route('admin.reports.sales-trend-summary') }}">
+                @csrf
+                <input type="hidden" name="period" value="{{ $filters['period'] }}">
+                <input type="hidden" name="date" value="{{ $filters['date'] }}">
+                <input type="hidden" name="start_date" value="{{ $filters['start_date'] }}">
+                <input type="hidden" name="end_date" value="{{ $filters['end_date'] }}">
+                <input type="hidden" name="month" value="{{ $filters['month'] }}">
+                <input type="hidden" name="year" value="{{ $filters['year'] }}">
+                <button class="btn btn-primary" type="submit">Generate Summary</button>
+            </form>
+        </div>
+        <div class="ai-insight-body">
+            @if (session('salesTrendSummary'))
+                <div class="ai-insight-text">{!! nl2br(e(session('salesTrendSummary.text'))) !!}</div>
+                <p>AI-assisted trend summary based on system-calculated Sales Trends. Use it to support, not replace, management judgment.</p>
+                <span>Generated {{ session('salesTrendSummary.generated_at') }}</span>
+            @elseif (session('salesTrendSummaryNotice'))
+                <div class="dashboard-empty-state dashboard-empty-state-small">{{ session('salesTrendSummaryNotice') }}</div>
+            @else
+                <div class="dashboard-empty-state dashboard-empty-state-small">Generate a sales trend summary from the current Sales Trends values.</div>
+            @endif
+        </div>
+    </section>
     <section class="report-panel">
         <div class="report-intro">
             <strong>Sales report generated from current database records.</strong>

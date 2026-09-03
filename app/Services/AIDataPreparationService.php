@@ -154,22 +154,27 @@ class AIDataPreparationService
     private function salesTrendData(string $trendPeriod, int $trendYear, array $dateRange): array
     {
         $trend = $this->summary->salesTrend($trendPeriod, $trendYear);
+        $quantitySeries = $this->quantitySoldSeries($trendPeriod, $trendYear);
+        $series = collect($trend['labels'])
+            ->map(fn (string $label, int $index): array => [
+                'label' => $this->sanitizeText($label),
+                'sales_total' => round((float) $trend['values'][$index], 2),
+                'quantity_sold_liters' => $quantitySeries[$index] ?? 0.0,
+            ])
+            ->all();
 
         return [
             'reporting_period' => $trend['period'],
             'year' => $trend['year'],
             'currency' => 'PHP',
-            'series' => collect($trend['labels'])
-                ->map(fn (string $label, int $index): array => [
-                    'label' => $this->sanitizeText($label),
-                    'sales_total' => round((float) $trend['values'][$index], 2),
-                    'quantity_sold_liters' => $this->quantitySoldSeries($trendPeriod, $trendYear)[$index] ?? 0.0,
-                ])
-                ->all(),
+            'quantity_unit' => 'liters',
+            'series' => $series,
             'total_sales' => round((float) $trend['total'], 2),
-            'previous_period_comparison' => null,
-            'percentage_change' => null,
-            'comparison_note' => 'Previous-period comparison is not yet calculated by the existing dashboard service.',
+            'total_quantity_sold_liters' => round((float) collect($series)->sum('quantity_sold_liters'), 2),
+            'valid_sales_count' => $this->validSalesCountForTrend($trendPeriod, $trendYear),
+            'previous_period_comparison' => $this->previousPeriodComparison($trendPeriod, $trendYear, $dateRange),
+            'peak_period' => $this->periodExtreme($series, 'max'),
+            'low_period' => $this->periodExtreme($series, 'min'),
             'fuel_type_breakdown' => $this->salesFuelBreakdown($dateRange),
             'source' => 'DashboardSummaryService salesTrend(); quantity and fuel summaries use the same valid sale status rules.',
         ];
@@ -448,6 +453,146 @@ class AIDataPreparationService
                 'sales_total' => round((float) $row->sales_total, 2),
             ])
             ->all();
+    }
+
+    private function validSalesCountForTrend(string $period, int $year): int
+    {
+        return $this->validSaleItemsQuery()
+            ->when($period === 'week', function (Builder $query): Builder {
+                $start = CarbonImmutable::now()->startOfWeek();
+                $end = $start->endOfWeek();
+
+                return $query->whereBetween('sales.sale_date', [$start->toDateString(), $end->toDateString()]);
+            })
+            ->when($period === 'month', fn (Builder $query): Builder => $query->whereBetween('sales.sale_date', [$year.'-01-01', $year.'-12-31']))
+            ->when($period === 'year', fn (Builder $query): Builder => $query->whereBetween('sales.sale_date', [($year - 4).'-01-01', $year.'-12-31']))
+            ->distinct('sales.id')
+            ->count('sales.id');
+    }
+
+    /**
+     * @param  array{0: ?string, 1: ?string}  $dateRange
+     * @return array<string, mixed>
+     */
+    private function previousPeriodComparison(string $period, int $year, array $dateRange): array
+    {
+        [$currentLabel, $currentSales, $previousLabel, $previousSales] = match ($period) {
+            'year' => $this->yearComparison($year),
+            'week' => $this->weekComparison($dateRange),
+            default => $this->monthComparison($year, $dateRange),
+        };
+
+        $absoluteChange = round($currentSales - $previousSales, 2);
+        $percentageChange = $previousSales > 0
+            ? round(($absoluteChange / $previousSales) * 100, 1)
+            : null;
+
+        return [
+            'current_period_label' => $currentLabel,
+            'current_period_sales' => round($currentSales, 2),
+            'previous_period_label' => $previousLabel,
+            'previous_period_sales' => round($previousSales, 2),
+            'absolute_change' => $absoluteChange,
+            'percentage_change' => $percentageChange,
+            'direction' => match (true) {
+                $currentSales > $previousSales => 'increase',
+                $currentSales < $previousSales => 'decrease',
+                default => 'stable',
+            },
+            'comparison_note' => $previousSales > 0
+                ? 'Percentage change was calculated by Laravel before AI generation.'
+                : 'Percentage change is unavailable because the previous period had zero sales.',
+        ];
+    }
+
+    /**
+     * @return array{0: string, 1: float, 2: string, 3: float}
+     */
+    private function yearComparison(int $year): array
+    {
+        $currentTrend = $this->summary->salesTrend('year', $year);
+        $previousTrend = $this->summary->salesTrend('year', $year - 1);
+        $currentValues = $currentTrend['values'];
+        $previousValues = $previousTrend['values'];
+
+        return [
+            (string) $year,
+            (float) $currentValues[array_key_last($currentValues)],
+            (string) ($year - 1),
+            (float) $previousValues[array_key_last($previousValues)],
+        ];
+    }
+
+    /**
+     * @param  array{0: ?string, 1: ?string}  $dateRange
+     * @return array{0: string, 1: float, 2: string, 3: float}
+     */
+    private function monthComparison(int $year, array $dateRange): array
+    {
+        $reference = $dateRange[1]
+            ? CarbonImmutable::parse($dateRange[1])
+            : (CarbonImmutable::now()->year === $year ? CarbonImmutable::now() : CarbonImmutable::create($year, 12, 1));
+        $currentTrend = $this->summary->salesTrend('month', $reference->year);
+        $previous = $reference->subMonthNoOverflow();
+        $previousTrend = $this->summary->salesTrend('month', $previous->year);
+
+        return [
+            $reference->format('M Y'),
+            (float) $currentTrend['values'][$reference->month - 1],
+            $previous->format('M Y'),
+            (float) $previousTrend['values'][$previous->month - 1],
+        ];
+    }
+
+    /**
+     * @param  array{0: ?string, 1: ?string}  $dateRange
+     * @return array{0: string, 1: float, 2: string, 3: float}
+     */
+    private function weekComparison(array $dateRange): array
+    {
+        $reference = $dateRange[1] ? CarbonImmutable::parse($dateRange[1]) : CarbonImmutable::now();
+        $currentSales = $this->validSalesBetween($reference->toDateString(), $reference->toDateString());
+        $previous = $reference->subDay();
+        $previousSales = $this->validSalesBetween($previous->toDateString(), $previous->toDateString());
+
+        return [
+            $reference->format('D M d'),
+            $currentSales,
+            $previous->format('D M d'),
+            $previousSales,
+        ];
+    }
+
+    private function validSalesBetween(string $dateFrom, string $dateTo): float
+    {
+        return (float) $this->validSaleItemsQuery()
+            ->whereBetween('sales.sale_date', [$dateFrom, $dateTo])
+            ->selectRaw('COALESCE(SUM(sale_items.line_total), 0) as total')
+            ->value('total');
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $series
+     * @return array<string, mixed>|null
+     */
+    private function periodExtreme(array $series, string $direction): ?array
+    {
+        $nonZero = collect($series)->filter(fn (array $row): bool => (float) $row['sales_total'] > 0)->values();
+
+        if ($nonZero->isEmpty()) {
+            return null;
+        }
+
+        $sorted = $direction === 'min'
+            ? $nonZero->sortBy('sales_total')
+            : $nonZero->sortByDesc('sales_total');
+        $row = $sorted->first();
+
+        return [
+            'label' => $row['label'],
+            'sales_total' => round((float) $row['sales_total'], 2),
+            'quantity_sold_liters' => round((float) $row['quantity_sold_liters'], 2),
+        ];
     }
 
     private function validSaleItemsQuery(): Builder

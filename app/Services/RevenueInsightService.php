@@ -86,9 +86,8 @@ Provide concise, professional, actionable business insights.';
                 'reporting_period' => $preparedData['sales_trends']['reporting_period'],
                 'year' => $preparedData['sales_trends']['year'],
                 'total_sales' => $preparedData['sales_trends']['total_sales'],
+                'total_quantity_sold_liters' => $preparedData['sales_trends']['total_quantity_sold_liters'],
                 'previous_period_comparison' => $preparedData['sales_trends']['previous_period_comparison'],
-                'percentage_change' => $preparedData['sales_trends']['percentage_change'],
-                'comparison_note' => $preparedData['sales_trends']['comparison_note'],
             ],
             'receivables_context' => [
                 'total_outstanding' => $preparedData['receivables']['total_outstanding'],

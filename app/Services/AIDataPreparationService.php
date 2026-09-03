@@ -42,6 +42,13 @@ class AIDataPreparationService
         $trendPeriod = (string) $filters['trend_period'];
         $trendYear = (int) $filters['trend_year'];
         $expectedYear = (int) $filters['expected_year'];
+        $varianceFilters = [
+            'date_from' => $dateRange[0],
+            'date_to' => $dateRange[1],
+            'fuel_type_id' => $filters['variance_fuel_type_id'],
+            'customer_id' => $filters['variance_customer_id'],
+            'variance_status' => $filters['variance_status'],
+        ];
 
         return [
             'reporting_period' => $period,
@@ -64,7 +71,7 @@ class AIDataPreparationService
             'inventory' => $this->inventoryData($dateRange),
             'fuel_lifting' => $this->fuelLiftingData($dateRange, $limit),
             'receivables' => $this->receivablesData($limit),
-            'inventory_variance' => $this->inventoryVarianceData($dateRange, $limit),
+            'inventory_variance' => $this->inventoryVarianceData($varianceFilters, $limit),
         ];
     }
 
@@ -80,6 +87,9 @@ class AIDataPreparationService
             'trend_period' => ['nullable', Rule::in(DashboardSummaryService::SALES_TREND_PERIODS)],
             'trend_year' => ['nullable', 'integer', 'between:2000,2100'],
             'expected_year' => ['nullable', 'integer', 'between:2000,2100'],
+            'variance_fuel_type_id' => ['nullable', 'integer', Rule::exists('fuel_types', 'id')],
+            'variance_customer_id' => ['nullable', 'integer', Rule::exists('customers', 'id')],
+            'variance_status' => ['nullable', Rule::in(DashboardSummaryService::INVENTORY_VARIANCE_STATUSES)],
             'limit' => ['nullable', 'integer', 'between:1,10'],
         ])->validate();
 
@@ -91,6 +101,9 @@ class AIDataPreparationService
             'trend_period' => $validated['trend_period'] ?? 'month',
             'trend_year' => isset($validated['trend_year']) ? (int) $validated['trend_year'] : $now->year,
             'expected_year' => isset($validated['expected_year']) ? (int) $validated['expected_year'] : $now->year,
+            'variance_fuel_type_id' => $validated['variance_fuel_type_id'] ?? null,
+            'variance_customer_id' => $validated['variance_customer_id'] ?? null,
+            'variance_status' => $validated['variance_status'] ?? null,
             'limit' => isset($validated['limit']) ? (int) $validated['limit'] : 6,
         ];
     }
@@ -108,6 +121,11 @@ class AIDataPreparationService
             'trend_period' => $filters['trend_period'],
             'trend_year' => $filters['trend_year'],
             'expected_revenue_year' => $filters['expected_year'],
+            'variance_filters' => [
+                'fuel_type_id' => $filters['variance_fuel_type_id'],
+                'customer_id_applied' => $filters['variance_customer_id'] !== null,
+                'variance_status' => $filters['variance_status'],
+            ],
             'timezone' => config('app.timezone'),
             'generated_at' => CarbonImmutable::now()->toIso8601String(),
         ];
@@ -282,15 +300,26 @@ class AIDataPreparationService
     }
 
     /**
-     * @param  array{0: ?string, 1: ?string}  $dateRange
+     * @param  array<string, mixed>  $filters
      * @return array<string, mixed>
      */
-    private function inventoryVarianceData(array $dateRange, int $limit): array
+    private function inventoryVarianceData(array $filters, int $limit): array
     {
-        $variance = $this->summary->inventoryVarianceMonitoring([
-            'date_from' => $dateRange[0],
-            'date_to' => $dateRange[1],
-        ], $limit);
+        $variance = $this->summary->inventoryVarianceMonitoring($filters, $limit);
+        $sampleVariances = collect($variance['rows'])
+            ->map(fn (array $row): array => [
+                'transaction_reference' => $this->sanitizeText((string) $row['transaction_reference']),
+                'transaction_date' => $row['transaction_date'],
+                'fuel_type' => $this->sanitizeText((string) $row['fuel_name']),
+                'sale_quantity_liters' => round((float) $row['sale_quantity_liters'], 2),
+                'stock_out_quantity_liters' => round((float) $row['stock_out_quantity_liters'], 2),
+                'quantity_variance_liters' => round((float) $row['quantity_variance_liters'], 2),
+                'sale_amount' => round((float) $row['sale_amount'], 2),
+                'paid_amount' => round((float) $row['total_paid'], 2),
+                'outstanding_amount' => round((float) $row['outstanding_amount'], 2),
+                'reason' => $this->sanitizeText((string) $row['reason']),
+            ])
+            ->all();
 
         return [
             'quantity_unit' => 'liters',
@@ -307,20 +336,18 @@ class AIDataPreparationService
                     'count' => (int) $row['count'],
                 ])
                 ->all(),
-            'sample_variances' => collect($variance['rows'])
-                ->map(fn (array $row): array => [
-                    'transaction_reference' => $this->sanitizeText((string) $row['transaction_reference']),
-                    'transaction_date' => $row['transaction_date'],
-                    'fuel_type' => $this->sanitizeText((string) $row['fuel_name']),
-                    'sale_quantity_liters' => round((float) $row['sale_quantity_liters'], 2),
-                    'stock_out_quantity_liters' => round((float) $row['stock_out_quantity_liters'], 2),
-                    'quantity_variance_liters' => round((float) $row['quantity_variance_liters'], 2),
-                    'sale_amount' => round((float) $row['sale_amount'], 2),
-                    'paid_amount' => round((float) $row['total_paid'], 2),
-                    'outstanding_amount' => round((float) $row['outstanding_amount'], 2),
-                    'reason' => $this->sanitizeText((string) $row['reason']),
+            'affected_fuel_types' => collect($sampleVariances)
+                ->groupBy('fuel_type')
+                ->map(fn ($rows, string $fuelType): array => [
+                    'fuel_type' => $fuelType,
+                    'variance_records_in_sample' => $rows->count(),
+                    'quantity_difference_liters_in_sample' => round((float) $rows->sum('quantity_variance_liters'), 2),
                 ])
+                ->values()
                 ->all(),
+            'sample_variances' => $sampleVariances,
+            'uncertainty_note' => 'Variance reasons identify records requiring verification; the system does not prove the real-world cause.',
+            'payment_status_boundary' => 'Unpaid or partially paid valid sales are not automatically inventory variance unless the inventory variance logic flags a mismatch.',
             'source' => 'DashboardSummaryService inventoryVarianceMonitoring().',
         ];
     }

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AdminDashboardController;
+use App\Http\Controllers\AdminInventoryVarianceExplanationController;
 use App\Http\Controllers\AdminMonitoringController;
 use App\Http\Controllers\AdminRevenueInsightController;
 use App\Http\Controllers\AdminSalesReportController;
@@ -38,6 +39,7 @@ Route::middleware(['auth'])->group(function () {
     Route::redirect('/admin', '/admin/dashboard')->middleware('role:admin')->name('admin.shortcut');
     Route::prefix('admin')->name('admin.')->middleware('role:admin')->group(function () {
         Route::get('/dashboard', AdminDashboardController::class)->name('dashboard');
+        Route::post('/dashboard/inventory-variance-explanation', AdminInventoryVarianceExplanationController::class)->name('dashboard.inventory-variance-explanation');
         Route::get('/inventory', [AdminMonitoringController::class, 'inventory'])->name('inventory');
         Route::get('/ledger', [AdminMonitoringController::class, 'ledger'])->name('ledger');
         Route::get('/fuel-lifting', [AdminMonitoringController::class, 'fuelLifting'])->name('fuel-lifting');

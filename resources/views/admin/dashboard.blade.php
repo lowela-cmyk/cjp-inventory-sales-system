@@ -228,6 +228,31 @@
                     <div class="demand-row"><span>Requires Verification</span><span class="demand-track"><i class="demand-fill" style="--p:{{ $inventoryVariance['summary']['total_checked'] > 0 ? round(($inventoryVariance['summary']['variance_count'] / $inventoryVariance['summary']['total_checked']) * 100) : 0 }}%"></i></span><strong>{{ number_format($inventoryVariance['summary']['variance_count']) }}</strong></div>
                 </div>
             </div>
+            <div class="ai-insight-panel" style="margin-top:18px">
+                <div class="chart-header">
+                    <h2>Inventory Variance AI Explanation</h2>
+                    <form method="POST" action="{{ route('admin.dashboard.inventory-variance-explanation') }}">
+                        @csrf
+                        <input type="hidden" name="variance_date_from" value="{{ $inventoryVarianceFilters['date_from'] ?? '' }}">
+                        <input type="hidden" name="variance_date_to" value="{{ $inventoryVarianceFilters['date_to'] ?? '' }}">
+                        <input type="hidden" name="variance_fuel_type_id" value="{{ $inventoryVarianceFilters['fuel_type_id'] ?? '' }}">
+                        <input type="hidden" name="variance_customer_id" value="{{ $inventoryVarianceFilters['customer_id'] ?? '' }}">
+                        <input type="hidden" name="variance_status" value="{{ $inventoryVarianceFilters['variance_status'] ?? '' }}">
+                        <button class="btn btn-primary" type="submit">Generate Explanation</button>
+                    </form>
+                </div>
+                <div class="ai-insight-body">
+                    @if (session('inventoryVarianceExplanation'))
+                        <div class="ai-insight-text">{!! nl2br(e(session('inventoryVarianceExplanation.text'))) !!}</div>
+                        <p>AI-assisted explanation based on system-detected inventory variance. Use it to support, not replace, record verification.</p>
+                        <span>Generated {{ session('inventoryVarianceExplanation.generated_at') }}</span>
+                    @elseif (session('inventoryVarianceExplanationNotice'))
+                        <div class="dashboard-empty-state dashboard-empty-state-small">{{ session('inventoryVarianceExplanationNotice') }}</div>
+                    @else
+                        <div class="dashboard-empty-state dashboard-empty-state-small">Generate an explanation from the current inventory variance values.</div>
+                    @endif
+                </div>
+            </div>
         </section>
 
         <section class="chart-panel">

@@ -202,10 +202,15 @@ class InventoryOfficerPurchaseController extends Controller
                 return 'The selected haul has invalid allocation quantities.';
             }
 
+            $quantity = round((float) $data['quantity_liters'], 2);
             $remaining = $this->remainingReceivableForAllocation($allocation);
 
-            if ((float) $data['quantity_liters'] > $remaining) {
+            if ($quantity > $remaining) {
                 return 'Quantity received cannot exceed the remaining garage allocation.';
+            }
+
+            if ($this->duplicateStockInExists($allocation, (int) $data['storage_location_id'], $quantity, (string) $data['movement_date'])) {
+                return 'This stock-in receipt has already been recorded.';
             }
 
             DB::table('inventory_movements')->insert([
@@ -214,7 +219,7 @@ class InventoryOfficerPurchaseController extends Controller
                 'fuel_type_id' => $allocation->fuel_type_id,
                 'movement_type' => 'stock_in',
                 'direction' => 'in',
-                'quantity_liters' => $data['quantity_liters'],
+                'quantity_liters' => $quantity,
                 'unit_cost' => $allocation->unit_cost,
                 'reference_type' => self::STOCK_IN_REFERENCE_TYPE,
                 'reference_id' => $allocation->id,
@@ -225,7 +230,7 @@ class InventoryOfficerPurchaseController extends Controller
                 'updated_at' => now(),
             ]);
 
-            $newRemaining = round($remaining - (float) $data['quantity_liters'], 2);
+            $newRemaining = round($remaining - $quantity, 2);
 
             DB::table('haul_allocations')
                 ->where('id', $allocation->id)
@@ -891,6 +896,21 @@ class InventoryOfficerPurchaseController extends Controller
             ->sum('quantity_liters');
 
         return round(max(0, (float) $allocation->quantity_liters - $received), 2);
+    }
+
+    private function duplicateStockInExists(object $allocation, int $garageId, float $quantity, string $movementDate): bool
+    {
+        return DB::table('inventory_movements')
+            ->where('reference_type', self::STOCK_IN_REFERENCE_TYPE)
+            ->where('reference_id', $allocation->id)
+            ->where('storage_location_id', $garageId)
+            ->where('fuel_type_id', $allocation->fuel_type_id)
+            ->where('direction', 'in')
+            ->where('movement_type', 'stock_in')
+            ->where('quantity_liters', $quantity)
+            ->where('movement_date', $movementDate)
+            ->lockForUpdate()
+            ->first(['id']) !== null;
     }
 
     private function haulAllocationsAreWithinQuantity(int $haulId, float $haulQuantity): bool

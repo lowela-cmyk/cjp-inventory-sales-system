@@ -207,6 +207,12 @@ class DriverDeliveryController extends Controller
             }
 
             if ($nextStatus === 'delivered' && $row->source_type === 'depot') {
+                $fulfillmentError = $this->recordDepotDeliveryFulfillment($row);
+
+                if ($fulfillmentError) {
+                    return $fulfillmentError;
+                }
+
                 $this->markDirectAllocationDeliveredWhenComplete($row);
             }
 
@@ -633,6 +639,9 @@ class DriverDeliveryController extends Controller
             ->lockForUpdate()
             ->first([
                 'deliveries.id',
+                'deliveries.sale_id',
+                'deliveries.sale_item_id',
+                'deliveries.fuel_type_id',
                 'deliveries.source_type',
                 'deliveries.scheduled_at',
                 'deliveries.delivered_at',
@@ -831,6 +840,62 @@ class DriverDeliveryController extends Controller
                     'updated_at' => now(),
                 ]);
         }
+    }
+
+    private function recordDepotDeliveryFulfillment(object $delivery): ?string
+    {
+        $saleItemId = $delivery->sale_item_id
+            ? (int) $delivery->sale_item_id
+            : $this->saleItemIdForExistingDirectDelivery($delivery);
+
+        if (! $saleItemId) {
+            return 'The direct depot delivery cannot be matched to an eligible sale item.';
+        }
+
+        $quantity = round((float) ($delivery->actual_quantity_liters ?? $delivery->scheduled_quantity_liters ?? 0), 2);
+
+        if ($quantity <= 0) {
+            return 'Delivered quantity must be positive.';
+        }
+
+        $updated = DB::table('sale_items')
+            ->where('id', $saleItemId)
+            ->where('fulfilled_quantity_liters', '<=', DB::raw('quantity_liters - '.$quantity))
+            ->update([
+                'fulfilled_quantity_liters' => DB::raw('fulfilled_quantity_liters + '.$quantity),
+                'updated_at' => now(),
+            ]);
+
+        if ($updated !== 1) {
+            return 'Delivered quantity cannot exceed the remaining sale quantity.';
+        }
+
+        if (! $delivery->sale_item_id) {
+            DB::table('deliveries')
+                ->where('id', $delivery->id)
+                ->whereNull('sale_item_id')
+                ->update([
+                    'sale_item_id' => $saleItemId,
+                    'updated_at' => now(),
+                ]);
+        }
+
+        return null;
+    }
+
+    private function saleItemIdForExistingDirectDelivery(object $delivery): ?int
+    {
+        if (! $delivery->sale_id || ! $delivery->fuel_type_id) {
+            return null;
+        }
+
+        $items = DB::table('sale_items')
+            ->where('sale_id', $delivery->sale_id)
+            ->where('fuel_type_id', $delivery->fuel_type_id)
+            ->lockForUpdate()
+            ->get(['id']);
+
+        return $items->count() === 1 ? (int) $items->first()->id : null;
     }
 
     /**

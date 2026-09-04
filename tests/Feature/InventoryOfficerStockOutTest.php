@@ -352,6 +352,57 @@ class InventoryOfficerStockOutTest extends TestCase
         ]);
     }
 
+    public function test_direct_depot_release_respects_already_scheduled_direct_deliveries(): void
+    {
+        $records = $this->baseRecords();
+        $sale = $this->sale($records, ['quantity_liters' => 20000]);
+        $allocationId = $this->directAllocation($records, $sale, ['quantity_liters' => 20000]);
+
+        DB::table('deliveries')->insert([
+            'delivery_code' => 'DLV-PENDING-DIRECT',
+            'sale_id' => $sale['saleId'],
+            'sale_item_id' => $sale['saleItemId'],
+            'customer_id' => $records['customerId'],
+            'fuel_type_id' => $records['fuelTypeId'],
+            'source_type' => 'depot',
+            'depot_id' => $records['depotId'],
+            'haul_allocation_id' => $allocationId,
+            'scheduled_at' => '2026-08-30 12:00:00',
+            'scheduled_quantity_liters' => 12000,
+            'status' => 'scheduled',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($records['inventoryOfficer'])
+            ->from(route('inventory-officer.inventory.stock-out'))
+            ->post(route('inventory-officer.inventory.stock-out.store'), $this->stockOutPayload($records, $sale, [
+                'source_type' => 'depot',
+                'storage_location_id' => null,
+                'haul_allocation_id' => $allocationId,
+                'quantity_liters' => 9000,
+            ]))
+            ->assertRedirect(route('inventory-officer.inventory.stock-out'))
+            ->assertSessionHasErrors('stock_out');
+
+        $this->actingAs($records['inventoryOfficer'])
+            ->post(route('inventory-officer.inventory.stock-out.store'), $this->stockOutPayload($records, $sale, [
+                'source_type' => 'depot',
+                'storage_location_id' => null,
+                'haul_allocation_id' => $allocationId,
+                'quantity_liters' => 8000,
+                'stock_out_at' => '2026-08-30 13:00:00',
+            ]))
+            ->assertRedirect(route('inventory-officer.inventory.stock-out'));
+
+        $this->assertSame(0, DB::table('stock_outs')->count());
+        $this->assertSame(2, DB::table('deliveries')->where('source_type', 'depot')->count());
+        $this->assertDatabaseHas('sale_items', [
+            'id' => $sale['saleItemId'],
+            'fulfilled_quantity_liters' => '8000.00',
+        ]);
+    }
+
     public function test_non_inventory_roles_cannot_create_stock_out(): void
     {
         $records = $this->baseRecords();

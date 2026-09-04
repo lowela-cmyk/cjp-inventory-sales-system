@@ -348,6 +348,7 @@ class InventoryOfficerPurchaseController extends Controller
             ->join('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')
             ->where('inventory_movements.direction', 'in')
             ->where('inventory_movements.movement_type', 'stock_in')
+            ->where('haul_allocations.status', '!=', 'cancelled')
             ->selectRaw('hauls.purchase_item_id, COALESCE(SUM(inventory_movements.quantity_liters), 0) as received_liters')
             ->groupBy('hauls.purchase_item_id');
 
@@ -465,6 +466,7 @@ class InventoryOfficerPurchaseController extends Controller
             ->leftJoin('users', 'users.id', '=', 'inventory_movements.created_by')
             ->where('inventory_movements.direction', 'in')
             ->where('inventory_movements.movement_type', 'stock_in')
+            ->whereNotExists($this->cancelledHaulAllocationExists())
             ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
                 'inventory_movements.movement_code',
                 'storage_locations.name',
@@ -766,13 +768,14 @@ class InventoryOfficerPurchaseController extends Controller
             return 'The selected haul has invalid allocation quantities.';
         }
 
-        $delivered = (float) DB::table('deliveries')
+        $committed = (float) DB::table('deliveries')
             ->where('haul_allocation_id', $allocation->id)
             ->where('status', '!=', 'cancelled')
             ->lockForUpdate()
-            ->sum('actual_quantity_liters');
+            ->selectRaw('COALESCE(SUM(COALESCE(actual_quantity_liters, scheduled_quantity_liters, 0)), 0) as committed_liters')
+            ->value('committed_liters');
 
-        $allocationRemaining = round((float) $allocation->quantity_liters - $delivered, 2);
+        $allocationRemaining = round((float) $allocation->quantity_liters - $committed, 2);
 
         if ($quantity > $allocationRemaining) {
             return 'Quantity released cannot exceed the remaining direct depot allocation.';
@@ -780,6 +783,26 @@ class InventoryOfficerPurchaseController extends Controller
 
         if ($this->duplicateDirectDepotReleaseExists($allocation, $saleItem, $quantity, (string) $data['stock_out_at'])) {
             return 'This direct depot release has already been recorded.';
+        }
+
+        $salePending = (float) DB::table('deliveries')
+            ->where(function (Builder $query) use ($saleItem): void {
+                $query->where('sale_item_id', $saleItem->id)
+                    ->orWhere(function (Builder $query) use ($saleItem): void {
+                        $query->whereNull('sale_item_id')
+                            ->where('sale_id', $saleItem->sale_id)
+                            ->where('fuel_type_id', $saleItem->fuel_type_id);
+                    });
+            })
+            ->where('source_type', 'depot')
+            ->whereIn('status', ['scheduled', 'in_transit', 'incomplete'])
+            ->lockForUpdate()
+            ->selectRaw('COALESCE(SUM(COALESCE(actual_quantity_liters, scheduled_quantity_liters, 0)), 0) as pending_liters')
+            ->value('pending_liters');
+        $saleRemaining = round((float) $saleItem->quantity_liters - (float) $saleItem->fulfilled_quantity_liters - $salePending, 2);
+
+        if ($quantity > $saleRemaining) {
+            return 'Quantity released cannot exceed the remaining sale quantity.';
         }
 
         if (! $this->increaseFulfilledQuantity($saleItem, $quantity)) {
@@ -1082,9 +1105,7 @@ class InventoryOfficerPurchaseController extends Controller
 
     private function stockOutSaleItemOptions()
     {
-        $garageStock = DB::table('inventory_movements')
-            ->selectRaw("fuel_type_id, COALESCE(SUM(CASE WHEN direction = 'in' THEN quantity_liters ELSE -quantity_liters END), 0) as available_liters")
-            ->groupBy('fuel_type_id');
+        $garageStock = $this->activeInventoryBalancesByFuelQuery();
 
         return DB::table('sale_items')
             ->join('sales', 'sales.id', '=', 'sale_items.sale_id')
@@ -1107,12 +1128,22 @@ class InventoryOfficerPurchaseController extends Controller
             });
     }
 
+    private function activeInventoryBalancesByFuelQuery(): Builder
+    {
+        return DB::table('inventory_movements')
+            ->whereIn('direction', ['in', 'out'])
+            ->whereNotExists($this->cancelledStockOutExists())
+            ->whereNotExists($this->cancelledHaulAllocationExists())
+            ->selectRaw("fuel_type_id, COALESCE(SUM(CASE WHEN direction = 'in' THEN quantity_liters WHEN direction = 'out' THEN -quantity_liters ELSE 0 END), 0) as available_liters")
+            ->groupBy('fuel_type_id');
+    }
+
     private function directDeliveryAllocationOptions()
     {
         $delivered = DB::table('deliveries')
             ->where('source_type', 'depot')
             ->where('status', '!=', 'cancelled')
-            ->selectRaw('haul_allocation_id, COALESCE(SUM(actual_quantity_liters), 0) as delivered_liters')
+            ->selectRaw('haul_allocation_id, COALESCE(SUM(COALESCE(actual_quantity_liters, scheduled_quantity_liters, 0)), 0) as delivered_liters')
             ->groupBy('haul_allocation_id');
 
         return DB::table('haul_allocations')

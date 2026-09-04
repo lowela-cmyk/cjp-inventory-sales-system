@@ -147,12 +147,17 @@ class DispatchDeliverySchedulingTest extends TestCase
         $this->assertDatabaseHas('deliveries', [
             'source_type' => 'depot',
             'haul_allocation_id' => $allocationId,
+            'sale_item_id' => $sale['saleItemId'],
             'scheduled_quantity_liters' => '8000.00',
             'actual_quantity_liters' => null,
             'status' => 'scheduled',
         ]);
         $this->assertSame(0, DB::table('stock_outs')->count());
         $this->assertSame(0, DB::table('inventory_movements')->count());
+        $this->assertDatabaseHas('sale_items', [
+            'id' => $sale['saleItemId'],
+            'fulfilled_quantity_liters' => '0.00',
+        ]);
 
         $this->actingAs($records['dispatchOfficer'])
             ->get(route('dispatch.fuel-lifting'))

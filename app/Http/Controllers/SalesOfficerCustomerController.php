@@ -980,6 +980,9 @@ class SalesOfficerCustomerController extends Controller
     private function fuelTypeOptions()
     {
         $balances = DB::table('inventory_movements')
+            ->whereIn('direction', ['in', 'out'])
+            ->whereNotExists($this->cancelledStockOutExists())
+            ->whereNotExists($this->cancelledHaulAllocationExists())
             ->selectRaw("fuel_type_id, COALESCE(SUM(CASE WHEN direction = 'in' THEN quantity_liters ELSE -quantity_liters END), 0) as available_liters")
             ->groupBy('fuel_type_id');
 
@@ -1205,5 +1208,27 @@ class SalesOfficerCustomerController extends Controller
     private function formatLiters(mixed $value): string
     {
         return $this->formatNumber($value).' L';
+    }
+
+    private function cancelledStockOutExists(): \Closure
+    {
+        return function (Builder $query): void {
+            $query->selectRaw('1')
+                ->from('stock_outs')
+                ->whereColumn('stock_outs.id', 'inventory_movements.reference_id')
+                ->where('inventory_movements.reference_type', 'stock_out')
+                ->where('stock_outs.status', 'cancelled');
+        };
+    }
+
+    private function cancelledHaulAllocationExists(): \Closure
+    {
+        return function (Builder $query): void {
+            $query->selectRaw('1')
+                ->from('haul_allocations')
+                ->whereColumn('haul_allocations.id', 'inventory_movements.reference_id')
+                ->where('inventory_movements.reference_type', 'haul_allocation')
+                ->where('haul_allocations.status', 'cancelled');
+        };
     }
 }

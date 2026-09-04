@@ -110,6 +110,10 @@ class DispatchDeliveryStatusManagementTest extends TestCase
         Carbon::setTestNow('2026-08-31 11:00:00');
         $records = $this->baseRecords();
         $allocationId = $this->directAllocation($records, ['quantity_liters' => 10000]);
+        $saleItemId = (int) DB::table('sale_items')
+            ->where('sale_id', DB::table('haul_allocations')->where('id', $allocationId)->value('sale_id'))
+            ->value('id');
+        DB::table('sale_items')->where('id', $saleItemId)->update(['fulfilled_quantity_liters' => 0]);
         $deliveryId = $this->depotDelivery($records, $allocationId, ['scheduled_quantity_liters' => 10000]);
         $before = $this->sideEffectCounts($records);
 
@@ -125,9 +129,14 @@ class DispatchDeliveryStatusManagementTest extends TestCase
             'source_type' => 'depot',
             'status' => 'delivered',
             'actual_quantity_liters' => '10000.00',
+            'sale_item_id' => $saleItemId,
         ]);
         $this->assertDatabaseHas('haul_allocations', ['id' => $allocationId, 'status' => 'delivered']);
         $this->assertSame($before, $this->sideEffectCounts($records));
+        $this->assertDatabaseHas('sale_items', [
+            'id' => $saleItemId,
+            'fulfilled_quantity_liters' => '10000.00',
+        ]);
 
         Carbon::setTestNow();
     }

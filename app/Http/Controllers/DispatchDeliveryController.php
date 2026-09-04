@@ -184,6 +184,12 @@ class DispatchDeliveryController extends Controller
                 ->update($updates);
 
             if ($nextStatus === 'delivered' && $row->source_type === 'depot') {
+                $fulfillmentError = $this->recordDepotDeliveryFulfillment($row);
+
+                if ($fulfillmentError) {
+                    return $fulfillmentError;
+                }
+
                 $this->markDirectAllocationDeliveredWhenComplete($row);
             }
 
@@ -397,6 +403,12 @@ class DispatchDeliveryController extends Controller
             return 'The selected direct depot allocation is not eligible for delivery scheduling.';
         }
 
+        $saleItem = $this->saleItemForDirectAllocationForUpdate($allocation, $quantity);
+
+        if (! $saleItem) {
+            return 'The selected direct depot allocation cannot be matched to an eligible sale item.';
+        }
+
         if (! $this->haulAllocationsAreWithinQuantity((int) $allocation->haul_id, (float) $allocation->haul_quantity_liters)) {
             return 'The selected haul has invalid allocation quantities.';
         }
@@ -413,9 +425,30 @@ class DispatchDeliveryController extends Controller
             return 'Delivery quantity cannot exceed the remaining direct depot allocation.';
         }
 
+        $salePending = (float) DB::table('deliveries')
+            ->where(function (Builder $query) use ($allocation, $saleItem): void {
+                $query->where('sale_item_id', $saleItem->id)
+                    ->orWhere(function (Builder $query) use ($allocation): void {
+                        $query->whereNull('sale_item_id')
+                            ->where('sale_id', $allocation->sale_id)
+                            ->where('fuel_type_id', $allocation->fuel_type_id);
+                    });
+            })
+            ->where('source_type', 'depot')
+            ->whereIn('status', ['scheduled', 'in_transit', 'incomplete'])
+            ->lockForUpdate()
+            ->selectRaw('COALESCE(SUM(COALESCE(actual_quantity_liters, scheduled_quantity_liters, 0)), 0) as pending_liters')
+            ->value('pending_liters');
+        $saleRemaining = round((float) $saleItem->quantity_liters - (float) $saleItem->fulfilled_quantity_liters - $salePending, 2);
+
+        if ($quantity > $saleRemaining) {
+            return 'Delivery quantity cannot exceed the remaining sale quantity.';
+        }
+
         DB::table('deliveries')->insert([
             'delivery_code' => $this->nextCode('deliveries', 'delivery_code', 'DLV'),
             'sale_id' => $allocation->sale_id,
+            'sale_item_id' => $saleItem->id,
             'customer_id' => $allocation->customer_id,
             'fuel_type_id' => $allocation->fuel_type_id,
             'source_type' => 'depot',
@@ -655,6 +688,9 @@ class DispatchDeliveryController extends Controller
             ->lockForUpdate()
             ->first([
                 'deliveries.id',
+                'deliveries.sale_id',
+                'deliveries.sale_item_id',
+                'deliveries.fuel_type_id',
                 'deliveries.source_type',
                 'deliveries.haul_allocation_id',
                 'deliveries.scheduled_quantity_liters',
@@ -721,6 +757,81 @@ class DispatchDeliveryController extends Controller
                     'updated_at' => now(),
                 ]);
         }
+    }
+
+    private function saleItemForDirectAllocationForUpdate(object $allocation, float $quantity): ?object
+    {
+        $items = DB::table('sale_items')
+            ->where('sale_id', $allocation->sale_id)
+            ->where('fuel_type_id', $allocation->fuel_type_id)
+            ->lockForUpdate()
+            ->get(['id', 'quantity_liters', 'fulfilled_quantity_liters']);
+
+        if ($items->count() !== 1) {
+            return null;
+        }
+
+        $item = $items->first();
+
+        return round((float) $item->quantity_liters - (float) $item->fulfilled_quantity_liters, 2) >= $quantity
+            ? $item
+            : null;
+    }
+
+    private function recordDepotDeliveryFulfillment(object $delivery): ?string
+    {
+        $saleItemId = $delivery->sale_item_id
+            ? (int) $delivery->sale_item_id
+            : $this->saleItemIdForExistingDirectDelivery($delivery);
+
+        if (! $saleItemId) {
+            return 'The direct depot delivery cannot be matched to an eligible sale item.';
+        }
+
+        $quantity = round((float) ($delivery->actual_quantity_liters ?? $delivery->scheduled_quantity_liters ?? 0), 2);
+
+        if ($quantity <= 0) {
+            return 'Delivered quantity must be positive.';
+        }
+
+        $updated = DB::table('sale_items')
+            ->where('id', $saleItemId)
+            ->where('fulfilled_quantity_liters', '<=', DB::raw('quantity_liters - '.$quantity))
+            ->update([
+                'fulfilled_quantity_liters' => DB::raw('fulfilled_quantity_liters + '.$quantity),
+                'updated_at' => now(),
+            ]);
+
+        if ($updated !== 1) {
+            return 'Delivered quantity cannot exceed the remaining sale quantity.';
+        }
+
+        if (! $delivery->sale_item_id) {
+            DB::table('deliveries')
+                ->where('id', $delivery->id)
+                ->whereNull('sale_item_id')
+                ->update([
+                    'sale_item_id' => $saleItemId,
+                    'updated_at' => now(),
+                ]);
+        }
+
+        return null;
+    }
+
+    private function saleItemIdForExistingDirectDelivery(object $delivery): ?int
+    {
+        if (! $delivery->sale_id || ! $delivery->fuel_type_id) {
+            return null;
+        }
+
+        $items = DB::table('sale_items')
+            ->where('sale_id', $delivery->sale_id)
+            ->where('fuel_type_id', $delivery->fuel_type_id)
+            ->lockForUpdate()
+            ->get(['id']);
+
+        return $items->count() === 1 ? (int) $items->first()->id : null;
     }
 
     private function garageStockOutOptions()

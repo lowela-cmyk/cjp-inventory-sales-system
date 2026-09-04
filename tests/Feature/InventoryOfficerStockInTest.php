@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Services\DashboardSummaryService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -313,6 +314,40 @@ class InventoryOfficerStockInTest extends TestCase
             ->assertSessionHasErrors('stock_in');
 
         $this->assertSame(0, DB::table('inventory_movements')->count());
+    }
+
+    public function test_cancelled_garage_allocation_stock_in_is_excluded_from_rows_and_inventory_totals(): void
+    {
+        $records = $this->stockInRecords();
+
+        DB::table('inventory_movements')->insert([
+            'movement_code' => 'MOV-CANCELLED-ALLOC-IN',
+            'storage_location_id' => $records['garageId'],
+            'fuel_type_id' => $records['fuelTypeId'],
+            'movement_type' => 'stock_in',
+            'direction' => 'in',
+            'quantity_liters' => 15000,
+            'unit_cost' => 52.50,
+            'reference_type' => 'haul_allocation',
+            'reference_id' => $records['garageAllocationId'],
+            'movement_date' => '2026-08-30 08:00:00',
+            'remarks' => 'Cancelled allocation receipt',
+            'created_by' => $records['inventoryOfficer']->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('haul_allocations')->where('id', $records['garageAllocationId'])->update(['status' => 'cancelled']);
+
+        /** @var DashboardSummaryService $summary */
+        $summary = app(DashboardSummaryService::class);
+
+        $this->assertSame(0.0, $summary->totalInventoryLiters());
+
+        $this->actingAs($records['inventoryOfficer'])
+            ->get(route('inventory-officer.inventory.stock-in'))
+            ->assertOk()
+            ->assertDontSee('MOV-CANCELLED-ALLOC-IN')
+            ->assertDontSee('Cancelled allocation receipt');
     }
 
     public function test_stock_in_rejects_haul_allocations_that_exceed_hauled_quantity(): void

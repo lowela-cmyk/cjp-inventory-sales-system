@@ -50,6 +50,7 @@ class AdminDashboardService
             (string) ($filters['trend_period'] ?? 'week'),
             isset($filters['trend_year']) ? (int) $filters['trend_year'] : null
         );
+        $salesQuantityByDate = $this->salesQuantityByDate();
 
         return [
             'metricCards' => $summary['metricCards'],
@@ -77,8 +78,8 @@ class AdminDashboardService
             'expectedRevenue' => $expectedRevenue,
             'expectedRevenueChart' => $expectedRevenue['chart'],
             'revenueBars' => $this->revenueBars($totalSalesRevenue, $collectedRevenue, $outstandingBalance),
-            'demandDays' => $this->demandByDay(),
-            'demandMonths' => $this->demandByMonth(),
+            'demandDays' => $this->demandByDay($salesQuantityByDate),
+            'demandMonths' => $this->demandByMonth($salesQuantityByDate),
         ];
     }
 
@@ -106,10 +107,10 @@ class AdminDashboardService
     /**
      * @return array<int, array{label: string, percent: int, hot: bool}>
      */
-    private function demandByDay(): array
+    private function demandByDay(Collection $salesQuantityByDate): array
     {
         $labels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-        $totals = $this->salesQuantityByDate()->groupBy(fn (object $row): string => CarbonImmutable::parse($row->sale_date)->format('D'))
+        $totals = $salesQuantityByDate->groupBy(fn (object $row): string => CarbonImmutable::parse($row->sale_date)->format('D'))
             ->map(fn (Collection $rows): float => (float) $rows->sum('quantity'));
 
         return $this->normalizedDemandRows($labels, $totals);
@@ -118,10 +119,10 @@ class AdminDashboardService
     /**
      * @return array<int, array{label: string, percent: int, hot: bool}>
      */
-    private function demandByMonth(): array
+    private function demandByMonth(Collection $salesQuantityByDate): array
     {
         $labels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        $totals = $this->salesQuantityByDate()->groupBy(fn (object $row): string => CarbonImmutable::parse($row->sale_date)->format('M'))
+        $totals = $salesQuantityByDate->groupBy(fn (object $row): string => CarbonImmutable::parse($row->sale_date)->format('M'))
             ->map(fn (Collection $rows): float => (float) $rows->sum('quantity'));
 
         return $this->normalizedDemandRows($labels, $totals);

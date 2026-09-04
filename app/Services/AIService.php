@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -41,6 +42,16 @@ class AIService
         $url = $provider === 'groq' ? $baseUrl.'/chat/completions' : $baseUrl.'/interactions';
         $attempts = max(1, min(2, (int) ($options['attempts'] ?? 2)));
         $response = null;
+        $cacheTtl = max(0, (int) config('services.ai.cache_ttl', 300));
+        $cacheKey = $this->cacheKey($messages, $options, $provider, $model, $baseUrl);
+
+        if (($options['cache'] ?? true) && $cacheTtl > 0) {
+            $cached = Cache::get($cacheKey);
+
+            if (is_array($cached) && ($cached['ok'] ?? false) === true) {
+                return $cached;
+            }
+        }
 
         for ($attempt = 1; $attempt <= $attempts; $attempt++) {
             try {
@@ -90,7 +101,7 @@ class AIService
 
         $text = $this->safeOutput($text);
 
-        return [
+        $result = [
             'ok' => true,
             'success' => true,
             'text' => $text,
@@ -101,6 +112,12 @@ class AIService
             'provider' => $provider,
             'model' => $model,
         ];
+
+        if (($options['cache'] ?? true) && $cacheTtl > 0) {
+            Cache::put($cacheKey, $result, $cacheTtl);
+        }
+
+        return $result;
     }
 
     /**
@@ -111,6 +128,7 @@ class AIService
         return $this->generateText('Reply with: AI connection successful.', [
             'temperature' => 0,
             'max_output_tokens' => 32,
+            'cache' => false,
         ]);
     }
 
@@ -297,6 +315,47 @@ class AIService
         $text = preg_replace('/[^\P{C}\t\n\r]+/u', '', $text) ?? '';
 
         return mb_substr(trim($text), 0, self::MAX_TEXT_LENGTH);
+    }
+
+    /**
+     * @param  string|array<int, array{role?: string, content?: string}>  $messages
+     * @param  array<string, mixed>  $options
+     */
+    private function cacheKey(string|array $messages, array $options, string $provider, string $model, string $baseUrl): string
+    {
+        $cacheOptions = $options;
+        unset($cacheOptions['cache'], $cacheOptions['attempts']);
+
+        return 'ai-response:'.hash('sha256', json_encode([
+            'provider' => $provider,
+            'model' => $model,
+            'base_url' => $baseUrl,
+            'messages' => $this->cacheableMessages($messages),
+            'options' => $cacheOptions,
+        ], JSON_THROW_ON_ERROR));
+    }
+
+    /**
+     * @param  string|array<int, array{role?: string, content?: string}>  $messages
+     * @return string|array<int, array{role?: string, content?: string}>
+     */
+    private function cacheableMessages(string|array $messages): string|array
+    {
+        $normalize = fn (string $content): string => preg_replace(
+            '/"generated_at"\s*:\s*"[^"]+"/',
+            '"generated_at":"cached-at-runtime"',
+            $content
+        ) ?? $content;
+
+        if (is_string($messages)) {
+            return $normalize($messages);
+        }
+
+        return collect($messages)
+            ->map(fn (array $message): array => array_merge($message, [
+                'content' => $normalize((string) ($message['content'] ?? '')),
+            ]))
+            ->all();
     }
 
     /**

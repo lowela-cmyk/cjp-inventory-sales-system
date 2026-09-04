@@ -28,6 +28,7 @@ return [
         'model' => env('AI_MODEL', 'openai/gpt-oss-20b'),
         'base_url' => env('AI_BASE_URL', 'https://api.groq.com/openai/v1'),
         'timeout' => (int) env('AI_TIMEOUT', 60),
+        'cache_ttl' => (int) env('AI_CACHE_TTL', 300),
     ],
 
     'ses' => [

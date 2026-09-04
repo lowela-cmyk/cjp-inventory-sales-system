@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use Closure;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
@@ -16,28 +17,35 @@ class DashboardSummaryService
     private const STOCK_LEVEL_COLORS = ['#f7043a', '#3b9a35', '#e28a22', '#0d1424', '#6b7280'];
 
     /**
+     * @var array<string, mixed>
+     */
+    private array $memo = [];
+
+    /**
      * @return array<string, mixed>
      */
     public function adminSummary(): array
     {
-        $totalInventoryLiters = $this->totalInventoryLiters();
-        $totalSalesRevenue = $this->totalSalesRevenue();
-        $collectedRevenue = $this->collectedRevenue();
-        $outstandingBalance = $this->outstandingReceivables();
+        return $this->remember('adminSummary', function (): array {
+            $totalInventoryLiters = $this->totalInventoryLiters();
+            $totalSalesRevenue = $this->totalSalesRevenue();
+            $collectedRevenue = $this->collectedRevenue();
+            $outstandingBalance = $this->outstandingReceivables();
 
-        return [
-            'totalInventoryLiters' => $totalInventoryLiters,
-            'totalSalesRevenue' => $totalSalesRevenue,
-            'collectedRevenue' => $collectedRevenue,
-            'outstandingReceivables' => $outstandingBalance,
-            'metricCards' => [
-                ['Total Inventory (KL)', $this->formatKiloliters($totalInventoryLiters), 'Across all depots', ''],
-                ['Total Sales Revenue', $this->formatMoney($totalSalesRevenue), 'Cumulative', ''],
-                ['Outstanding Balance', $this->formatMoney($outstandingBalance), 'Receivables', 'color:#a31318'],
-                ['Unlifted Fuel (KL)', $this->formatKiloliters($this->unliftedFuelLiters()), 'Pending lifting', ''],
-                ['Active Deliveries', number_format($this->activeDeliveries()), 'Scheduled / in transit', ''],
-            ],
-        ];
+            return [
+                'totalInventoryLiters' => $totalInventoryLiters,
+                'totalSalesRevenue' => $totalSalesRevenue,
+                'collectedRevenue' => $collectedRevenue,
+                'outstandingReceivables' => $outstandingBalance,
+                'metricCards' => [
+                    ['Total Inventory (KL)', $this->formatKiloliters($totalInventoryLiters), 'Across all depots', ''],
+                    ['Total Sales Revenue', $this->formatMoney($totalSalesRevenue), 'Cumulative', ''],
+                    ['Outstanding Balance', $this->formatMoney($outstandingBalance), 'Receivables', 'color:#a31318'],
+                    ['Unlifted Fuel (KL)', $this->formatKiloliters($this->unliftedFuelLiters()), 'Pending lifting', ''],
+                    ['Active Deliveries', number_format($this->activeDeliveries()), 'Scheduled / in transit', ''],
+                ],
+            ];
+        });
     }
 
     /**
@@ -45,13 +53,13 @@ class DashboardSummaryService
      */
     public function inventoryCards(): array
     {
-        return [
+        return $this->remember('inventoryCards', fn (): array => [
             ['label' => 'Total Inventory', 'value' => $this->formatLiters($this->totalInventoryLiters()), 'caption' => 'Current stock'],
             ['label' => 'Stock-In Today', 'value' => $this->formatLiters($this->stockMovementLiters('in', CarbonImmutable::now())), 'caption' => 'Received today'],
             ['label' => 'Stock-Out Today', 'value' => $this->formatLiters($this->stockMovementLiters('out', CarbonImmutable::now())), 'caption' => 'Released today'],
             ['label' => 'Unlifted Fuel', 'value' => $this->formatLiters($this->unliftedFuelLiters()), 'caption' => 'Pending lifting'],
             ['label' => 'Open Purchases', 'value' => number_format($this->openPurchases()), 'caption' => 'Not cancelled'],
-        ];
+        ]);
     }
 
     /**
@@ -59,13 +67,13 @@ class DashboardSummaryService
      */
     public function salesCards(): array
     {
-        return [
+        return $this->remember('salesCards', fn (): array => [
             ['label' => 'Total Sales', 'value' => $this->formatMoney($this->totalSalesRevenue()), 'caption' => 'Valid sales'],
             ['label' => "Today's Sales", 'value' => $this->formatMoney($this->salesRevenueForDate(CarbonImmutable::now())), 'caption' => 'Valid sales today'],
             ['label' => 'Payments Collected', 'value' => $this->formatMoney($this->collectedRevenue()), 'caption' => 'Recorded payments'],
             ['label' => 'Outstanding Receivables', 'value' => $this->formatMoney($this->outstandingReceivables()), 'caption' => 'Unpaid balances'],
             ['label' => 'Active Customers', 'value' => number_format($this->activeCustomers()), 'caption' => 'Customer records'],
-        ];
+        ]);
     }
 
     /**
@@ -76,6 +84,7 @@ class DashboardSummaryService
         $period = in_array($period, self::SALES_TREND_PERIODS, true) ? $period : 'week';
         $year = $year ?: CarbonImmutable::now()->year;
 
+        return $this->remember('salesTrend:'.$period.':'.$year, function () use ($period, $year): array {
         [$labels, $values] = match ($period) {
             'month' => $this->monthlySalesTrend($year),
             'year' => $this->yearlySalesTrend($year),
@@ -114,6 +123,7 @@ class DashboardSummaryService
                 ]],
             ],
         ];
+        });
     }
 
     /**
@@ -127,6 +137,7 @@ class DashboardSummaryService
      */
     public function stockLevels(): array
     {
+        return $this->remember('stockLevels', function (): array {
         $rows = DB::table('fuel_types')
             ->leftJoinSub($this->inventoryBalancesByFuelQuery(), 'inventory_balances', 'inventory_balances.fuel_type_id', '=', 'fuel_types.id')
             ->where('fuel_types.status', 'active')
@@ -176,6 +187,7 @@ class DashboardSummaryService
             'totalLiters' => array_sum($values),
             'formattedTotal' => $this->formatLiters(array_sum($values)),
         ];
+        });
     }
 
     /**
@@ -190,6 +202,7 @@ class DashboardSummaryService
      */
     public function receivablesMonitoring(int $limit = 5): array
     {
+        return $this->remember('receivablesMonitoring:'.$limit, function () use ($limit): array {
         $rows = $this->outstandingReceivableRowsQuery()
             ->orderByRaw('(sale_totals.total - COALESCE(payment_totals.paid, 0)) desc')
             ->orderBy('sales.sale_date')
@@ -222,6 +235,7 @@ class DashboardSummaryService
             'formattedTotalOutstanding' => $this->formatMoney($outstanding),
             'outstandingSalesCount' => $this->outstandingSalesCount(),
         ];
+        });
     }
 
     /**
@@ -230,6 +244,7 @@ class DashboardSummaryService
      */
     public function unliftedFuelMonitoring(array $filters = [], int $limit = 6): array
     {
+        return $this->remember('unliftedFuelMonitoring:'.md5(json_encode([$filters, $limit], JSON_THROW_ON_ERROR)), function () use ($filters, $limit): array {
         $base = $this->unliftedPurchaseItemsQuery($filters);
         $summary = DB::query()
             ->fromSub(clone $base, 'unlifted_items')
@@ -315,6 +330,7 @@ class DashboardSummaryService
                 ]],
             ],
         ];
+        });
     }
 
     /**
@@ -325,6 +341,7 @@ class DashboardSummaryService
      */
     public function inventoryVarianceMonitoring(array $filters = [], int $limit = 6): array
     {
+        return $this->remember('inventoryVarianceMonitoring:'.md5(json_encode([$filters, $limit], JSON_THROW_ON_ERROR)), function () use ($filters, $limit): array {
         $rows = $this->inventoryVarianceRows($filters);
         $totalChecked = $rows->count();
         $varianceCount = $rows->where('variance_status', 'variance')->count();
@@ -364,6 +381,7 @@ class DashboardSummaryService
                 ]],
             ],
         ];
+        });
     }
 
     /**
@@ -375,6 +393,8 @@ class DashboardSummaryService
     public function expectedRevenue(?int $year = null): array
     {
         $year = $year ?: CarbonImmutable::now()->year;
+
+        return $this->remember('expectedRevenue:'.$year, function () use ($year): array {
         $labels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         $collectedByMonth = $this->collectedRevenueByPaymentMonth($year);
         $dueOutstandingByMonth = $this->outstandingReceivablesByDueMonth($year);
@@ -430,61 +450,62 @@ class DashboardSummaryService
                 ]],
             ],
         ];
+        });
     }
 
     public function totalInventoryLiters(): float
     {
-        return (float) DB::table('fuel_types')
+        return $this->remember('totalInventoryLiters', fn (): float => (float) DB::table('fuel_types')
             ->leftJoinSub($this->inventoryBalancesByFuelQuery(), 'inventory_balances', 'inventory_balances.fuel_type_id', '=', 'fuel_types.id')
             ->where('fuel_types.status', 'active')
             ->selectRaw('COALESCE(SUM(inventory_balances.liters), 0) as total')
-            ->value('total');
+            ->value('total'));
     }
 
     public function totalSalesRevenue(): float
     {
-        return (float) DB::query()
+        return $this->remember('totalSalesRevenue', fn (): float => (float) DB::query()
             ->fromSub($this->saleTotalsQuery(), 'sale_totals')
             ->selectRaw('COALESCE(SUM(total), 0) as total')
-            ->value('total');
+            ->value('total'));
     }
 
     public function collectedRevenue(): float
     {
-        return (float) DB::query()
+        return $this->remember('collectedRevenue', fn (): float => (float) DB::query()
             ->fromSub($this->paymentTotalsQuery(), 'payment_totals')
             ->selectRaw('COALESCE(SUM(paid), 0) as total')
-            ->value('total');
+            ->value('total'));
     }
 
     public function outstandingReceivables(): float
     {
-        return (float) DB::query()
+        return $this->remember('outstandingReceivables', fn (): float => (float) DB::query()
             ->fromSub($this->saleTotalsQuery(), 'sale_totals')
             ->leftJoinSub($this->paymentTotalsQuery(), 'payment_totals', 'payment_totals.sale_id', '=', 'sale_totals.sale_id')
             ->selectRaw('COALESCE(SUM(CASE WHEN sale_totals.total > COALESCE(payment_totals.paid, 0) THEN sale_totals.total - COALESCE(payment_totals.paid, 0) ELSE 0 END), 0) as total')
-            ->value('total');
+            ->value('total'));
     }
 
     public function outstandingSalesCount(): int
     {
-        return $this->outstandingReceivableRowsQuery()->count();
+        return $this->remember('outstandingSalesCount', fn (): int => $this->outstandingReceivableRowsQuery()->count());
     }
 
     public function unliftedFuelLiters(): float
     {
-        return (float) DB::query()
+        return $this->remember('unliftedFuelLiters', fn (): float => (float) DB::query()
             ->fromSub($this->unliftedPurchaseItemsQuery(), 'unlifted_items')
             ->selectRaw('COALESCE(SUM(remaining_liters), 0) as total')
-            ->value('total');
+            ->value('total'));
     }
 
     public function liftedFuelLiters(): float
     {
-        return (float) DB::query()
+        return $this->remember('liftedFuelLiters', fn (): float => (float) DB::query()
             ->fromSub($this->unliftedPurchaseItemsQuery(), 'unlifted_items')
             ->selectRaw('COALESCE(SUM(lifted_liters), 0) as total')
-            ->value('total');
+            ->value('total'));
     }
 
     /**
@@ -492,7 +513,7 @@ class DashboardSummaryService
      */
     public function unliftedFilterOptions(): array
     {
-        return [
+        return $this->remember('unliftedFilterOptions', fn (): array => [
             'statuses' => self::LIFTING_PROGRESS_STATUSES,
             'fuelTypes' => DB::table('fuel_types')
                 ->where('status', 'active')
@@ -502,7 +523,7 @@ class DashboardSummaryService
                 ->where('status', 'active')
                 ->orderBy('name')
                 ->get(['id', 'name']),
-        ];
+        ]);
     }
 
     /**
@@ -510,7 +531,7 @@ class DashboardSummaryService
      */
     public function inventoryVarianceFilterOptions(): array
     {
-        return [
+        return $this->remember('inventoryVarianceFilterOptions', fn (): array => [
             'statuses' => self::INVENTORY_VARIANCE_STATUSES,
             'fuelTypes' => DB::table('fuel_types')
                 ->where('status', 'active')
@@ -519,14 +540,14 @@ class DashboardSummaryService
             'customers' => DB::table('customers')
                 ->orderBy('name')
                 ->get(['id', 'name', 'company_name']),
-        ];
+        ]);
     }
 
     public function activeDeliveries(): int
     {
-        return DB::table('deliveries')
+        return $this->remember('activeDeliveries', fn (): int => DB::table('deliveries')
             ->whereIn('status', self::ACTIVE_DELIVERY_STATUSES)
-            ->count();
+            ->count());
     }
 
     public function saleTotalsQuery(): Builder
@@ -631,24 +652,28 @@ class DashboardSummaryService
 
     private function salesRevenueForDate(CarbonImmutable $date): float
     {
-        return (float) DB::table('sales')
+        $key = 'salesRevenueForDate:'.$date->toDateString();
+
+        return $this->remember($key, fn (): float => (float) DB::table('sales')
             ->join('sale_items', 'sale_items.sale_id', '=', 'sales.id')
             ->whereNull('sales.deleted_at')
             ->whereIn('sales.status', self::VALID_SALE_STATUSES)
             ->whereDate('sales.sale_date', $date->toDateString())
             ->selectRaw('COALESCE(SUM(sale_items.line_total), 0) as total')
-            ->value('total');
+            ->value('total'));
     }
 
     private function stockMovementLiters(string $direction, CarbonImmutable $date): float
     {
-        return (float) DB::table('inventory_movements')
+        $key = 'stockMovementLiters:'.$direction.':'.$date->toDateString();
+
+        return $this->remember($key, fn (): float => (float) DB::table('inventory_movements')
             ->where('direction', $direction)
             ->whereNotExists($this->cancelledStockOutExists())
             ->whereNotExists($this->cancelledHaulAllocationExists())
             ->whereDate('movement_date', $date->toDateString())
             ->selectRaw('COALESCE(SUM(quantity_liters), 0) as total')
-            ->value('total');
+            ->value('total'));
     }
 
     private function outstandingReceivableRowsQuery(): Builder
@@ -1153,16 +1178,25 @@ class DashboardSummaryService
 
     private function openPurchases(): int
     {
-        return DB::table('purchases')
+        return $this->remember('openPurchases', fn (): int => DB::table('purchases')
             ->whereNull('deleted_at')
             ->where('status', '!=', 'cancelled')
-            ->count();
+            ->count());
     }
 
     private function activeCustomers(): int
     {
-        return DB::table('customers')
+        return $this->remember('activeCustomers', fn (): int => DB::table('customers')
             ->where('status', 'active')
-            ->count();
+            ->count());
+    }
+
+    private function remember(string $key, Closure $callback): mixed
+    {
+        if (array_key_exists($key, $this->memo)) {
+            return $this->memo[$key];
+        }
+
+        return $this->memo[$key] = $callback();
     }
 }

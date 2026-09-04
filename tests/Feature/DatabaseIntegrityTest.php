@@ -193,6 +193,65 @@ class DatabaseIntegrityTest extends TestCase
         $this->assertNoBrokenOperationalLinks();
     }
 
+    public function test_stock_out_inventory_movement_link_is_unique_when_present(): void
+    {
+        $records = $this->baseRecords();
+        $sale = $this->createSaleViaRoute($records, [
+            'sale_code' => 'SLS-DB-UNIQUE-MOVEMENT',
+            'quantity_liters' => 20000,
+            'unit_price' => 5,
+        ]);
+        $movementId = DB::table('inventory_movements')->insertGetId([
+            'movement_code' => 'MOV-UNIQUE-STOCK-OUT',
+            'storage_location_id' => $records['garageId'],
+            'fuel_type_id' => $records['fuelTypeId'],
+            'movement_type' => 'stock_out',
+            'direction' => 'out',
+            'quantity_liters' => 10000,
+            'unit_cost' => null,
+            'reference_type' => 'stock_out',
+            'reference_id' => 1,
+            'movement_date' => '2026-09-04 11:00:00',
+            'created_by' => $records['inventoryOfficer']->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('stock_outs')->insert([
+            'stock_out_code' => 'STO-UNIQUE-MOVEMENT-A',
+            'sale_id' => $sale['saleId'],
+            'sale_item_id' => $sale['saleItemId'],
+            'customer_id' => $records['customerId'],
+            'fuel_type_id' => $records['fuelTypeId'],
+            'storage_location_id' => $records['garageId'],
+            'inventory_movement_id' => $movementId,
+            'quantity_liters' => 10000,
+            'stock_out_at' => '2026-09-04 11:00:00',
+            'status' => 'released',
+            'created_by' => $records['inventoryOfficer']->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->assertQueryFails(fn (): bool => DB::table('stock_outs')->insert([
+            'stock_out_code' => 'STO-UNIQUE-MOVEMENT-B',
+            'sale_id' => $sale['saleId'],
+            'sale_item_id' => $sale['saleItemId'],
+            'customer_id' => $records['customerId'],
+            'fuel_type_id' => $records['fuelTypeId'],
+            'storage_location_id' => $records['garageId'],
+            'inventory_movement_id' => $movementId,
+            'quantity_liters' => 10000,
+            'stock_out_at' => '2026-09-04 12:00:00',
+            'status' => 'released',
+            'created_by' => $records['inventoryOfficer']->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]));
+
+        $this->assertSame(1, DB::table('stock_outs')->where('inventory_movement_id', $movementId)->count());
+    }
+
     public function test_failed_transactions_duplicates_and_cancelled_records_do_not_leave_inconsistent_data(): void
     {
         $records = $this->baseRecords();

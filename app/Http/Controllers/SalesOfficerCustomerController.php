@@ -7,6 +7,7 @@ use Illuminate\Database\Query\Builder;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -445,7 +446,7 @@ class SalesOfficerCustomerController extends Controller
 
     private function customerRows(?string $search)
     {
-        return DB::table('customers')
+        $rows = DB::table('customers')
             ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
                 'customer_code',
                 'name',
@@ -470,7 +471,19 @@ class SalesOfficerCustomerController extends Controller
                 'status',
                 'created_at',
                 'updated_at',
-            ])
+            ]);
+
+        $customerIds = $rows
+            ->pluck('id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->filter()
+            ->unique()
+            ->values();
+
+        $transactionSummaries = $this->transactionSummaries($customerIds);
+        $outstandingTotals = $this->customerOutstandingTotals($customerIds);
+
+        return $rows
             ->map(fn (object $row): array => [
                 'id' => (int) $row->id,
                 'modal_id' => 'so-customer-edit-'.$row->id,
@@ -502,8 +515,8 @@ class SalesOfficerCustomerController extends Controller
                     'Account Status' => $this->label($row->status),
                     'Date Added' => $this->formatDateTime($row->created_at),
                     'Last Updated' => $this->formatDateTime($row->updated_at),
-                    'Transactions' => $this->transactionSummary((int) $row->id),
-                    'Outstanding Receivables' => 'PHP '.$this->formatNumber($this->customerOutstandingTotal((int) $row->id)),
+                    'Transactions' => $transactionSummaries[(int) $row->id] ?? 'No transaction records found',
+                    'Outstanding Receivables' => 'PHP '.$this->formatNumber($outstandingTotals[(int) $row->id] ?? 0),
                 ],
             ]);
     }
@@ -536,7 +549,7 @@ class SalesOfficerCustomerController extends Controller
             ->selectRaw('sale_items.sale_id, COUNT(*) as item_count, SUM(sale_items.quantity_liters) as total_quantity_liters, SUM(sale_items.line_total) as sale_total, MIN(fuel_types.name) as first_fuel_name')
             ->groupBy('sale_items.sale_id');
 
-        return DB::table('sales')
+        $rows = DB::table('sales')
             ->joinSub($items, 'items_total', 'items_total.sale_id', '=', 'sales.id')
             ->join('customers', 'customers.id', '=', 'sales.customer_id')
             ->leftJoin('receivables', 'receivables.sale_id', '=', 'sales.id')
@@ -570,18 +583,34 @@ class SalesOfficerCustomerController extends Controller
                 'receivables.due_date',
                 'receivables.status as receivable_status',
                 'payments_total.total_paid',
-            ])
-            ->map(function (object $row): array {
+            ]);
+
+        $saleIds = $rows
+            ->pluck('sale_id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->filter()
+            ->unique()
+            ->values();
+
+        $itemsBySale = $this->itemsForSales($saleIds);
+        $latestPaymentDates = $this->latestPaymentDatesForSales($saleIds);
+        $dependencyMap = $this->saleDependencyMap($saleIds);
+        $paymentsBySale = $this->paymentsForSales($saleIds);
+        $schedulesBySale = $this->paymentSchedulesForSales($saleIds);
+
+        return $rows
+            ->map(function (object $row) use ($itemsBySale, $latestPaymentDates, $dependencyMap, $paymentsBySale, $schedulesBySale): array {
+                $saleId = (int) $row->sale_id;
                 $paid = (float) ($row->total_paid ?? 0);
                 $saleTotal = (float) $row->sale_total;
                 $balance = max(0, $saleTotal - $paid);
                 $receivableStatus = $this->receivableStatusForSale($saleTotal, $paid, $row->due_date);
                 $status = $this->receivableStatusLabel($receivableStatus);
-                $saleItems = $this->itemsForSale((int) $row->sale_id);
-                $latestPaymentDate = $this->latestPaymentDateForSale((int) $row->sale_id);
+                $saleItems = $itemsBySale[$saleId] ?? [];
+                $latestPaymentDate = $latestPaymentDates[$saleId] ?? null;
 
                 return [
-                    'id' => (int) $row->sale_id,
+                    'id' => $saleId,
                     'modal_id' => 'so-sales-edit-'.$row->sale_id,
                     'payment_id' => 'so-payment-history-'.$row->sale_id,
                     'payment_token' => (string) Str::uuid(),
@@ -594,7 +623,7 @@ class SalesOfficerCustomerController extends Controller
                     'receivable_status' => $receivableStatus,
                     'due_date' => $row->due_date,
                     'latest_payment_date' => $latestPaymentDate,
-                    'has_dependencies' => $this->hasSaleDependentActivity((int) $row->sale_id),
+                    'has_dependencies' => $dependencyMap[$saleId] ?? false,
                     'items' => $saleItems,
                     'class' => $this->rowClass($receivableStatus === 'overdue' ? 'overdue' : $status),
                     'cells' => [
@@ -628,8 +657,8 @@ class SalesOfficerCustomerController extends Controller
                         'Payment Terms' => $this->label($row->payment_terms),
                         'Payment Method' => $this->paymentMethodLabel($row->payment_method),
                     ],
-                    'payments' => $this->paymentsForSale((int) $row->sale_id),
-                    'payment_schedules' => $this->paymentSchedulesForSale((int) $row->sale_id),
+                    'payments' => $paymentsBySale[$saleId] ?? [],
+                    'payment_schedules' => $schedulesBySale[$saleId] ?? [],
                     'sale_total' => $this->formatNumber($saleTotal),
                     'total_paid' => $this->formatNumber($paid),
                     'balance' => $this->formatNumber($balance),
@@ -736,6 +765,39 @@ class SalesOfficerCustomerController extends Controller
             || DB::table('deliveries')->where('sale_id', $saleId)->exists()
             || DB::table('haul_allocations')->where('sale_id', $saleId)->exists()
             || DB::table('sale_items')->where('sale_id', $saleId)->where('fulfilled_quantity_liters', '>', 0)->exists();
+    }
+
+    /**
+     * @param Collection<int, int> $saleIds
+     * @return array<int, bool>
+     */
+    private function saleDependencyMap(Collection $saleIds): array
+    {
+        $ids = $saleIds
+            ->map(fn (mixed $id): int => (int) $id)
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($ids->isEmpty()) {
+            return [];
+        }
+
+        $dependentIds = collect()
+            ->merge(DB::table('payments')->whereIn('sale_id', $ids->all())->pluck('sale_id'))
+            ->merge(DB::table('stock_outs')->whereIn('sale_id', $ids->all())->pluck('sale_id'))
+            ->merge(DB::table('deliveries')->whereIn('sale_id', $ids->all())->pluck('sale_id'))
+            ->merge(DB::table('haul_allocations')->whereIn('sale_id', $ids->all())->pluck('sale_id'))
+            ->merge(DB::table('sale_items')->whereIn('sale_id', $ids->all())->where('fulfilled_quantity_liters', '>', 0)->pluck('sale_id'))
+            ->map(fn (mixed $id): int => (int) $id)
+            ->unique()
+            ->all();
+
+        $dependentSet = array_fill_keys($dependentIds, true);
+
+        return $ids
+            ->mapWithKeys(fn (int $id): array => [$id => isset($dependentSet[$id])])
+            ->all();
     }
 
     /**
@@ -851,8 +913,22 @@ class SalesOfficerCustomerController extends Controller
             ->lockForUpdate()
             ->get(['id', 'due_date', 'amount_due']);
 
+        $scheduleIds = $schedules
+            ->pluck('id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->filter()
+            ->values();
+
+        $paidBySchedule = $scheduleIds->isEmpty()
+            ? collect()
+            : DB::table('payments')
+                ->whereIn('payment_schedule_id', $scheduleIds->all())
+                ->selectRaw('payment_schedule_id, COALESCE(SUM(amount), 0) as paid')
+                ->groupBy('payment_schedule_id')
+                ->pluck('paid', 'payment_schedule_id');
+
         foreach ($schedules as $schedule) {
-            $paid = $this->paidTotalForSchedule((int) $schedule->id);
+            $paid = round((float) ($paidBySchedule[(int) $schedule->id] ?? 0), 2);
             $status = $this->paymentScheduleStatus((float) $schedule->amount_due, $paid, (string) $schedule->due_date);
 
             DB::table('payment_schedules')
@@ -908,11 +984,32 @@ class SalesOfficerCustomerController extends Controller
 
     private function latestPaymentDateForSale(int $saleId): ?string
     {
-        $date = DB::table('payments')
-            ->where('sale_id', $saleId)
-            ->max('payment_date');
+        return $this->latestPaymentDatesForSales(collect([$saleId]))[$saleId] ?? null;
+    }
 
-        return $date ? (string) $date : null;
+    /**
+     * @param Collection<int, int> $saleIds
+     * @return array<int, string|null>
+     */
+    private function latestPaymentDatesForSales(Collection $saleIds): array
+    {
+        $ids = $saleIds
+            ->map(fn (mixed $id): int => (int) $id)
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($ids->isEmpty()) {
+            return [];
+        }
+
+        return DB::table('payments')
+            ->whereIn('sale_id', $ids->all())
+            ->selectRaw('sale_id, MAX(payment_date) as latest_payment_date')
+            ->groupBy('sale_id')
+            ->pluck('latest_payment_date', 'sale_id')
+            ->mapWithKeys(fn (mixed $date, mixed $saleId): array => [(int) $saleId => $date ? (string) $date : null])
+            ->all();
     }
 
     private function nextCode(string $table, string $column, string $prefix): string
@@ -954,11 +1051,32 @@ class SalesOfficerCustomerController extends Controller
      */
     private function itemsForSale(int $saleId): array
     {
-        return DB::table('sale_items')
+        return $this->itemsForSales(collect([$saleId]))[$saleId] ?? [];
+    }
+
+    /**
+     * @param Collection<int, int> $saleIds
+     * @return array<int, array<int, array<string, mixed>>>
+     */
+    private function itemsForSales(Collection $saleIds): array
+    {
+        $ids = $saleIds
+            ->map(fn (mixed $id): int => (int) $id)
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($ids->isEmpty()) {
+            return [];
+        }
+
+        $items = DB::table('sale_items')
             ->join('fuel_types', 'fuel_types.id', '=', 'sale_items.fuel_type_id')
-            ->where('sale_items.sale_id', $saleId)
+            ->whereIn('sale_items.sale_id', $ids->all())
+            ->orderBy('sale_items.sale_id')
             ->orderBy('sale_items.id')
             ->get([
+                'sale_items.sale_id',
                 'sale_items.fuel_type_id',
                 'sale_items.quantity_liters',
                 'sale_items.unit_price',
@@ -966,13 +1084,20 @@ class SalesOfficerCustomerController extends Controller
                 'sale_items.fulfilled_quantity_liters',
                 'fuel_types.name as fuel_name',
             ])
-            ->map(fn (object $item): array => [
-                'fuel_type_id' => (int) $item->fuel_type_id,
-                'fuel_name' => $item->fuel_name,
-                'quantity_liters' => $item->quantity_liters,
-                'unit_price' => $item->unit_price,
-                'line_total' => $item->line_total,
-                'fulfilled_quantity_liters' => $item->fulfilled_quantity_liters,
+            ->groupBy(fn (object $item): int => (int) $item->sale_id);
+
+        return $ids
+            ->mapWithKeys(fn (int $saleId): array => [
+                $saleId => ($items[$saleId] ?? collect())
+                    ->map(fn (object $item): array => [
+                        'fuel_type_id' => (int) $item->fuel_type_id,
+                        'fuel_name' => $item->fuel_name,
+                        'quantity_liters' => $item->quantity_liters,
+                        'unit_price' => $item->unit_price,
+                        'line_total' => $item->line_total,
+                        'fulfilled_quantity_liters' => $item->fulfilled_quantity_liters,
+                    ])
+                    ->all(),
             ])
             ->all();
     }
@@ -1002,13 +1127,34 @@ class SalesOfficerCustomerController extends Controller
      */
     private function paymentsForSale(int $saleId): array
     {
-        return DB::table('payments')
+        return $this->paymentsForSales(collect([$saleId]))[$saleId] ?? [];
+    }
+
+    /**
+     * @param Collection<int, int> $saleIds
+     * @return array<int, array<int, array<string, string>>>
+     */
+    private function paymentsForSales(Collection $saleIds): array
+    {
+        $ids = $saleIds
+            ->map(fn (mixed $id): int => (int) $id)
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($ids->isEmpty()) {
+            return [];
+        }
+
+        $payments = DB::table('payments')
             ->leftJoin('users', 'users.id', '=', 'payments.received_by')
             ->leftJoin('payment_schedules', 'payment_schedules.id', '=', 'payments.payment_schedule_id')
-            ->where('payments.sale_id', $saleId)
+            ->whereIn('payments.sale_id', $ids->all())
+            ->orderBy('payments.sale_id')
             ->orderBy('payment_date')
             ->orderBy('payments.id')
             ->get([
+                'payments.sale_id',
                 'payments.id',
                 'payments.payment_code',
                 'payments.payment_date',
@@ -1019,18 +1165,25 @@ class SalesOfficerCustomerController extends Controller
                 'payment_schedules.due_date as schedule_due_date',
                 'users.name as received_by_name',
             ])
-            ->values()
-            ->map(fn (object $row, int $index): array => [
-                'sequence' => 'Installment #'.($index + 1),
-                'code' => $row->payment_code,
-                'date' => $this->formatDate($row->payment_date),
-                'amount' => $this->formatNumber($row->amount),
-                'method' => $this->paymentMethodLabel($row->method),
-                'reference' => $row->reference_number ?: 'N/A',
-                'schedule' => $row->schedule_due_date ? 'Due '.$this->formatDate($row->schedule_due_date) : 'Unscheduled',
-                'recorded_by' => $row->received_by_name ?: 'N/A',
-                'remarks' => $row->remarks ?: 'N/A',
-                'status' => 'Recorded',
+            ->groupBy(fn (object $row): int => (int) $row->sale_id);
+
+        return $ids
+            ->mapWithKeys(fn (int $saleId): array => [
+                $saleId => ($payments[$saleId] ?? collect())
+                    ->values()
+                    ->map(fn (object $row, int $index): array => [
+                        'sequence' => 'Installment #'.($index + 1),
+                        'code' => $row->payment_code,
+                        'date' => $this->formatDate($row->payment_date),
+                        'amount' => $this->formatNumber($row->amount),
+                        'method' => $this->paymentMethodLabel($row->method),
+                        'reference' => $row->reference_number ?: 'N/A',
+                        'schedule' => $row->schedule_due_date ? 'Due '.$this->formatDate($row->schedule_due_date) : 'Unscheduled',
+                        'recorded_by' => $row->received_by_name ?: 'N/A',
+                        'remarks' => $row->remarks ?: 'N/A',
+                        'status' => 'Recorded',
+                    ])
+                    ->all(),
             ])
             ->all();
     }
@@ -1040,39 +1193,67 @@ class SalesOfficerCustomerController extends Controller
      */
     private function paymentSchedulesForSale(int $saleId): array
     {
+        return $this->paymentSchedulesForSales(collect([$saleId]))[$saleId] ?? [];
+    }
+
+    /**
+     * @param Collection<int, int> $saleIds
+     * @return array<int, array<int, array<string, mixed>>>
+     */
+    private function paymentSchedulesForSales(Collection $saleIds): array
+    {
+        $ids = $saleIds
+            ->map(fn (mixed $id): int => (int) $id)
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($ids->isEmpty()) {
+            return [];
+        }
+
         $schedulePayments = DB::table('payments')
             ->selectRaw('payment_schedule_id, COALESCE(SUM(amount), 0) as paid')
             ->whereNotNull('payment_schedule_id')
             ->groupBy('payment_schedule_id');
 
-        return DB::table('payment_schedules')
+        $schedules = DB::table('payment_schedules')
             ->leftJoinSub($schedulePayments, 'schedule_payments', 'schedule_payments.payment_schedule_id', '=', 'payment_schedules.id')
-            ->where('payment_schedules.sale_id', $saleId)
+            ->whereIn('payment_schedules.sale_id', $ids->all())
+            ->orderBy('payment_schedules.sale_id')
             ->orderBy('payment_schedules.due_date')
             ->orderBy('payment_schedules.id')
             ->get([
+                'payment_schedules.sale_id',
                 'payment_schedules.id',
                 'payment_schedules.due_date',
                 'payment_schedules.amount_due',
                 'payment_schedules.status',
                 DB::raw('COALESCE(schedule_payments.paid, 0) as paid'),
             ])
-            ->values()
-            ->map(function (object $row, int $index): array {
-                $remaining = max(0, round((float) $row->amount_due - (float) $row->paid, 2));
+            ->groupBy(fn (object $row): int => (int) $row->sale_id);
 
-                return [
-                    'id' => (int) $row->id,
-                    'sequence' => 'Installment #'.($index + 1),
-                    'due_date' => $this->formatDate($row->due_date),
-                    'amount_due' => $this->formatNumber($row->amount_due),
-                    'paid' => $this->formatNumber($row->paid),
-                    'remaining' => $this->formatNumber($remaining),
-                    'status' => $this->label($row->status),
-                    'is_payable' => $remaining > 0,
-                    'label' => 'Installment #'.($index + 1).' / Due '.$this->formatDate($row->due_date).' / Remaining '.$this->formatNumber($remaining),
-                ];
-            })
+        return $ids
+            ->mapWithKeys(fn (int $saleId): array => [
+                $saleId => ($schedules[$saleId] ?? collect())
+                    ->values()
+                    ->map(function (object $row, int $index): array {
+                        $remaining = max(0, round((float) $row->amount_due - (float) $row->paid, 2));
+
+                        return [
+                            'id' => (int) $row->id,
+                            'sequence' => 'Installment #'.($index + 1),
+                            'due_date' => $this->formatDate($row->due_date),
+                            'amount_due' => $this->formatNumber($row->amount_due),
+                            'paid' => $this->formatNumber($row->paid),
+                            'remaining' => $this->formatNumber($remaining),
+                            'status' => $this->label($row->status),
+                            'is_payable' => $remaining > 0,
+                            'label' => 'Installment #'.($index + 1).' / Due '.$this->formatDate($row->due_date).' / Remaining '.$this->formatNumber($remaining),
+                        ];
+                    })
+                    ->all(),
+            ])
             ->all();
     }
 
@@ -1090,18 +1271,73 @@ class SalesOfficerCustomerController extends Controller
 
     private function transactionSummary(int $customerId): string
     {
-        $sales = DB::table('sales')->where('customer_id', $customerId)->whereNull('deleted_at')->count();
-        $deliveries = DB::table('deliveries')->where('customer_id', $customerId)->count();
+        return $this->transactionSummaries(collect([$customerId]))[$customerId] ?? 'No transaction records found';
+    }
 
-        if ($sales === 0 && $deliveries === 0) {
-            return 'No transaction records found';
+    /**
+     * @param Collection<int, int> $customerIds
+     * @return array<int, string>
+     */
+    private function transactionSummaries(Collection $customerIds): array
+    {
+        $ids = $customerIds
+            ->map(fn (mixed $id): int => (int) $id)
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($ids->isEmpty()) {
+            return [];
         }
 
-        return $sales.' sales / '.$deliveries.' deliveries';
+        $salesCounts = DB::table('sales')
+            ->whereIn('customer_id', $ids->all())
+            ->whereNull('deleted_at')
+            ->selectRaw('customer_id, COUNT(*) as sales_count')
+            ->groupBy('customer_id')
+            ->pluck('sales_count', 'customer_id');
+
+        $deliveryCounts = DB::table('deliveries')
+            ->whereIn('customer_id', $ids->all())
+            ->selectRaw('customer_id, COUNT(*) as delivery_count')
+            ->groupBy('customer_id')
+            ->pluck('delivery_count', 'customer_id');
+
+        return $ids
+            ->mapWithKeys(function (int $customerId) use ($salesCounts, $deliveryCounts): array {
+                $sales = (int) ($salesCounts[$customerId] ?? 0);
+                $deliveries = (int) ($deliveryCounts[$customerId] ?? 0);
+
+                return [
+                    $customerId => $sales === 0 && $deliveries === 0
+                        ? 'No transaction records found'
+                        : $sales.' sales / '.$deliveries.' deliveries',
+                ];
+            })
+            ->all();
     }
 
     private function customerOutstandingTotal(int $customerId): float
     {
+        return $this->customerOutstandingTotals(collect([$customerId]))[$customerId] ?? 0.0;
+    }
+
+    /**
+     * @param Collection<int, int> $customerIds
+     * @return array<int, float>
+     */
+    private function customerOutstandingTotals(Collection $customerIds): array
+    {
+        $ids = $customerIds
+            ->map(fn (mixed $id): int => (int) $id)
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($ids->isEmpty()) {
+            return [];
+        }
+
         $payments = DB::table('payments')
             ->selectRaw('sale_id, COALESCE(SUM(amount), 0) as total_paid')
             ->groupBy('sale_id');
@@ -1110,14 +1346,19 @@ class SalesOfficerCustomerController extends Controller
             ->selectRaw('sale_id, COALESCE(SUM(line_total), 0) as sale_total')
             ->groupBy('sale_id');
 
-        return round((float) DB::table('sales')
+        $totals = DB::table('sales')
             ->joinSub($items, 'items_total', 'items_total.sale_id', '=', 'sales.id')
             ->leftJoinSub($payments, 'payments_total', 'payments_total.sale_id', '=', 'sales.id')
-            ->where('sales.customer_id', $customerId)
+            ->whereIn('sales.customer_id', $ids->all())
             ->whereNull('sales.deleted_at')
             ->where('sales.status', '!=', 'cancelled')
-            ->selectRaw('COALESCE(SUM(CASE WHEN items_total.sale_total > COALESCE(payments_total.total_paid, 0) THEN items_total.sale_total - COALESCE(payments_total.total_paid, 0) ELSE 0 END), 0) as outstanding')
-            ->value('outstanding'), 2);
+            ->selectRaw('sales.customer_id, COALESCE(SUM(CASE WHEN items_total.sale_total > COALESCE(payments_total.total_paid, 0) THEN items_total.sale_total - COALESCE(payments_total.total_paid, 0) ELSE 0 END), 0) as outstanding')
+            ->groupBy('sales.customer_id')
+            ->pluck('outstanding', 'customer_id');
+
+        return $ids
+            ->mapWithKeys(fn (int $customerId): array => [$customerId => round((float) ($totals[$customerId] ?? 0), 2)])
+            ->all();
     }
 
     private function nextCustomerCode(): string

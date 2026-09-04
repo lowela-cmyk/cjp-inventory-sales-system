@@ -352,7 +352,7 @@ class InventoryOfficerPurchaseController extends Controller
             ->selectRaw('hauls.purchase_item_id, COALESCE(SUM(inventory_movements.quantity_liters), 0) as received_liters')
             ->groupBy('hauls.purchase_item_id');
 
-        return DB::table('purchase_items')
+        $rows = DB::table('purchase_items')
             ->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
             ->join('depots', 'depots.id', '=', 'purchases.depot_id')
             ->join('fuel_types', 'fuel_types.id', '=', 'purchase_items.fuel_type_id')
@@ -396,8 +396,12 @@ class InventoryOfficerPurchaseController extends Controller
                 DB::raw('COALESCE(allocation_totals.garage_allocated_liters, 0) as garage_allocated_liters'),
                 DB::raw('COALESCE(allocation_totals.direct_allocated_liters, 0) as direct_allocated_liters'),
                 DB::raw('COALESCE(received_totals.received_liters, 0) as received_liters'),
-            ])
-            ->map(function (object $row): array {
+            ]);
+
+        $dependencyMap = $this->purchaseDependencyMap($rows);
+
+        return $rows
+            ->map(function (object $row) use ($dependencyMap): array {
                 $inventoryStatus = $this->inventoryLinkStatus(
                     (float) $row->garage_allocated_liters,
                     (float) $row->received_liters,
@@ -417,7 +421,7 @@ class InventoryOfficerPurchaseController extends Controller
                     'receipt_url' => $this->isStoredReceipt($row->receipt_reference) ? route('purchase-receipts.show', $row->purchase_id) : null,
                     'payment_status' => $row->payment_status,
                     'purchase_status' => $row->purchase_status,
-                    'has_dependencies' => $this->hasDependentActivity($row),
+                    'has_dependencies' => $dependencyMap[(int) $row->id] ?? false,
                     'class' => $this->rowClass($row->payment_status),
                     'cells' => [
                         $row->purchase_code,
@@ -1168,6 +1172,42 @@ class InventoryOfficerPurchaseController extends Controller
 
                 return $row;
             });
+    }
+
+    /**
+     * @param Collection<int, object> $rows
+     * @return array<int, bool>
+     */
+    private function purchaseDependencyMap(Collection $rows): array
+    {
+        $ids = $rows
+            ->pluck('id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($ids->isEmpty()) {
+            return [];
+        }
+
+        $dependentIds = $rows
+            ->filter(fn (object $row): bool => (float) ($row->quantity_hauled_liters ?? 0) > 0)
+            ->pluck('id')
+            ->merge(DB::table('hauls')->whereIn('purchase_item_id', $ids->all())->pluck('purchase_item_id'))
+            ->merge(DB::table('inventory_movements')
+                ->where('reference_type', 'purchase_item')
+                ->whereIn('reference_id', $ids->all())
+                ->pluck('reference_id'))
+            ->map(fn (mixed $id): int => (int) $id)
+            ->unique()
+            ->all();
+
+        $dependentSet = array_fill_keys($dependentIds, true);
+
+        return $ids
+            ->mapWithKeys(fn (int $id): array => [$id => isset($dependentSet[$id])])
+            ->all();
     }
 
     private function hasDependentActivity(object $row): bool

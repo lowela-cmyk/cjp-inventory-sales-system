@@ -39,21 +39,19 @@ class AnalyticsTestingTest extends TestCase
         $this->payment($records, $septemberPaid['saleId'], 'PAY-ANA-PAID', 40000, '2026-09-04');
         $this->payment($records, $cancelledSale['saleId'], 'PAY-ANA-CANCELLED', 999999, '2026-09-04');
 
-        DB::table('deliveries')->insert([
-            'delivery_code' => 'DLV-ANA-DIRECT',
+        DB::table('stock_outs')->insert([
+            'stock_out_code' => 'STO-ANA-DIRECT',
             'sale_id' => $augustSale['saleId'],
             'sale_item_id' => $augustSale['saleItemId'],
             'customer_id' => $records['customerId'],
             'fuel_type_id' => $records['fuelTypeId'],
             'source_type' => 'depot',
+            'storage_location_id' => null,
             'depot_id' => $records['depotId'],
-            'truck_id' => $records['truckId'],
-            'driver_user_id' => $records['driver']->id,
-            'scheduled_at' => '2026-09-04 11:00:00',
-            'delivered_at' => '2026-09-04 12:00:00',
-            'scheduled_quantity_liters' => 30000,
-            'actual_quantity_liters' => 30000,
-            'status' => 'delivered',
+            'quantity_liters' => 30000,
+            'stock_out_at' => '2026-09-04 12:00:00',
+            'status' => 'released',
+            'created_by' => $records['inventoryOfficer']->id,
             'created_at' => now(),
             'updated_at' => now(),
         ]);

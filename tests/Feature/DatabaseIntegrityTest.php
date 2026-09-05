@@ -130,7 +130,7 @@ class DatabaseIntegrityTest extends TestCase
         $this->assertNoBrokenOperationalLinks();
     }
 
-    public function test_sales_stock_out_delivery_payment_and_receivable_links_stay_consistent(): void
+    public function test_sales_stock_out_payment_and_receivable_links_stay_consistent(): void
     {
         $records = $this->baseRecords();
         $this->seedGarageStock($records, 22000);
@@ -153,12 +153,10 @@ class DatabaseIntegrityTest extends TestCase
             ->assertRedirect(route('inventory-officer.inventory.stock-out'));
 
         $stockOut = DB::table('stock_outs')->where('sale_id', $sale['saleId'])->first();
-        $delivery = DB::table('deliveries')->where('id', $stockOut->delivery_id)->first();
 
         $this->assertNotNull($stockOut->inventory_movement_id);
         $this->assertSame((int) $sale['saleItemId'], (int) $stockOut->sale_item_id);
-        $this->assertSame((int) $delivery->id, (int) $stockOut->delivery_id);
-        $this->assertSame('delivered', $delivery->status);
+        $this->assertSame('garage', $stockOut->source_type);
         $this->assertDatabaseHas('inventory_movements', [
             'id' => $stockOut->inventory_movement_id,
             'reference_type' => 'stock_out',
@@ -578,11 +576,6 @@ class DatabaseIntegrityTest extends TestCase
             ->leftJoin('sales', 'sales.id', '=', 'receivables.sale_id')
             ->whereNull('sales.id')
             ->count());
-        $this->assertSame(0, DB::table('deliveries')
-            ->leftJoin('customers', 'customers.id', '=', 'deliveries.customer_id')
-            ->leftJoin('fuel_types', 'fuel_types.id', '=', 'deliveries.fuel_type_id')
-            ->whereNull('customers.id')
-            ->orWhereNull('fuel_types.id')
-            ->count());
+        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasTable('deliveries'));
     }
 }

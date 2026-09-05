@@ -188,7 +188,6 @@ class AdminSalesReportsTest extends TestCase
             'payments' => DB::table('payments')->count(),
             'inventory_movements' => DB::table('inventory_movements')->count(),
             'stock_outs' => DB::table('stock_outs')->count(),
-            'deliveries' => DB::table('deliveries')->count(),
             'hauls' => DB::table('hauls')->count(),
         ];
 

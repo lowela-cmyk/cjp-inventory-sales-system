@@ -305,23 +305,6 @@ class AdminMonitoringTest extends TestCase
             'updated_at' => now(),
         ]);
 
-        DB::table('deliveries')->insert([
-            'delivery_code' => 'DEL-MONITOR',
-            'sale_id' => $saleId,
-            'sale_item_id' => $saleItemId,
-            'customer_id' => $customerId,
-            'fuel_type_id' => $fuelTypeId,
-            'source_type' => 'garage',
-            'storage_location_id' => $storageLocationId,
-            'truck_id' => $truckId,
-            'driver_user_id' => $driver->id,
-            'scheduled_at' => '2026-08-26 08:00:00',
-            'scheduled_quantity_liters' => 5000,
-            'status' => 'scheduled',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
         DB::table('alerts')->insert([
             'alert_code' => 'ALT-MONITOR',
             'type' => 'haul',

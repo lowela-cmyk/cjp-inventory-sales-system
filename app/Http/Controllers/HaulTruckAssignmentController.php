@@ -12,7 +12,6 @@ class HaulTruckAssignmentController extends Controller
 {
     private const ASSIGNABLE_HAUL_STATUSES = ['scheduled'];
     private const ACTIVE_HAUL_STATUSES = ['scheduled', 'in_transit', 'lifted'];
-    private const ACTIVE_DELIVERY_STATUSES = ['scheduled', 'in_transit', 'incomplete'];
 
     public function update(Request $request, int $haul): RedirectResponse
     {
@@ -131,21 +130,10 @@ class HaulTruckAssignmentController extends Controller
 
     private function truckIsAvailable(int $truckId, CarbonImmutable $scheduledAt, int $exceptHaulId): bool
     {
-        $hasHaulConflict = DB::table('hauls')
+        return ! DB::table('hauls')
             ->where('truck_id', $truckId)
             ->where('id', '!=', $exceptHaulId)
             ->whereIn('status', self::ACTIVE_HAUL_STATUSES)
-            ->where('scheduled_at', $scheduledAt->toDateTimeString())
-            ->lockForUpdate()
-            ->exists();
-
-        if ($hasHaulConflict) {
-            return false;
-        }
-
-        return ! DB::table('deliveries')
-            ->where('truck_id', $truckId)
-            ->whereIn('status', self::ACTIVE_DELIVERY_STATUSES)
             ->where('scheduled_at', $scheduledAt->toDateTimeString())
             ->lockForUpdate()
             ->exists();

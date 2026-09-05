@@ -65,14 +65,13 @@ class InventoryVarianceExplanationsTest extends TestCase
                 && $body['model'] === 'openai/gpt-oss-20b'
                 && $body['max_tokens'] === 420
                 && str_contains($promptText, InventoryVarianceExplanationService::SYSTEM_PROMPT)
-                && str_contains($promptText, '"transactions_checked": 6')
+                && str_contains($promptText, '"transactions_checked": 5')
                 && str_contains($promptText, '"matched_transactions": 2')
-                && str_contains($promptText, '"variance_count": 4')
-                && str_contains($promptText, '"variance_rate_percent": 66.7')
+                && str_contains($promptText, '"variance_count": 3')
+                && str_contains($promptText, '"variance_rate_percent": 60')
                 && str_contains($promptText, '"quantity_difference_liters": -2500')
                 && str_contains($promptText, '"reason": "Missing Stock-Out"')
                 && str_contains($promptText, '"reason": "Quantity Mismatch"')
-                && str_contains($promptText, '"reason": "Duplicate Relationship"')
                 && str_contains($promptText, '"reason": "Missing Sale\/Receivable"')
                 && str_contains($promptText, '"fuel_type": "AI Diesel"')
                 && str_contains($promptText, '"fuel_type": "AI E10"')
@@ -245,26 +244,7 @@ class InventoryVarianceExplanationsTest extends TestCase
         $this->saleWithItem($records, 'SLS-VAR-AI-MISSING-STOCK', 1000, 40, 'unpaid');
 
         [$mismatchSaleId, $mismatchItemId] = $this->saleWithItem($records, 'SLS-VAR-AI-QTY-MISMATCH', 2000, 45, 'confirmed', $records['e10Id']);
-        $this->stockOutForSale($records, $mismatchSaleId, $mismatchItemId, 'STO-VAR-AI-QTY-MISMATCH', 500, null, $records['e10Id']);
-
-        [$duplicateSaleId, $duplicateItemId] = $this->saleWithItem($records, 'SLS-VAR-AI-DUPLICATE', 2000, 30, 'confirmed');
-        $deliveryId = DB::table('deliveries')->insertGetId([
-            'delivery_code' => 'DLV-VAR-AI-DUP',
-            'sale_id' => $duplicateSaleId,
-            'sale_item_id' => $duplicateItemId,
-            'customer_id' => $records['customerId'],
-            'fuel_type_id' => $records['dieselId'],
-            'source_type' => 'garage',
-            'storage_location_id' => $records['garageId'],
-            'scheduled_at' => '2026-09-02 08:00:00',
-            'scheduled_quantity_liters' => 2000,
-            'actual_quantity_liters' => null,
-            'status' => 'scheduled',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-        $this->stockOutForSale($records, $duplicateSaleId, $duplicateItemId, 'STO-VAR-AI-DUP-A', 1000, $deliveryId);
-        $this->stockOutForSale($records, $duplicateSaleId, $duplicateItemId, 'STO-VAR-AI-DUP-B', 1000, $deliveryId);
+        $this->stockOutForSale($records, $mismatchSaleId, $mismatchItemId, 'STO-VAR-AI-QTY-MISMATCH', 500, $records['e10Id']);
 
         [$missingReceivableSaleId, $missingReceivableItemId] = $this->saleWithItem($records, 'SLS-VAR-AI-MISSING-REC', 750, 70, 'confirmed');
         DB::table('receivables')->where('sale_id', $missingReceivableSaleId)->delete();
@@ -322,7 +302,6 @@ class InventoryVarianceExplanationsTest extends TestCase
         int $saleItemId,
         string $code,
         float $quantity,
-        ?int $deliveryId = null,
         ?int $fuelTypeId = null
     ): void {
         DB::table('stock_outs')->insert([
@@ -332,7 +311,6 @@ class InventoryVarianceExplanationsTest extends TestCase
             'customer_id' => $records['customerId'],
             'fuel_type_id' => $fuelTypeId ?? $records['dieselId'],
             'storage_location_id' => $records['garageId'],
-            'delivery_id' => $deliveryId,
             'quantity_liters' => $quantity,
             'stock_out_at' => '2026-09-02 08:00:00',
             'status' => 'released',

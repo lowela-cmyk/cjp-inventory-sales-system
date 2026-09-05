@@ -13,7 +13,6 @@ class DashboardSummaryService
     public const SALES_TREND_PERIODS = ['week', 'month', 'year'];
     public const LIFTING_PROGRESS_STATUSES = ['unlifted', 'partial', 'lifted'];
     public const INVENTORY_VARIANCE_STATUSES = ['matched', 'variance'];
-    private const ACTIVE_DELIVERY_STATUSES = ['scheduled', 'in_transit', 'incomplete'];
     private const STOCK_LEVEL_COLORS = ['#f7043a', '#3b9a35', '#e28a22', '#0d1424', '#6b7280'];
 
     /**
@@ -542,13 +541,6 @@ class DashboardSummaryService
         ]);
     }
 
-    public function activeDeliveries(): int
-    {
-        return $this->remember('activeDeliveries', fn (): int => DB::table('deliveries')
-            ->whereIn('status', self::ACTIVE_DELIVERY_STATUSES)
-            ->count());
-    }
-
     public function saleTotalsQuery(): Builder
     {
         return DB::table('sales')
@@ -921,19 +913,6 @@ class DashboardSummaryService
     {
         $releaseTotals = $this->saleItemReleaseTotals();
         $paymentTotals = $this->paymentTotalsQuery();
-        $duplicateDeliveries = DB::table('stock_outs')
-            ->where('status', '!=', 'cancelled')
-            ->whereNotNull('delivery_id')
-            ->selectRaw('delivery_id, COUNT(*) as stock_out_count')
-            ->groupBy('delivery_id')
-            ->havingRaw('COUNT(*) > 1');
-        $duplicateSaleItems = DB::table('stock_outs')
-            ->joinSub($duplicateDeliveries, 'duplicate_deliveries', 'duplicate_deliveries.delivery_id', '=', 'stock_outs.delivery_id')
-            ->where('stock_outs.status', '!=', 'cancelled')
-            ->whereNotNull('stock_outs.sale_item_id')
-            ->selectRaw('stock_outs.sale_item_id, COUNT(*) as duplicate_count')
-            ->groupBy('stock_outs.sale_item_id');
-
         $saleRows = DB::table('sale_items')
             ->join('sales', 'sales.id', '=', 'sale_items.sale_id')
             ->join('customers', 'customers.id', '=', 'sales.customer_id')
@@ -941,7 +920,6 @@ class DashboardSummaryService
             ->leftJoin('receivables', 'receivables.sale_id', '=', 'sales.id')
             ->leftJoinSub($releaseTotals, 'release_totals', 'release_totals.sale_item_id', '=', 'sale_items.id')
             ->leftJoinSub($paymentTotals, 'payment_totals', 'payment_totals.sale_id', '=', 'sales.id')
-            ->leftJoinSub($duplicateSaleItems, 'duplicate_sale_items', 'duplicate_sale_items.sale_item_id', '=', 'sale_items.id')
             ->whereNull('sales.deleted_at')
             ->whereIn('sales.status', self::VALID_SALE_STATUSES)
             ->when($filters['date_from'] ?? null, fn (Builder $query, string $date): Builder => $query->where('sales.sale_date', '>=', $date))
@@ -967,7 +945,7 @@ class DashboardSummaryService
             ->selectRaw('COALESCE(release_totals.released_liters, 0) as stock_out_quantity_liters')
             ->selectRaw('COALESCE(payment_totals.paid, 0) as total_paid')
             ->selectRaw('CASE WHEN sale_items.line_total > COALESCE(payment_totals.paid, 0) THEN sale_items.line_total - COALESCE(payment_totals.paid, 0) ELSE 0 END as outstanding_amount')
-            ->selectRaw('COALESCE(duplicate_sale_items.duplicate_count, 0) as duplicate_relationships')
+            ->selectRaw('0 as duplicate_relationships')
             ->get()
             ->map(fn (object $row): array => $this->inventoryVarianceSaleRow($row));
 
@@ -985,22 +963,10 @@ class DashboardSummaryService
 
     private function saleItemReleaseTotals(): Builder
     {
-        $garageReleases = DB::table('stock_outs')
+        return DB::table('stock_outs')
             ->where('status', '!=', 'cancelled')
             ->whereNotNull('sale_item_id')
             ->selectRaw('sale_item_id, COALESCE(SUM(quantity_liters), 0) as released_liters')
-            ->groupBy('sale_item_id');
-
-        $depotReleases = DB::table('deliveries')
-            ->where('source_type', 'depot')
-            ->where('status', 'delivered')
-            ->whereNotNull('sale_item_id')
-            ->selectRaw('sale_item_id, COALESCE(SUM(COALESCE(actual_quantity_liters, scheduled_quantity_liters, 0)), 0) as released_liters')
-            ->groupBy('sale_item_id');
-
-        return DB::query()
-            ->fromSub($garageReleases->unionAll($depotReleases), 'release_rows')
-            ->selectRaw('sale_item_id, COALESCE(SUM(released_liters), 0) as released_liters')
             ->groupBy('sale_item_id');
     }
 

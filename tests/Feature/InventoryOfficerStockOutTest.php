@@ -38,12 +38,7 @@ class InventoryOfficerStockOutTest extends TestCase
             'reference_type' => 'stock_out',
             'reference_id' => $stockOut->id,
         ]);
-        $this->assertDatabaseHas('deliveries', [
-            'id' => $stockOut->delivery_id,
-            'source_type' => 'garage',
-            'status' => 'delivered',
-            'actual_quantity_liters' => '12000.00',
-        ]);
+        $this->assertSame('garage', $stockOut->source_type);
         $this->assertSame(8000.0, $this->garageBalance($records));
         $this->assertDatabaseHas('sale_items', [
             'id' => $sale['saleItemId'],
@@ -150,8 +145,14 @@ class InventoryOfficerStockOutTest extends TestCase
             ->assertRedirect(route('inventory-officer.inventory.stock-out'));
 
         $this->assertSame(9000.0, $this->garageBalance($records));
-        $this->assertSame(0, DB::table('stock_outs')->count());
-        $this->assertSame(1, DB::table('deliveries')->where('source_type', 'depot')->count());
+        $this->assertSame(1, DB::table('stock_outs')->where('source_type', 'depot')->count());
+        $this->assertDatabaseHas('stock_outs', [
+            'sale_id' => $sale['saleId'],
+            'haul_allocation_id' => $allocationId,
+            'source_type' => 'depot',
+            'quantity_liters' => '10000.00',
+            'status' => 'released',
+        ]);
         $this->assertSame(1, DB::table('inventory_movements')->count());
         $this->assertDatabaseHas('sale_items', [
             'id' => $sale['saleItemId'],
@@ -226,7 +227,7 @@ class InventoryOfficerStockOutTest extends TestCase
             ->assertSessionHasErrors('stock_out');
 
         $this->assertSame(9000.0, $this->garageBalance($records));
-        $this->assertSame(0, DB::table('deliveries')->count());
+        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasTable('deliveries'));
         $this->assertDatabaseHas('sale_items', [
             'id' => $sale['saleItemId'],
             'fulfilled_quantity_liters' => '0.00',
@@ -340,8 +341,7 @@ class InventoryOfficerStockOutTest extends TestCase
             ->assertSessionHasErrors('stock_out');
 
         $this->assertSame(9000.0, $this->garageBalance($records));
-        $this->assertSame(0, DB::table('stock_outs')->count());
-        $this->assertSame(1, DB::table('deliveries')->where('source_type', 'depot')->count());
+        $this->assertSame(1, DB::table('stock_outs')->where('source_type', 'depot')->count());
         $this->assertDatabaseHas('sale_items', [
             'id' => $pendingSale['saleItemId'],
             'fulfilled_quantity_liters' => '0.00',
@@ -358,18 +358,20 @@ class InventoryOfficerStockOutTest extends TestCase
         $sale = $this->sale($records, ['quantity_liters' => 20000]);
         $allocationId = $this->directAllocation($records, $sale, ['quantity_liters' => 20000]);
 
-        DB::table('deliveries')->insert([
-            'delivery_code' => 'DLV-PENDING-DIRECT',
+        DB::table('stock_outs')->insert([
+            'stock_out_code' => 'STO-PENDING-DIRECT',
             'sale_id' => $sale['saleId'],
             'sale_item_id' => $sale['saleItemId'],
             'customer_id' => $records['customerId'],
             'fuel_type_id' => $records['fuelTypeId'],
             'source_type' => 'depot',
+            'storage_location_id' => null,
             'depot_id' => $records['depotId'],
             'haul_allocation_id' => $allocationId,
-            'scheduled_at' => '2026-08-30 12:00:00',
-            'scheduled_quantity_liters' => 12000,
-            'status' => 'scheduled',
+            'quantity_liters' => 12000,
+            'stock_out_at' => '2026-08-30 12:00:00',
+            'status' => 'released',
+            'created_by' => $records['inventoryOfficer']->id,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -395,8 +397,7 @@ class InventoryOfficerStockOutTest extends TestCase
             ]))
             ->assertRedirect(route('inventory-officer.inventory.stock-out'));
 
-        $this->assertSame(0, DB::table('stock_outs')->count());
-        $this->assertSame(2, DB::table('deliveries')->where('source_type', 'depot')->count());
+        $this->assertSame(2, DB::table('stock_outs')->where('source_type', 'depot')->count());
         $this->assertDatabaseHas('sale_items', [
             'id' => $sale['saleItemId'],
             'fulfilled_quantity_liters' => '8000.00',

@@ -706,23 +706,6 @@ class RoleBasedAccessControlTest extends TestCase
             'updated_at' => now(),
         ]);
 
-        DB::table('deliveries')->insert([
-            'delivery_code' => 'DEL-TEST',
-            'sale_id' => $saleId,
-            'sale_item_id' => $saleItemId,
-            'customer_id' => $customerId,
-            'fuel_type_id' => $premiumId,
-            'source_type' => 'garage',
-            'storage_location_id' => $storageLocationId,
-            'truck_id' => $truckId,
-            'driver_user_id' => $driver->id,
-            'scheduled_at' => now(),
-            'scheduled_quantity_liters' => 20000,
-            'status' => 'in_transit',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
         $this->actingAs($admin)
             ->get('/admin/dashboard')
             ->assertOk()

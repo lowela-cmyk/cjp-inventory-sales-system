@@ -97,7 +97,7 @@ class IntegrationTestingTest extends TestCase
 
         $this->assertSame(25000.0, $this->garageBalance($records));
         $this->assertSame(2, DB::table('stock_outs')->where('sale_id', $garageSale['saleId'])->count());
-        $this->assertSame(2, DB::table('deliveries')->where('sale_id', $garageSale['saleId'])->where('source_type', 'garage')->count());
+        $this->assertSame(2, DB::table('stock_outs')->where('sale_id', $garageSale['saleId'])->where('source_type', 'garage')->count());
         $this->assertDatabaseHas('sale_items', [
             'id' => $garageSale['saleItemId'],
             'fulfilled_quantity_liters' => '40000.00',
@@ -112,13 +112,13 @@ class IntegrationTestingTest extends TestCase
         ]);
 
         $this->assertSame(25000.0, $this->garageBalance($records), 'Direct depot to client must bypass garage inventory.');
-        $this->assertSame(0, DB::table('stock_outs')->where('sale_id', $directSale['saleId'])->count());
-        $this->assertDatabaseHas('deliveries', [
+        $this->assertSame(1, DB::table('stock_outs')->where('sale_id', $directSale['saleId'])->count());
+        $this->assertDatabaseHas('stock_outs', [
             'sale_id' => $directSale['saleId'],
             'haul_allocation_id' => $directAllocationId,
             'source_type' => 'depot',
-            'actual_quantity_liters' => '35000.00',
-            'status' => 'delivered',
+            'quantity_liters' => '35000.00',
+            'status' => 'released',
         ]);
 
         $firstPayment = $this->paymentPayload([
@@ -258,7 +258,7 @@ class IntegrationTestingTest extends TestCase
 
         $this->assertSame(0, DB::table('inventory_movements')->count());
         $this->assertSame(0, DB::table('stock_outs')->count());
-        $this->assertSame(0, DB::table('deliveries')->count());
+        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasTable('deliveries'));
         $this->assertSame(0, DB::table('payments')->count());
         $this->assertSame(0.0, $this->garageBalance($records));
     }

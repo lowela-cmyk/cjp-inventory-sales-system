@@ -771,7 +771,6 @@ class SalesOfficerCustomerController extends Controller
     {
         return DB::table('payments')->where('sale_id', $saleId)->exists()
             || DB::table('stock_outs')->where('sale_id', $saleId)->exists()
-            || DB::table('deliveries')->where('sale_id', $saleId)->exists()
             || DB::table('haul_allocations')->where('sale_id', $saleId)->exists()
             || DB::table('sale_items')->where('sale_id', $saleId)->where('fulfilled_quantity_liters', '>', 0)->exists();
     }
@@ -795,7 +794,6 @@ class SalesOfficerCustomerController extends Controller
         $dependentIds = collect()
             ->merge(DB::table('payments')->whereIn('sale_id', $ids->all())->pluck('sale_id'))
             ->merge(DB::table('stock_outs')->whereIn('sale_id', $ids->all())->pluck('sale_id'))
-            ->merge(DB::table('deliveries')->whereIn('sale_id', $ids->all())->pluck('sale_id'))
             ->merge(DB::table('haul_allocations')->whereIn('sale_id', $ids->all())->pluck('sale_id'))
             ->merge(DB::table('sale_items')->whereIn('sale_id', $ids->all())->where('fulfilled_quantity_liters', '>', 0)->pluck('sale_id'))
             ->map(fn (mixed $id): int => (int) $id)

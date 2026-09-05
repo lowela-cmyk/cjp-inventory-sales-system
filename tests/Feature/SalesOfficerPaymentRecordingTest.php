@@ -161,7 +161,7 @@ class SalesOfficerPaymentRecordingTest extends TestCase
         $this->assertSame($beforeInventory, DB::table('inventory_movements')->count());
         $this->assertSame(0, DB::table('stock_outs')->count());
         $this->assertSame(0, DB::table('hauls')->count());
-        $this->assertSame(0, DB::table('deliveries')->count());
+        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasTable('deliveries'));
     }
 
     public function test_duplicate_physical_payment_with_new_token_is_rejected(): void

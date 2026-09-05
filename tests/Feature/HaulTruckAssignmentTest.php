@@ -151,7 +151,6 @@ class HaulTruckAssignmentTest extends TestCase
             'receivables' => DB::table('receivables')->count(),
             'stock_outs' => DB::table('stock_outs')->count(),
             'inventory_movements' => DB::table('inventory_movements')->count(),
-            'deliveries' => DB::table('deliveries')->count(),
             'hauls' => DB::table('hauls')->count(),
         ];
     }

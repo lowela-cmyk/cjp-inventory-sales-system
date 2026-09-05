@@ -326,7 +326,7 @@ class FormValidationTest extends TestCase
             ->assertRedirect(route('driver.fuel-lifting'))
             ->assertSessionHasErrors(['idempotency_key', 'lifting_status']);
 
-        $this->assertSame(0, DB::table('deliveries')->count());
+        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasTable('deliveries'));
         $this->assertDatabaseHas('hauls', ['id' => $haul['haulId'], 'status' => 'scheduled']);
     }
 

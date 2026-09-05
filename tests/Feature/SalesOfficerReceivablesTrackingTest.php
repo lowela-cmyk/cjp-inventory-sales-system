@@ -144,7 +144,7 @@ class SalesOfficerReceivablesTrackingTest extends TestCase
         $this->assertSame($beforeInventory, DB::table('inventory_movements')->count());
         $this->assertSame(0, DB::table('stock_outs')->count());
         $this->assertSame(0, DB::table('hauls')->count());
-        $this->assertSame(0, DB::table('deliveries')->count());
+        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasTable('deliveries'));
 
         $this->actingAs($records['salesOfficer'])
             ->get(route('sales-officer.sales'))

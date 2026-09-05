@@ -498,31 +498,6 @@ class RoleAccessTestingTest extends TestCase
     /**
      * @param array<string, mixed> $records
      * @param array{saleId: int, saleItemId: int} $sale
-     * @param array<string, mixed> $overrides
-     */
-    private function delivery(array $records, array $sale, float $quantity, array $overrides = []): int
-    {
-        return DB::table('deliveries')->insertGetId(array_merge([
-            'delivery_code' => 'DLV-RBAC-'.Str::upper(Str::random(5)),
-            'sale_id' => $sale['saleId'],
-            'sale_item_id' => $sale['saleItemId'],
-            'customer_id' => $records['customerId'],
-            'fuel_type_id' => $records['fuelTypeId'],
-            'source_type' => 'garage',
-            'storage_location_id' => $records['garageId'],
-            'truck_id' => $records['truckId'],
-            'driver_user_id' => $records['driver']->id,
-            'scheduled_at' => now()->addDay()->toDateTimeString(),
-            'scheduled_quantity_liters' => $quantity,
-            'status' => 'scheduled',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ], $overrides));
-    }
-
-    /**
-     * @param array<string, mixed> $records
-     * @param array{saleId: int, saleItemId: int} $sale
      */
     private function stockOut(array $records, array $sale, float $quantity): int
     {
@@ -589,7 +564,6 @@ class RoleAccessTestingTest extends TestCase
             'sales' => DB::table('sales')->count(),
             'customers' => DB::table('customers')->count(),
             'stock_outs' => DB::table('stock_outs')->count(),
-            'deliveries' => DB::table('deliveries')->count(),
             'payments' => DB::table('payments')->count(),
             'hauls' => DB::table('hauls')->count(),
         ];

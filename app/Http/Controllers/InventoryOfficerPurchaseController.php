@@ -43,7 +43,7 @@ class InventoryOfficerPurchaseController extends Controller
             'garages' => DB::table('storage_locations')->where('type', 'garage')->where('status', 'active')->orderBy('name')->get(['id', 'name']),
             'garageAllocations' => $this->garageAllocationOptions(),
             'stockOutSaleItems' => $this->stockOutSaleItemOptions(),
-            'directDeliveryAllocations' => $this->directDeliveryAllocationOptions(),
+            'directDeliveryAllocations' => $this->directDepotReleaseAllocationOptions(),
             'purchaseStatuses' => self::PURCHASE_STATUSES,
             'paymentStatuses' => self::PAYMENT_STATUSES,
             'stockOutIdempotencyKey' => (string) Str::uuid(),
@@ -534,7 +534,7 @@ class InventoryOfficerPurchaseController extends Controller
             ->selectRaw('sale_id, COALESCE(SUM(amount), 0) as total_paid')
             ->groupBy('sale_id');
 
-        $garageRows = DB::table('stock_outs')
+        return DB::table('stock_outs')
             ->join('sales', 'sales.id', '=', 'stock_outs.sale_id')
             ->join('customers', 'customers.id', '=', 'stock_outs.customer_id')
             ->join('fuel_types', 'fuel_types.id', '=', 'stock_outs.fuel_type_id')
@@ -554,6 +554,7 @@ class InventoryOfficerPurchaseController extends Controller
                 'stock_outs.stock_out_at',
                 'stock_outs.quantity_liters',
                 'stock_outs.status',
+                'stock_outs.source_type',
                 'sales.sale_code',
                 'customers.name as customer_name',
                 'customers.company_name',
@@ -572,59 +573,11 @@ class InventoryOfficerPurchaseController extends Controller
                 $this->formatNumber($row->unit_price),
                 $this->formatNumber($row->line_total),
                 $this->formatNumber($row->total_paid),
-                'Garage',
+                $row->source_type === 'depot' ? 'Depot' : 'Garage',
                 '0.00',
                 $this->formatNumber($row->line_total),
                 $this->rowClass($row->status),
             ]);
-
-        $directRows = DB::table('deliveries')
-            ->join('sales', 'sales.id', '=', 'deliveries.sale_id')
-            ->join('customers', 'customers.id', '=', 'deliveries.customer_id')
-            ->join('fuel_types', 'fuel_types.id', '=', 'deliveries.fuel_type_id')
-            ->leftJoin('sale_items', 'sale_items.id', '=', 'deliveries.sale_item_id')
-            ->leftJoinSub($payments, 'payments_total', 'payments_total.sale_id', '=', 'sales.id')
-            ->where('deliveries.source_type', 'depot')
-            ->whereNull('sales.deleted_at')
-            ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
-                'deliveries.delivery_code',
-                'sales.sale_code',
-                'customers.name',
-                'customers.company_name',
-                'fuel_types.name',
-                'deliveries.status',
-            ]))
-            ->orderByDesc('deliveries.delivered_at')
-            ->get([
-                'deliveries.delivery_code',
-                'deliveries.delivered_at',
-                'deliveries.actual_quantity_liters',
-                'deliveries.status',
-                'sales.sale_code',
-                'customers.name as customer_name',
-                'customers.company_name',
-                'fuel_types.name as fuel_name',
-                'sale_items.unit_price',
-                'sale_items.line_total',
-                'payments_total.total_paid',
-            ])
-            ->map(fn (object $row): array => [
-                $row->sale_code ?: $row->delivery_code,
-                $this->formatDateTime($row->delivered_at),
-                $row->customer_name,
-                $row->company_name,
-                $row->fuel_name,
-                $this->formatNumber($row->actual_quantity_liters),
-                $this->formatNumber($row->unit_price),
-                $this->formatNumber($row->line_total),
-                $this->formatNumber($row->total_paid),
-                'Depot',
-                '0.00',
-                $this->formatNumber($row->line_total),
-                $this->rowClass($row->status),
-            ]);
-
-        return $garageRows->merge($directRows);
     }
 
     private function saleItemForStockOut(int $saleItemId): ?object
@@ -670,23 +623,6 @@ class InventoryOfficerPurchaseController extends Controller
             return 'Quantity released cannot exceed the remaining sale quantity.';
         }
 
-        $deliveryId = DB::table('deliveries')->insertGetId([
-            'delivery_code' => $this->nextCode('deliveries', 'delivery_code', 'DLV'),
-            'sale_id' => $saleItem->sale_id,
-            'sale_item_id' => $saleItem->id,
-            'customer_id' => $saleItem->customer_id,
-            'fuel_type_id' => $saleItem->fuel_type_id,
-            'source_type' => 'garage',
-            'storage_location_id' => $garageId,
-            'scheduled_quantity_liters' => $quantity,
-            'actual_quantity_liters' => $quantity,
-            'scheduled_at' => $data['stock_out_at'],
-            'delivered_at' => $data['stock_out_at'],
-            'status' => 'delivered',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
         $stockOutId = DB::table('stock_outs')->insertGetId([
             'stock_out_code' => $this->nextCode('stock_outs', 'stock_out_code', 'STO'),
             'sale_id' => $saleItem->sale_id,
@@ -694,7 +630,7 @@ class InventoryOfficerPurchaseController extends Controller
             'customer_id' => $saleItem->customer_id,
             'fuel_type_id' => $saleItem->fuel_type_id,
             'storage_location_id' => $garageId,
-            'delivery_id' => $deliveryId,
+            'source_type' => 'garage',
             'quantity_liters' => $quantity,
             'stock_out_at' => $data['stock_out_at'],
             'status' => 'released',
@@ -765,18 +701,19 @@ class InventoryOfficerPurchaseController extends Controller
             ]);
 
         if (! $allocation) {
-            return 'The selected direct delivery source does not match this sale.';
+            return 'The selected direct depot release source does not match this sale.';
         }
 
         if (! $this->haulAllocationsAreWithinQuantity((int) $allocation->haul_id, (float) $allocation->haul_quantity_liters)) {
             return 'The selected haul has invalid allocation quantities.';
         }
 
-        $committed = (float) DB::table('deliveries')
+        $committed = (float) DB::table('stock_outs')
             ->where('haul_allocation_id', $allocation->id)
+            ->where('source_type', 'depot')
             ->where('status', '!=', 'cancelled')
             ->lockForUpdate()
-            ->selectRaw('COALESCE(SUM(COALESCE(actual_quantity_liters, scheduled_quantity_liters, 0)), 0) as committed_liters')
+            ->selectRaw('COALESCE(SUM(quantity_liters), 0) as committed_liters')
             ->value('committed_liters');
 
         $allocationRemaining = round((float) $allocation->quantity_liters - $committed, 2);
@@ -789,21 +726,7 @@ class InventoryOfficerPurchaseController extends Controller
             return 'This direct depot release has already been recorded.';
         }
 
-        $salePending = (float) DB::table('deliveries')
-            ->where(function (Builder $query) use ($saleItem): void {
-                $query->where('sale_item_id', $saleItem->id)
-                    ->orWhere(function (Builder $query) use ($saleItem): void {
-                        $query->whereNull('sale_item_id')
-                            ->where('sale_id', $saleItem->sale_id)
-                            ->where('fuel_type_id', $saleItem->fuel_type_id);
-                    });
-            })
-            ->where('source_type', 'depot')
-            ->whereIn('status', ['scheduled', 'in_transit', 'incomplete'])
-            ->lockForUpdate()
-            ->selectRaw('COALESCE(SUM(COALESCE(actual_quantity_liters, scheduled_quantity_liters, 0)), 0) as pending_liters')
-            ->value('pending_liters');
-        $saleRemaining = round((float) $saleItem->quantity_liters - (float) $saleItem->fulfilled_quantity_liters - $salePending, 2);
+        $saleRemaining = round((float) $saleItem->quantity_liters - (float) $saleItem->fulfilled_quantity_liters, 2);
 
         if ($quantity > $saleRemaining) {
             return 'Quantity released cannot exceed the remaining sale quantity.';
@@ -813,22 +736,20 @@ class InventoryOfficerPurchaseController extends Controller
             return 'Quantity released cannot exceed the remaining sale quantity.';
         }
 
-        DB::table('deliveries')->insert([
-            'delivery_code' => $this->nextCode('deliveries', 'delivery_code', 'DLV'),
+        DB::table('stock_outs')->insert([
+            'stock_out_code' => $this->nextCode('stock_outs', 'stock_out_code', 'STO'),
             'sale_id' => $saleItem->sale_id,
             'sale_item_id' => $saleItem->id,
             'customer_id' => $saleItem->customer_id,
             'fuel_type_id' => $saleItem->fuel_type_id,
             'source_type' => 'depot',
+            'storage_location_id' => null,
             'depot_id' => $allocation->depot_id,
             'haul_allocation_id' => $allocation->id,
-            'truck_id' => $allocation->truck_id,
-            'driver_user_id' => $allocation->driver_user_id,
-            'scheduled_quantity_liters' => $quantity,
-            'actual_quantity_liters' => $quantity,
-            'scheduled_at' => $data['stock_out_at'],
-            'delivered_at' => $data['stock_out_at'],
-            'status' => 'delivered',
+            'quantity_liters' => $quantity,
+            'stock_out_at' => $data['stock_out_at'],
+            'status' => 'released',
+            'created_by' => $request->user()->id,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -894,15 +815,15 @@ class InventoryOfficerPurchaseController extends Controller
 
     private function duplicateDirectDepotReleaseExists(object $allocation, object $saleItem, float $quantity, string $stockOutAt): bool
     {
-        return DB::table('deliveries')
+        return DB::table('stock_outs')
             ->where('sale_id', $saleItem->sale_id)
             ->where('sale_item_id', $saleItem->id)
             ->where('customer_id', $saleItem->customer_id)
             ->where('fuel_type_id', $saleItem->fuel_type_id)
             ->where('source_type', 'depot')
             ->where('haul_allocation_id', $allocation->id)
-            ->where('actual_quantity_liters', $quantity)
-            ->where('delivered_at', $stockOutAt)
+            ->where('quantity_liters', $quantity)
+            ->where('stock_out_at', $stockOutAt)
             ->where('status', '!=', 'cancelled')
             ->lockForUpdate()
             ->first(['id']) !== null;
@@ -1142,12 +1063,13 @@ class InventoryOfficerPurchaseController extends Controller
             ->groupBy('fuel_type_id');
     }
 
-    private function directDeliveryAllocationOptions()
+    private function directDepotReleaseAllocationOptions()
     {
-        $delivered = DB::table('deliveries')
+        $delivered = DB::table('stock_outs')
             ->where('source_type', 'depot')
             ->where('status', '!=', 'cancelled')
-            ->selectRaw('haul_allocation_id, COALESCE(SUM(COALESCE(actual_quantity_liters, scheduled_quantity_liters, 0)), 0) as delivered_liters')
+            ->whereNotNull('haul_allocation_id')
+            ->selectRaw('haul_allocation_id, COALESCE(SUM(quantity_liters), 0) as delivered_liters')
             ->groupBy('haul_allocation_id');
 
         return DB::table('haul_allocations')

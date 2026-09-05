@@ -56,7 +56,7 @@ class PurchaseReceiptStatusTest extends TestCase
 
         $this->assertSame(0, DB::table('inventory_movements')->count());
         $this->assertSame(0, DB::table('hauls')->count());
-        $this->assertSame(0, DB::table('deliveries')->count());
+        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasTable('deliveries'));
         $this->assertSame(0, DB::table('payments')->count());
     }
 

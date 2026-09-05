@@ -98,7 +98,7 @@ class CompleteWorkflowIntegrationTest extends TestCase
 
         $this->assertSame(15000.0, $this->garageBalance($records));
         $this->assertSame(2, DB::table('stock_outs')->where('sale_id', $sale['saleId'])->count());
-        $this->assertSame(2, DB::table('deliveries')->where('sale_id', $sale['saleId'])->where('source_type', 'garage')->count());
+        $this->assertSame(2, DB::table('stock_outs')->where('sale_id', $sale['saleId'])->where('source_type', 'garage')->count());
         $this->assertDatabaseHas('sale_items', [
             'id' => $sale['saleItemId'],
             'fulfilled_quantity_liters' => '25000.00',
@@ -180,13 +180,13 @@ class CompleteWorkflowIntegrationTest extends TestCase
 
         $this->assertSame(0.0, $this->garageBalance($records));
         $this->assertSame(0, DB::table('inventory_movements')->count());
-        $this->assertSame(0, DB::table('stock_outs')->count());
-        $this->assertDatabaseHas('deliveries', [
+        $this->assertSame(1, DB::table('stock_outs')->where('sale_id', $sale['saleId'])->count());
+        $this->assertDatabaseHas('stock_outs', [
             'sale_id' => $sale['saleId'],
             'haul_allocation_id' => $allocationId,
             'source_type' => 'depot',
-            'actual_quantity_liters' => '18000.00',
-            'status' => 'delivered',
+            'quantity_liters' => '18000.00',
+            'status' => 'released',
         ]);
         $this->assertDatabaseHas('haul_allocations', ['id' => $allocationId, 'status' => 'delivered']);
         $this->assertDatabaseHas('sale_items', [
@@ -250,7 +250,7 @@ class CompleteWorkflowIntegrationTest extends TestCase
 
         $this->assertSame(0, DB::table('inventory_movements')->count());
         $this->assertSame(0, DB::table('stock_outs')->count());
-        $this->assertSame(0, DB::table('deliveries')->count());
+        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasTable('deliveries'));
         $this->assertSame(0, DB::table('payments')->count());
         $this->assertSame(0.0, $this->garageBalance($records));
     }

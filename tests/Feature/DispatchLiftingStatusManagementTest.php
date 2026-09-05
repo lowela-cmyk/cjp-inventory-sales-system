@@ -107,7 +107,7 @@ class DispatchLiftingStatusManagementTest extends TestCase
         $records = $this->baseRecords();
         $garageHaulId = $this->haul($records, ['haul_code' => 'LFT-GARAGE']);
         $directHaulId = $this->haul($records, ['haul_code' => 'LFT-DIRECT', 'destination_type' => 'customer']);
-        $beforeDeliveries = DB::table('deliveries')->count();
+        $deliveryTableExists = \Illuminate\Support\Facades\Schema::hasTable('deliveries');
         $beforeStockOuts = DB::table('stock_outs')->count();
         $beforeMovements = DB::table('inventory_movements')->count();
 
@@ -119,7 +119,7 @@ class DispatchLiftingStatusManagementTest extends TestCase
             }
         }
 
-        $this->assertSame($beforeDeliveries, DB::table('deliveries')->count());
+        $this->assertFalse($deliveryTableExists);
         $this->assertSame($beforeStockOuts, DB::table('stock_outs')->count());
         $this->assertSame($beforeMovements, DB::table('inventory_movements')->count());
 
@@ -258,7 +258,6 @@ class DispatchLiftingStatusManagementTest extends TestCase
     {
         return [
             'inventory_movements' => DB::table('inventory_movements')->count(),
-            'deliveries' => DB::table('deliveries')->count(),
             'stock_outs' => DB::table('stock_outs')->count(),
             'payments' => DB::table('payments')->count(),
             'receivables' => DB::table('receivables')->count(),

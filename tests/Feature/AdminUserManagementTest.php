@@ -86,6 +86,7 @@ class AdminUserManagementTest extends TestCase
 
         $this->assertSame('sales_officer', $user->role);
         $this->assertSame('active', $user->status);
+        $this->assertSame('approved', $user->approval_status);
         $this->assertTrue(Hash::check('password', $user->password));
     }
 
@@ -112,6 +113,7 @@ class AdminUserManagementTest extends TestCase
         $driver = User::where('email', 'new-driver@example.com')->firstOrFail();
 
         $this->assertSame('driver', $driver->role);
+        $this->assertSame('approved', $driver->approval_status);
         $this->assertTrue(Hash::check('password', $driver->password));
         $this->assertDatabaseHas('driver_profiles', [
             'user_id' => $driver->id,
@@ -305,6 +307,96 @@ class AdminUserManagementTest extends TestCase
                 'tab' => 'drivers',
             ])
             ->assertForbidden();
+    }
+
+    public function test_admin_can_approve_and_reject_account_requests(): void
+    {
+        $admin = User::factory()->create([
+            'role' => 'admin',
+            'status' => 'active',
+            'approval_status' => 'approved',
+        ]);
+
+        $pending = User::factory()->create([
+            'name' => 'Pending Driver',
+            'email' => 'pending-driver@example.com',
+            'role' => 'driver',
+            'status' => 'active',
+            'approval_status' => 'pending',
+            'password' => 'password',
+        ]);
+
+        $rejected = User::factory()->create([
+            'name' => 'Rejected Driver',
+            'email' => 'rejected-driver@example.com',
+            'role' => 'driver',
+            'status' => 'active',
+            'approval_status' => 'pending',
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('admin.account-requests'))
+            ->assertOk()
+            ->assertSee('Pending Driver')
+            ->assertSee('pending-driver@example.com')
+            ->assertSee('Driver')
+            ->assertSee('Approve')
+            ->assertSee('Reject');
+
+        $this->actingAs($admin)
+            ->patch(route('admin.account-requests.update', $pending), [
+                'approval_status' => 'approved',
+                'role' => 'admin',
+                'status' => 'inactive',
+            ])
+            ->assertRedirect(route('admin.account-requests'));
+
+        $this->assertSame('approved', $pending->refresh()->approval_status);
+        $this->assertSame('driver', $pending->role);
+        $this->assertSame('active', $pending->status);
+
+        $this->post('/logout');
+
+        $this->post('/login', [
+            'username' => $pending->email,
+            'password' => 'password',
+        ])->assertRedirect(route('driver.fuel-lifting'));
+
+        $this->post('/logout');
+
+        $this->actingAs($admin)
+            ->patch(route('admin.account-requests.update', $rejected), [
+                'approval_status' => 'rejected',
+            ])
+            ->assertRedirect(route('admin.account-requests'));
+
+        $this->assertSame('rejected', $rejected->refresh()->approval_status);
+    }
+
+    public function test_only_admin_can_approve_or_reject_account_requests(): void
+    {
+        $salesOfficer = User::factory()->create([
+            'role' => 'sales_officer',
+            'status' => 'active',
+            'approval_status' => 'approved',
+        ]);
+        $pending = User::factory()->create([
+            'role' => 'driver',
+            'status' => 'active',
+            'approval_status' => 'pending',
+        ]);
+
+        $this->actingAs($salesOfficer)
+            ->get(route('admin.account-requests'))
+            ->assertForbidden();
+
+        $this->actingAs($salesOfficer)
+            ->patch(route('admin.account-requests.update', $pending), [
+                'approval_status' => 'approved',
+            ])
+            ->assertForbidden();
+
+        $this->assertSame('pending', $pending->refresh()->approval_status);
     }
 
     public function test_admin_can_change_inventory_officer_to_sales_officer_and_login_uses_new_dashboard(): void

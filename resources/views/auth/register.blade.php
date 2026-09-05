@@ -58,5 +58,6 @@
             </div>
         </section>
     </main>
+    <x-toast-stack />
 </body>
 </html>

@@ -15,7 +15,7 @@ class EnsureUserHasRole
 
         $currentUser = $user?->fresh();
 
-        if (! $currentUser || $currentUser->status !== 'active') {
+        if (! $currentUser || $currentUser->status !== 'active' || $currentUser->approval_status !== 'approved') {
             Auth::logout();
 
             $request->session()->invalidate();

@@ -20,18 +20,6 @@
                     </div>
 
                     <div class="login-field">
-                        <label for="role">ROLE</label>
-                        <select id="role" name="role" required>
-                            <option value="" @selected(! old('role')) disabled>Role</option>
-                            <option value="admin" @selected(old('role') === 'admin')>Admin</option>
-                            <option value="dispatch_officer" @selected(old('role') === 'dispatch_officer')>Dispatch Officer</option>
-                            <option value="inventory_officer" @selected(old('role') === 'inventory_officer')>Inventory Officer</option>
-                            <option value="sales_officer" @selected(old('role') === 'sales_officer')>Sales Officer</option>
-                            <option value="driver" @selected(old('role') === 'driver')>Driver</option>
-                        </select>
-                    </div>
-
-                    <div class="login-field">
                         <label for="password">PASSWORD</label>
                         <input id="password" name="password" type="password" placeholder="Password" autocomplete="current-password" required>
                     </div>
@@ -67,5 +55,6 @@
             </div>
         </section>
     </main>
+    <x-toast-stack />
 </body>
 </html>

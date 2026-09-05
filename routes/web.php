@@ -56,6 +56,8 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/reports/sales-trend-summary', AdminSalesTrendSummaryController::class)->name('reports.sales-trend-summary');
         Route::get('/reports/export', [AdminSalesReportController::class, 'export'])->name('reports.export');
         Route::get('/alerts', [AdminMonitoringController::class, 'alerts'])->name('alerts');
+        Route::get('/account-requests', [AdminUserManagementController::class, 'accountRequests'])->name('account-requests');
+        Route::patch('/account-requests/{user}', [AdminUserManagementController::class, 'updateApproval'])->name('account-requests.update');
         Route::get('/user-management', [AdminUserManagementController::class, 'index'])->name('user-management');
         Route::post('/user-management/staff', [AdminUserManagementController::class, 'storeStaff'])->name('user-management.staff.store');
         Route::patch('/user-management/staff/{user}', [AdminUserManagementController::class, 'updateStaff'])->name('user-management.staff.update');

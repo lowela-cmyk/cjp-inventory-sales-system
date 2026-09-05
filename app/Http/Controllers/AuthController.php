@@ -49,7 +49,7 @@ class AuthController extends Controller
     {
         $user = $request->user()?->fresh();
 
-        abort_unless($user && $user->status === 'active', 403);
+        abort_unless($user && $user->status === 'active' && $user->approval_status === 'approved', 403);
 
         Auth::setUser($user);
 
@@ -64,6 +64,7 @@ class AuthController extends Controller
 
         $user = User::where('email', $data['email'])
             ->where('status', 'active')
+            ->where('approval_status', 'approved')
             ->first();
 
         if ($user) {
@@ -102,13 +103,10 @@ class AuthController extends Controller
     {
         $credentials = $request->validate([
             'username' => ['required', 'string'],
-            'role' => ['required', 'string', 'in:admin,inventory_officer,sales_officer,dispatch_officer,driver'],
             'password' => ['required', 'string'],
         ]);
 
         $user = User::query()
-            ->where('role', $credentials['role'])
-            ->where('status', 'active')
             ->where(function ($query) use ($credentials): void {
                 $query->where('email', $credentials['username'])
                     ->orWhere('name', $credentials['username']);
@@ -121,6 +119,24 @@ class AuthController extends Controller
             ]);
         }
 
+        if ($user->status !== 'active') {
+            throw ValidationException::withMessages([
+                'username' => 'The provided credentials do not match an active account.',
+            ]);
+        }
+
+        if ($user->approval_status === 'pending') {
+            throw ValidationException::withMessages([
+                'username' => 'Your account is still pending Admin approval.',
+            ]);
+        }
+
+        if ($user->approval_status === 'rejected') {
+            throw ValidationException::withMessages([
+                'username' => 'Your account registration was rejected by the Administrator.',
+            ]);
+        }
+
         Auth::login($user);
 
         $request->session()->regenerate();
@@ -129,7 +145,10 @@ class AuthController extends Controller
             'last_login_at' => now(),
         ])->save();
 
-        return redirect()->route($this->dashboardRouteFor($request->user()->role));
+        return redirect()
+            ->route($this->dashboardRouteFor($request->user()->role))
+            ->with('status', 'Welcome back to CJP Southern Star. Your dashboard is ready.')
+            ->with('toast_type', 'success');
     }
 
     public function register(Request $request): RedirectResponse
@@ -147,12 +166,14 @@ class AuthController extends Controller
             'phone' => $data['contact_number'] ?? null,
             'role' => 'driver',
             'status' => 'active',
+            'approval_status' => 'pending',
             'password' => $data['password'],
         ]);
 
         return redirect()
             ->route('login')
-            ->with('status', 'Account created successfully. Please log in to continue.');
+            ->with('status', 'Your registration is pending Admin approval.')
+            ->with('toast_type', 'warning');
     }
 
     public function showResetPassword(): View|RedirectResponse
@@ -178,6 +199,7 @@ class AuthController extends Controller
 
         $user = User::where('email', $data['email'])
             ->where('status', 'active')
+            ->where('approval_status', 'approved')
             ->first();
 
         $codeIsExpired = ! $reset || Carbon::parse($reset->created_at)->addMinutes(15)->isPast();
@@ -199,7 +221,8 @@ class AuthController extends Controller
 
         return redirect()
             ->route('login')
-            ->with('status', 'Password updated successfully. Please log in with your new password.');
+            ->with('status', 'Password updated successfully. Please log in with your new password.')
+            ->with('toast_type', 'success');
     }
 
     public function logout(Request $request): RedirectResponse
@@ -209,7 +232,10 @@ class AuthController extends Controller
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 
-        return redirect()->route('login');
+        return redirect()
+            ->route('login')
+            ->with('status', 'You have been signed out of CJP Southern Star.')
+            ->with('toast_type', 'success');
     }
 
     private function dashboardRouteFor(string $role): string

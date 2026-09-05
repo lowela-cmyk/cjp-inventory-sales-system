@@ -41,6 +41,23 @@ class FrontendBugFixesTest extends TestCase
         $this->assertStringContainsString('--admin-red: var(--danger);', $styles);
         $this->assertStringContainsString('.btn:disabled', $styles);
         $this->assertStringContainsString('form[aria-busy="true"]', $styles);
+        $this->assertStringContainsString('.toast-stack', $styles);
+        $this->assertStringContainsString('@keyframes cjp-toast-enter', $styles);
+    }
+
+    public function test_login_uses_username_password_form_and_renders_cjp_toasts(): void
+    {
+        $response = $this->withSession([
+            'status' => 'Your registration is pending Admin approval.',
+            'toast_type' => 'warning',
+        ])->get(route('login'));
+
+        $response->assertOk()
+            ->assertSee('name="username"', false)
+            ->assertSee('name="password"', false)
+            ->assertDontSee('name="role"', false)
+            ->assertSee('cjp-toast-warning', false)
+            ->assertSee('Your registration is pending Admin approval.');
     }
 
     public function test_admin_nested_routes_keep_parent_sidebar_active(): void

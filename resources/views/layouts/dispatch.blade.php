@@ -32,5 +32,6 @@
     </div>
 
     <div class="sidebar-scrim" data-sidebar-toggle></div>
+    <x-toast-stack />
 </body>
 </html>

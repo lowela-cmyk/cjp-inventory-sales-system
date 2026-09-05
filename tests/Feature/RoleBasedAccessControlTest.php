@@ -98,6 +98,7 @@ class RoleBasedAccessControlTest extends TestCase
                 '/admin/sales',
                 '/admin/reports',
                 '/admin/alerts',
+                '/admin/account-requests',
                 '/admin/user-management',
             ],
             'inventory_officer' => [
@@ -241,7 +242,7 @@ class RoleBasedAccessControlTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_login_uses_database_role_and_blocks_wrong_role_selection(): void
+    public function test_login_uses_database_role_and_ignores_frontend_role_input(): void
     {
         $user = User::factory()->create([
             'email' => 'inventory@example.com',
@@ -254,9 +255,9 @@ class RoleBasedAccessControlTest extends TestCase
             'username' => $user->email,
             'role' => 'sales_officer',
             'password' => 'password',
-        ])->assertSessionHasErrors('username');
+        ])->assertRedirect(route('inventory-officer.inventory'));
 
-        $this->assertGuest();
+        $this->assertAuthenticatedAs($user);
     }
 
     public function test_repeated_failed_login_attempts_are_rate_limited(): void
@@ -412,6 +413,7 @@ class RoleBasedAccessControlTest extends TestCase
             'phone' => '09171234567',
             'role' => 'driver',
             'status' => 'active',
+            'approval_status' => 'pending',
         ]);
 
         $this->assertGuest();
@@ -434,12 +436,52 @@ class RoleBasedAccessControlTest extends TestCase
             'email' => 'self-escalate@example.com',
             'role' => 'driver',
             'status' => 'active',
+            'approval_status' => 'pending',
         ]);
 
         $this->assertDatabaseMissing('users', [
             'email' => 'self-escalate@example.com',
             'role' => 'admin',
         ]);
+
+        $this->assertGuest();
+    }
+
+    public function test_pending_and_rejected_accounts_cannot_login_or_access_dashboards(): void
+    {
+        $pending = User::factory()->create([
+            'email' => 'pending-login@example.com',
+            'role' => 'driver',
+            'status' => 'active',
+            'approval_status' => 'pending',
+            'password' => 'password',
+        ]);
+
+        $rejected = User::factory()->create([
+            'email' => 'rejected-login@example.com',
+            'role' => 'driver',
+            'status' => 'active',
+            'approval_status' => 'rejected',
+            'password' => 'password',
+        ]);
+
+        $this->post('/login', [
+            'username' => $pending->email,
+            'password' => 'password',
+        ])->assertSessionHasErrors(['username' => 'Your account is still pending Admin approval.']);
+
+        $this->assertGuest();
+
+        $this->post('/login', [
+            'username' => $rejected->email,
+            'password' => 'password',
+        ])->assertSessionHasErrors(['username' => 'Your account registration was rejected by the Administrator.']);
+
+        $this->assertGuest();
+
+        $this->actingAs($pending)
+            ->get(route('driver.fuel-lifting'))
+            ->assertForbidden();
 
         $this->assertGuest();
     }

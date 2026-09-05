@@ -10,6 +10,7 @@
         ['route' => 'admin.sales', 'label' => 'Sales'],
         ['route' => 'admin.reports', 'label' => 'Reports'],
         ['route' => 'admin.alerts', 'label' => 'Alerts'],
+        ['route' => 'admin.account-requests', 'label' => 'Account Requests'],
         ['route' => 'admin.user-management', 'label' => 'User Management'],
     ];
 @endphp

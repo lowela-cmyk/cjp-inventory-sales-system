@@ -28,6 +28,7 @@ class AdminUserManagementController extends Controller
     ];
 
     private const STATUSES = ['active', 'inactive'];
+    private const APPROVAL_STATUSES = ['pending', 'approved', 'rejected'];
 
     public function index(Request $request): View
     {
@@ -74,6 +75,7 @@ class AdminUserManagementController extends Controller
             'phone' => $data['phone'] ?? null,
             'role' => $data['role'],
             'status' => $data['status'],
+            'approval_status' => 'approved',
             'password' => $data['password'],
         ]);
 
@@ -97,6 +99,7 @@ class AdminUserManagementController extends Controller
                 'phone' => $data['phone'] ?? null,
                 'role' => 'driver',
                 'status' => $data['status'],
+                'approval_status' => 'approved',
                 'password' => $data['password'],
             ]);
 
@@ -193,6 +196,45 @@ class AdminUserManagementController extends Controller
         return $this->backToTab($data['tab'] ?? ($user->role === 'driver' ? 'drivers' : 'office'), 'Account status updated successfully.');
     }
 
+    public function accountRequests(): View
+    {
+        $requests = User::query()
+            ->whereIn('approval_status', self::APPROVAL_STATUSES)
+            ->orderByRaw("CASE approval_status WHEN 'pending' THEN 0 WHEN 'rejected' THEN 1 ELSE 2 END")
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->get();
+
+        return view('admin.account-requests', [
+            'requests' => $requests,
+            'approvalStatuses' => self::APPROVAL_STATUSES,
+        ]);
+    }
+
+    public function updateApproval(Request $request, User $user): RedirectResponse
+    {
+        $data = $request->validate([
+            'approval_status' => ['required', Rule::in(['approved', 'rejected'])],
+        ]);
+
+        if ($data['approval_status'] === 'rejected' && $this->removesFinalActiveAdmin($user, $user->role, $user->status, 'rejected')) {
+            return $this->finalAdminError();
+        }
+
+        $user->forceFill([
+            'approval_status' => $data['approval_status'],
+        ])->save();
+
+        $message = $data['approval_status'] === 'approved'
+            ? 'Account approved. The user can now enter the CJP dashboard.'
+            : 'Account request rejected. The user remains blocked from CJP dashboards.';
+
+        return redirect()
+            ->route('admin.account-requests')
+            ->with('status', $message)
+            ->with('toast_type', $data['approval_status'] === 'approved' ? 'success' : 'warning');
+    }
+
     /**
      * @param array<int, mixed> $passwordRules
      * @param array<string, array<int, mixed>> $extraRules
@@ -278,19 +320,20 @@ class AdminUserManagementController extends Controller
         ]);
     }
 
-    private function removesFinalActiveAdmin(User $user, string $newRole, string $newStatus): bool
+    private function removesFinalActiveAdmin(User $user, string $newRole, string $newStatus, ?string $newApprovalStatus = null): bool
     {
-        if ($user->role !== 'admin' || $user->status !== 'active') {
+        if ($user->role !== 'admin' || $user->status !== 'active' || $user->approval_status !== 'approved') {
             return false;
         }
 
-        if ($newRole === 'admin' && $newStatus === 'active') {
+        if ($newRole === 'admin' && $newStatus === 'active' && ($newApprovalStatus ?? $user->approval_status) === 'approved') {
             return false;
         }
 
         return ! User::query()
             ->where('role', 'admin')
             ->where('status', 'active')
+            ->where('approval_status', 'approved')
             ->whereKeyNot($user->id)
             ->exists();
     }
@@ -312,6 +355,7 @@ class AdminUserManagementController extends Controller
         return redirect()
             ->route('admin.user-management', ['tab' => $tab])
             ->with('user_management_tab', $tab)
-            ->with('status', $message);
+            ->with('status', $message)
+            ->with('toast_type', 'success');
     }
 }

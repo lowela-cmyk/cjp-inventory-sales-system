@@ -26,11 +26,9 @@ class FormValidationTest extends TestCase
             ])
             ->assertRedirect(route('login'))
             ->assertSessionHasErrors([
-                'role' => 'The selected role is invalid.',
                 'password' => 'The password field is required.',
             ])
-            ->assertSessionHasInput('username', 'bad-user')
-            ->assertSessionHasInput('role', 'manager');
+            ->assertSessionHasInput('username', 'bad-user');
 
         $this->assertNull(session()->getOldInput('password'));
 

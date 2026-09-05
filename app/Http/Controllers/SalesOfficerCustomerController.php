@@ -56,7 +56,7 @@ class SalesOfficerCustomerController extends Controller
 
         if ($request->session()->has($sessionKey)) {
             return redirect()
-                ->route('sales-officer.sales')
+                ->route($this->salesRedirectRoute($request))
                 ->with('status', 'Payment record was already submitted.');
         }
 
@@ -190,7 +190,7 @@ class SalesOfficerCustomerController extends Controller
         $request->session()->put($sessionKey, $result['payment_code']);
 
         return redirect()
-            ->route('sales-officer.sales')
+            ->route($this->salesRedirectRoute($request))
             ->with('status', 'Payment record '.$result['payment_code'].' recorded successfully.');
     }
 
@@ -202,7 +202,7 @@ class SalesOfficerCustomerController extends Controller
 
         if ($request->session()->has($sessionKey)) {
             return redirect()
-                ->route('sales-officer.sales')
+                ->route($this->salesRedirectRoute($request))
                 ->with('status', 'Sale record was already submitted.');
         }
 
@@ -213,6 +213,7 @@ class SalesOfficerCustomerController extends Controller
 
                 $saleId = DB::table('sales')->insertGetId([
                     'sale_code' => $saleCode,
+                    'sales_order_number' => $this->blankToNull($data['sales_order_number'] ?? null),
                     'customer_id' => $data['customer_id'],
                     'sale_date' => $data['sale_date'],
                     'payment_method' => $data['payment_method'],
@@ -256,7 +257,7 @@ class SalesOfficerCustomerController extends Controller
         $request->session()->put($sessionKey, $saleCode);
 
         return redirect()
-            ->route('sales-officer.sales')
+            ->route($this->salesRedirectRoute($request))
             ->with('status', 'Sale record '.$saleCode.' created successfully.');
     }
 
@@ -270,7 +271,7 @@ class SalesOfficerCustomerController extends Controller
         if ($this->hasSaleDependentActivity($sale) && $this->changesProtectedSaleFields($row, $data)) {
             return back()
                 ->withInput()
-                ->withErrors(['sale' => 'This sale already has payment, stock-out, delivery, or haul activity, so customer, fuel, quantity, price, and date cannot be changed.']);
+                ->withErrors(['sale' => 'This sale already has payment, stock-out, inventory release, or haul activity, so customer, fuel, quantity, price, and date cannot be changed.']);
         }
 
         DB::transaction(function () use ($sale, $data): void {
@@ -280,6 +281,7 @@ class SalesOfficerCustomerController extends Controller
             DB::table('sales')
                 ->where('id', $sale)
                 ->update([
+                    'sales_order_number' => $this->blankToNull($data['sales_order_number'] ?? null),
                     'customer_id' => $data['customer_id'],
                     'sale_date' => $data['sale_date'],
                     'payment_method' => $data['payment_method'],
@@ -319,11 +321,11 @@ class SalesOfficerCustomerController extends Controller
         });
 
         return redirect()
-            ->route('sales-officer.sales')
+            ->route($this->salesRedirectRoute($request))
             ->with('status', 'Sale record updated successfully.');
     }
 
-    public function cancelSale(int $sale): RedirectResponse
+    public function cancelSale(Request $request, int $sale): RedirectResponse
     {
         abort_unless(DB::table('sales')->where('id', $sale)->whereNull('deleted_at')->exists(), 404);
 
@@ -340,7 +342,7 @@ class SalesOfficerCustomerController extends Controller
             ]);
 
         return redirect()
-            ->route('sales-officer.sales')
+            ->route($this->salesRedirectRoute($request))
             ->with('status', 'Sale record cancelled successfully.');
     }
 
@@ -557,6 +559,7 @@ class SalesOfficerCustomerController extends Controller
             ->whereNull('sales.deleted_at')
             ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
                 'sales.sale_code',
+                'sales.sales_order_number',
                 'customers.name',
                 'customers.company_name',
                 'items_total.first_fuel_name',
@@ -569,6 +572,7 @@ class SalesOfficerCustomerController extends Controller
             ->get([
                 'sales.id as sale_id',
                 'sales.sale_code',
+                'sales.sales_order_number',
                 'sales.sale_date',
                 'sales.customer_id',
                 'sales.payment_method',
@@ -615,6 +619,7 @@ class SalesOfficerCustomerController extends Controller
                     'payment_id' => 'so-payment-history-'.$row->sale_id,
                     'payment_token' => (string) Str::uuid(),
                     'sale_code' => $row->sale_code,
+                    'sales_order_number' => $row->sales_order_number,
                     'sale_date' => $row->sale_date,
                     'customer_id' => (int) $row->customer_id,
                     'payment_method' => $row->payment_method,
@@ -628,6 +633,7 @@ class SalesOfficerCustomerController extends Controller
                     'class' => $this->rowClass($receivableStatus === 'overdue' ? 'overdue' : $status),
                     'cells' => [
                         $row->sale_code,
+                        $row->sales_order_number ?: 'N/A',
                         $this->formatDate($row->sale_date),
                         $row->customer_name,
                         $row->company_name,
@@ -642,6 +648,7 @@ class SalesOfficerCustomerController extends Controller
                         $status,
                     ],
                     'details' => [
+                        'Sales Order Number' => $row->sales_order_number ?: 'N/A',
                         'Transaction Date' => $this->formatDate($row->sale_date),
                         'Customer Name' => $row->customer_name,
                         'Company Name' => $row->company_name,
@@ -674,6 +681,7 @@ class SalesOfficerCustomerController extends Controller
         return $request->validate([
             'idempotency_key' => [$saleId ? 'nullable' : 'required', 'uuid'],
             'sale_code' => ['nullable', 'string', 'max:30', Rule::unique('sales', 'sale_code')->ignore($saleId)->whereNull('deleted_at')],
+            'sales_order_number' => ['nullable', 'string', 'max:60', Rule::unique('sales', 'sales_order_number')->ignore($saleId)->whereNull('deleted_at')],
             'customer_id' => ['required', 'integer', Rule::exists('customers', 'id')->where(fn (Builder $query): Builder => $query->where('status', 'active'))],
             'sale_date' => ['required', 'date'],
             'fuel_type_id' => ['required_without:items', 'integer', Rule::exists('fuel_types', 'id')->where(fn (Builder $query): Builder => $query->where('status', 'active'))],
@@ -750,6 +758,7 @@ class SalesOfficerCustomerController extends Controller
             ->whereNull('sales.deleted_at')
             ->first([
                 'sales.id',
+                'sales.sales_order_number',
                 'sales.customer_id',
                 'sales.sale_date',
                 'sales.payment_method',
@@ -834,6 +843,13 @@ class SalesOfficerCustomerController extends Controller
         $requested = trim((string) $requested);
 
         return $requested !== '' ? $requested : $this->nextCode('sales', 'sale_code', 'SLS');
+    }
+
+    private function blankToNull(mixed $value): ?string
+    {
+        $value = trim((string) $value);
+
+        return $value === '' ? null : $value;
     }
 
     private function saleTotalForUpdate(int $saleId): float
@@ -1297,24 +1313,24 @@ class SalesOfficerCustomerController extends Controller
             ->groupBy('customer_id')
             ->pluck('sales_count', 'customer_id');
 
-        $deliveryCounts = DB::table('deliveries')
-            ->whereIn('customer_id', $ids->all())
-            ->selectRaw('customer_id, COUNT(*) as delivery_count')
-            ->groupBy('customer_id')
-            ->pluck('delivery_count', 'customer_id');
-
         return $ids
-            ->mapWithKeys(function (int $customerId) use ($salesCounts, $deliveryCounts): array {
+            ->mapWithKeys(function (int $customerId) use ($salesCounts): array {
                 $sales = (int) ($salesCounts[$customerId] ?? 0);
-                $deliveries = (int) ($deliveryCounts[$customerId] ?? 0);
 
                 return [
-                    $customerId => $sales === 0 && $deliveries === 0
+                    $customerId => $sales === 0
                         ? 'No transaction records found'
-                        : $sales.' sales / '.$deliveries.' deliveries',
+                        : $sales.' sales',
                 ];
             })
             ->all();
+    }
+
+    private function salesRedirectRoute(Request $request): string
+    {
+        return str_starts_with((string) $request->route()?->getName(), 'admin.')
+            ? 'admin.sales'
+            : 'sales-officer.sales';
     }
 
     private function customerOutstandingTotal(int $customerId): float

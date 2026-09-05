@@ -50,10 +50,11 @@ class AdminSalesReportController extends Controller
 
         fputcsv($handle, []);
         fputcsv($handle, ['Transactions']);
-        fputcsv($handle, ['Reference', 'Date', 'Customer', 'Company', 'Items', 'Quantity Liters', 'Sale Total', 'Total Paid', 'Balance', 'Payment Status']);
+        fputcsv($handle, ['Reference', 'Sales Order Number', 'Date', 'Customer', 'Company', 'Items', 'Quantity Liters', 'Sale Total', 'Total Paid', 'Balance', 'Payment Status']);
         foreach ($report['transactions'] as $row) {
             fputcsv($handle, [
                 $row['sale_code'],
+                $row['sales_order_number'],
                 $row['sale_date'],
                 $row['customer_name'],
                 $row['company_name'],
@@ -68,11 +69,12 @@ class AdminSalesReportController extends Controller
 
         fputcsv($handle, []);
         fputcsv($handle, ['Payment History']);
-        fputcsv($handle, ['Payment Reference', 'Sale Reference', 'Payment Date', 'Customer', 'Method', 'Amount', 'Received By']);
+        fputcsv($handle, ['Payment Reference', 'Sale Reference', 'Sales Order Number', 'Payment Date', 'Customer', 'Method', 'Amount', 'Received By']);
         foreach ($report['paymentHistory'] as $row) {
             fputcsv($handle, [
                 $row['payment_code'],
                 $row['sale_code'],
+                $row['sales_order_number'],
                 $row['payment_date'],
                 $row['customer_name'],
                 $row['method'],
@@ -83,11 +85,12 @@ class AdminSalesReportController extends Controller
 
         fputcsv($handle, []);
         fputcsv($handle, ['Receivables']);
-        fputcsv($handle, ['Customer', 'Reference', 'Sale Total', 'Total Paid', 'Balance', 'Status', 'Due Date']);
+        fputcsv($handle, ['Customer', 'Reference', 'Sales Order Number', 'Sale Total', 'Total Paid', 'Balance', 'Status', 'Due Date']);
         foreach ($report['receivables'] as $row) {
             fputcsv($handle, [
                 $row['customer_name'],
                 $row['sale_code'],
+                $row['sales_order_number'],
                 $row['sale_total_raw'],
                 $row['paid_raw'],
                 $row['balance_raw'],
@@ -221,6 +224,7 @@ class AdminSalesReportController extends Controller
             ->get([
                 'sales.id',
                 'sales.sale_code',
+                'sales.sales_order_number',
                 'sales.sale_date',
                 'sales.payment_method',
                 'sales.payment_terms',
@@ -358,6 +362,7 @@ class AdminSalesReportController extends Controller
                 'payments.amount',
                 'payments.method',
                 'sales.sale_code',
+                'sales.sales_order_number',
                 'customers.name as customer_name',
                 'users.name as received_by',
             ])
@@ -367,6 +372,7 @@ class AdminSalesReportController extends Controller
                 'amount' => $this->formatMoney((float) $row->amount),
                 'method' => $this->paymentMethodLabel($row->method),
                 'sale_code' => $row->sale_code,
+                'sales_order_number' => $row->sales_order_number ?: 'N/A',
                 'customer_name' => $row->customer_name,
                 'received_by' => $row->received_by ?: 'N/A',
                 'amount_raw' => number_format((float) $row->amount, 2, '.', ''),
@@ -380,6 +386,7 @@ class AdminSalesReportController extends Controller
             ->values()
             ->map(fn (object $row): array => [
                 'sale_code' => $row->sale_code,
+                'sales_order_number' => $row->sales_order_number ?: 'N/A',
                 'customer_name' => $row->customer_name,
                 'sale_total' => $this->formatMoney($row->sale_total),
                 'paid' => $this->formatMoney($row->total_paid),
@@ -397,6 +404,7 @@ class AdminSalesReportController extends Controller
         return $saleRows
             ->map(fn (object $row): array => [
                 'sale_code' => $row->sale_code,
+                'sales_order_number' => $row->sales_order_number ?: 'N/A',
                 'sale_date' => $this->formatDate($row->sale_date),
                 'customer_name' => $row->customer_name,
                 'company_name' => $row->company_name,

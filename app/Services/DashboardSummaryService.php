@@ -42,7 +42,6 @@ class DashboardSummaryService
                     ['Total Sales Revenue', $this->formatMoney($totalSalesRevenue), 'Cumulative', ''],
                     ['Outstanding Balance', $this->formatMoney($outstandingBalance), 'Receivables', 'color:#a31318'],
                     ['Unlifted Fuel (KL)', $this->formatKiloliters($this->unliftedFuelLiters()), 'Pending lifting', ''],
-                    ['Active Deliveries', number_format($this->activeDeliveries()), 'Scheduled / in transit', ''],
                 ],
             ];
         });

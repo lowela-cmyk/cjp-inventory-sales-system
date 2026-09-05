@@ -21,30 +21,38 @@
             <button class="tab-button {{ $activeTab === 'drivers' ? 'is-active' : '' }}" type="button" data-tab-target="drivers">Drivers</button>
             <button class="tab-button {{ $activeTab === 'customers' ? 'is-active' : '' }}" type="button" data-tab-target="customers">Customers</button>
         </div>
-        <div class="actions-right"><button class="btn btn-secondary" type="button">Export</button></div>
+        <div class="actions-right">
+            <a
+                class="btn btn-secondary"
+                href="{{ route('admin.user-management.export', ['tab' => $activeTab]) }}"
+                data-tab-export-url="{{ route('admin.user-management.export', ['tab' => '__TAB__']) }}"
+            >Export</a>
+        </div>
 
         <section data-tab-panel="office" {{ $activeTab !== 'office' ? 'hidden' : '' }}>
             <div class="toolbar toolbar-narrow">
                 <input type="search" placeholder="Search..." aria-label="Search office staff">
-                <button class="btn btn-primary" type="button">Position</button>
-                <button class="btn btn-primary" type="button">Contact</button>
+                <button class="btn btn-primary" type="button" data-sort-table="2">Position</button>
+                <button class="btn btn-primary" type="button" data-sort-table="6">Contact</button>
                 <button class="btn btn-primary" type="button" data-modal-open="staff-add">+ Add Office Staff</button>
             </div>
             <div class="table-wrap">
                 <table class="admin-table">
-                    <thead><tr><th>Staff ID</th><th>Name</th><th>Position</th><th>Email</th><th>Contact Number</th><th>Actions</th></tr></thead>
+                    <thead><tr><th>Staff ID</th><th>Name</th><th>Position</th><th>Account Status</th><th>Approval Status</th><th>Email</th><th>Contact Number</th><th>Actions</th></tr></thead>
                     <tbody>
                         @forelse ($staff as $row)
                             <tr>
                                 <td>{{ $staffId($row) }}</td>
                                 <td>{{ $row->name }}</td>
-                                <td>{{ $row->role_label }} / {{ ucfirst($row->status) }}</td>
+                                <td>{{ $row->role_label }}</td>
+                                <td><x-admin.status-badge :status="ucfirst($row->status)" /></td>
+                                <td><x-admin.status-badge :status="ucfirst($row->approval_status)" /></td>
                                 <td>{{ $row->email }}</td>
                                 <td>{{ $row->phone ?: 'N/A' }}</td>
                                 <td><button class="btn btn-secondary" type="button" data-modal-open="staff-edit-{{ $row->id }}">Edit</button></td>
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="6">No office staff accounts found.</td></tr>
+                            <tr><td class="empty-cell" colspan="8">No office staff accounts found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -54,25 +62,27 @@
         <section data-tab-panel="drivers" {{ $activeTab !== 'drivers' ? 'hidden' : '' }}>
             <div class="toolbar toolbar-narrow">
                 <input type="search" placeholder="Search..." aria-label="Search drivers">
-                <button class="btn btn-primary" type="button">License</button>
-                <button class="btn btn-primary" type="button">Contact</button>
+                <button class="btn btn-primary" type="button" data-sort-table="2">License</button>
+                <button class="btn btn-primary" type="button" data-sort-table="6">Contact</button>
                 <button class="btn btn-primary" type="button" data-modal-open="driver-add">+ Add Driver</button>
             </div>
             <div class="table-wrap">
                 <table class="admin-table">
-                    <thead><tr><th>Driver ID</th><th>Name</th><th>License No.</th><th>Email</th><th>Contact Number</th><th>Actions</th></tr></thead>
+                    <thead><tr><th>Driver ID</th><th>Name</th><th>License No.</th><th>Account Status</th><th>Approval Status</th><th>Email</th><th>Contact Number</th><th>Actions</th></tr></thead>
                     <tbody>
                         @forelse ($drivers as $row)
                             <tr>
                                 <td>{{ $driverId($row) }}</td>
                                 <td>{{ $row->name }}</td>
                                 <td>{{ $row->license_number ?: 'N/A' }}</td>
+                                <td><x-admin.status-badge :status="ucfirst($row->status)" /></td>
+                                <td><x-admin.status-badge :status="ucfirst($row->approval_status)" /></td>
                                 <td>{{ $row->email }}</td>
                                 <td>{{ $row->phone ?: 'N/A' }}</td>
                                 <td><button class="btn btn-secondary" type="button" data-modal-open="driver-edit-{{ $row->id }}">Edit</button></td>
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="6">No driver accounts found.</td></tr>
+                            <tr><td class="empty-cell" colspan="8">No driver accounts found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -82,8 +92,8 @@
         <section data-tab-panel="customers" {{ $activeTab !== 'customers' ? 'hidden' : '' }}>
             <div class="toolbar toolbar-narrow">
                 <input type="search" placeholder="Search..." aria-label="Search customers">
-                <button class="btn btn-primary" type="button">Location</button>
-                <button class="btn btn-primary" type="button">Company</button>
+                <button class="btn btn-primary" type="button" data-sort-table="3">Location</button>
+                <button class="btn btn-primary" type="button" data-sort-table="2">Company</button>
                 <button class="btn btn-primary" type="button" data-modal-open="customer-add">+ Add Customer</button>
             </div>
             <div class="table-wrap">
@@ -171,6 +181,7 @@
                     <div class="form-row"><label for="staff_email_{{ $row->id }}">Email</label><input form="staff-update-{{ $row->id }}" id="staff_email_{{ $row->id }}" name="email" type="email" value="{{ old('email', $row->email) }}" required></div>
                     <div class="form-row"><label for="staff_phone_{{ $row->id }}">Contact Number</label><input form="staff-update-{{ $row->id }}" id="staff_phone_{{ $row->id }}" name="phone" type="tel" value="{{ old('phone', $row->phone) }}"></div>
                     <div class="form-row"><label for="staff_status_{{ $row->id }}">Status</label><select form="staff-update-{{ $row->id }}" id="staff_status_{{ $row->id }}" name="status" required>@foreach ($statuses as $status)<option value="{{ $status }}" @selected(old('status', $row->status) === $status)>{{ ucfirst($status) }}</option>@endforeach</select></div>
+                    <div class="form-row"><label>Approval Status</label><div class="form-status-value"><x-admin.status-badge :status="ucfirst($row->approval_status)" /></div></div>
                     <div class="form-row"><label for="staff_password_{{ $row->id }}">Password</label><input form="staff-update-{{ $row->id }}" id="staff_password_{{ $row->id }}" name="password" type="password" placeholder="Leave blank to keep current password"></div>
                     <div class="form-row"><label for="staff_password_confirmation_{{ $row->id }}">Confirm Password</label><input form="staff-update-{{ $row->id }}" id="staff_password_confirmation_{{ $row->id }}" name="password_confirmation" type="password" placeholder="Confirm New Password"></div>
                 </div>
@@ -203,6 +214,7 @@
                     <div class="form-row"><label for="driver_email_{{ $row->id }}">Email</label><input form="driver-update-{{ $row->id }}" id="driver_email_{{ $row->id }}" name="email" type="email" value="{{ old('email', $row->email) }}" required></div>
                     <div class="form-row"><label for="driver_phone_{{ $row->id }}">Contact Number</label><input form="driver-update-{{ $row->id }}" id="driver_phone_{{ $row->id }}" name="phone" type="tel" value="{{ old('phone', $row->phone) }}"></div>
                     <div class="form-row"><label for="driver_status_{{ $row->id }}">Status</label><select form="driver-update-{{ $row->id }}" id="driver_status_{{ $row->id }}" name="status" required>@foreach ($statuses as $status)<option value="{{ $status }}" @selected(old('status', $row->status) === $status)>{{ ucfirst($status) }}</option>@endforeach</select></div>
+                    <div class="form-row"><label>Approval Status</label><div class="form-status-value"><x-admin.status-badge :status="ucfirst($row->approval_status)" /></div></div>
                     <div class="form-row"><label for="driver_password_{{ $row->id }}">Password</label><input form="driver-update-{{ $row->id }}" id="driver_password_{{ $row->id }}" name="password" type="password" placeholder="Leave blank to keep current password"></div>
                     <div class="form-row"><label for="driver_password_confirmation_{{ $row->id }}">Confirm Password</label><input form="driver-update-{{ $row->id }}" id="driver_password_confirmation_{{ $row->id }}" name="password_confirmation" type="password" placeholder="Confirm New Password"></div>
                 </div>

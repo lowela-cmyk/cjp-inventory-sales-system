@@ -27,7 +27,7 @@
         </div>
 
         <div class="actions-right">
-            <button class="btn btn-secondary" type="button" data-print-page>Export</button>
+            <button class="btn btn-secondary" type="button" data-export-table>Export</button>
         </div>
 
         @if (! empty($summaryCards))

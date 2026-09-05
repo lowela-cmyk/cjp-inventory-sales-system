@@ -161,6 +161,7 @@
                         <thead>
                             <tr>
                                 <th>Reference</th>
+                                <th>Sales Order No.</th>
                                 <th>Date</th>
                                 <th>Customer</th>
                                 <th>Fuel/Items</th>
@@ -176,6 +177,7 @@
                             @forelse ($transactions as $row)
                                 <tr>
                                     <td>{{ $row['sale_code'] }}</td>
+                                    <td>{{ $row['sales_order_number'] }}</td>
                                     <td>{{ $row['sale_date'] }}</td>
                                     <td>{{ $row['customer_name'] }}</td>
                                     <td>{{ $row['items'] }}</td>
@@ -187,7 +189,7 @@
                                     <td>{{ $row['latest_payment_date'] }}</td>
                                 </tr>
                             @empty
-                                <tr><td class="empty-cell" colspan="10">No records found.</td></tr>
+                                <tr><td class="empty-cell" colspan="11">No records found.</td></tr>
                             @endforelse
                         </tbody>
                     </table>
@@ -243,6 +245,7 @@
                             <tr>
                                 <th>Payment Ref</th>
                                 <th>Sale Ref</th>
+                                <th>Sales Order No.</th>
                                 <th>Date</th>
                                 <th>Customer</th>
                                 <th>Method</th>
@@ -255,6 +258,7 @@
                                 <tr>
                                     <td>{{ $row['payment_code'] }}</td>
                                     <td>{{ $row['sale_code'] }}</td>
+                                    <td>{{ $row['sales_order_number'] }}</td>
                                     <td>{{ $row['payment_date'] }}</td>
                                     <td>{{ $row['customer_name'] }}</td>
                                     <td>{{ $row['method'] }}</td>
@@ -262,7 +266,7 @@
                                     <td>{{ $row['received_by'] }}</td>
                                 </tr>
                             @empty
-                                <tr><td class="empty-cell" colspan="7">No records found.</td></tr>
+                                <tr><td class="empty-cell" colspan="8">No records found.</td></tr>
                             @endforelse
                         </tbody>
                     </table>
@@ -296,12 +300,13 @@
                     <div class="chart-header"><h2>Receivable Report</h2></div>
                     <div class="table-wrap">
                         <table class="admin-table">
-                            <thead><tr><th>Customer</th><th>Reference</th><th>Sale Total</th><th>Paid</th><th>Balance</th><th>Status</th><th>Due</th></tr></thead>
+                            <thead><tr><th>Customer</th><th>Reference</th><th>Sales Order No.</th><th>Sale Total</th><th>Paid</th><th>Balance</th><th>Status</th><th>Due</th></tr></thead>
                             <tbody>
                                 @forelse ($receivables as $row)
                                     <tr>
                                         <td>{{ $row['customer_name'] }}</td>
                                         <td>{{ $row['sale_code'] }}</td>
+                                        <td>{{ $row['sales_order_number'] }}</td>
                                         <td>{{ $row['sale_total'] }}</td>
                                         <td>{{ $row['paid'] }}</td>
                                         <td>{{ $row['balance'] }}</td>
@@ -309,7 +314,7 @@
                                         <td>{{ $row['due_date'] ?: 'N/A' }}</td>
                                     </tr>
                                 @empty
-                                    <tr><td class="empty-cell" colspan="7">No records found.</td></tr>
+                                    <tr><td class="empty-cell" colspan="8">No records found.</td></tr>
                                 @endforelse
                             </tbody>
                         </table>

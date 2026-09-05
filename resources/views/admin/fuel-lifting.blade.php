@@ -15,7 +15,7 @@
             <button class="tab-button is-active" type="button" data-tab-target="schedule">Schedule</button>
             <button class="tab-button" type="button" data-tab-target="hauled">Hauled</button>
         </div>
-        <div class="actions-right"><button class="btn btn-secondary" type="button">Export</button></div>
+        <div class="actions-right"><button class="btn btn-secondary" type="button" data-export-table>Export</button></div>
 
         <section data-tab-panel="schedule">
             <form class="toolbar toolbar-narrow" method="GET" action="{{ route('admin.fuel-lifting') }}">

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
@@ -32,33 +33,82 @@ class AdminUserManagementController extends Controller
 
     public function index(Request $request): View
     {
-        $staff = User::query()
-            ->whereIn('role', array_keys(self::OFFICE_ROLES))
-            ->orderBy('id')
-            ->get();
-
-        $drivers = User::query()
-            ->leftJoin('driver_profiles', 'driver_profiles.user_id', '=', 'users.id')
-            ->where('users.role', 'driver')
-            ->orderBy('users.id')
-            ->get([
-                'users.*',
-                'driver_profiles.driver_code',
-                'driver_profiles.license_number',
-            ]);
-
-        $customers = DB::table('customers')
-            ->orderBy('id')
-            ->get();
-
         return view('admin.user-management', [
-            'staff' => $staff,
-            'drivers' => $drivers,
-            'customers' => $customers,
+            'staff' => $this->staffRows(),
+            'drivers' => $this->driverRows(),
+            'customers' => $this->customerRows(),
             'officeRoles' => self::OFFICE_ROLES,
             'roles' => self::ROLES,
             'statuses' => self::STATUSES,
             'activeTab' => $request->query('tab', session('user_management_tab', 'office')),
+        ]);
+    }
+
+    public function export(Request $request): Response
+    {
+        $data = $request->validate([
+            'tab' => ['nullable', Rule::in(['office', 'drivers', 'customers'])],
+        ]);
+
+        $tab = $data['tab'] ?? 'office';
+        $filename = 'user-management-'.$tab.'-'.now()->format('Ymd-His').'.csv';
+        $handle = fopen('php://temp', 'r+');
+
+        fputcsv($handle, ['CJP Southern Star OPC User Management']);
+        fputcsv($handle, ['Section', ucfirst($tab)]);
+        fputcsv($handle, ['Generated At', now()->format('M d, Y h:i A')]);
+        fputcsv($handle, []);
+
+        if ($tab === 'drivers') {
+            fputcsv($handle, ['Driver ID', 'Name', 'License No.', 'Account Status', 'Approval Status', 'Email', 'Contact Number']);
+
+            foreach ($this->driverRows() as $row) {
+                fputcsv($handle, [
+                    $this->driverCodeFor($row),
+                    $row->name,
+                    $row->license_number ?: 'N/A',
+                    ucfirst($row->status),
+                    ucfirst($row->approval_status),
+                    $row->email,
+                    $row->phone ?: 'N/A',
+                ]);
+            }
+        } elseif ($tab === 'customers') {
+            fputcsv($handle, ['Customer ID', 'Customer Name', 'Company Name', 'Location', 'Email', 'Contact Number']);
+
+            foreach ($this->customerRows() as $row) {
+                fputcsv($handle, [
+                    'CSM-'.str_pad((string) $row->id, 6, '0', STR_PAD_LEFT),
+                    $row->name,
+                    $row->company_name,
+                    $row->location ?: 'N/A',
+                    $row->email ?: 'N/A',
+                    $row->phone ?: 'N/A',
+                ]);
+            }
+        } else {
+            fputcsv($handle, ['Staff ID', 'Name', 'Position', 'Account Status', 'Approval Status', 'Email', 'Contact Number']);
+
+            foreach ($this->staffRows() as $row) {
+                fputcsv($handle, [
+                    $this->staffCodeFor($row),
+                    $row->name,
+                    $row->role_label,
+                    ucfirst($row->status),
+                    ucfirst($row->approval_status),
+                    $row->email,
+                    $row->phone ?: 'N/A',
+                ]);
+            }
+        }
+
+        rewind($handle);
+        $csv = stream_get_contents($handle);
+        fclose($handle);
+
+        return response($csv, 200, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="'.$filename.'"',
         ]);
     }
 
@@ -347,7 +397,12 @@ class AdminUserManagementController extends Controller
 
     private function driverCodeFor(User $user): string
     {
-        return 'DRV-'.str_pad((string) $user->id, 6, '0', STR_PAD_LEFT);
+        return $user->driver_code ?: 'DRV-'.str_pad((string) $user->id, 6, '0', STR_PAD_LEFT);
+    }
+
+    private function staffCodeFor(User $user): string
+    {
+        return 'EMP-'.str_pad((string) $user->id, 6, '0', STR_PAD_LEFT);
     }
 
     private function backToTab(string $tab, string $message): RedirectResponse
@@ -357,5 +412,33 @@ class AdminUserManagementController extends Controller
             ->with('user_management_tab', $tab)
             ->with('status', $message)
             ->with('toast_type', 'success');
+    }
+
+    private function staffRows()
+    {
+        return User::query()
+            ->whereIn('role', array_keys(self::OFFICE_ROLES))
+            ->orderBy('id')
+            ->get();
+    }
+
+    private function driverRows()
+    {
+        return User::query()
+            ->leftJoin('driver_profiles', 'driver_profiles.user_id', '=', 'users.id')
+            ->where('users.role', 'driver')
+            ->orderBy('users.id')
+            ->get([
+                'users.*',
+                'driver_profiles.driver_code',
+                'driver_profiles.license_number',
+            ]);
+    }
+
+    private function customerRows()
+    {
+        return DB::table('customers')
+            ->orderBy('id')
+            ->get();
     }
 }

@@ -15,9 +15,6 @@
     </a>
 
     <nav class="side-nav driver-nav" aria-label="Driver navigation">
-        <a class="side-link {{ request()->routeIs('driver.assigned-deliveries*') ? 'is-active' : '' }}" href="{{ route('driver.assigned-deliveries') }}">
-            Assigned Deliveries
-        </a>
         <a class="side-link {{ request()->routeIs('driver.fuel-lifting*') ? 'is-active' : '' }}" href="{{ route('driver.fuel-lifting') }}">
             Fuel Lifting
         </a>

@@ -9,8 +9,8 @@ use App\Http\Controllers\AdminSalesReportController;
 use App\Http\Controllers\AdminSalesTrendSummaryController;
 use App\Http\Controllers\AdminUserManagementController;
 use App\Http\Controllers\AuthController;
-use App\Http\Controllers\DispatchDeliveryController;
 use App\Http\Controllers\DispatchLiftingStatusController;
+use App\Http\Controllers\DispatchDeliveryController;
 use App\Http\Controllers\DriverDeliveryController;
 use App\Http\Controllers\DriverLiftingStatusController;
 use App\Http\Controllers\HaulTruckAssignmentController;
@@ -44,12 +44,12 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/inventory', [AdminMonitoringController::class, 'inventory'])->name('inventory');
         Route::get('/ledger', [AdminMonitoringController::class, 'ledger'])->name('ledger');
         Route::get('/fuel-lifting', [AdminMonitoringController::class, 'fuelLifting'])->name('fuel-lifting');
-        Route::post('/fuel-lifting/deliveries', [DispatchDeliveryController::class, 'store'])->name('fuel-lifting.deliveries.store');
-        Route::patch('/fuel-lifting/deliveries/{delivery}/assignment', [DispatchDeliveryController::class, 'updateAssignment'])->name('fuel-lifting.deliveries.assignment');
-        Route::patch('/fuel-lifting/deliveries/{delivery}/status', [DispatchDeliveryController::class, 'updateStatus'])->name('fuel-lifting.deliveries.status');
         Route::patch('/fuel-lifting/hauls/{haul}/truck', [HaulTruckAssignmentController::class, 'update'])->name('fuel-lifting.hauls.truck');
         Route::patch('/fuel-lifting/hauls/{haul}/status', [DispatchLiftingStatusController::class, 'updateStatus'])->name('fuel-lifting.hauls.status');
         Route::get('/sales', [AdminMonitoringController::class, 'sales'])->name('sales');
+        Route::post('/sales', [SalesOfficerCustomerController::class, 'storeSale'])->name('sales.store');
+        Route::patch('/sales/{sale}', [SalesOfficerCustomerController::class, 'updateSale'])->name('sales.update');
+        Route::patch('/sales/{sale}/cancel', [SalesOfficerCustomerController::class, 'cancelSale'])->name('sales.cancel');
         Route::get('/reports', AdminSalesReportController::class)->name('reports');
         Route::post('/reports/business-insight', AdminBusinessInsightController::class)->name('reports.business-insight');
         Route::post('/reports/revenue-insight', AdminRevenueInsightController::class)->name('reports.revenue-insight');
@@ -59,6 +59,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/account-requests', [AdminUserManagementController::class, 'accountRequests'])->name('account-requests');
         Route::patch('/account-requests/{user}', [AdminUserManagementController::class, 'updateApproval'])->name('account-requests.update');
         Route::get('/user-management', [AdminUserManagementController::class, 'index'])->name('user-management');
+        Route::get('/user-management/export', [AdminUserManagementController::class, 'export'])->name('user-management.export');
         Route::post('/user-management/staff', [AdminUserManagementController::class, 'storeStaff'])->name('user-management.staff.store');
         Route::patch('/user-management/staff/{user}', [AdminUserManagementController::class, 'updateStaff'])->name('user-management.staff.update');
         Route::post('/user-management/drivers', [AdminUserManagementController::class, 'storeDriver'])->name('user-management.drivers.store');
@@ -69,9 +70,6 @@ Route::middleware(['auth'])->group(function () {
     Route::redirect('/dispatch', '/dispatch/fuel-lifting')->middleware('role:dispatch_officer')->name('dispatch.shortcut');
     Route::prefix('dispatch')->name('dispatch.')->middleware('role:dispatch_officer')->group(function () {
         Route::get('/fuel-lifting', [DispatchDeliveryController::class, 'index'])->name('fuel-lifting');
-        Route::post('/fuel-lifting/deliveries', [DispatchDeliveryController::class, 'store'])->name('fuel-lifting.deliveries.store');
-        Route::patch('/fuel-lifting/deliveries/{delivery}/assignment', [DispatchDeliveryController::class, 'updateAssignment'])->name('fuel-lifting.deliveries.assignment');
-        Route::patch('/fuel-lifting/deliveries/{delivery}/status', [DispatchDeliveryController::class, 'updateStatus'])->name('fuel-lifting.deliveries.status');
         Route::patch('/fuel-lifting/hauls/{haul}/truck', [HaulTruckAssignmentController::class, 'update'])->name('fuel-lifting.hauls.truck');
         Route::patch('/fuel-lifting/hauls/{haul}/status', [DispatchLiftingStatusController::class, 'updateStatus'])->name('fuel-lifting.hauls.status');
         Route::get('/fuel-lifting/hauled', [DispatchDeliveryController::class, 'index'])->defaults('state', 'hauled')->name('fuel-lifting.hauled');
@@ -110,10 +108,6 @@ Route::middleware(['auth'])->group(function () {
 
     Route::redirect('/driver', '/driver/fuel-lifting')->middleware('role:driver')->name('driver.shortcut');
     Route::prefix('driver')->name('driver.')->middleware('role:driver')->group(function () {
-        Route::get('/assigned-deliveries', [DriverDeliveryController::class, 'assignedDeliveries'])->name('assigned-deliveries');
-        Route::get('/assigned-deliveries/completed', [DriverDeliveryController::class, 'assignedDeliveries'])->defaults('state', 'completed')->name('assigned-deliveries.completed');
-        Route::patch('/assigned-deliveries/{delivery}/pickup', [DriverDeliveryController::class, 'confirmPickup'])->name('assigned-deliveries.pickup');
-        Route::patch('/assigned-deliveries/{delivery}/status', [DriverDeliveryController::class, 'updateDeliveryStatus'])->name('assigned-deliveries.status');
         Route::get('/fuel-lifting', [DriverDeliveryController::class, 'index'])->name('fuel-lifting');
         Route::patch('/fuel-lifting/hauls/{haul}/status', [DriverLiftingStatusController::class, 'updateStatus'])->name('fuel-lifting.hauls.status');
         Route::get('/fuel-lifting/hauled', [DriverDeliveryController::class, 'index'])->defaults('state', 'hauled')->name('fuel-lifting.hauled');

@@ -76,8 +76,6 @@ class FunctionalTestingTest extends TestCase
                 route('dispatch.alerts'),
             ],
             'driver' => [
-                route('driver.assigned-deliveries'),
-                route('driver.assigned-deliveries.completed'),
                 route('driver.fuel-lifting'),
                 route('driver.fuel-lifting.hauled'),
                 route('driver.fuel-lifting.no-schedule'),
@@ -245,59 +243,6 @@ class FunctionalTestingTest extends TestCase
 
         $this->assertSame(100000.0, round((float) DB::table('payments')->where('sale_id', $sale->id)->sum('amount'), 2));
         $this->assertDatabaseHas('receivables', ['sale_id' => $sale->id, 'status' => 'partial']);
-    }
-
-    public function test_dispatch_and_driver_delivery_success_and_failed_invalid_status_update(): void
-    {
-        Carbon::setTestNow('2026-09-04 07:00:00');
-        $records = $this->baseRecords();
-        $this->seedGarageStock($records, 10000);
-        $sale = $this->manualSale($records, 4000);
-        $stockOutId = $this->manualStockOut($records, $sale['saleId'], $sale['saleItemId'], 4000);
-
-        $this->actingAs($records['dispatchOfficer'])
-            ->post(route('dispatch.fuel-lifting.deliveries.store'), [
-                'idempotency_key' => (string) Str::uuid(),
-                'source_type' => 'garage',
-                'stock_out_id' => $stockOutId,
-                'driver_user_id' => $records['driver']->id,
-                'truck_id' => $records['truckId'],
-                'scheduled_at' => '2026-09-05 08:00:00',
-                'quantity_liters' => 4000,
-            ])
-            ->assertRedirect(route('dispatch.fuel-lifting'));
-
-        $deliveryId = (int) DB::table('deliveries')->where('sale_id', $sale['saleId'])->value('id');
-
-        $this->actingAs($records['driver'])
-            ->patch(route('driver.assigned-deliveries.pickup', $deliveryId), [
-                'idempotency_key' => (string) Str::uuid(),
-            ])
-            ->assertRedirect(route('driver.assigned-deliveries'));
-
-        $this->actingAs($records['driver'])
-            ->patch(route('driver.assigned-deliveries.status', $deliveryId), [
-                'idempotency_key' => (string) Str::uuid(),
-                'status' => 'delivered',
-            ])
-            ->assertRedirect(route('driver.assigned-deliveries'));
-
-        $this->assertDatabaseHas('deliveries', [
-            'id' => $deliveryId,
-            'status' => 'delivered',
-            'actual_quantity_liters' => '4000.00',
-        ]);
-
-        $this->actingAs($records['driver'])
-            ->from(route('driver.assigned-deliveries'))
-            ->patch(route('driver.assigned-deliveries.status', $deliveryId), [
-                'idempotency_key' => (string) Str::uuid(),
-                'status' => 'incomplete',
-            ])
-            ->assertRedirect(route('driver.assigned-deliveries'))
-            ->assertSessionHasErrors('delivery');
-
-        Carbon::setTestNow();
     }
 
     public function test_dashboard_reports_and_analytics_pages_render_real_system_totals(): void

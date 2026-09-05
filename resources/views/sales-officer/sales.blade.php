@@ -29,7 +29,7 @@
             <button class="tab-button {{ $activeTab === 'customers' ? 'is-active' : '' }}" type="button" data-tab-target="customers" data-heading="Customers">Customers</button>
         </div>
         <div class="actions-right">
-            <button class="btn btn-secondary" type="button">Export</button>
+            <button class="btn btn-secondary" type="button" data-export-table>Export</button>
         </div>
 
         @if (! empty($summaryCards))
@@ -57,6 +57,7 @@
                     <thead>
                         <tr>
                             <th>Order-ID</th>
+                            <th>Sales Order No.</th>
                             <th>Transaction Date</th>
                             <th>Customer Name</th>
                             <th>Company Name</th>
@@ -85,7 +86,7 @@
                                 <td><button class="btn btn-secondary" type="button" data-modal-open="{{ $row['modal_id'] }}">Edit</button></td>
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="14">No records found.</td></tr>
+                            <tr><td class="empty-cell" colspan="15">No records found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -142,6 +143,7 @@
             <div class="modal-card">
                 <div class="form-grid">
                     <div class="form-row"><label for="sale_code">Order ID</label><input id="sale_code" name="sale_code" type="text" placeholder="Auto-generated if blank" value="{{ old('sale_code') }}"></div>
+                    <div class="form-row"><label for="sales_order_number">Sales Order Number</label><input id="sales_order_number" name="sales_order_number" type="text" maxlength="60" placeholder="Customer receipt/order number" value="{{ old('sales_order_number') }}"></div>
                     <div class="form-row"><label for="sale_date">Transaction Date</label><input id="sale_date" name="sale_date" type="date" value="{{ old('sale_date', now()->toDateString()) }}" required></div>
                     <div class="form-row">
                         <label for="sale_customer_id">Customer Name</label>
@@ -211,7 +213,7 @@
                 @method('PATCH')
             </form>
             <div class="modal-card">
-                <span class="detail-status">{{ $row['cells'][12] }}</span>
+                <span class="detail-status">{{ $row['cells'][13] }}</span>
                 <p class="detail-id">{{ $row['sale_code'] }}</p>
                 <div class="detail-grid">
                     @foreach ($row['details'] as $label => $value)
@@ -229,6 +231,7 @@
                     </table>
                 </div>
                 <div class="form-grid" style="margin-top:18px">
+                    <div class="form-row"><label for="sales_order_number_{{ $row['id'] }}">Sales Order Number</label><input form="sale-update-{{ $row['id'] }}" id="sales_order_number_{{ $row['id'] }}" name="sales_order_number" type="text" maxlength="60" value="{{ old('sales_order_number', $row['sales_order_number']) }}"></div>
                     <div class="form-row"><label for="sale_date_{{ $row['id'] }}">Transaction Date</label><input form="sale-update-{{ $row['id'] }}" id="sale_date_{{ $row['id'] }}" name="sale_date" type="date" value="{{ old('sale_date', $row['sale_date']) }}" required></div>
                     <div class="form-row">
                         <label for="sale_customer_{{ $row['id'] }}">Customer Name</label>
@@ -303,7 +306,7 @@
                     <div class="detail-row"><div class="detail-label">Sale Total</div><div class="detail-value">PHP {{ $row['sale_total'] }}</div></div>
                     <div class="detail-row"><div class="detail-label">Total Paid</div><div class="detail-value">PHP {{ $row['total_paid'] }}</div></div>
                     <div class="detail-row"><div class="detail-label">Remaining Balance</div><div class="detail-value">PHP {{ $row['balance'] }}</div></div>
-                    <div class="detail-row"><div class="detail-label">Payment Status</div><div class="detail-value">{{ $row['cells'][12] }}</div></div>
+                    <div class="detail-row"><div class="detail-label">Payment Status</div><div class="detail-value">{{ $row['cells'][13] }}</div></div>
                 </div>
                 <form method="POST" action="{{ route('sales-officer.sales.payments.store', $row['id']) }}" style="margin-top:18px">
                     @csrf

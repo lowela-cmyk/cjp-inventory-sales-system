@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Query\Builder;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -61,182 +60,12 @@ class DriverDeliveryController extends Controller
         ]);
     }
 
-    public function assignedDeliveries(Request $request, string $state = 'active'): View
-    {
-        $data = $request->validate([
-            'search' => ['nullable', 'string', 'max:100'],
-            'task_status' => ['nullable', Rule::in(self::DELIVERY_STATUSES)],
-            'source_type' => ['nullable', Rule::in(['depot', 'garage'])],
-            'fuel_type_id' => ['nullable', 'integer', Rule::exists('fuel_types', 'id')],
-            'date_from' => ['nullable', 'date'],
-            'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
-        ]);
-        $search = trim((string) ($data['search'] ?? ''));
-        $filters = [
-            'task_status' => $data['task_status'] ?? null,
-            'source_type' => $data['source_type'] ?? null,
-            'destination_type' => 'customer',
-            'fuel_type_id' => $data['fuel_type_id'] ?? null,
-            'date_from' => $data['date_from'] ?? null,
-            'date_to' => $data['date_to'] ?? null,
-        ];
-        $driverId = (int) $request->user()->id;
-        $rows = $this->deliveryRows($driverId, $search === '' ? null : $search, $filters);
-
-        return view('driver.assigned-deliveries', [
-            'activeTab' => $state === 'completed' ? 'completed' : 'active',
-            'driverName' => $request->user()->name,
-            'search' => $search === '' ? null : $search,
-            'filters' => $filters,
-            'filterOptions' => $this->deliveryFilterOptions($driverId),
-            'summaryCards' => $this->deliverySummaryCards($driverId),
-            'activeRows' => $rows->where('group', 'schedule')->values(),
-            'completedRows' => $rows->where('group', 'hauled')->values(),
-            'pickupIdempotencyKey' => (string) Str::uuid(),
-            'deliveryStatusIdempotencyKey' => (string) Str::uuid(),
-        ]);
-    }
-
-    public function confirmPickup(Request $request, int $delivery): RedirectResponse
-    {
-        $data = $request->validate([
-            'idempotency_key' => ['required', 'uuid'],
-        ]);
-        $driverId = (int) $request->user()->id;
-        $sessionKey = 'driver.deliveries.pickup.'.$driverId.'.'.$delivery.'.'.((string) $data['idempotency_key']);
-
-        if ($request->session()->has($sessionKey)) {
-            return redirect()
-                ->route('driver.assigned-deliveries')
-                ->with('status', 'Pickup confirmation was already submitted.');
-        }
-
-        $result = DB::transaction(function () use ($delivery, $driverId): ?string {
-            $row = $this->deliveryForPickup($delivery, $driverId);
-
-            if (! $row) {
-                return 'The selected delivery is not assigned to your driver account.';
-            }
-
-            $validationError = $this->validatePickup($row);
-
-            if ($validationError) {
-                return $validationError;
-            }
-
-            $updated = DB::table('deliveries')
-                ->where('id', $row->id)
-                ->where('driver_user_id', $driverId)
-                ->where('status', 'scheduled')
-                ->update([
-                    'status' => 'in_transit',
-                    'updated_at' => now(),
-                ]);
-
-            if ($updated !== 1) {
-                return 'Delivery status changed while your pickup confirmation was being processed. Please refresh and try again.';
-            }
-
-            return null;
-        });
-
-        if ($result) {
-            return back()->withErrors(['pickup' => $result])->withInput();
-        }
-
-        $request->session()->put($sessionKey, true);
-
-        return redirect()
-            ->route('driver.assigned-deliveries')
-            ->with('status', 'Pickup confirmed successfully.');
-    }
-
-    public function updateDeliveryStatus(Request $request, int $delivery): RedirectResponse
-    {
-        $data = $request->validate([
-            'idempotency_key' => ['required', 'uuid'],
-            'status' => ['required', Rule::in(self::DELIVERY_STATUSES)],
-        ]);
-        $driverId = (int) $request->user()->id;
-        $nextStatus = (string) $data['status'];
-        $sessionKey = 'driver.deliveries.status.'.$driverId.'.'.$delivery.'.'.$nextStatus.'.'.((string) $data['idempotency_key']);
-
-        if ($request->session()->has($sessionKey)) {
-            return redirect()
-                ->route('driver.assigned-deliveries')
-                ->with('status', 'Delivery status update was already submitted.');
-        }
-
-        $result = DB::transaction(function () use ($delivery, $driverId, $nextStatus): ?string {
-            $row = $this->deliveryForPickup($delivery, $driverId);
-
-            if (! $row) {
-                return 'The selected delivery is not assigned to your driver account.';
-            }
-
-            $allowed = self::DRIVER_DELIVERY_STATUS_TRANSITIONS[$row->status] ?? [];
-
-            if (! in_array($nextStatus, $allowed, true)) {
-                return 'The selected delivery status transition is not allowed.';
-            }
-
-            $validationError = $this->validateDeliveryStatusUpdate($row, $nextStatus);
-
-            if ($validationError) {
-                return $validationError;
-            }
-
-            $updates = [
-                'status' => $nextStatus,
-                'updated_at' => now(),
-            ];
-
-            if ($nextStatus === 'delivered') {
-                $updates['delivered_at'] = now();
-                $updates['actual_quantity_liters'] = round((float) ($row->actual_quantity_liters ?? $row->scheduled_quantity_liters), 2);
-            }
-
-            $updated = DB::table('deliveries')
-                ->where('id', $row->id)
-                ->where('driver_user_id', $driverId)
-                ->where('status', $row->status)
-                ->update($updates);
-
-            if ($updated !== 1) {
-                return 'Delivery status changed while your update was being processed. Please refresh and try again.';
-            }
-
-            if ($nextStatus === 'delivered' && $row->source_type === 'depot') {
-                $fulfillmentError = $this->recordDepotDeliveryFulfillment($row);
-
-                if ($fulfillmentError) {
-                    return $fulfillmentError;
-                }
-
-                $this->markDirectAllocationDeliveredWhenComplete($row);
-            }
-
-            return null;
-        });
-
-        if ($result) {
-            return back()->withErrors(['delivery' => $result])->withInput();
-        }
-
-        $request->session()->put($sessionKey, true);
-
-        return redirect()
-            ->route('driver.assigned-deliveries')
-            ->with('status', 'Delivery status updated successfully.');
-    }
-
     /**
      * @param array<string, mixed> $filters
      */
     private function rows(int $driverId, ?string $search, array $filters)
     {
-        return $this->deliveryRows($driverId, $search, $filters)
-            ->merge($this->haulRows($driverId, $search, $filters))
+        return $this->haulRows($driverId, $search, $filters)
             ->sortByDesc('sort_at')
             ->sortByDesc('id')
             ->values();
@@ -502,13 +331,11 @@ class DriverDeliveryController extends Controller
 
     private function filterOptions(int $driverId): array
     {
-        $deliveryFuelIds = DB::table('deliveries')
+        $fuelIds = DB::table('hauls')
             ->where('driver_user_id', $driverId)
-            ->pluck('fuel_type_id');
-        $haulFuelIds = DB::table('hauls')
-            ->where('driver_user_id', $driverId)
-            ->pluck('fuel_type_id');
-        $fuelIds = $deliveryFuelIds->merge($haulFuelIds)->unique()->values();
+            ->pluck('fuel_type_id')
+            ->unique()
+            ->values();
 
         return [
             'statuses' => self::TASK_STATUSES,
@@ -575,15 +402,6 @@ class DriverDeliveryController extends Controller
 
     private function summaryCards(int $driverId): array
     {
-        $deliveries = DB::table('deliveries')
-            ->where('driver_user_id', $driverId)
-            ->selectRaw("
-                COUNT(*) as total,
-                SUM(CASE WHEN status = 'scheduled' THEN 1 ELSE 0 END) as scheduled,
-                SUM(CASE WHEN status IN ('in_transit', 'incomplete') THEN 1 ELSE 0 END) as active,
-                SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END) as completed
-            ")
-            ->first();
         $hauls = DB::table('hauls')
             ->where('driver_user_id', $driverId)
             ->selectRaw("
@@ -595,10 +413,10 @@ class DriverDeliveryController extends Controller
             ->first();
 
         return [
-            ['label' => 'Assigned', 'value' => number_format((int) ($deliveries->total ?? 0) + (int) ($hauls->total ?? 0))],
-            ['label' => 'Scheduled', 'value' => number_format((int) ($deliveries->scheduled ?? 0) + (int) ($hauls->scheduled ?? 0))],
-            ['label' => 'Active', 'value' => number_format((int) ($deliveries->active ?? 0) + (int) ($hauls->active ?? 0))],
-            ['label' => 'Completed', 'value' => number_format((int) ($deliveries->completed ?? 0) + (int) ($hauls->completed ?? 0))],
+            ['label' => 'Assigned Lifts', 'value' => number_format((int) ($hauls->total ?? 0))],
+            ['label' => 'Scheduled', 'value' => number_format((int) ($hauls->scheduled ?? 0))],
+            ['label' => 'Active', 'value' => number_format((int) ($hauls->active ?? 0))],
+            ['label' => 'Completed', 'value' => number_format((int) ($hauls->completed ?? 0))],
         ];
     }
 

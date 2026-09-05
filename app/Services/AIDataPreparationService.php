@@ -154,6 +154,7 @@ class AIDataPreparationService
             ],
             'total_valid_sales' => $totalValidSales,
             'valid_sales_count' => (int) ($salesTotal->sales_count ?? 0),
+            'sales_payment_method_breakdown' => $this->salesPaymentMethodBreakdown($dateRange),
             'collected_revenue' => $collectedRevenue,
             'expected_revenue' => round((float) $expectedRevenue['totalExpected'], 2),
             'expected_revenue_year' => $expectedYear,
@@ -390,6 +391,30 @@ class AIDataPreparationService
             ->leftJoinSub($this->summary->paymentTotalsQuery(), 'payment_totals', 'payment_totals.sale_id', '=', 'sale_totals.sale_id')
             ->selectRaw('COALESCE(SUM(CASE WHEN sale_totals.total > COALESCE(payment_totals.paid, 0) THEN sale_totals.total - COALESCE(payment_totals.paid, 0) ELSE 0 END), 0) as total')
             ->value('total');
+    }
+
+    /**
+     * @param  array{0: ?string, 1: ?string}  $dateRange
+     * @return array<int, array<string, mixed>>
+     */
+    private function salesPaymentMethodBreakdown(array $dateRange): array
+    {
+        return DB::query()
+            ->fromSub($this->periodSaleTotalsQuery($dateRange), 'sale_totals')
+            ->join('sales', 'sales.id', '=', 'sale_totals.sale_id')
+            ->selectRaw("COALESCE(sales.payment_method, 'unspecified') as payment_method")
+            ->selectRaw('COUNT(*) as sales_count')
+            ->selectRaw('COALESCE(SUM(sale_totals.total), 0) as sales_total')
+            ->groupByRaw("COALESCE(sales.payment_method, 'unspecified')")
+            ->orderByRaw("COALESCE(sales.payment_method, 'unspecified')")
+            ->get()
+            ->map(fn (object $row): array => [
+                'payment_method' => $this->sanitizeText((string) $row->payment_method),
+                'sales_count' => (int) $row->sales_count,
+                'sales_total' => round((float) $row->sales_total, 2),
+                'note' => 'Sale-level selected method only; this does not mean paid unless a payment record exists.',
+            ])
+            ->all();
     }
 
     /**

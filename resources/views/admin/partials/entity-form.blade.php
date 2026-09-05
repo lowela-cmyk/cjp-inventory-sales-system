@@ -9,6 +9,6 @@
     </div>
 </div>
 <div class="modal-actions">
-    <button class="btn btn-pill btn-secondary" type="button">Add</button>
+    <button class="btn btn-pill btn-secondary" type="submit">Add</button>
     <button class="btn btn-pill btn-danger" type="button" data-modal-close>Cancel</button>
 </div>

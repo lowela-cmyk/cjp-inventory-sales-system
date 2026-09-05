@@ -209,7 +209,24 @@ class AdminMonitoringController extends Controller
                 ],
             ]);
 
-        return view('admin.sales', compact('search', 'sales', 'customers'));
+        return view('admin.sales', [
+            'search' => $search,
+            'sales' => $sales,
+            'customers' => $customers,
+            'customerOptions' => DB::table('customers')
+                ->where('status', 'active')
+                ->orderBy('company_name')
+                ->orderBy('name')
+                ->get(['id', 'name', 'company_name']),
+            'fuelTypes' => DB::table('fuel_types')
+                ->where('status', 'active')
+                ->orderBy('name')
+                ->get(['id', 'name']),
+            'paymentMethods' => ['cash_on_delivery', 'cheque', 'advance_payment', 'bank_transfer'],
+            'paymentTerms' => ['cod', 'installment', 'advance'],
+            'editableSaleStatuses' => ['draft', 'confirmed', 'partially_paid', 'unpaid', 'cancelled'],
+            'saleIdempotencyKey' => (string) Str::uuid(),
+        ]);
     }
 
     public function alerts(Request $request): View
@@ -262,6 +279,7 @@ class AdminMonitoringController extends Controller
             ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
                 'stock_outs.stock_out_code',
                 'sales.sale_code',
+                'sales.sales_order_number',
                 'customers.name',
                 'customers.company_name',
                 'fuel_types.name',
@@ -276,6 +294,7 @@ class AdminMonitoringController extends Controller
                 'stock_outs.quantity_liters',
                 'stock_outs.status',
                 'sales.sale_code',
+                'sales.sales_order_number',
                 'customers.name as customer_name',
                 'customers.company_name',
                 'fuel_types.name as fuel_name',
@@ -321,6 +340,7 @@ class AdminMonitoringController extends Controller
             ->whereNull('sales.deleted_at')
             ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
                 'sales.sale_code',
+                'sales.sales_order_number',
                 'customers.name',
                 'customers.company_name',
                 'items_total.first_fuel_name',
@@ -333,7 +353,9 @@ class AdminMonitoringController extends Controller
             ->get([
                 'sales.id as sale_id',
                 'sales.sale_code',
+                'sales.sales_order_number',
                 'sales.sale_date',
+                'sales.customer_id',
                 'sales.payment_method',
                 'sales.payment_terms',
                 'sales.status',
@@ -357,9 +379,20 @@ class AdminMonitoringController extends Controller
 
                 return [
                     'id' => 'sales-detail-'.$row->sale_id,
+                    'sale_id' => (int) $row->sale_id,
                     'payment_id' => 'payment-history-'.$row->sale_id,
+                    'sale_code' => $row->sale_code,
+                    'sales_order_number' => $row->sales_order_number,
+                    'sale_date' => $row->sale_date,
+                    'customer_id' => (int) $row->customer_id,
+                    'payment_method' => $row->payment_method,
+                    'payment_terms' => $row->payment_terms,
+                    'raw_status' => $row->status,
+                    'due_date' => $row->due_date,
+                    'items' => $this->itemsForSale((int) $row->sale_id),
                     'cells' => [
                         $row->sale_code,
+                        $row->sales_order_number ?: 'N/A',
                         $this->formatDate($row->sale_date),
                         $row->customer_name,
                         $row->company_name,
@@ -376,6 +409,7 @@ class AdminMonitoringController extends Controller
                     'status' => $status,
                     'class' => $this->rowClass($status),
                     'details' => [
+                        'Sales Order Number' => $row->sales_order_number ?: 'N/A',
                         'Transaction Date' => $this->formatDate($row->sale_date),
                         'Customer Name' => $row->customer_name,
                         'Company Name' => $row->company_name,
@@ -578,6 +612,34 @@ class AdminMonitoringController extends Controller
                     'status' => $this->label($row->status),
                 ];
             })
+            ->all();
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function itemsForSale(int $saleId): array
+    {
+        return DB::table('sale_items')
+            ->join('fuel_types', 'fuel_types.id', '=', 'sale_items.fuel_type_id')
+            ->where('sale_items.sale_id', $saleId)
+            ->orderBy('sale_items.id')
+            ->get([
+                'sale_items.fuel_type_id',
+                'sale_items.quantity_liters',
+                'sale_items.unit_price',
+                'sale_items.line_total',
+                'sale_items.fulfilled_quantity_liters',
+                'fuel_types.name as fuel_name',
+            ])
+            ->map(fn (object $item): array => [
+                'fuel_type_id' => (int) $item->fuel_type_id,
+                'fuel_name' => $item->fuel_name,
+                'quantity_liters' => $item->quantity_liters,
+                'unit_price' => $item->unit_price,
+                'line_total' => $item->line_total,
+                'fulfilled_quantity_liters' => $item->fulfilled_quantity_liters,
+            ])
             ->all();
     }
 

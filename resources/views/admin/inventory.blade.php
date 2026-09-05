@@ -7,7 +7,7 @@
             <button class="tab-button" type="button" data-tab-target="stock-out">Stock Out</button>
         </div>
         <div class="actions-right">
-            <button class="btn btn-secondary" type="button">Export</button>
+            <button class="btn btn-secondary" type="button" data-export-table>Export</button>
         </div>
 
         <section data-tab-panel="purchases">
@@ -77,7 +77,7 @@
                 <input type="search" name="search" placeholder="Search..." aria-label="Search stock-out" value="{{ $search }}">
                 <button class="btn btn-primary" type="submit">Date</button>
                 <button class="btn btn-primary" type="submit">Fuel Type (All)</button>
-                <button class="btn btn-primary" type="button">Print</button>
+                <button class="btn btn-primary" type="button" data-print-page>Print</button>
             </form>
             <div class="table-wrap">
                 <table class="admin-table">

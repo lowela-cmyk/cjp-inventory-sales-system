@@ -10,6 +10,5 @@
     </div>
 </div>
 <div class="modal-actions">
-    <button class="btn btn-pill btn-secondary" type="button">Edit</button>
-    <button class="btn btn-pill btn-danger" type="button">Delete</button>
+    <button class="btn btn-pill btn-secondary" type="button" data-modal-close>Close</button>
 </div>

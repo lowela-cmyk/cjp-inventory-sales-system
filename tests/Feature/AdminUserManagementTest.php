@@ -309,6 +309,84 @@ class AdminUserManagementTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_admin_can_export_user_management_tabs_as_csv(): void
+    {
+        $admin = User::factory()->create([
+            'name' => 'Export Admin',
+            'email' => 'export-admin@example.com',
+            'role' => 'admin',
+            'status' => 'active',
+            'approval_status' => 'approved',
+        ]);
+
+        $driver = User::factory()->create([
+            'name' => 'Export Driver',
+            'email' => 'export-driver@example.com',
+            'role' => 'driver',
+            'phone' => '09170009999',
+            'status' => 'active',
+            'approval_status' => 'approved',
+        ]);
+
+        DB::table('driver_profiles')->insert([
+            'user_id' => $driver->id,
+            'driver_code' => 'DRV-EXPORT',
+            'license_number' => 'LIC-EXPORT',
+            'status' => 'available',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('customers')->insert([
+            'customer_code' => 'CUS-EXPORT',
+            'name' => 'Export Customer',
+            'company_name' => 'Export Company',
+            'location' => 'Batangas',
+            'email' => 'export-customer@example.com',
+            'phone' => '09171112222',
+            'payment_status' => 'clear',
+            'status' => 'active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('admin.user-management.export', ['tab' => 'office']))
+            ->assertOk()
+            ->assertHeader('Content-Type', 'text/csv; charset=UTF-8')
+            ->assertSee('CJP Southern Star OPC User Management')
+            ->assertSee('Export Admin')
+            ->assertSee('Approved')
+            ->assertDontSee('Export Driver');
+
+        $this->actingAs($admin)
+            ->get(route('admin.user-management.export', ['tab' => 'drivers']))
+            ->assertOk()
+            ->assertSee('DRV-EXPORT')
+            ->assertSee('LIC-EXPORT')
+            ->assertSee('Export Driver');
+
+        $this->actingAs($admin)
+            ->get(route('admin.user-management.export', ['tab' => 'customers']))
+            ->assertOk()
+            ->assertSee('Export Customer')
+            ->assertSee('Export Company')
+            ->assertSee('Batangas');
+    }
+
+    public function test_user_management_export_is_admin_only(): void
+    {
+        $salesOfficer = User::factory()->create([
+            'role' => 'sales_officer',
+            'status' => 'active',
+            'approval_status' => 'approved',
+        ]);
+
+        $this->actingAs($salesOfficer)
+            ->get(route('admin.user-management.export'))
+            ->assertForbidden();
+    }
+
     public function test_admin_can_approve_and_reject_account_requests(): void
     {
         $admin = User::factory()->create([

@@ -125,8 +125,6 @@ class RoleBasedAccessControlTest extends TestCase
             ],
             'driver' => [
                 '/driver',
-                '/driver/assigned-deliveries',
-                '/driver/assigned-deliveries/completed',
                 '/driver/fuel-lifting',
                 '/driver/fuel-lifting/hauled',
                 '/driver/fuel-lifting/no-schedule',
@@ -732,7 +730,6 @@ class RoleBasedAccessControlTest extends TestCase
             ->assertSee('PHP 1,800,000')
             ->assertSee('PHP 1,000,000')
             ->assertSee('60 KL')
-            ->assertSee('Scheduled / in transit')
             ->assertSee('40,000 L')
             ->assertSee('Premium')
             ->assertSee('1,000 L')

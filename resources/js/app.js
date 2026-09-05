@@ -53,6 +53,11 @@ document.addEventListener('click', (event) => {
         if (heading && tabButton.dataset.heading) {
             heading.textContent = tabButton.dataset.heading;
         }
+
+        const exportLink = scope.querySelector('[data-tab-export-url]');
+        if (exportLink) {
+            exportLink.href = exportLink.dataset.tabExportUrl.replace('__TAB__', encodeURIComponent(target));
+        }
     }
 
     if (event.target.closest('[data-sidebar-toggle]')) {
@@ -62,6 +67,17 @@ document.addEventListener('click', (event) => {
     const printButton = event.target.closest('[data-print-page]');
     if (printButton) {
         window.print();
+    }
+
+    const sortButton = event.target.closest('[data-sort-table]');
+    if (sortButton) {
+        sortVisibleTable(sortButton, Number(sortButton.dataset.sortTable || 0));
+    }
+
+    const exportButton = event.target.closest('[data-export-table]');
+    if (exportButton) {
+        event.preventDefault();
+        exportVisibleTable(exportButton);
     }
 
     const addSaleItemButton = event.target.closest('[data-sales-item-add]');
@@ -123,6 +139,99 @@ const reindexSaleItems = (items) => {
         }
     });
 };
+
+const visibleTableFor = (trigger) => {
+    const scope = trigger.closest('[data-tabs]') || trigger.closest('section') || document;
+    const visiblePanel = [...scope.querySelectorAll('[data-tab-panel]')]
+        .find((panel) => ! panel.hidden);
+
+    return (visiblePanel || scope).querySelector('table');
+};
+
+const sortVisibleTable = (trigger, columnIndex) => {
+    const table = visibleTableFor(trigger);
+    const tbody = table?.tBodies?.[0];
+
+    if (! tbody) {
+        return;
+    }
+
+    const direction = trigger.dataset.sortDirection === 'asc' ? 'desc' : 'asc';
+    const rows = [...tbody.rows].filter((row) => ! row.querySelector('.empty-cell'));
+
+    rows.sort((first, second) => {
+        const a = first.cells[columnIndex]?.textContent.trim() || '';
+        const b = second.cells[columnIndex]?.textContent.trim() || '';
+        const comparison = a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+
+        return direction === 'asc' ? comparison : -comparison;
+    });
+
+    rows.forEach((row) => tbody.appendChild(row));
+    trigger.dataset.sortDirection = direction;
+};
+
+const exportVisibleTable = (trigger) => {
+    const scope = trigger.closest('[data-tabs]') || document;
+    const table = visibleTableFor(trigger);
+
+    if (! table) {
+        return;
+    }
+
+    const rows = [...table.querySelectorAll('tr')]
+        .map((row) => [...row.querySelectorAll('th, td')]
+            .map((cell) => `"${cell.textContent.trim().replace(/\s+/g, ' ').replace(/"/g, '""')}"`)
+            .join(','))
+        .filter(Boolean);
+
+    if (rows.length === 0) {
+        return;
+    }
+
+    const title = document.querySelector('h1')?.textContent || 'CJP Export';
+    const activeTab = scope.querySelector('[data-tab-target].is-active')?.textContent || 'Table';
+    const csv = [
+        `"${title.replace(/"/g, '""')}"`,
+        `"${activeTab.trim().replace(/"/g, '""')}"`,
+        `"Generated At","${new Date().toLocaleString()}"`,
+        '',
+        ...rows,
+    ].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const safeName = `${title}-${activeTab}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+    link.href = URL.createObjectURL(blob);
+    link.download = `${safeName || 'cjp-export'}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(link.href);
+};
+
+document.addEventListener('input', (event) => {
+    const search = event.target;
+
+    if (!(search instanceof HTMLInputElement) || search.type !== 'search') {
+        return;
+    }
+
+    const table = visibleTableFor(search);
+
+    if (! table) {
+        return;
+    }
+
+    const query = search.value.trim().toLowerCase();
+    [...table.tBodies[0]?.rows || []].forEach((row) => {
+        if (row.querySelector('.empty-cell')) {
+            return;
+        }
+
+        row.hidden = query !== '' && ! row.textContent.toLowerCase().includes(query);
+    });
+});
 
 document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {

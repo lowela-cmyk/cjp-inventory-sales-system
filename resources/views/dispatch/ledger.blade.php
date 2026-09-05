@@ -8,12 +8,13 @@
 
 @component('layouts.dispatch', ['title' => 'Inventory Ledger', 'active' => 'ledger'])
     <h2 class="section-title">Ledger Tab</h2>
+    <div class="actions-right"><button class="btn btn-secondary" type="button" data-export-table>Export</button></div>
 
     <div class="dispatch-filter-row">
         <input type="search" placeholder="Search..." aria-label="Search ledger records">
-        <button class="btn btn-primary" type="button">Date</button>
-        <button class="btn btn-primary" type="button">Depot</button>
-        <button class="btn btn-primary" type="button">Fuel Type (All)</button>
+        <button class="btn btn-primary" type="button" data-sort-table="1">Date</button>
+        <button class="btn btn-primary" type="button" data-sort-table="3">Depot</button>
+        <button class="btn btn-primary" type="button" data-sort-table="2">Fuel Type (All)</button>
     </div>
 
     <div class="table-wrap dispatch-table-wrap">

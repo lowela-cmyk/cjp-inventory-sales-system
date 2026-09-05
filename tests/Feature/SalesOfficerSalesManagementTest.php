@@ -20,6 +20,7 @@ class SalesOfficerSalesManagementTest extends TestCase
         $this->actingAs($records['salesOfficer'])
             ->post(route('sales-officer.sales.store'), $this->salePayload($records, [
                 'sale_code' => 'SLS-REAL',
+                'sales_order_number' => 'SO-CJP-1001',
                 'quantity_liters' => '1500.25',
                 'unit_price' => '62.50',
                 'payment_method' => 'cheque',
@@ -30,6 +31,7 @@ class SalesOfficerSalesManagementTest extends TestCase
         $this->actingAs($records['salesOfficer'])
             ->post(route('sales-officer.sales.store'), $this->salePayload($records, [
                 'sale_code' => 'SLS-REAL',
+                'sales_order_number' => 'SO-CJP-1001',
                 'quantity_liters' => '1500.25',
                 'unit_price' => '62.50',
                 'payment_method' => 'cheque',
@@ -39,6 +41,7 @@ class SalesOfficerSalesManagementTest extends TestCase
         $sale = DB::table('sales')->where('sale_code', 'SLS-REAL')->first();
         $this->assertNotNull($sale);
         $this->assertSame($records['salesOfficer']->id, (int) $sale->created_by);
+        $this->assertSame('SO-CJP-1001', $sale->sales_order_number);
         $this->assertSame('cheque', $sale->payment_method);
         $this->assertSame('confirmed', $sale->status);
 
@@ -56,6 +59,73 @@ class SalesOfficerSalesManagementTest extends TestCase
         $this->assertSame($beforeInventory, DB::table('inventory_movements')->count());
         $this->assertSame(0, DB::table('stock_outs')->count());
         $this->assertSame(0, DB::table('payments')->count());
+    }
+
+    public function test_sales_order_number_is_unique_and_payment_method_does_not_record_payment(): void
+    {
+        $records = $this->baseRecords();
+        $this->createSale($records, [
+            'sale_code' => 'SLS-SO-EXISTING',
+            'sales_order_number' => 'SO-CJP-DUP',
+        ]);
+
+        $this->actingAs($records['salesOfficer'])
+            ->from(route('sales-officer.sales'))
+            ->post(route('sales-officer.sales.store'), $this->salePayload($records, [
+                'sale_code' => 'SLS-SO-DUP',
+                'sales_order_number' => 'SO-CJP-DUP',
+                'payment_method' => 'advance_payment',
+            ]))
+            ->assertRedirect(route('sales-officer.sales'))
+            ->assertSessionHasErrors('sales_order_number');
+
+        $this->actingAs($records['salesOfficer'])
+            ->post(route('sales-officer.sales.store'), $this->salePayload($records, [
+                'sale_code' => 'SLS-SO-METHOD',
+                'sales_order_number' => 'SO-CJP-1002',
+                'payment_method' => 'advance_payment',
+            ]))
+            ->assertRedirect(route('sales-officer.sales'));
+
+        $sale = DB::table('sales')->where('sale_code', 'SLS-SO-METHOD')->first();
+        $this->assertNotNull($sale);
+        $this->assertSame('advance_payment', $sale->payment_method);
+        $this->assertSame(0, DB::table('payments')->where('sale_id', $sale->id)->count());
+        $this->assertDatabaseHas('receivables', [
+            'sale_id' => $sale->id,
+            'status' => 'pending',
+        ]);
+    }
+
+    public function test_admin_can_create_and_update_sales_order_number_and_payment_method(): void
+    {
+        $records = $this->baseRecords();
+
+        $this->actingAs($records['admin'])
+            ->post(route('admin.sales.store'), $this->salePayload($records, [
+                'sale_code' => 'SLS-ADMIN',
+                'sales_order_number' => 'SO-CJP-ADMIN',
+                'payment_method' => 'bank_transfer',
+            ]))
+            ->assertRedirect(route('admin.sales'));
+
+        $sale = DB::table('sales')->where('sale_code', 'SLS-ADMIN')->first();
+        $this->assertNotNull($sale);
+        $this->assertSame('SO-CJP-ADMIN', $sale->sales_order_number);
+        $this->assertSame('bank_transfer', $sale->payment_method);
+
+        $this->actingAs($records['admin'])
+            ->patch(route('admin.sales.update', $sale->id), $this->salePayload($records, [
+                'sales_order_number' => 'SO-CJP-ADMIN-EDIT',
+                'payment_method' => 'cheque',
+            ]))
+            ->assertRedirect(route('admin.sales'));
+
+        $this->assertDatabaseHas('sales', [
+            'id' => $sale->id,
+            'sales_order_number' => 'SO-CJP-ADMIN-EDIT',
+            'payment_method' => 'cheque',
+        ]);
     }
 
     public function test_sales_officer_can_view_real_sales_and_admin_can_monitor_them(): void
@@ -127,6 +197,7 @@ class SalesOfficerSalesManagementTest extends TestCase
         $payload = $this->salePayload($records, [
             'idempotency_key' => (string) Str::uuid(),
             'sale_code' => null,
+            'sales_order_number' => null,
         ]);
 
         $this->actingAs($records['salesOfficer'])
@@ -238,6 +309,7 @@ class SalesOfficerSalesManagementTest extends TestCase
         $payload = [
             'idempotency_key' => (string) Str::uuid(),
             'sale_code' => 'SLS-'.Str::upper(Str::random(8)),
+            'sales_order_number' => 'SO-'.Str::upper(Str::random(8)),
             'customer_id' => $records['customerId'],
             'sale_date' => '2026-08-30',
             'fuel_type_id' => $records['fuelTypeId'],

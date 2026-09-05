@@ -286,11 +286,9 @@ class FormValidationTest extends TestCase
         $this->assertSame(0, DB::table('payments')->count());
     }
 
-    public function test_delivery_and_fuel_lifting_forms_validate_ids_dates_statuses_and_capacity_limits(): void
+    public function test_fuel_lifting_forms_validate_ids_dates_statuses_and_capacity_limits(): void
     {
         $records = $this->baseRecords();
-        $sale = $this->sale($records, 1000, 50);
-        $stockOutId = $this->stockOut($records, $sale, 1000);
         $smallTruckId = DB::table('trucks')->insertGetId([
             'truck_code' => 'TRK-SMALL-VAL',
             'capacity_liters' => 500,
@@ -300,35 +298,6 @@ class FormValidationTest extends TestCase
             'updated_at' => now(),
         ]);
         $haul = $this->haulForValidation($records, 1000);
-
-        $this->actingAs($records['dispatchOfficer'])
-            ->from(route('dispatch.fuel-lifting'))
-            ->post(route('dispatch.fuel-lifting.deliveries.store'), [
-                'idempotency_key' => 'bad-token',
-                'source_type' => 'garage',
-                'stock_out_id' => 999999,
-                'driver_user_id' => 999999,
-                'truck_id' => 999999,
-                'scheduled_at' => 'bad-date',
-                'quantity_liters' => 0,
-            ])
-            ->assertRedirect(route('dispatch.fuel-lifting'))
-            ->assertSessionHasErrors(['idempotency_key', 'stock_out_id', 'driver_user_id', 'truck_id', 'scheduled_at', 'quantity_liters']);
-
-        $this->actingAs($records['dispatchOfficer'])
-            ->from(route('dispatch.fuel-lifting'))
-            ->post(route('dispatch.fuel-lifting.deliveries.store'), [
-                'idempotency_key' => (string) Str::uuid(),
-                'source_type' => 'garage',
-                'stock_out_id' => $stockOutId,
-                'driver_user_id' => $records['driver']->id,
-                'truck_id' => $smallTruckId,
-                'scheduled_at' => now()->addDay()->toDateTimeString(),
-                'quantity_liters' => 1000,
-            ])
-            ->assertRedirect(route('dispatch.fuel-lifting'))
-            ->assertSessionHasErrors(['delivery' => 'Delivery quantity cannot exceed the selected truck capacity.'])
-            ->assertSessionHasInput('quantity_liters', 1000);
 
         $this->actingAs($records['dispatchOfficer'])
             ->from(route('dispatch.fuel-lifting'))

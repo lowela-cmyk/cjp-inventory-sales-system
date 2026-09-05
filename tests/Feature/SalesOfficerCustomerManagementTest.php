@@ -140,7 +140,7 @@ class SalesOfficerCustomerManagementTest extends TestCase
             ->assertSee('CSM-DETAIL')
             ->assertSee('Detail Contact')
             ->assertSee('Detail Fuel Corp')
-            ->assertSee('1 sales / 0 deliveries');
+            ->assertSee('1 sales');
     }
 
     public function test_customer_search_filters_records(): void

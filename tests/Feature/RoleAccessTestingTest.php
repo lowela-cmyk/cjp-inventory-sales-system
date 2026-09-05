@@ -18,12 +18,11 @@ class RoleAccessTestingTest extends TestCase
         $records = $this->baseRecords();
         $sale = $this->sale($records, 1000, 50);
         $purchase = $this->purchase($records, 1000);
-        $deliveryId = $this->delivery($records, $sale, 1000);
         $stockOutId = $this->stockOut($records, $sale, 1000);
         $allocationId = $this->garageAllocation($records, $purchase, 1000);
         $haulId = $this->haul($records, $purchase, 1000);
 
-        foreach ($this->protectedWriteActions($records, $sale, $purchase, $deliveryId, $stockOutId, $allocationId, $haulId) as $action) {
+        foreach ($this->protectedWriteActions($records, $sale, $purchase, $stockOutId, $allocationId, $haulId) as $action) {
             $this->call($action['method'], $action['url'], $action['payload'])
                 ->assertRedirect(route('login'));
         }
@@ -37,7 +36,6 @@ class RoleAccessTestingTest extends TestCase
         $records = $this->baseRecords();
         $sale = $this->sale($records, 1000, 50);
         $purchase = $this->purchase($records, 1000);
-        $deliveryId = $this->delivery($records, $sale, 1000);
         $stockOutId = $this->stockOut($records, $sale, 1000);
         $allocationId = $this->garageAllocation($records, $purchase, 1000);
         $haulId = $this->haul($records, $purchase, 1000);
@@ -51,7 +49,7 @@ class RoleAccessTestingTest extends TestCase
             'driver' => $records['driver'],
         ];
 
-        foreach ($this->protectedWriteActions($records, $sale, $purchase, $deliveryId, $stockOutId, $allocationId, $haulId) as $action) {
+        foreach ($this->protectedWriteActions($records, $sale, $purchase, $stockOutId, $allocationId, $haulId) as $action) {
             foreach ($roles as $role => $user) {
                 if (in_array($role, $action['allowed_roles'], true)) {
                     continue;
@@ -72,7 +70,6 @@ class RoleAccessTestingTest extends TestCase
         $records = $this->baseRecords();
         $sale = $this->sale($records, 1000, 50);
         $purchase = $this->purchase($records, 1000);
-        $stockOutId = $this->stockOut($records, $sale, 1000);
         $haulId = $this->haul($records, $purchase, 1000);
 
         $this->actingAs($records['admin'])
@@ -90,18 +87,6 @@ class RoleAccessTestingTest extends TestCase
         $this->actingAs($records['admin'])
             ->post(route('admin.reports.business-insight'), ['period' => 'all'])
             ->assertRedirect();
-
-        $this->actingAs($records['admin'])
-            ->post(route('admin.fuel-lifting.deliveries.store'), [
-                'idempotency_key' => (string) Str::uuid(),
-                'source_type' => 'garage',
-                'stock_out_id' => $stockOutId,
-                'driver_user_id' => $records['driver']->id,
-                'truck_id' => $records['truckId'],
-                'scheduled_at' => now()->addDays(2)->toDateTimeString(),
-                'quantity_liters' => 1000,
-            ])
-            ->assertRedirect(route('admin.fuel-lifting'));
 
         $this->actingAs($records['admin'])
             ->post(route('inventory-officer.inventory.purchases.store'), $this->purchasePayload($records))
@@ -178,29 +163,13 @@ class RoleAccessTestingTest extends TestCase
             ->assertDontSee('STO-SECRET-RBAC');
     }
 
-    public function test_driver_direct_id_access_is_scoped_to_owned_deliveries_and_lifting_tasks(): void
+    public function test_driver_direct_id_access_is_scoped_to_owned_lifting_tasks(): void
     {
         $records = $this->baseRecords();
         $otherDriver = User::factory()->create(['role' => 'driver', 'status' => 'active']);
-        $sale = $this->sale($records, 1000, 50);
-        $ownedDeliveryId = $this->delivery($records, $sale, 500);
-        $otherDeliveryId = $this->delivery($records, $sale, 500, ['driver_user_id' => $otherDriver->id]);
         $purchase = $this->purchase($records, 1000);
         $ownedHaulId = $this->haul($records, $purchase, 500);
         $otherHaulId = $this->haul($records, $purchase, 500, ['driver_user_id' => $otherDriver->id]);
-
-        $this->actingAs($records['driver'])
-            ->patch(route('driver.assigned-deliveries.pickup', $otherDeliveryId), [
-                'idempotency_key' => (string) Str::uuid(),
-            ])
-            ->assertSessionHasErrors(['pickup' => 'The selected delivery is not assigned to your driver account.']);
-
-        $this->actingAs($records['driver'])
-            ->patch(route('driver.assigned-deliveries.status', $otherDeliveryId), [
-                'idempotency_key' => (string) Str::uuid(),
-                'status' => 'delivered',
-            ])
-            ->assertSessionHasErrors(['delivery' => 'The selected delivery is not assigned to your driver account.']);
 
         $this->actingAs($records['driver'])
             ->patch(route('driver.fuel-lifting.hauls.status', $otherHaulId), [
@@ -209,8 +178,6 @@ class RoleAccessTestingTest extends TestCase
             ])
             ->assertSessionHasErrors(['lifting' => 'The selected lifting task is not assigned to your driver account.']);
 
-        $this->assertDatabaseHas('deliveries', ['id' => $ownedDeliveryId, 'driver_user_id' => $records['driver']->id]);
-        $this->assertDatabaseHas('deliveries', ['id' => $otherDeliveryId, 'status' => 'scheduled']);
         $this->assertDatabaseHas('hauls', ['id' => $ownedHaulId, 'driver_user_id' => $records['driver']->id]);
         $this->assertDatabaseHas('hauls', ['id' => $otherHaulId, 'status' => 'scheduled']);
     }
@@ -239,7 +206,7 @@ class RoleAccessTestingTest extends TestCase
      * @param array{purchaseId: int, purchaseItemId: int} $purchase
      * @return array<int, array{method: string, url: string, payload: array<string, mixed>, allowed_roles: array<int, string>}>
      */
-    private function protectedWriteActions(array $records, array $sale, array $purchase, int $deliveryId, int $stockOutId, int $allocationId, int $haulId): array
+    private function protectedWriteActions(array $records, array $sale, array $purchase, int $stockOutId, int $allocationId, int $haulId): array
     {
         return [
             [
@@ -338,29 +305,6 @@ class RoleAccessTestingTest extends TestCase
                 'allowed_roles' => ['sales_officer'],
             ],
             [
-                'method' => 'POST',
-                'url' => route('dispatch.fuel-lifting.deliveries.store'),
-                'payload' => [
-                    'idempotency_key' => (string) Str::uuid(),
-                    'source_type' => 'garage',
-                    'stock_out_id' => $stockOutId,
-                    'driver_user_id' => $records['driver']->id,
-                    'truck_id' => $records['truckId'],
-                    'scheduled_at' => now()->addDay()->toDateTimeString(),
-                    'quantity_liters' => 500,
-                ],
-                'allowed_roles' => ['dispatch_officer'],
-            ],
-            [
-                'method' => 'PATCH',
-                'url' => route('dispatch.fuel-lifting.deliveries.status', $deliveryId),
-                'payload' => [
-                    'idempotency_key' => (string) Str::uuid(),
-                    'status' => 'in_transit',
-                ],
-                'allowed_roles' => ['dispatch_officer'],
-            ],
-            [
                 'method' => 'PATCH',
                 'url' => route('dispatch.fuel-lifting.hauls.truck', $haulId),
                 'payload' => [
@@ -368,21 +312,6 @@ class RoleAccessTestingTest extends TestCase
                     'truck_id' => $records['truckId'],
                 ],
                 'allowed_roles' => ['dispatch_officer'],
-            ],
-            [
-                'method' => 'PATCH',
-                'url' => route('driver.assigned-deliveries.pickup', $deliveryId),
-                'payload' => ['idempotency_key' => (string) Str::uuid()],
-                'allowed_roles' => ['driver'],
-            ],
-            [
-                'method' => 'PATCH',
-                'url' => route('driver.assigned-deliveries.status', $deliveryId),
-                'payload' => [
-                    'idempotency_key' => (string) Str::uuid(),
-                    'status' => 'delivered',
-                ],
-                'allowed_roles' => ['driver'],
             ],
             [
                 'method' => 'PATCH',

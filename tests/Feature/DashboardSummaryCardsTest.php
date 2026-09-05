@@ -30,8 +30,7 @@ class DashboardSummaryCardsTest extends TestCase
             ->assertSee('PHP 50,000')
             ->assertSee('Unlifted Fuel (KL)')
             ->assertSee('50 KL')
-            ->assertSee('Active Deliveries')
-            ->assertSee('3');
+            ->assertDontSee('Active Deliveries');
 
         $this->actingAs($records['inventoryOfficer'])
             ->get(route('inventory-officer.inventory'))
@@ -63,11 +62,10 @@ class DashboardSummaryCardsTest extends TestCase
         $this->actingAs($records['dispatchOfficer'])
             ->get(route('dispatch.fuel-lifting'))
             ->assertOk()
-            ->assertSee('Total Deliveries')
+            ->assertSee('Assigned Lifts')
             ->assertSee('Scheduled')
-            ->assertSee('Active')
+            ->assertSee('In Progress')
             ->assertSee('Completed')
-            ->assertSee('Cancelled')
             ->assertSee('2');
 
         Carbon::setTestNow();

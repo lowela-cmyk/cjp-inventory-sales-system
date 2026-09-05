@@ -21,10 +21,7 @@ class FrontendBugFixesTest extends TestCase
             $this->assertStringNotContainsString('href="#"', $contents, $file);
         }
 
-        $driverDeliveryView = file_get_contents(resource_path('views/driver/assigned-deliveries.blade.php')) ?: '';
-
-        $this->assertStringContainsString('data-confirm-message=', $driverDeliveryView);
-        $this->assertStringContainsString('data-print-page', $driverDeliveryView);
+        $this->assertFileDoesNotExist(resource_path('views/driver/assigned-deliveries.blade.php'));
     }
 
     public function test_shared_frontend_assets_guard_charts_and_duplicate_submissions(): void
@@ -34,6 +31,10 @@ class FrontendBugFixesTest extends TestCase
 
         $this->assertStringContainsString('dataset.confirmMessage', $script);
         $this->assertStringContainsString('data-print-page', $script);
+        $this->assertStringContainsString('data-export-table', $script);
+        $this->assertStringContainsString('data-sort-table', $script);
+        $this->assertStringContainsString('exportVisibleTable', $script);
+        $this->assertStringContainsString('sortVisibleTable', $script);
         $this->assertStringContainsString('form.dataset.submitted', $script);
         $this->assertStringContainsString('try {', $script);
         $this->assertStringContainsString('JSON.parse', $script);
@@ -43,6 +44,23 @@ class FrontendBugFixesTest extends TestCase
         $this->assertStringContainsString('form[aria-busy="true"]', $styles);
         $this->assertStringContainsString('.toast-stack', $styles);
         $this->assertStringContainsString('@keyframes cjp-toast-enter', $styles);
+    }
+
+    public function test_type_button_controls_have_frontend_behavior_hooks(): void
+    {
+        foreach ($this->frontendFiles('resources/views') as $file) {
+            $contents = file_get_contents($file) ?: '';
+
+            preg_match_all('/<button\b[^>]*type="button"[^>]*>/i', $contents, $matches);
+
+            foreach ($matches[0] as $button) {
+                $this->assertMatchesRegularExpression(
+                    '/\bdata-[a-z0-9-]+(?:=|\s|>)/i',
+                    $button,
+                    $file.' contains a button without a working behavior hook: '.$button
+                );
+            }
+        }
     }
 
     public function test_login_uses_username_password_form_and_renders_cjp_toasts(): void

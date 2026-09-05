@@ -19,7 +19,7 @@
             <button class="tab-button {{ $activeTab === 'stock-in' ? 'is-active' : '' }}" type="button" data-tab-target="stock-in" data-heading="Stock-In">Stock-In</button>
             <button class="tab-button {{ $activeTab === 'stock-out' ? 'is-active' : '' }}" type="button" data-tab-target="stock-out" data-heading="Stock-Out">Stock Out</button>
         </div>
-        <div class="actions-right"><button class="btn btn-secondary" type="button">Export</button></div>
+        <div class="actions-right"><button class="btn btn-secondary" type="button" data-export-table>Export</button></div>
 
         @if (! empty($summaryCards))
             <div class="metric-row">
@@ -224,7 +224,7 @@
             <input type="hidden" name="idempotency_key" value="{{ old('idempotency_key', $stockOutIdempotencyKey) }}">
             <div class="modal-card">
                 <div class="form-grid">
-                    <div class="form-row"><label for="stock_out_source_type">Source</label><select id="stock_out_source_type" name="source_type" required><option value="garage" @selected(old('source_type', 'garage') === 'garage')>Garage Inventory</option><option value="depot" @selected(old('source_type') === 'depot')>Direct Depot Delivery</option></select></div>
+                    <div class="form-row"><label for="stock_out_source_type">Source</label><select id="stock_out_source_type" name="source_type" required><option value="garage" @selected(old('source_type', 'garage') === 'garage')>Garage Inventory</option><option value="depot" @selected(old('source_type') === 'depot')>Direct Depot Release</option></select></div>
                     <div class="form-row"><label for="stock_out_sale_item_id">Sale / Item</label><select id="stock_out_sale_item_id" name="sale_item_id" required><option value="" disabled @selected(! old('sale_item_id'))>Select Sale Item</option>@foreach ($stockOutSaleItems as $item)<option value="{{ $item->id }}" @selected((string) old('sale_item_id') === (string) $item->id)>{{ $item->label }}</option>@endforeach</select></div>
                     <div class="form-row"><label for="stock_out_storage_location_id">Garage</label><select id="stock_out_storage_location_id" name="storage_location_id"><option value="" @selected(! old('storage_location_id'))>Select Garage</option>@foreach ($garages as $garage)<option value="{{ $garage->id }}" @selected((string) old('storage_location_id') === (string) $garage->id)>{{ $garage->name }}</option>@endforeach</select></div>
                     <div class="form-row"><label for="stock_out_haul_allocation_id">Depot Allocation</label><select id="stock_out_haul_allocation_id" name="haul_allocation_id"><option value="" @selected(! old('haul_allocation_id'))>Select Direct Allocation</option>@foreach ($directDeliveryAllocations as $allocation)<option value="{{ $allocation->id }}" @selected((string) old('haul_allocation_id') === (string) $allocation->id)>{{ $allocation->label }}</option>@endforeach</select></div>

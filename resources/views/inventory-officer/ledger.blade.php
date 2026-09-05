@@ -9,7 +9,7 @@
             <button class="tab-button {{ $activeTab === 'ledger' ? 'is-active' : '' }}" type="button" data-tab-target="ledger">Ledger</button>
             <button class="tab-button {{ $activeTab === 'transactions' ? 'is-active' : '' }}" type="button" data-tab-target="transactions">Transaction</button>
         </div>
-        <div class="actions-right"><button class="btn btn-secondary" type="button">Export</button></div>
+        <div class="actions-right"><button class="btn btn-secondary" type="button" data-export-table>Export</button></div>
 
         <section data-tab-panel="ledger" @hidden($activeTab !== 'ledger')>
             <form class="dispatch-filter-row" method="GET" action="{{ route('inventory-officer.ledger') }}">

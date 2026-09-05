@@ -259,6 +259,32 @@ class RoleBasedAccessControlTest extends TestCase
         $this->assertGuest();
     }
 
+    public function test_repeated_failed_login_attempts_are_rate_limited(): void
+    {
+        User::factory()->create([
+            'email' => 'limited-login@example.com',
+            'role' => 'admin',
+            'status' => 'active',
+            'password' => 'password',
+        ]);
+
+        for ($attempt = 0; $attempt < 5; $attempt++) {
+            $this->post('/login', [
+                'username' => 'limited-login@example.com',
+                'role' => 'admin',
+                'password' => 'wrong-password',
+            ])->assertSessionHasErrors('username');
+        }
+
+        $this->post('/login', [
+            'username' => 'limited-login@example.com',
+            'role' => 'admin',
+            'password' => 'wrong-password',
+        ])->assertStatus(429);
+
+        $this->assertGuest();
+    }
+
     public function test_login_regenerates_the_session_id(): void
     {
         $user = User::factory()->create([
@@ -376,7 +402,6 @@ class RoleBasedAccessControlTest extends TestCase
             'full_name' => 'New Inventory User',
             'email' => 'new-inventory@example.com',
             'contact_number' => '09171234567',
-            'role' => 'inventory_officer',
             'password' => 'password',
             'password_confirmation' => 'password',
         ])->assertRedirect(route('login'));
@@ -385,8 +410,35 @@ class RoleBasedAccessControlTest extends TestCase
             'name' => 'New Inventory User',
             'email' => 'new-inventory@example.com',
             'phone' => '09171234567',
-            'role' => 'inventory_officer',
+            'role' => 'driver',
             'status' => 'active',
+        ]);
+
+        $this->assertGuest();
+    }
+
+    public function test_public_registration_cannot_create_privileged_accounts(): void
+    {
+        $this->post('/register', [
+            'full_name' => 'Self Escalating User',
+            'email' => 'self-escalate@example.com',
+            'contact_number' => '09171234567',
+            'role' => 'admin',
+            'status' => 'active',
+            'password' => 'password',
+            'password_confirmation' => 'password',
+        ])->assertRedirect(route('login'));
+
+        $this->assertDatabaseHas('users', [
+            'name' => 'Self Escalating User',
+            'email' => 'self-escalate@example.com',
+            'role' => 'driver',
+            'status' => 'active',
+        ]);
+
+        $this->assertDatabaseMissing('users', [
+            'email' => 'self-escalate@example.com',
+            'role' => 'admin',
         ]);
 
         $this->assertGuest();
@@ -651,7 +703,7 @@ class RoleBasedAccessControlTest extends TestCase
         Carbon::setTestNow();
     }
 
-    public function test_registration_validates_unique_email_role_and_confirmed_password(): void
+    public function test_registration_validates_unique_email_and_confirmed_password(): void
     {
         User::factory()->create([
             'email' => 'existing@example.com',
@@ -661,10 +713,9 @@ class RoleBasedAccessControlTest extends TestCase
             'full_name' => 'Duplicate User',
             'email' => 'existing@example.com',
             'contact_number' => '09171234567',
-            'role' => 'unknown_role',
             'password' => 'password',
             'password_confirmation' => 'different',
-        ])->assertSessionHasErrors(['email', 'role', 'password']);
+        ])->assertSessionHasErrors(['email', 'password']);
 
         $this->assertGuest();
     }

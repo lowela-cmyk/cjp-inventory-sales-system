@@ -58,7 +58,7 @@ class FormValidationTest extends TestCase
         $this->assertNull(session()->getOldInput('password_confirmation'));
     }
 
-    public function test_registration_validates_lengths_roles_phone_format_duplicates_and_confirmation(): void
+    public function test_registration_validates_lengths_phone_format_duplicates_and_confirmation(): void
     {
         User::factory()->create(['email' => 'taken@example.test']);
 
@@ -66,7 +66,6 @@ class FormValidationTest extends TestCase
             'full_name' => str_repeat('A', 256),
             'email' => 'taken@example.test',
             'contact_number' => 'phone<script>',
-            'role' => 'manager',
             'password' => 'password',
             'password_confirmation' => 'different',
         ];
@@ -74,10 +73,9 @@ class FormValidationTest extends TestCase
         $this->from(route('register'))
             ->post(route('register.store'), $payload)
             ->assertRedirect(route('register'))
-            ->assertSessionHasErrors(['full_name', 'email', 'contact_number', 'role', 'password'])
+            ->assertSessionHasErrors(['full_name', 'email', 'contact_number', 'password'])
             ->assertSessionHasInput('email', 'taken@example.test')
-            ->assertSessionHasInput('contact_number', 'phone<script>')
-            ->assertSessionHasInput('role', 'manager');
+            ->assertSessionHasInput('contact_number', 'phone<script>');
 
         $this->assertSame(1, User::count());
     }

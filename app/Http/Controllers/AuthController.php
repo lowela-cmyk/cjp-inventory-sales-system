@@ -138,7 +138,6 @@ class AuthController extends Controller
             'full_name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
             'contact_number' => ['nullable', 'string', 'max:30', 'regex:/^[0-9+()\\-\\s]+$/'],
-            'role' => ['required', 'string', 'in:admin,inventory_officer,sales_officer,dispatch_officer,driver'],
             'password' => ['required', 'confirmed', Password::defaults()],
         ]);
 
@@ -146,7 +145,7 @@ class AuthController extends Controller
             'name' => $data['full_name'],
             'email' => $data['email'],
             'phone' => $data['contact_number'] ?? null,
-            'role' => $data['role'],
+            'role' => 'driver',
             'status' => 'active',
             'password' => $data['password'],
         ]);

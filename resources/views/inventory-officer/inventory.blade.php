@@ -1,8 +1,10 @@
 @php
     $activeTab = in_array($activeTab ?? 'purchases', ['purchases', 'stock-in', 'stock-out'], true) ? $activeTab : 'purchases';
+    $inventoryRoutePrefix = request()->routeIs('admin.inventory*') ? 'admin.inventory' : 'inventory-officer.inventory';
+    $inventoryLayout = request()->routeIs('admin.inventory*') ? 'layouts.admin' : 'layouts.inventory-officer';
 @endphp
 
-@component('layouts.inventory-officer', ['title' => 'Inventory Management', 'active' => 'inventory'])
+@component($inventoryLayout, ['title' => 'Inventory Management', 'active' => 'inventory'])
     <div data-tabs>
         <h2 class="section-title" data-tab-heading>{{ ['purchases' => 'Purchases', 'stock-in' => 'Stock-In', 'stock-out' => 'Stock-Out'][$activeTab] }}</h2>
 
@@ -34,13 +36,15 @@
         @endif
 
         <section data-tab-panel="purchases" @hidden($activeTab !== 'purchases')>
-            <form class="toolbar" method="GET" action="{{ route('inventory-officer.inventory') }}">
+            <form class="toolbar toolbar-inventory" method="GET" action="{{ route($inventoryRoutePrefix) }}">
                 <input type="search" name="search" placeholder="Search..." aria-label="Search purchases" value="{{ $search }}">
                 <button class="btn btn-primary" type="submit">Status</button>
                 <button class="btn btn-primary" type="submit">Date</button>
                 <button class="btn btn-primary" type="submit">Depot</button>
                 <button class="btn btn-primary" type="submit">Fuel Type (All)</button>
                 <button class="btn btn-primary" type="button" data-modal-open="io-purchase-add">+ Record Purchases</button>
+                <button class="btn btn-secondary" type="button" data-modal-open="io-fuel-type-add">+ Fuel Type</button>
+                <button class="btn btn-secondary" type="button" data-modal-open="io-depot-add">+ Depot</button>
             </form>
             <div class="table-wrap">
                 <table class="admin-table">
@@ -66,7 +70,7 @@
         </section>
 
         <section data-tab-panel="stock-in" @hidden($activeTab !== 'stock-in')>
-            <form class="toolbar" method="GET" action="{{ route('inventory-officer.inventory.stock-in') }}">
+            <form class="toolbar toolbar-inventory" method="GET" action="{{ route($inventoryRoutePrefix.'.stock-in') }}">
                 <input type="search" name="search" placeholder="Search..." aria-label="Search stock-in" value="{{ $search }}">
                 <span></span>
                 <button class="btn btn-primary" type="submit">Status</button>
@@ -99,7 +103,7 @@
         </section>
 
         <section data-tab-panel="stock-out" @hidden($activeTab !== 'stock-out')>
-            <form class="toolbar" method="GET" action="{{ route('inventory-officer.inventory.stock-out') }}">
+            <form class="toolbar toolbar-inventory" method="GET" action="{{ route($inventoryRoutePrefix.'.stock-out') }}">
                 <input type="search" name="search" placeholder="Search..." aria-label="Search stock-out" value="{{ $search }}">
                 <button class="btn btn-primary" type="submit">Status</button>
                 <button class="btn btn-primary" type="submit">Date</button>
@@ -123,7 +127,7 @@
     </div>
 
     <x-admin.modal id="io-purchase-add" title="Add Purchase Record" wide>
-        <form method="POST" action="{{ route('inventory-officer.inventory.purchases.store') }}">
+        <form method="POST" action="{{ route($inventoryRoutePrefix.'.purchases.store') }}">
             @csrf
             <div class="modal-card">
                 <div class="form-grid">
@@ -142,7 +146,7 @@
 
     @foreach ($purchases as $row)
         <x-admin.modal id="{{ $row['modal_id'] }}" title="Edit Purchase Record">
-            <form id="purchase-update-{{ $row['id'] }}" method="POST" action="{{ route('inventory-officer.inventory.purchases.update', $row['id']) }}">
+            <form id="purchase-update-{{ $row['id'] }}" method="POST" action="{{ route($inventoryRoutePrefix.'.purchases.update', $row['id']) }}">
                 @csrf
                 @method('PATCH')
             </form>
@@ -187,7 +191,7 @@
             </div>
             <div class="modal-actions">
                 <button class="btn btn-pill btn-secondary" type="submit" form="purchase-update-{{ $row['id'] }}">Edit</button>
-                <form method="POST" action="{{ route('inventory-officer.inventory.purchases.cancel', $row['id']) }}">
+                <form method="POST" action="{{ route($inventoryRoutePrefix.'.purchases.cancel', $row['id']) }}">
                     @csrf
                     @method('PATCH')
                     <button class="btn btn-pill btn-danger" type="submit">Cancel</button>
@@ -197,7 +201,7 @@
     @endforeach
 
     <x-admin.modal id="io-stockin-add" title="Edit Stock-In Record" wide>
-        <form method="POST" action="{{ route('inventory-officer.inventory.stock-in.store') }}">
+        <form method="POST" action="{{ route($inventoryRoutePrefix.'.stock-in.store') }}">
             @csrf
             <div class="modal-card">
                 <div class="form-grid">
@@ -227,7 +231,7 @@
     @endforeach
 
     <x-admin.modal id="io-stockout-add" title="Record Stock-Out" wide>
-        <form method="POST" action="{{ route('inventory-officer.inventory.stock-out.store') }}">
+        <form method="POST" action="{{ route($inventoryRoutePrefix.'.stock-out.store') }}">
             @csrf
             <input type="hidden" name="idempotency_key" value="{{ old('idempotency_key', $stockOutIdempotencyKey) }}">
             <div class="modal-card">
@@ -239,6 +243,38 @@
                     <div class="form-row"><label for="stock_out_quantity_liters">Quantity (Liters)</label><input id="stock_out_quantity_liters" name="quantity_liters" type="number" min="0.01" step="0.01" placeholder="Enter Quantity (Liters)" value="{{ old('quantity_liters') }}" required></div>
                     <div class="form-row"><label for="stock_out_at">Date</label><input id="stock_out_at" name="stock_out_at" type="datetime-local" value="{{ old('stock_out_at', now()->format('Y-m-d\TH:i')) }}" required></div>
                     <div class="form-row"><label for="stock_out_remarks">Remarks</label><input id="stock_out_remarks" name="remarks" type="text" placeholder="Enter Remarks" value="{{ old('remarks') }}"></div>
+                </div>
+            </div>
+            <div class="modal-actions"><button class="btn btn-pill btn-secondary" type="submit">Add</button><button class="btn btn-pill btn-danger" type="button" data-modal-close>Cancel</button></div>
+        </form>
+    </x-admin.modal>
+
+    <x-admin.modal id="io-fuel-type-add" title="Add Fuel Type">
+        <form method="POST" action="{{ route($inventoryRoutePrefix.'.fuel-types.store') }}">
+            @csrf
+            <div class="modal-card">
+                <div class="form-grid">
+                    <div class="form-row"><label for="fuel_type_code">Code</label><input id="fuel_type_code" name="code" type="text" maxlength="30" value="{{ old('code') }}" required></div>
+                    <div class="form-row"><label for="fuel_type_name">Name</label><input id="fuel_type_name" name="name" type="text" maxlength="100" value="{{ old('name') }}" required></div>
+                    <div class="form-row"><label for="fuel_type_status">Status</label><select id="fuel_type_status" name="status" required><option value="active" @selected(old('status', 'active') === 'active')>Active</option><option value="inactive" @selected(old('status') === 'inactive')>Inactive</option></select></div>
+                    <div class="form-row form-row-full"><label for="fuel_type_description">Description</label><input id="fuel_type_description" name="description" type="text" maxlength="1000" value="{{ old('description') }}"></div>
+                </div>
+            </div>
+            <div class="modal-actions"><button class="btn btn-pill btn-secondary" type="submit">Add</button><button class="btn btn-pill btn-danger" type="button" data-modal-close>Cancel</button></div>
+        </form>
+    </x-admin.modal>
+
+    <x-admin.modal id="io-depot-add" title="Add Depot">
+        <form method="POST" action="{{ route($inventoryRoutePrefix.'.depots.store') }}">
+            @csrf
+            <div class="modal-card">
+                <div class="form-grid">
+                    <div class="form-row"><label for="depot_code_master">Code</label><input id="depot_code_master" name="depot_code" type="text" maxlength="30" value="{{ old('depot_code') }}" required></div>
+                    <div class="form-row"><label for="depot_name_master">Name</label><input id="depot_name_master" name="name" type="text" maxlength="255" value="{{ old('name') }}" required></div>
+                    <div class="form-row"><label for="depot_status_master">Status</label><select id="depot_status_master" name="status" required><option value="active" @selected(old('status', 'active') === 'active')>Active</option><option value="inactive" @selected(old('status') === 'inactive')>Inactive</option></select></div>
+                    <div class="form-row"><label for="depot_phone_master">Phone</label><input id="depot_phone_master" name="phone" type="text" maxlength="30" value="{{ old('phone') }}"></div>
+                    <div class="form-row"><label for="depot_contact_master">Contact</label><input id="depot_contact_master" name="contact_person" type="text" maxlength="255" value="{{ old('contact_person') }}"></div>
+                    <div class="form-row"><label for="depot_address_master">Address</label><input id="depot_address_master" name="address" type="text" maxlength="255" value="{{ old('address') }}"></div>
                 </div>
             </div>
             <div class="modal-actions"><button class="btn btn-pill btn-secondary" type="submit">Add</button><button class="btn btn-pill btn-danger" type="button" data-modal-close>Cancel</button></div>

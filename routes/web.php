@@ -41,7 +41,16 @@ Route::middleware(['auth'])->group(function () {
     Route::prefix('admin')->name('admin.')->middleware('role:admin')->group(function () {
         Route::get('/dashboard', AdminDashboardController::class)->name('dashboard');
         Route::post('/dashboard/inventory-variance-explanation', AdminInventoryVarianceExplanationController::class)->name('dashboard.inventory-variance-explanation');
-        Route::get('/inventory', [AdminMonitoringController::class, 'inventory'])->name('inventory');
+        Route::get('/inventory', [InventoryOfficerPurchaseController::class, 'index'])->name('inventory');
+        Route::post('/inventory/purchases', [InventoryOfficerPurchaseController::class, 'store'])->name('inventory.purchases.store');
+        Route::patch('/inventory/purchases/{purchaseItem}', [InventoryOfficerPurchaseController::class, 'update'])->name('inventory.purchases.update');
+        Route::patch('/inventory/purchases/{purchaseItem}/cancel', [InventoryOfficerPurchaseController::class, 'cancel'])->name('inventory.purchases.cancel');
+        Route::post('/inventory/stock-in', [InventoryOfficerPurchaseController::class, 'storeStockIn'])->name('inventory.stock-in.store');
+        Route::get('/inventory/stock-in', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'stock-in')->name('inventory.stock-in');
+        Route::post('/inventory/stock-out', [InventoryOfficerPurchaseController::class, 'storeStockOut'])->name('inventory.stock-out.store');
+        Route::get('/inventory/stock-out', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'stock-out')->name('inventory.stock-out');
+        Route::post('/inventory/fuel-types', [InventoryOfficerPurchaseController::class, 'storeFuelType'])->name('inventory.fuel-types.store');
+        Route::post('/inventory/depots', [InventoryOfficerPurchaseController::class, 'storeDepot'])->name('inventory.depots.store');
         Route::get('/ledger', [AdminMonitoringController::class, 'ledger'])->name('ledger');
         Route::get('/fuel-lifting', [AdminMonitoringController::class, 'fuelLifting'])->name('fuel-lifting');
         Route::patch('/fuel-lifting/hauls/{haul}/truck', [HaulTruckAssignmentController::class, 'update'])->name('fuel-lifting.hauls.truck');
@@ -74,7 +83,8 @@ Route::middleware(['auth'])->group(function () {
         Route::patch('/fuel-lifting/hauls/{haul}/truck', [HaulTruckAssignmentController::class, 'update'])->name('fuel-lifting.hauls.truck');
         Route::patch('/fuel-lifting/hauls/{haul}/status', [DispatchLiftingStatusController::class, 'updateStatus'])->name('fuel-lifting.hauls.status');
         Route::get('/fuel-lifting/hauled', [DispatchDeliveryController::class, 'index'])->defaults('state', 'hauled')->name('fuel-lifting.hauled');
-        Route::view('/ledger', 'dispatch.ledger')->name('ledger');
+        Route::get('/ledger', InventoryOfficerLedgerController::class)->name('ledger');
+        Route::get('/ledger/transactions', InventoryOfficerLedgerController::class)->defaults('state', 'transactions')->name('ledger.transactions');
         Route::get('/alerts', [AdminMonitoringController::class, 'dispatchAlerts'])->name('alerts');
     });
 
@@ -88,6 +98,8 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/inventory/stock-in', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'stock-in')->name('inventory.stock-in');
         Route::post('/inventory/stock-out', [InventoryOfficerPurchaseController::class, 'storeStockOut'])->name('inventory.stock-out.store');
         Route::get('/inventory/stock-out', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'stock-out')->name('inventory.stock-out');
+        Route::post('/inventory/fuel-types', [InventoryOfficerPurchaseController::class, 'storeFuelType'])->name('inventory.fuel-types.store');
+        Route::post('/inventory/depots', [InventoryOfficerPurchaseController::class, 'storeDepot'])->name('inventory.depots.store');
         Route::get('/ledger', InventoryOfficerLedgerController::class)->name('ledger');
         Route::get('/ledger/transactions', InventoryOfficerLedgerController::class)->defaults('state', 'transactions')->name('ledger.transactions');
         Route::get('/alerts', [AdminMonitoringController::class, 'inventoryOfficerAlerts'])->name('alerts');

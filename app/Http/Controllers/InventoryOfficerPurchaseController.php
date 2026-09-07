@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\DashboardSummaryService;
+use App\Services\GarageTankService;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -21,25 +22,52 @@ class InventoryOfficerPurchaseController extends Controller
     private const STOCK_OUT_REFERENCE_TYPE = 'stock_out';
     private const ELIGIBLE_SALE_STATUSES = ['confirmed', 'partially_paid', 'paid', 'unpaid'];
 
-    public function index(Request $request, DashboardSummaryService $dashboardSummary, string $state = 'purchases'): View
+    public function index(Request $request, DashboardSummaryService $dashboardSummary, GarageTankService $garageTanks, string $state = 'purchases'): View
     {
+        $garageTanks->ensureForActiveFuelTypes();
+
         $data = $request->validate([
             'search' => ['nullable', 'string', 'max:100'],
         ]);
 
         $search = trim((string) ($data['search'] ?? ''));
         $activeTab = in_array($state, ['purchases', 'stock-in', 'stock-out'], true) ? $state : 'purchases';
+        $purchases = $this->purchaseRows($search === '' ? null : $search);
+        $stockIn = $this->stockInRows($search === '' ? null : $search);
+        $stockOut = $this->stockOutRows($search === '' ? null : $search);
+        $purchaseFuelTypeIds = $purchases->pluck('fuel_type_id')->map(fn (mixed $id): int => (int) $id)->unique()->values()->all();
+        $purchaseDepotIds = $purchases->pluck('depot_id')->map(fn (mixed $id): int => (int) $id)->unique()->values()->all();
 
         return view('inventory-officer.inventory', [
             'activeTab' => $activeTab,
             'search' => $search === '' ? null : $search,
             'summaryCards' => $dashboardSummary->inventoryCards(),
-            'purchases' => $this->purchaseRows($search === '' ? null : $search),
-            'stockIn' => $this->stockInRows($search === '' ? null : $search),
-            'stockOut' => $this->stockOutRows($search === '' ? null : $search),
-            'depots' => DB::table('depots')->where('status', 'active')->orderBy('name')->get(['id', 'name']),
-            'fuelTypes' => DB::table('fuel_types')->where('status', 'active')->orderBy('name')->get(['id', 'name']),
-            'garages' => DB::table('storage_locations')->where('type', 'garage')->where('status', 'active')->orderBy('name')->get(['id', 'name']),
+            'purchases' => $purchases,
+            'stockIn' => $stockIn,
+            'stockOut' => $stockOut,
+            'depots' => DB::table('depots')
+                ->where('status', 'active')
+                ->when($search !== '', fn (Builder $query): Builder => $query->whereIn('id', $purchaseDepotIds ?: [0]))
+                ->orderBy('name')
+                ->get(['id', 'name']),
+            'fuelTypes' => DB::table('fuel_types')
+                ->where('status', 'active')
+                ->when($search !== '', fn (Builder $query): Builder => $query->whereIn('id', $purchaseFuelTypeIds ?: [0]))
+                ->orderBy('name')
+                ->get(['id', 'name']),
+            'garages' => DB::table('storage_locations')
+                ->where('type', 'garage')
+                ->where('status', 'active')
+                ->when($search !== '', function (Builder $query) use ($purchaseFuelTypeIds): Builder {
+                    return $query->where(function (Builder $query) use ($purchaseFuelTypeIds): void {
+                        $query->whereNull('fuel_type_id')
+                            ->orWhereIn('fuel_type_id', $purchaseFuelTypeIds ?: [0]);
+                    });
+                })
+                ->orderBy('fuel_type_id')
+                ->orderBy('tank_number')
+                ->orderBy('name')
+                ->get(['id', 'name', 'fuel_type_id', 'tank_number']),
             'garageAllocations' => $this->garageAllocationOptions(),
             'stockOutSaleItems' => $this->stockOutSaleItemOptions(),
             'directDeliveryAllocations' => $this->directDepotReleaseAllocationOptions(),
@@ -80,7 +108,7 @@ class InventoryOfficerPurchaseController extends Controller
         });
 
         return redirect()
-            ->route('inventory-officer.inventory')
+            ->route($this->inventoryRouteName($request))
             ->with('status', 'Purchase record created successfully.');
     }
 
@@ -122,7 +150,7 @@ class InventoryOfficerPurchaseController extends Controller
         });
 
         return redirect()
-            ->route('inventory-officer.inventory')
+            ->route($this->inventoryRouteName($request))
             ->with('status', 'Purchase record updated successfully.');
     }
 
@@ -168,8 +196,60 @@ class InventoryOfficerPurchaseController extends Controller
             ]);
 
         return redirect()
-            ->route('inventory-officer.inventory')
+            ->route($this->inventoryRouteName($request))
             ->with('status', 'Purchase record cancelled successfully.');
+    }
+
+    public function storeFuelType(Request $request, GarageTankService $garageTanks): RedirectResponse
+    {
+        $data = $request->validate([
+            'code' => ['required', 'string', 'max:30', Rule::unique('fuel_types', 'code')],
+            'name' => ['required', 'string', 'max:100', Rule::unique('fuel_types', 'name')],
+            'description' => ['nullable', 'string', 'max:1000'],
+            'status' => ['required', Rule::in(['active', 'inactive'])],
+        ]);
+
+        DB::table('fuel_types')->insert([
+            'code' => Str::upper($data['code']),
+            'name' => $data['name'],
+            'description' => $data['description'] ?? null,
+            'status' => $data['status'],
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $garageTanks->ensureForActiveFuelTypes();
+
+        return redirect()
+            ->route($this->inventoryRouteName($request))
+            ->with('status', 'Fuel type created successfully.');
+    }
+
+    public function storeDepot(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'depot_code' => ['required', 'string', 'max:30', Rule::unique('depots', 'depot_code')],
+            'name' => ['required', 'string', 'max:255'],
+            'address' => ['nullable', 'string', 'max:255'],
+            'contact_person' => ['nullable', 'string', 'max:255'],
+            'phone' => ['nullable', 'string', 'max:30'],
+            'status' => ['required', Rule::in(['active', 'inactive'])],
+        ]);
+
+        DB::table('depots')->insert([
+            'depot_code' => Str::upper($data['depot_code']),
+            'name' => $data['name'],
+            'address' => $data['address'] ?? null,
+            'contact_person' => $data['contact_person'] ?? null,
+            'phone' => $data['phone'] ?? null,
+            'status' => $data['status'],
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return redirect()
+            ->route($this->inventoryRouteName($request))
+            ->with('status', 'Depot created successfully.');
     }
 
     public function storeStockIn(Request $request): RedirectResponse
@@ -242,7 +322,7 @@ class InventoryOfficerPurchaseController extends Controller
         }
 
         return redirect()
-            ->route('inventory-officer.inventory.stock-in')
+            ->route($this->inventoryRouteName($request, 'stock-in'))
             ->with('status', 'Stock-In recorded successfully.');
     }
 
@@ -262,7 +342,7 @@ class InventoryOfficerPurchaseController extends Controller
 
         if ($request->session()->has($sessionKey)) {
             return redirect()
-                ->route('inventory-officer.inventory.stock-out')
+                ->route($this->inventoryRouteName($request, 'stock-out'))
                 ->with('status', 'Stock-Out record was already submitted.');
         }
 
@@ -294,7 +374,7 @@ class InventoryOfficerPurchaseController extends Controller
         $request->session()->put($sessionKey, true);
 
         return redirect()
-            ->route('inventory-officer.inventory.stock-out')
+            ->route($this->inventoryRouteName($request, 'stock-out'))
             ->with('status', 'Stock-Out recorded successfully.');
     }
 
@@ -613,6 +693,21 @@ class InventoryOfficerPurchaseController extends Controller
     private function releaseFromGarage(Request $request, array $data, object $saleItem, float $quantity): ?string
     {
         $garageId = (int) $data['storage_location_id'];
+        $garage = DB::table('storage_locations')
+            ->where('id', $garageId)
+            ->where('type', 'garage')
+            ->where('status', 'active')
+            ->lockForUpdate()
+            ->first(['id', 'fuel_type_id', 'tank_number']);
+
+        if (! $garage) {
+            return 'The selected garage tank is invalid.';
+        }
+
+        if ($garage->fuel_type_id && (int) $garage->fuel_type_id !== (int) $saleItem->fuel_type_id) {
+            return 'The selected garage tank does not match the sale fuel type.';
+        }
+
         $available = $this->availableGarageStockForUpdate($garageId, (int) $saleItem->fuel_type_id);
 
         if ($quantity > $available) {
@@ -857,16 +952,23 @@ class InventoryOfficerPurchaseController extends Controller
             ->join('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')
             ->join('purchase_items', 'purchase_items.id', '=', 'hauls.purchase_item_id')
             ->join('purchases', 'purchases.id', '=', 'hauls.purchase_id')
+            ->join('storage_locations', 'storage_locations.id', '=', 'haul_allocations.storage_location_id')
             ->where('haul_allocations.id', $allocationId)
             ->where('haul_allocations.destination_type', 'garage')
             ->whereNotNull('haul_allocations.storage_location_id')
             ->where('haul_allocations.status', '!=', 'cancelled')
+            ->where('storage_locations.type', 'garage')
+            ->where('storage_locations.status', 'active')
             ->where('hauls.status', 'completed')
             ->whereNull('purchases.deleted_at')
             ->whereColumn('hauls.purchase_id', 'purchase_items.purchase_id')
             ->whereColumn('hauls.depot_id', 'purchases.depot_id')
             ->whereColumn('hauls.fuel_type_id', 'purchase_items.fuel_type_id')
             ->whereColumn('haul_allocations.fuel_type_id', 'hauls.fuel_type_id')
+            ->where(function (Builder $query): void {
+                $query->whereNull('storage_locations.fuel_type_id')
+                    ->orWhereColumn('storage_locations.fuel_type_id', 'haul_allocations.fuel_type_id');
+            })
             ->lockForUpdate()
             ->first([
                 'haul_allocations.id',
@@ -1247,6 +1349,15 @@ class InventoryOfficerPurchaseController extends Controller
     private function referenceKey(?string $type, int $id): string
     {
         return ((string) $type).':'.$id;
+    }
+
+    private function inventoryRouteName(Request $request, ?string $state = null): string
+    {
+        $prefix = str_starts_with((string) $request->route()?->getName(), 'admin.')
+            ? 'admin.inventory'
+            : 'inventory-officer.inventory';
+
+        return $state ? $prefix.'.'.$state : $prefix;
     }
 
     private function formatDate(mixed $date): string

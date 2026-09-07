@@ -14,6 +14,7 @@ class DashboardSummaryService
     public const LIFTING_PROGRESS_STATUSES = ['unlifted', 'partial', 'lifted'];
     public const INVENTORY_VARIANCE_STATUSES = ['matched', 'variance'];
     private const STOCK_LEVEL_COLORS = ['#f7043a', '#3b9a35', '#e28a22', '#0d1424', '#6b7280'];
+    private const BASELINE_FUEL_CODES = ['ADO', 'RGP', 'P95', 'KRS'];
 
     /**
      * @var array<string, mixed>
@@ -139,6 +140,10 @@ class DashboardSummaryService
         $rows = DB::table('fuel_types')
             ->leftJoinSub($this->inventoryBalancesByFuelQuery(), 'inventory_balances', 'inventory_balances.fuel_type_id', '=', 'fuel_types.id')
             ->where('fuel_types.status', 'active')
+            ->where(function (Builder $query): void {
+                $query->whereNotIn('fuel_types.code', self::BASELINE_FUEL_CODES)
+                    ->orWhereNotNull('inventory_balances.liters');
+            })
             ->selectRaw('fuel_types.id, fuel_types.name, COALESCE(inventory_balances.liters, 0) as liters')
             ->groupBy('fuel_types.id', 'fuel_types.name', 'inventory_balances.liters')
             ->orderBy('fuel_types.name')
@@ -515,6 +520,16 @@ class DashboardSummaryService
             'statuses' => self::LIFTING_PROGRESS_STATUSES,
             'fuelTypes' => DB::table('fuel_types')
                 ->where('status', 'active')
+                ->where(function (Builder $query): void {
+                    $query->whereNotIn('code', self::BASELINE_FUEL_CODES)
+                        ->orWhereExists(function (Builder $query): void {
+                            $query->selectRaw('1')
+                                ->from('purchase_items')
+                                ->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
+                                ->whereColumn('purchase_items.fuel_type_id', 'fuel_types.id')
+                                ->whereNull('purchases.deleted_at');
+                        });
+                })
                 ->orderBy('name')
                 ->get(['id', 'name']),
             'depots' => DB::table('depots')
@@ -533,6 +548,15 @@ class DashboardSummaryService
             'statuses' => self::INVENTORY_VARIANCE_STATUSES,
             'fuelTypes' => DB::table('fuel_types')
                 ->where('status', 'active')
+                ->where(function (Builder $query): void {
+                    $query->whereNotIn('code', self::BASELINE_FUEL_CODES)
+                        ->orWhereExists(function (Builder $query): void {
+                            $query->selectRaw('1')
+                                ->from('stock_outs')
+                                ->whereColumn('stock_outs.fuel_type_id', 'fuel_types.id')
+                                ->where('stock_outs.status', '!=', 'cancelled');
+                        });
+                })
                 ->orderBy('name')
                 ->get(['id', 'name']),
             'customers' => DB::table('customers')

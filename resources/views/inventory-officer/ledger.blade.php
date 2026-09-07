@@ -1,8 +1,10 @@
 @php
     $activeTab = $activeTab ?? (($state ?? 'ledger') === 'transactions' ? 'transactions' : 'ledger');
+    $ledgerLayout = request()->routeIs('dispatch.ledger*') ? 'layouts.dispatch' : 'layouts.inventory-officer';
+    $ledgerRoutePrefix = request()->routeIs('dispatch.ledger*') ? 'dispatch.ledger' : 'inventory-officer.ledger';
 @endphp
 
-@component('layouts.inventory-officer', ['title' => 'Inventory Ledger', 'active' => 'ledger'])
+@component($ledgerLayout, ['title' => 'Inventory Ledger', 'active' => 'ledger'])
     <div data-tabs>
         <h2 class="section-title">Ledger Tab</h2>
         <div class="tabs">
@@ -12,7 +14,7 @@
         <div class="actions-right"><button class="btn btn-secondary" type="button" data-export-table>Export</button></div>
 
         <section data-tab-panel="ledger" {{ $activeTab !== 'ledger' ? 'hidden' : '' }}>
-            <form class="dispatch-filter-row" method="GET" action="{{ route('inventory-officer.ledger') }}">
+            <form class="dispatch-filter-row" method="GET" action="{{ route($ledgerRoutePrefix) }}">
                 <input type="search" name="search" placeholder="Search..." aria-label="Search ledger" value="{{ $search }}">
                 <button class="btn btn-primary" type="submit">Date</button>
                 <button class="btn btn-primary" type="submit">Depot</button>
@@ -33,7 +35,7 @@
                                 @endforeach
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="7">No active lifting progress found.</td></tr>
+                            <tr><td class="empty-cell" colspan="7">No inventory movements found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -41,7 +43,7 @@
         </section>
 
         <section data-tab-panel="transactions" {{ $activeTab !== 'transactions' ? 'hidden' : '' }}>
-            <form class="dispatch-filter-row" method="GET" action="{{ route('inventory-officer.ledger.transactions') }}">
+            <form class="dispatch-filter-row" method="GET" action="{{ route($ledgerRoutePrefix.'.transactions') }}">
                 <input type="search" name="search" placeholder="Search..." aria-label="Search ledger transactions" value="{{ $search }}">
                 <button class="btn btn-primary" type="submit">Date</button>
                 <button class="btn btn-primary" type="submit">Depot</button>
@@ -63,7 +65,7 @@
                                 <td><button class="btn btn-secondary" type="button" data-modal-open="{{ $row['id'] }}">View</button></td>
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="8">No purchase transactions found.</td></tr>
+                            <tr><td class="empty-cell" colspan="8">No inventory movements found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>

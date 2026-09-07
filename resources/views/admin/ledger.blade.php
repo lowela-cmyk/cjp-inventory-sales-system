@@ -4,7 +4,6 @@
         <div class="tabs">
             <button class="tab-button is-active" type="button" data-tab-target="ledger">Ledger</button>
             <button class="tab-button" type="button" data-tab-target="transaction">Transaction</button>
-            <button class="tab-button" type="button" data-tab-target="empty">No Data</button>
         </div>
 
         <section data-tab-panel="ledger">
@@ -29,7 +28,7 @@
                                 @endforeach
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="7">No active lifting progress found.</td></tr>
+                            <tr><td class="empty-cell" colspan="7">No inventory movements found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -60,27 +59,13 @@
                                 <td><button class="btn btn-secondary" type="button" data-modal-open="{{ $row['id'] }}">View</button></td>
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="8">No purchase transactions found.</td></tr>
+                            <tr><td class="empty-cell" colspan="8">No inventory movements found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
             </div>
         </section>
 
-        <section data-tab-panel="empty" hidden>
-            <form class="toolbar toolbar-ledger" method="GET" action="{{ route('admin.ledger') }}">
-                <input type="search" name="search" placeholder="Search empty ledger" aria-label="Search empty ledger" value="{{ $search }}">
-                <button class="btn btn-primary" type="submit">Date</button>
-                <button class="btn btn-primary" type="submit">Depot</button>
-                <button class="btn btn-primary" type="submit">Fuel Type (All)</button>
-            </form>
-            <div class="table-wrap">
-                <table class="admin-table">
-                    <thead><tr><th>Purchase ID</th><th>Fuel Type</th><th>Depot</th><th>Purchased Quantity</th><th>Total Lifted</th><th>Remaining Quantity</th><th>Status</th></tr></thead>
-                    <tbody><tr><td class="empty-cell" colspan="7">No active lifting progress found.</td></tr></tbody>
-                </table>
-            </div>
-        </section>
     </div>
 
     @foreach ($transactions as $row)

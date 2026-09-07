@@ -215,23 +215,23 @@ select {
 }
 
 .toolbar {
-    display: grid;
-    grid-template-columns: minmax(240px, 1fr) repeat(4, minmax(130px, 174px));
+    display: flex;
+    flex-wrap: wrap;
     gap: 16px;
     align-items: center;
     margin: 8px 0 10px;
 }
 
 .toolbar-narrow {
-    grid-template-columns: minmax(240px, 1fr) repeat(3, minmax(130px, 174px));
+    max-width: none;
 }
 
 .toolbar-ledger {
-    grid-template-columns: minmax(240px, 1fr) repeat(3, minmax(130px, 174px));
+    max-width: none;
 }
 
 .toolbar-transaction {
-    grid-template-columns: minmax(240px, 1fr) repeat(4, minmax(130px, 174px));
+    max-width: none;
 }
 
 .toolbar input,
@@ -248,6 +248,21 @@ select {
     font-size: 14px;
 }
 
+.toolbar input {
+    flex: 1 1 240px;
+    min-width: 220px;
+}
+
+.toolbar select,
+.toolbar button {
+    flex: 0 0 164px;
+    min-width: 140px;
+}
+
+.toolbar-inventory button {
+    flex-basis: 172px;
+}
+
 .toolbar input::placeholder {
     color: #fff;
 }
@@ -256,7 +271,8 @@ select {
     display: flex;
     justify-content: flex-end;
     gap: 16px;
-    margin: -51px 0 8px;
+    flex-wrap: wrap;
+    margin: 0 0 12px;
 }
 
 .admin-flash {

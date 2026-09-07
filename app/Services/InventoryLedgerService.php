@@ -16,13 +16,15 @@ class InventoryLedgerService
         $purchaseRows = $this->purchaseProgressRows($search);
         $purchaseItemIds = $purchaseRows->pluck('purchase_item_id')->map(fn (mixed $id): int => (int) $id)->all();
         $liftsByPurchaseItem = $this->liftsByPurchaseItem($purchaseItemIds);
+        $movementsByPurchaseItem = $this->movementSummariesByPurchaseItem($purchaseItemIds);
         $latestBalances = $this->latestBalances();
 
-        $transactions = $purchaseRows->map(function (object $row) use ($liftsByPurchaseItem): array {
+        $transactions = $purchaseRows->map(function (object $row) use ($liftsByPurchaseItem, $movementsByPurchaseItem): array {
             $purchased = round((float) $row->quantity_ordered_liters, 2);
             $lifted = round(min($purchased, (float) $row->total_lifted_liters), 2);
             $remaining = round(max(0, $purchased - $lifted), 2);
             $lifts = $liftsByPurchaseItem[(int) $row->purchase_item_id] ?? collect();
+            $movementSummary = $movementsByPurchaseItem[(int) $row->purchase_item_id] ?? 'No inventory movements recorded';
             $status = $this->liftingStatus($lifted, $purchased);
 
             return [
@@ -38,6 +40,7 @@ class InventoryLedgerService
                     $row->fuel_name,
                     $row->depot_name,
                     $status,
+                    $movementSummary,
                     $lifts->pluck('search_text')->implode(' '),
                 ])),
                 'cells' => [
@@ -58,6 +61,7 @@ class InventoryLedgerService
                     'Total Lifted' => $this->formatLiters($lifted),
                     'Remaining Quantity' => $this->formatLiters($remaining),
                     'Lift Transactions' => (string) $lifts->count(),
+                    'Inventory Movements' => $movementSummary,
                     'Status' => $status,
                 ],
             ];
@@ -177,6 +181,57 @@ class InventoryLedgerService
             round($lifted, 2) >= round($purchased, 2) => 'Complete',
             default => 'Partially Lifted',
         };
+    }
+
+    /**
+     * @param array<int, int> $purchaseItemIds
+     * @return array<int, string>
+     */
+    private function movementSummariesByPurchaseItem(array $purchaseItemIds): array
+    {
+        if ($purchaseItemIds === []) {
+            return [];
+        }
+
+        return DB::table('inventory_movements')
+            ->leftJoin('haul_allocations', function ($join): void {
+                $join->on('haul_allocations.id', '=', 'inventory_movements.reference_id')
+                    ->where('inventory_movements.reference_type', 'haul_allocation');
+            })
+            ->leftJoin('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')
+            ->where(function (Builder $query) use ($purchaseItemIds): void {
+                $query->where(function (Builder $query) use ($purchaseItemIds): void {
+                    $query->where('inventory_movements.reference_type', 'purchase_item')
+                        ->whereIn('inventory_movements.reference_id', $purchaseItemIds);
+                })->orWhereIn('hauls.purchase_item_id', $purchaseItemIds);
+            })
+            ->whereNotExists($this->cancelledStockOutExists())
+            ->whereNotExists($this->cancelledHaulAllocationExists())
+            ->get([
+                'inventory_movements.movement_type',
+                'inventory_movements.quantity_liters',
+                'inventory_movements.direction',
+                'inventory_movements.reference_type',
+                'inventory_movements.reference_id',
+                'hauls.purchase_item_id as allocation_purchase_item_id',
+            ])
+            ->groupBy(function (object $row): int {
+                return $row->reference_type === 'haul_allocation'
+                    ? (int) $row->allocation_purchase_item_id
+                    : (int) $row->reference_id;
+            })
+            ->map(function (Collection $rows): string {
+                return $rows
+                    ->groupBy('movement_type')
+                    ->map(function (Collection $rows, string $type): string {
+                        $quantity = $rows->sum(fn (object $row): float => (float) $row->quantity_liters);
+
+                        return $this->label($type).': '.$this->formatLiters($quantity);
+                    })
+                    ->values()
+                    ->implode(', ');
+            })
+            ->all();
     }
 
     /**

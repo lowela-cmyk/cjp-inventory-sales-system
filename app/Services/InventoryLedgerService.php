@@ -13,115 +13,170 @@ class InventoryLedgerService
      */
     public function rows(?string $search = null): array
     {
-        $base = DB::table('inventory_movements')
-            ->join('storage_locations', 'storage_locations.id', '=', 'inventory_movements.storage_location_id')
-            ->join('fuel_types', 'fuel_types.id', '=', 'inventory_movements.fuel_type_id')
-            ->leftJoin('users', 'users.id', '=', 'inventory_movements.created_by')
-            ->whereNotExists($this->cancelledStockOutExists())
-            ->whereNotExists($this->cancelledHaulAllocationExists())
-            ->select([
-                'inventory_movements.id',
-                'inventory_movements.movement_code',
-                'inventory_movements.movement_date',
-                'inventory_movements.movement_type',
-                'inventory_movements.direction',
-                'inventory_movements.quantity_liters',
-                'inventory_movements.unit_cost',
-                'inventory_movements.reference_type',
-                'inventory_movements.reference_id',
-                'inventory_movements.remarks',
-                'inventory_movements.created_at',
-                'storage_locations.id as storage_location_id',
-                'storage_locations.name as location_name',
-                'fuel_types.id as fuel_type_id',
-                'fuel_types.name as fuel_name',
-                'users.name as created_by_name',
-            ])
-            ->selectRaw("SUM(CASE WHEN inventory_movements.direction = 'in' THEN inventory_movements.quantity_liters ELSE -inventory_movements.quantity_liters END) OVER (PARTITION BY inventory_movements.storage_location_id, inventory_movements.fuel_type_id ORDER BY inventory_movements.movement_date, inventory_movements.created_at, inventory_movements.id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) as running_balance");
-
-        $query = DB::query()->fromSub($base, 'ledger_rows');
-
-        if ($search) {
-            $query->where(function (Builder $query) use ($search): void {
-                foreach ([
-                    'movement_code',
-                    'movement_type',
-                    'direction',
-                    'fuel_name',
-                    'location_name',
-                    'remarks',
-                    'created_by_name',
-                ] as $column) {
-                    $query->orWhere($column, 'like', '%'.$search.'%');
-                }
-            });
-        }
-
-        $movements = $query
-            ->orderByDesc('movement_date')
-            ->orderByDesc('created_at')
-            ->orderByDesc('id')
-            ->limit(500)
-            ->get();
-
-        $references = $this->referenceLabels($movements);
+        $purchaseRows = $this->purchaseProgressRows($search);
+        $purchaseItemIds = $purchaseRows->pluck('purchase_item_id')->map(fn (mixed $id): int => (int) $id)->all();
+        $liftsByPurchaseItem = $this->liftsByPurchaseItem($purchaseItemIds);
         $latestBalances = $this->latestBalances();
 
-        $rows = $movements->map(function (object $row) use ($references): array {
-            $signedQuantity = $row->direction === 'out' ? -((float) $row->quantity_liters) : (float) $row->quantity_liters;
-            $reference = $references[$this->referenceKey($row->reference_type, (int) $row->reference_id)]
-                ?? $this->label($row->reference_type).' #'.$row->reference_id;
-            $stockIn = $row->direction === 'in' ? $this->formatNumber($row->quantity_liters) : '0.00';
-            $stockOut = $row->direction === 'out' ? $this->formatNumber($row->quantity_liters) : '0.00';
-            $status = $this->label($row->movement_type);
+        $transactions = $purchaseRows->map(function (object $row) use ($liftsByPurchaseItem): array {
+            $purchased = round((float) $row->quantity_ordered_liters, 2);
+            $lifted = round(min($purchased, (float) $row->total_lifted_liters), 2);
+            $remaining = round(max(0, $purchased - $lifted), 2);
+            $lifts = $liftsByPurchaseItem[(int) $row->purchase_item_id] ?? collect();
+            $status = $this->liftingStatus($lifted, $purchased);
 
             return [
-                'id' => 'ledger-movement-'.$row->id,
+                'id' => 'ledger-purchase-'.$row->purchase_item_id,
+                'purchase_id' => (int) $row->purchase_id,
+                'purchase_item_id' => (int) $row->purchase_item_id,
+                'purchase_code' => $row->purchase_code,
+                'status' => $status,
+                'status_class' => $remaining <= 0 ? 'modal-complete' : 'modal-incomplete',
+                'lifts' => $lifts,
                 'search_text' => strtolower(implode(' ', [
-                    $row->movement_code,
-                    $reference,
-                    $row->movement_type,
-                    $row->direction,
+                    $row->purchase_code,
                     $row->fuel_name,
-                    $row->location_name,
-                    $row->remarks,
-                    $row->created_by_name,
+                    $row->depot_name,
                     $status,
+                    $lifts->pluck('search_text')->implode(' '),
                 ])),
                 'cells' => [
-                    $reference,
-                    $this->formatDateTime($row->movement_date),
+                    $row->purchase_code,
                     $row->fuel_name,
-                    $row->location_name,
-                    $stockIn,
-                    $stockOut,
-                    $this->formatNumber(abs($signedQuantity)),
-                    $this->formatNumber($row->running_balance),
+                    $row->depot_name,
+                    $this->formatNumber($purchased),
+                    $this->formatNumber($lifted),
+                    $this->formatNumber($remaining),
                     $status,
                 ],
-                'status' => $status,
-                'class' => $row->direction === 'out' ? 'row-warning' : 'row-success',
                 'details' => [
-                    'Movement ID' => $row->movement_code,
-                    'Date' => $this->formatDateTime($row->movement_date),
-                    'Reference' => $reference,
-                    'Transaction Type' => $status,
-                    'Fuel' => $row->fuel_name,
-                    'Garage' => $row->location_name,
-                    'Stock In' => $stockIn,
-                    'Stock Out' => $stockOut,
-                    'Running Balance' => $this->formatNumber($row->running_balance),
-                    'Created By' => $row->created_by_name ?: 'N/A',
-                    'Remarks' => $row->remarks ?: 'N/A',
+                    'Purchase ID' => $row->purchase_code,
+                    'Purchase Date' => $this->formatDate($row->purchase_date),
+                    'Fuel Type' => $row->fuel_name,
+                    'Depot' => $row->depot_name,
+                    'Purchased Quantity' => $this->formatLiters($purchased),
+                    'Total Lifted' => $this->formatLiters($lifted),
+                    'Remaining Quantity' => $this->formatLiters($remaining),
+                    'Lift Transactions' => (string) $lifts->count(),
+                    'Status' => $status,
                 ],
             ];
         });
 
         return [
-            'ledger' => $rows->map(fn (array $row): array => $row['cells']),
-            'transactions' => $rows,
+            'ledger' => $transactions
+                ->filter(fn (array $row): bool => (float) str_replace(',', '', $row['cells'][5]) > 0)
+                ->map(fn (array $row): array => $row['cells'])
+                ->values(),
+            'transactions' => $transactions->values(),
             'latestBalances' => $latestBalances,
         ];
+    }
+
+    private function purchaseProgressRows(?string $search): Collection
+    {
+        $completedLifts = DB::table('hauls')
+            ->where('status', 'completed')
+            ->selectRaw('purchase_item_id, COALESCE(SUM(quantity_liters), 0) as total_lifted_liters')
+            ->groupBy('purchase_item_id');
+
+        return DB::table('purchase_items')
+            ->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
+            ->join('depots', 'depots.id', '=', 'purchases.depot_id')
+            ->join('fuel_types', 'fuel_types.id', '=', 'purchase_items.fuel_type_id')
+            ->leftJoinSub($completedLifts, 'completed_lifts', 'completed_lifts.purchase_item_id', '=', 'purchase_items.id')
+            ->whereNull('purchases.deleted_at')
+            ->when($search, fn (Builder $query): Builder => $query->where(function (Builder $query) use ($search): void {
+                foreach ([
+                    'purchases.purchase_code',
+                    'depots.name',
+                    'fuel_types.name',
+                    'purchases.status',
+                    'purchase_items.status',
+                ] as $column) {
+                    $query->orWhere($column, 'like', '%'.$search.'%');
+                }
+            }))
+            ->orderByDesc('purchases.purchase_date')
+            ->orderByDesc('purchase_items.id')
+            ->get([
+                'purchase_items.id as purchase_item_id',
+                'purchase_items.purchase_id',
+                'purchase_items.quantity_ordered_liters',
+                'purchases.purchase_code',
+                'purchases.purchase_date',
+                'depots.name as depot_name',
+                'fuel_types.name as fuel_name',
+                DB::raw('COALESCE(completed_lifts.total_lifted_liters, 0) as total_lifted_liters'),
+            ]);
+    }
+
+    /**
+     * @param array<int, int> $purchaseItemIds
+     * @return array<int, Collection<int, array<string, mixed>>>
+     */
+    private function liftsByPurchaseItem(array $purchaseItemIds): array
+    {
+        if ($purchaseItemIds === []) {
+            return [];
+        }
+
+        return DB::table('hauls')
+            ->join('trucks', 'trucks.id', '=', 'hauls.truck_id')
+            ->join('users as drivers', 'drivers.id', '=', 'hauls.driver_user_id')
+            ->leftJoin('driver_profiles', 'driver_profiles.user_id', '=', 'drivers.id')
+            ->whereIn('hauls.purchase_item_id', $purchaseItemIds)
+            ->orderBy('hauls.scheduled_at')
+            ->orderBy('hauls.id')
+            ->get([
+                'hauls.id',
+                'hauls.purchase_item_id',
+                'hauls.haul_code',
+                'hauls.dr_number',
+                'hauls.quantity_liters',
+                'hauls.scheduled_at',
+                'hauls.hauled_at',
+                'hauls.status',
+                'trucks.truck_code',
+                'trucks.plate_number',
+                'trucks.capacity_liters',
+                'drivers.name as driver_name',
+                'driver_profiles.driver_code',
+            ])
+            ->groupBy('purchase_item_id')
+            ->map(fn (Collection $rows): Collection => $rows->values()->map(function (object $row, int $index): array {
+                $truck = trim($row->truck_code.($row->plate_number ? ' / '.$row->plate_number : ''));
+                $details = [
+                    'Lift/Transaction ID' => $row->haul_code,
+                    'Quantity' => $this->formatLiters($row->quantity_liters),
+                    'Driver' => $row->driver_name,
+                    'Truck' => $truck,
+                    'Truck Capacity' => $this->formatLiters($row->capacity_liters),
+                    'Assigned/Lift Date' => $this->formatDateTime($row->hauled_at ?: $row->scheduled_at),
+                    'DR Number' => $row->dr_number ?: 'N/A',
+                    'Status' => $this->label($row->status),
+                ];
+
+                return [
+                    'sequence' => $index + 1,
+                    'code' => $row->haul_code,
+                    'quantity' => $this->formatLiters($row->quantity_liters),
+                    'status' => $this->label($row->status),
+                    'counts_as_lifted' => $row->status === 'completed',
+                    'details' => $details,
+                    'search_text' => strtolower(implode(' ', $details)),
+                ];
+            }))
+            ->all();
+    }
+
+    private function liftingStatus(float $lifted, float $purchased): string
+    {
+        return match (true) {
+            $lifted <= 0 => 'Incomplete',
+            round($lifted, 2) >= round($purchased, 2) => 'Complete',
+            default => 'Partially Lifted',
+        };
     }
 
     /**
@@ -273,6 +328,16 @@ class InventoryLedgerService
     private function formatDateTime(mixed $date): string
     {
         return $date ? date('n/j/Y h:i A', strtotime((string) $date)) : 'N/A';
+    }
+
+    private function formatDate(mixed $date): string
+    {
+        return $date ? date('n/j/Y', strtotime((string) $date)) : 'N/A';
+    }
+
+    private function formatLiters(mixed $value): string
+    {
+        return $this->formatNumber($value).' L';
     }
 
     private function formatNumber(mixed $value): string

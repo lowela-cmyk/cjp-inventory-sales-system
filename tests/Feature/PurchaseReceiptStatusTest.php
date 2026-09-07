@@ -14,151 +14,90 @@ class PurchaseReceiptStatusTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_purchase_without_receipt_shows_no_receipt_state(): void
+    public function test_purchase_without_driver_withdrawal_shows_no_withdrawal_state(): void
     {
-        $records = $this->createPurchaseWithoutReceipt();
+        $records = $this->createPurchaseWithoutWithdrawal();
 
         $this->actingAs($records['inventoryOfficer'])
             ->get(route('inventory-officer.inventory'))
             ->assertOk()
-            ->assertSee('PUR-NO-RECEIPT')
-            ->assertSee('No Receipt');
+            ->assertSee('PUR-NO-WITHDRAWAL')
+            ->assertSee('No Withdrawal');
 
         $admin = User::factory()->create(['role' => 'admin', 'status' => 'active']);
 
         $this->actingAs($admin)
             ->get(route('admin.inventory'))
             ->assertOk()
-            ->assertSee('PUR-NO-RECEIPT')
-            ->assertSee('No Receipt');
+            ->assertSee('PUR-NO-WITHDRAWAL')
+            ->assertSee('No Withdrawal');
     }
 
-    public function test_uploading_receipt_shows_submitted_state_without_changing_inventory(): void
+    public function test_driver_withdrawal_shows_uploaded_state_without_changing_inventory(): void
     {
         Storage::fake('local');
-        $records = $this->baseRecords();
+        $records = $this->createPurchaseWithoutWithdrawal();
+        $driver = User::factory()->create(['role' => 'driver', 'status' => 'active']);
+        $truckId = DB::table('trucks')->insertGetId([
+            'truck_code' => 'TRK-WD',
+            'capacity_liters' => 40000,
+            'truck_type' => 'hauling',
+            'status' => 'assigned',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $haulId = DB::table('hauls')->insertGetId([
+            'haul_code' => 'LFT-WD',
+            'purchase_id' => $records['purchaseId'],
+            'purchase_item_id' => $records['purchaseItemId'],
+            'depot_id' => $records['depotId'],
+            'fuel_type_id' => $records['fuelTypeId'],
+            'truck_id' => $truckId,
+            'driver_user_id' => $driver->id,
+            'scheduled_at' => '2026-08-31 08:00:00',
+            'hauled_at' => '2026-08-31 10:00:00',
+            'quantity_liters' => 40000,
+            'status' => 'lifted',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
 
-        $this->actingAs($records['inventoryOfficer'])
-            ->post(route('inventory-officer.inventory.purchases.store'), $this->payload($records, [
-                'receipt_file' => UploadedFile::fake()->create('receipt.pdf', 10, 'application/pdf'),
-            ]))
-            ->assertRedirect(route('inventory-officer.inventory'));
-
-        $purchase = DB::table('purchases')->latest('id')->first();
-        Storage::disk('local')->assertExists($purchase->receipt_reference);
+        $this->actingAs($driver)
+            ->post(route('driver.fuel-lifting.hauls.withdrawal-receipt.store', $haulId), [
+                'withdrawal_receipt' => $this->tinyImage('withdrawal.png'),
+                'withdrawal_notes' => 'Driver uploaded withdrawal.',
+            ])
+            ->assertRedirect(route('driver.fuel-lifting.hauled'));
 
         $this->actingAs($records['inventoryOfficer'])
             ->get(route('inventory-officer.inventory'))
             ->assertOk()
-            ->assertSee('Submitted')
+            ->assertSee('1 Uploaded')
+            ->assertSee('Driver uploaded withdrawal.')
             ->assertDontSee('Verified')
             ->assertDontSee('Rejected');
 
         $this->assertSame(0, DB::table('inventory_movements')->count());
-        $this->assertSame(0, DB::table('hauls')->count());
-        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasTable('deliveries'));
+        $this->assertFalse(Schema::hasTable('deliveries'));
         $this->assertSame(0, DB::table('payments')->count());
     }
 
-    public function test_admin_monitoring_uses_same_receipt_status_source_as_purchase(): void
-    {
-        Storage::fake('local');
-        $records = $this->createPurchaseWithReceipt();
-        $admin = User::factory()->create(['role' => 'admin', 'status' => 'active']);
-
-        $this->actingAs($records['inventoryOfficer'])
-            ->get(route('inventory-officer.inventory'))
-            ->assertOk()
-            ->assertSee('Submitted');
-
-        $this->actingAs($admin)
-            ->get(route('admin.inventory'))
-            ->assertOk()
-            ->assertSee('PUR-000001')
-            ->assertSee('Submitted');
-    }
-
-    public function test_receipt_status_form_tampering_is_rejected_and_does_not_create_records(): void
+    public function test_purchase_receipt_fields_are_rejected_and_schema_has_no_receipt_status_workflow(): void
     {
         $records = $this->baseRecords();
 
         $this->actingAs($records['inventoryOfficer'])
             ->post(route('inventory-officer.inventory.purchases.store'), $this->payload($records, [
-                'receipt_status' => 'hacked',
-            ]))
-            ->assertSessionHasErrors('receipt_status');
-
-        $this->assertSame(0, DB::table('purchases')->count());
-        $this->assertSame(0, DB::table('purchase_items')->count());
-        $this->assertSame(0, DB::table('inventory_movements')->count());
-    }
-
-    public function test_receipt_status_form_tampering_on_update_is_rejected_and_preserves_receipt(): void
-    {
-        Storage::fake('local');
-        $records = $this->createPurchaseWithReceipt();
-        $originalPath = DB::table('purchases')->where('id', $records['purchaseId'])->value('receipt_reference');
-
-        $this->actingAs($records['inventoryOfficer'])
-            ->patch(route('inventory-officer.inventory.purchases.update', $records['purchaseItemId']), $this->payload($records, [
                 'receipt_status' => 'verified',
+                'receipt_file' => $this->tinyImage('receipt.png'),
+                'receipt_reference' => 'DR-OLD',
             ]))
-            ->assertSessionHasErrors('receipt_status');
+            ->assertSessionHasErrors(['receipt_status', 'receipt_file', 'receipt_reference']);
 
-        $this->assertSame($originalPath, DB::table('purchases')->where('id', $records['purchaseId'])->value('receipt_reference'));
-        Storage::disk('local')->assertExists($originalPath);
-        $this->assertSame(1, DB::table('purchases')->count());
-        $this->assertSame(0, DB::table('inventory_movements')->count());
-    }
-
-    public function test_unauthorized_roles_cannot_use_purchase_update_to_change_receipt_status(): void
-    {
-        Storage::fake('local');
-        $records = $this->createPurchaseWithReceipt();
-        $admin = User::factory()->create(['role' => 'admin', 'status' => 'active']);
-        $salesOfficer = User::factory()->create(['role' => 'sales_officer', 'status' => 'active']);
-
-        foreach ([$admin, $salesOfficer] as $user) {
-            $this->actingAs($user)
-                ->patch(route('inventory-officer.inventory.purchases.update', $records['purchaseItemId']), $this->payload($records, [
-                    'receipt_status' => 'verified',
-                ]))
-                ->assertForbidden();
-        }
-    }
-
-    public function test_replacing_receipt_keeps_status_submitted_and_preserves_purchase_identity(): void
-    {
-        Storage::fake('local');
-        $records = $this->createPurchaseWithReceipt('old.pdf');
-        $beforePurchaseCount = DB::table('purchases')->count();
-        $oldPath = DB::table('purchases')->where('id', $records['purchaseId'])->value('receipt_reference');
-
-        $this->actingAs($records['inventoryOfficer'])
-            ->patch(route('inventory-officer.inventory.purchases.update', $records['purchaseItemId']), $this->payload($records, [
-                'receipt_file' => UploadedFile::fake()->create('replacement.png', 10, 'image/png'),
-            ]))
-            ->assertRedirect(route('inventory-officer.inventory'));
-
-        $newPath = DB::table('purchases')->where('id', $records['purchaseId'])->value('receipt_reference');
-
-        $this->assertSame($beforePurchaseCount, DB::table('purchases')->count());
-        $this->assertNotSame($oldPath, $newPath);
-        Storage::disk('local')->assertExists($newPath);
-
-        $this->actingAs($records['inventoryOfficer'])
-            ->get(route('inventory-officer.inventory'))
-            ->assertOk()
-            ->assertSee('Submitted')
-            ->assertDontSee('Verified');
-    }
-
-    public function test_existing_schema_has_no_persistent_receipt_status_workflow_columns(): void
-    {
         $this->assertTrue(Schema::hasColumn('purchases', 'receipt_reference'));
+        $this->assertTrue(Schema::hasColumn('hauls', 'withdrawal_receipt_path'));
+        $this->assertTrue(Schema::hasColumn('hauls', 'withdrawal_receipt_notes'));
         $this->assertFalse(Schema::hasColumn('purchases', 'receipt_status'));
-        $this->assertFalse(Schema::hasColumn('purchases', 'receipt_verified_by'));
-        $this->assertFalse(Schema::hasColumn('purchases', 'receipt_verified_at'));
         $this->assertFalse(Schema::hasTable('purchase_receipts'));
     }
 
@@ -182,35 +121,12 @@ class PurchaseReceiptStatusTest extends TestCase
     /**
      * @return array<string, mixed>
      */
-    private function createPurchaseWithReceipt(string $name = 'receipt.pdf'): array
-    {
-        $records = $this->baseRecords();
-
-        $this->actingAs($records['inventoryOfficer'])
-            ->post(route('inventory-officer.inventory.purchases.store'), $this->payload($records, [
-                'receipt_file' => str_ends_with($name, '.png')
-                    ? UploadedFile::fake()->create($name, 10, 'image/png')
-                    : UploadedFile::fake()->create($name, 10, 'application/pdf'),
-            ]));
-
-        $purchase = DB::table('purchases')->latest('id')->first();
-        $purchaseItem = DB::table('purchase_items')->where('purchase_id', $purchase->id)->first();
-
-        return array_merge($records, [
-            'purchaseId' => $purchase->id,
-            'purchaseItemId' => $purchaseItem->id,
-        ]);
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function createPurchaseWithoutReceipt(): array
+    private function createPurchaseWithoutWithdrawal(): array
     {
         $records = $this->baseRecords();
 
         $purchaseId = DB::table('purchases')->insertGetId([
-            'purchase_code' => 'PUR-NO-RECEIPT',
+            'purchase_code' => 'PUR-NO-WITHDRAWAL',
             'depot_id' => $records['depotId'],
             'purchase_date' => '2026-08-30',
             'payment_status' => 'unpaid',
@@ -240,11 +156,7 @@ class PurchaseReceiptStatusTest extends TestCase
      */
     private function baseRecords(): array
     {
-        $inventoryOfficer = User::factory()->create([
-            'role' => 'inventory_officer',
-            'status' => 'active',
-        ]);
-
+        $inventoryOfficer = User::factory()->create(['role' => 'inventory_officer', 'status' => 'active']);
         $depotId = DB::table('depots')->insertGetId([
             'depot_code' => uniqid('DEP-'),
             'name' => uniqid('Depot '),
@@ -252,7 +164,6 @@ class PurchaseReceiptStatusTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
-
         $fuelTypeId = DB::table('fuel_types')->insertGetId([
             'code' => uniqid('FUEL-'),
             'name' => uniqid('Fuel '),
@@ -262,5 +173,10 @@ class PurchaseReceiptStatusTest extends TestCase
         ]);
 
         return compact('inventoryOfficer', 'depotId', 'fuelTypeId');
+    }
+
+    private function tinyImage(string $name): UploadedFile
+    {
+        return UploadedFile::fake()->createWithContent($name, base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII='));
     }
 }

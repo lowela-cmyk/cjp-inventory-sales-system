@@ -21,16 +21,12 @@
             </form>
             <div class="table-wrap">
                 <table class="admin-table">
-                    <thead><tr><th>Purchase-ID</th><th>Date</th><th>Fuel</th><th>Depot</th><th>QTY (L)</th><th>Cost / Liter</th><th>Total Cost</th><th>Delivery Receipt</th><th>Payment Status</th><th>Actions</th></tr></thead>
+                    <thead><tr><th>Purchase-ID</th><th>Date</th><th>Fuel</th><th>Depot</th><th>QTY (L)</th><th>Cost / Liter</th><th>Total Cost</th><th>Withdrawals</th><th>Payment Status</th><th>Actions</th></tr></thead>
                     <tbody>
                         @forelse ($purchases as $row)
                             <tr class="{{ $row['class'] }}">
                                 @foreach ($row['cells'] as $cell)
-                                    @if ($loop->index === 7 && $row['receipt_url'])
-                                        <td><a href="{{ $row['receipt_url'] }}">{{ $cell }}</a></td>
-                                    @else
-                                        <td>{{ $cell }}</td>
-                                    @endif
+                                    <td>{{ $cell }}</td>
                                 @endforeach
                                 <td><button class="btn btn-secondary" type="button" data-modal-open="{{ $row['id'] }}">View</button></td>
                             </tr>
@@ -117,14 +113,26 @@
                         <div class="detail-row">
                             <div class="detail-label">{{ $label }}</div>
                             <div class="detail-value">
-                                @if ($label === 'Delivery Receipt' && $row['receipt_url'])
-                                    <a href="{{ $row['receipt_url'] }}">{{ $value }}</a>
-                                @else
-                                    {{ $value }}
-                                @endif
+                                {{ $value }}
                             </div>
                         </div>
                     @endforeach
+                    @if (! empty($row['withdrawals']))
+                        <div class="detail-row">
+                            <div class="detail-label">Withdrawal Files</div>
+                            <div class="detail-value withdrawal-list">
+                                @foreach ($row['withdrawals'] as $withdrawal)
+                                    <div>
+                                        <a class="btn btn-secondary btn-small" href="{{ $withdrawal['url'] }}">{{ $withdrawal['haul_code'] }}</a>
+                                        <span>{{ $withdrawal['uploaded_at'] }}</span>
+                                        @if ($withdrawal['notes'])
+                                            <span>{{ $withdrawal['notes'] }}</span>
+                                        @endif
+                                    </div>
+                                @endforeach
+                            </div>
+                        </div>
+                    @endif
                 </div>
             </div>
         </x-admin.modal>

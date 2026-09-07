@@ -6,7 +6,6 @@ use App\Services\InventoryLedgerService;
 use Illuminate\Http\Request;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
 
@@ -20,6 +19,17 @@ class AdminMonitoringController extends Controller
         $search = $this->validatedSearch($request);
 
         $purchaseRows = DB::table('purchase_items')
+            ->leftJoinSub(
+                DB::table('hauls')
+                    ->whereNotNull('withdrawal_receipt_path')
+                    ->where('status', '!=', 'cancelled')
+                    ->selectRaw('purchase_item_id, COUNT(*) as withdrawal_count, MAX(withdrawal_receipt_uploaded_at) as latest_withdrawal_at')
+                    ->groupBy('purchase_item_id'),
+                'withdrawal_totals',
+                'withdrawal_totals.purchase_item_id',
+                '=',
+                'purchase_items.id'
+            )
             ->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
             ->join('depots', 'depots.id', '=', 'purchases.depot_id')
             ->join('fuel_types', 'fuel_types.id', '=', 'purchase_items.fuel_type_id')
@@ -28,7 +38,6 @@ class AdminMonitoringController extends Controller
                 'purchases.purchase_code',
                 'depots.name',
                 'fuel_types.name',
-                'purchases.receipt_reference',
                 'purchases.payment_status',
                 'purchases.status',
             ]))
@@ -49,10 +58,13 @@ class AdminMonitoringController extends Controller
                 'purchase_items.unit_cost',
                 'purchase_items.line_total',
                 'purchase_items.status as item_status',
+                DB::raw('COALESCE(withdrawal_totals.withdrawal_count, 0) as withdrawal_count'),
+                'withdrawal_totals.latest_withdrawal_at',
             ])
             ->map(fn (object $row): array => [
                 'id' => 'purchase-detail-'.$row->id,
-                'receipt_url' => $this->isStoredReceipt($row->receipt_reference) ? route('purchase-receipts.show', $row->purchase_id) : null,
+                'receipt_url' => null,
+                'withdrawals' => $this->withdrawalsForPurchaseItem((int) $row->id),
                 'cells' => [
                     $row->purchase_code,
                     $this->formatDate($row->purchase_date),
@@ -61,7 +73,7 @@ class AdminMonitoringController extends Controller
                     $this->formatNumber($row->quantity_ordered_liters),
                     $this->formatNumber($row->unit_cost),
                     $this->formatNumber($row->line_total),
-                    $this->receiptStatus($row->receipt_reference),
+                    $this->withdrawalStatus((int) $row->withdrawal_count),
                     $this->label($row->payment_status),
                 ],
                 'status' => $this->label($row->payment_status),
@@ -74,7 +86,8 @@ class AdminMonitoringController extends Controller
                     'QTY Lifted (L)' => $this->formatLiters($row->quantity_hauled_liters),
                     'Cost / Liter' => $this->formatNumber($row->unit_cost),
                     'Total Cost' => $this->formatNumber($row->line_total),
-                    'Delivery Receipt' => $this->receiptStatus($row->receipt_reference),
+                    'Withdrawal Receipts' => $this->withdrawalStatus((int) $row->withdrawal_count),
+                    'Latest Withdrawal Upload' => $this->formatDateTime($row->latest_withdrawal_at),
                     'Purchase Status' => $this->label($row->purchase_status),
                     'Item Status' => $this->label($row->item_status),
                     'Payment Status' => $this->label($row->payment_status),
@@ -232,30 +245,33 @@ class AdminMonitoringController extends Controller
     public function alerts(Request $request): View
     {
         $search = $this->validatedSearch($request);
-
-        $alerts = DB::table('alerts')
-            ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
-                'alert_code',
-                'type',
-                'severity',
-                'title',
-                'message',
-                'reference_type',
-                'status',
-            ]))
-            ->orderByDesc('created_at')
-            ->orderByDesc('id')
-            ->get()
-            ->map(fn (object $row): array => [
-                'class' => $row->severity === 'critical' ? 'alert-critical' : 'alert-warning',
-                'title' => $row->alert_code.' - '.$row->title,
-                'message' => $row->message,
-                'time' => $this->formatDateTime($row->created_at),
-                'meta' => trim($this->label($row->type).' / '.($row->reference_type ?: '').($row->reference_id ? ' #'.$row->reference_id : '')),
-                'status' => $this->label($row->status),
-            ]);
+        $alerts = $this->alertRows($search);
 
         return view('admin.alerts', compact('search', 'alerts'));
+    }
+
+    public function inventoryOfficerAlerts(Request $request): View
+    {
+        $search = $this->validatedSearch($request);
+        $alerts = $this->alertRows($search, ['inventory', 'purchase', 'haul', 'discrepancy']);
+
+        return view('inventory-officer.alerts', compact('search', 'alerts'));
+    }
+
+    public function salesOfficerAlerts(Request $request): View
+    {
+        $search = $this->validatedSearch($request);
+        $alerts = $this->alertRows($search, ['payment', 'receivable']);
+
+        return view('sales-officer.alerts', compact('search', 'alerts'));
+    }
+
+    public function dispatchAlerts(Request $request): View
+    {
+        $search = $this->validatedSearch($request);
+        $alerts = $this->alertRows($search, ['haul', 'delivery']);
+
+        return view('dispatch.alerts', compact('search', 'alerts'));
     }
 
     private function stockOutRows(?string $search)
@@ -318,6 +334,36 @@ class AdminMonitoringController extends Controller
                     $this->label($row->status),
                 ],
                 'class' => $this->rowClass($row->status),
+            ]);
+    }
+
+    /**
+     * @param array<int, string>|null $types
+     */
+    private function alertRows(?string $search, ?array $types = null)
+    {
+        return DB::table('alerts')
+            ->when($types, fn (Builder $query, array $types): Builder => $query->whereIn('type', $types))
+            ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
+                'alert_code',
+                'type',
+                'severity',
+                'title',
+                'message',
+                'reference_type',
+                'status',
+            ]))
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->get()
+            ->map(fn (object $row): array => [
+                'class' => $row->severity === 'critical' ? 'alert-critical' : 'alert-warning',
+                'type' => $row->severity === 'critical' ? 'critical' : 'warning',
+                'title' => $row->alert_code.' - '.$row->title,
+                'message' => $row->message,
+                'time' => $this->formatDateTime($row->created_at),
+                'meta' => trim($this->label($row->type).' / '.($row->reference_type ?: '').($row->reference_id ? ' #'.$row->reference_id : '')),
+                'status' => $this->label($row->status),
             ]);
     }
 
@@ -776,23 +822,30 @@ class AdminMonitoringController extends Controller
         };
     }
 
-    private function isStoredReceipt(?string $path): bool
+    /**
+     * @return array<int, array<string, string|null>>
+     */
+    private function withdrawalsForPurchaseItem(int $purchaseItemId): array
     {
-        return is_string($path)
-            && str_starts_with($path, 'purchase-receipts/')
-            && ! str_contains($path, '..')
-            && Storage::disk('local')->exists($path);
+        return DB::table('hauls')
+            ->where('purchase_item_id', $purchaseItemId)
+            ->whereNotNull('withdrawal_receipt_path')
+            ->where('status', '!=', 'cancelled')
+            ->orderByDesc('withdrawal_receipt_uploaded_at')
+            ->orderByDesc('id')
+            ->get(['id', 'haul_code', 'withdrawal_receipt_notes', 'withdrawal_receipt_uploaded_at'])
+            ->map(fn (object $row): array => [
+                'haul_code' => $row->haul_code,
+                'uploaded_at' => $this->formatDateTime($row->withdrawal_receipt_uploaded_at),
+                'notes' => $row->withdrawal_receipt_notes ?: null,
+                'url' => route('withdrawal-receipts.show', $row->id),
+            ])
+            ->all();
     }
 
-    private function receiptStatus(?string $path): string
+    private function withdrawalStatus(int $count): string
     {
-        $reference = trim((string) $path);
-
-        if ($reference === '') {
-            return 'No Receipt';
-        }
-
-        return $this->isStoredReceipt($reference) ? 'Submitted' : 'Submitted ('.$reference.')';
+        return $count > 0 ? $count.' Uploaded' : 'No Withdrawal';
     }
 
     private function formatDate(mixed $date): string

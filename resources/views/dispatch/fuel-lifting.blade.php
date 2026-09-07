@@ -3,6 +3,7 @@
     $filters = $filters ?? [];
     $filterOptions = $filterOptions ?? ['statuses' => [], 'fuelTypes' => collect(), 'drivers' => collect(), 'trucks' => collect()];
     $summaryCards = $summaryCards ?? [];
+    $purchaseItems = $purchaseItems ?? collect();
 @endphp
 
 @component('layouts.dispatch', ['title' => 'Fuel Lifting Operations', 'active' => 'fuel-lifting'])
@@ -44,7 +45,7 @@
             </div>
         @endif
 
-        <section data-tab-panel="schedule" @hidden($activeTab !== 'schedule')>
+        <section data-tab-panel="schedule" {{ $activeTab !== 'schedule' ? 'hidden' : '' }}>
             <form class="dispatch-filter-row dispatch-fuel-filter" method="GET" action="{{ route('dispatch.fuel-lifting') }}">
                 <input type="search" name="search" placeholder="Search..." aria-label="Search scheduled lifts" value="{{ $search }}">
                 <input type="date" name="date_from" aria-label="Filter from date" value="{{ $filters['date_from'] ?? '' }}">
@@ -106,7 +107,7 @@
             </div>
         </section>
 
-        <section data-tab-panel="hauled" @hidden($activeTab !== 'hauled')>
+        <section data-tab-panel="hauled" {{ $activeTab !== 'hauled' ? 'hidden' : '' }}>
             <form class="dispatch-filter-row dispatch-fuel-filter dispatch-hauled-filter" method="GET" action="{{ route('dispatch.fuel-lifting.hauled') }}">
                 <input type="search" name="search" placeholder="Search..." aria-label="Search hauled lifts" value="{{ $search }}">
                 <select name="status" aria-label="Filter by lift status">
@@ -175,8 +176,58 @@
     </div>
 
     <x-admin.modal id="dispatch-lift-add" title="Schedule Lift" wide>
-        <div class="modal-card"><p class="detail-value">Fuel lifting schedules are created from the purchase hauling workflow. Delivery scheduling is no longer a separate CJP module.</p></div>
-        <div class="modal-actions"><button class="btn btn-pill btn-danger" type="button" data-modal-close>Close</button></div>
+        <form method="POST" action="{{ route('dispatch.fuel-lifting.hauls.store') }}" data-prevent-double-submit>
+            @csrf
+            <input type="hidden" name="idempotency_key" value="{{ $createIdempotencyKey }}">
+            <div class="modal-card">
+                <div class="form-grid">
+                    <div class="form-row">
+                        <label for="dispatch_purchase_item_id">Purchase ID</label>
+                        <select id="dispatch_purchase_item_id" name="purchase_item_id" required>
+                            <option value="">Select purchase</option>
+                            @foreach ($purchaseItems as $purchaseItem)
+                                <option value="{{ $purchaseItem->id }}" @selected((string) old('purchase_item_id') === (string) $purchaseItem->id)>{{ $purchaseItem->label }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="form-row">
+                        <label for="dispatch_quantity_liters">QTY Lift</label>
+                        <input id="dispatch_quantity_liters" name="quantity_liters" type="number" min="0.01" step="0.01" value="{{ old('quantity_liters') }}" required>
+                    </div>
+                    <div class="form-row">
+                        <label for="dispatch_truck_id">Truck-ID</label>
+                        <select id="dispatch_truck_id" name="truck_id" required>
+                            <option value="">Select truck</option>
+                            @foreach ($trucks as $truck)
+                                <option value="{{ $truck->id }}" @selected((string) old('truck_id') === (string) $truck->id)>{{ $truck->truck_code }}{{ $truck->plate_number ? ' / '.$truck->plate_number : '' }} / {{ number_format((float) $truck->capacity_liters, 2) }} L</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="form-row">
+                        <label for="dispatch_driver_user_id">Driver</label>
+                        <select id="dispatch_driver_user_id" name="driver_user_id" required>
+                            <option value="">Select driver</option>
+                            @foreach ($drivers as $driver)
+                                <option value="{{ $driver->id }}" @selected((string) old('driver_user_id') === (string) $driver->id)>{{ $driver->name }}{{ $driver->driver_code ? ' / '.$driver->driver_code : '' }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="form-row">
+                        <label for="dispatch_scheduled_at">Lift Date</label>
+                        <input id="dispatch_scheduled_at" name="scheduled_at" type="datetime-local" value="{{ old('scheduled_at') }}" required>
+                    </div>
+                    <div class="form-row">
+                        <label for="dispatch_dr_number">DR Number</label>
+                        <input id="dispatch_dr_number" name="dr_number" type="text" value="{{ old('dr_number') }}" maxlength="100">
+                    </div>
+                    <div class="form-row form-row-full">
+                        <label for="dispatch_source_location">Location</label>
+                        <input id="dispatch_source_location" name="source_location" type="text" value="{{ old('source_location') }}" maxlength="255">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-actions"><button class="btn btn-pill btn-secondary" type="submit">Schedule Lift</button><button class="btn btn-pill btn-danger" type="button" data-modal-close>Cancel</button></div>
+        </form>
     </x-admin.modal>
 
     @foreach ($scheduledRows->merge($deliveredRows) as $row)

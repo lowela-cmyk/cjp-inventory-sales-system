@@ -401,6 +401,7 @@ class RoleBasedAccessControlTest extends TestCase
             'full_name' => 'New Inventory User',
             'email' => 'new-inventory@example.com',
             'contact_number' => '09171234567',
+            'role' => 'inventory_officer',
             'password' => 'password',
             'password_confirmation' => 'password',
         ])->assertRedirect(route('login'));
@@ -409,7 +410,7 @@ class RoleBasedAccessControlTest extends TestCase
             'name' => 'New Inventory User',
             'email' => 'new-inventory@example.com',
             'phone' => '09171234567',
-            'role' => 'driver',
+            'role' => 'inventory_officer',
             'status' => 'active',
             'approval_status' => 'pending',
         ]);

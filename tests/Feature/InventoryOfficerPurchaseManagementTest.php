@@ -38,7 +38,6 @@ class InventoryOfficerPurchaseManagementTest extends TestCase
                 'fuel_type_id' => $records['fuelTypeId'],
                 'quantity_ordered_liters' => '40000.50',
                 'unit_cost' => '51.25',
-                'receipt_reference' => 'DR-NEW',
                 'payment_status' => 'unpaid',
                 'status' => 'ordered',
                 'line_total' => '1',
@@ -46,9 +45,10 @@ class InventoryOfficerPurchaseManagementTest extends TestCase
             ])
             ->assertRedirect(route('inventory-officer.inventory'));
 
-        $purchase = DB::table('purchases')->where('receipt_reference', 'DR-NEW')->first();
+        $purchase = DB::table('purchases')->where('depot_id', $records['depotId'])->latest('id')->first();
         $this->assertNotNull($purchase);
         $this->assertSame($records['inventoryOfficer']->id, $purchase->created_by);
+        $this->assertNull($purchase->receipt_reference);
 
         $this->assertDatabaseHas('purchase_items', [
             'purchase_id' => $purchase->id,
@@ -94,7 +94,6 @@ class InventoryOfficerPurchaseManagementTest extends TestCase
                 'fuel_type_id' => $records['fuelTypeId'],
                 'quantity_ordered_liters' => 60000,
                 'unit_cost' => 70,
-                'receipt_reference' => 'DR-UPDATED',
                 'payment_status' => 'paid',
                 'status' => 'ordered',
             ])
@@ -102,7 +101,7 @@ class InventoryOfficerPurchaseManagementTest extends TestCase
 
         $this->assertDatabaseHas('purchases', [
             'id' => $records['purchaseId'],
-            'receipt_reference' => 'DR-UPDATED',
+            'receipt_reference' => 'DR-EXISTING',
             'payment_status' => 'paid',
             'created_by' => $records['inventoryOfficer']->id,
         ]);
@@ -146,7 +145,6 @@ class InventoryOfficerPurchaseManagementTest extends TestCase
                 'fuel_type_id' => $records['fuelTypeId'],
                 'quantity_ordered_liters' => 99999,
                 'unit_cost' => 75,
-                'receipt_reference' => 'DR-EXISTING',
                 'payment_status' => 'partial',
                 'status' => 'partially_hauled',
             ])
@@ -224,7 +222,6 @@ class InventoryOfficerPurchaseManagementTest extends TestCase
                 'fuel_type_id' => $records['fuelTypeId'],
                 'quantity_ordered_liters' => 40000,
                 'unit_cost' => 50,
-                'receipt_reference' => 'DR-ADMIN-MONITOR',
                 'payment_status' => 'unpaid',
                 'status' => 'ordered',
             ]);
@@ -234,7 +231,7 @@ class InventoryOfficerPurchaseManagementTest extends TestCase
         $this->actingAs($admin)
             ->get(route('admin.inventory'))
             ->assertOk()
-            ->assertSee('DR-ADMIN-MONITOR')
+            ->assertSee('No Withdrawal')
             ->assertSee('Diesel');
     }
 

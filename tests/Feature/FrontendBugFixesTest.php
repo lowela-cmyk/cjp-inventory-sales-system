@@ -63,19 +63,21 @@ class FrontendBugFixesTest extends TestCase
         }
     }
 
-    public function test_login_uses_username_password_form_and_renders_cjp_toasts(): void
+    public function test_login_uses_username_password_form_and_renders_logout_only_toast(): void
     {
         $response = $this->withSession([
-            'status' => 'Your registration is pending Admin approval.',
-            'toast_type' => 'warning',
+            'status' => 'You have been signed out of CJP Southern Star.',
+            'toast_type' => 'success',
+            'toast_context' => 'logout',
         ])->get(route('login'));
 
         $response->assertOk()
             ->assertSee('name="username"', false)
             ->assertSee('name="password"', false)
             ->assertDontSee('name="role"', false)
-            ->assertSee('cjp-toast-warning', false)
-            ->assertSee('Your registration is pending Admin approval.');
+            ->assertSee('cjp-toast-success', false)
+            ->assertSee('data-toast-dismiss', false)
+            ->assertSee('You have been signed out of CJP Southern Star.');
     }
 
     public function test_admin_nested_routes_keep_parent_sidebar_active(): void

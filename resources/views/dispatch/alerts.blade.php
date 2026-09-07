@@ -1,21 +1,21 @@
-@php
-    $alerts = [
-        ['critical', 'PUR-000002 is Unpaid. Settle Payment.'],
-        ['critical', 'PUR-000002 is Unlifted. Schedule Lifts'],
-        ['critical', 'PUR-000003 is Unlifted. Schedule Lifts'],
-        ['warning', 'PUR-000001 is Partially Lifted. Schedule Lifts to collect the remaining 20,000.'],
-    ];
-@endphp
-
 @component('layouts.dispatch', ['title' => 'Alerts Tab', 'active' => 'alerts'])
     <h2 class="section-title">System Alerts</h2>
+    <form class="toolbar toolbar-narrow" method="GET" action="{{ route('dispatch.alerts') }}">
+        <input type="search" name="search" placeholder="Search..." aria-label="Search alerts" value="{{ $search }}">
+        <button class="btn btn-primary" type="submit">Search</button>
+    </form>
 
     <div class="dispatch-alert-stack">
-        @foreach ($alerts as [$type, $message])
-            <div class="dispatch-alert dispatch-alert-{{ $type }}">
+        @forelse ($alerts as $alert)
+            <div class="dispatch-alert dispatch-alert-{{ $alert['type'] }}">
                 <div class="dispatch-alert-icon" aria-hidden="true">!</div>
-                <div>{{ $message }}</div>
+                <div>
+                    <strong>{{ $alert['title'] }}</strong>
+                    <span>{{ $alert['message'] }}</span>
+                </div>
             </div>
-        @endforeach
+        @empty
+            <div class="empty-state">No dispatch alerts found.</div>
+        @endforelse
     </div>
 @endcomponent

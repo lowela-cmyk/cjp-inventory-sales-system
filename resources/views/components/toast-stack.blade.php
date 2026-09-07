@@ -1,19 +1,11 @@
 @php
     $messages = [];
 
-    if (session('status')) {
+    if (session('status') && session('toast_context') === 'logout') {
         $messages[] = [
             'type' => session('toast_type', 'success'),
             'title' => session('toast_title', 'CJP Dispatch'),
             'message' => session('status'),
-        ];
-    }
-
-    if ($errors->any()) {
-        $messages[] = [
-            'type' => 'error',
-            'title' => 'CJP Checkpoint',
-            'message' => $errors->first(),
         ];
     }
 @endphp
@@ -27,6 +19,7 @@
                     <strong>{{ $toast['title'] }}</strong>
                     <span>{{ $toast['message'] }}</span>
                 </div>
+                <button class="toast-dismiss" type="button" data-toast-dismiss aria-label="Dismiss notification">x</button>
             </div>
         @endforeach
     </div>

@@ -11,7 +11,7 @@
         </div>
         <div class="actions-right"><button class="btn btn-secondary" type="button" data-export-table>Export</button></div>
 
-        <section data-tab-panel="ledger" @hidden($activeTab !== 'ledger')>
+        <section data-tab-panel="ledger" {{ $activeTab !== 'ledger' ? 'hidden' : '' }}>
             <form class="dispatch-filter-row" method="GET" action="{{ route('inventory-officer.ledger') }}">
                 <input type="search" name="search" placeholder="Search..." aria-label="Search ledger" value="{{ $search }}">
                 <button class="btn btn-primary" type="submit">Date</button>
@@ -20,7 +20,7 @@
             </form>
             <div class="table-wrap dispatch-table-wrap">
                 <table class="admin-table dispatch-table">
-                    <thead><tr><th>Reference</th><th>Date</th><th>Fuel</th><th>Garage</th><th>Stock In</th><th>Stock Out</th><th>Quantity</th><th>Balance</th><th>Status</th></tr></thead>
+                    <thead><tr><th>Purchase ID</th><th>Fuel Type</th><th>Depot</th><th>Purchased Quantity</th><th>Total Lifted</th><th>Remaining Quantity</th><th>Status</th></tr></thead>
                     <tbody>
                         @forelse ($ledger as $row)
                             <tr>
@@ -33,14 +33,14 @@
                                 @endforeach
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="9">No inventory movements found.</td></tr>
+                            <tr><td class="empty-cell" colspan="7">No active lifting progress found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
             </div>
         </section>
 
-        <section data-tab-panel="transactions" @hidden($activeTab !== 'transactions')>
+        <section data-tab-panel="transactions" {{ $activeTab !== 'transactions' ? 'hidden' : '' }}>
             <form class="dispatch-filter-row" method="GET" action="{{ route('inventory-officer.ledger.transactions') }}">
                 <input type="search" name="search" placeholder="Search..." aria-label="Search ledger transactions" value="{{ $search }}">
                 <button class="btn btn-primary" type="submit">Date</button>
@@ -49,17 +49,21 @@
             </form>
             <div class="table-wrap dispatch-table-wrap">
                 <table class="admin-table dispatch-table">
-                    <thead><tr><th>Reference</th><th>Date</th><th>Fuel</th><th>Garage</th><th>Stock In</th><th>Stock Out</th><th>Actions</th></tr></thead>
+                    <thead><tr><th>Purchase ID</th><th>Fuel Type</th><th>Depot</th><th>Purchased Quantity</th><th>Total Lifted</th><th>Remaining Quantity</th><th>Status</th><th>Actions</th></tr></thead>
                     <tbody>
                         @forelse ($transactions as $row)
                             <tr>
-                                @foreach (array_slice($row['cells'], 0, 6) as $cell)
-                                    <td>{{ $cell }}</td>
+                                @foreach ($row['cells'] as $cell)
+                                    @if ($loop->last)
+                                        <td><x-admin.status-badge :status="$cell" /></td>
+                                    @else
+                                        <td>{{ $cell }}</td>
+                                    @endif
                                 @endforeach
                                 <td><button class="btn btn-secondary" type="button" data-modal-open="{{ $row['id'] }}">View</button></td>
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="7">No inventory movements found.</td></tr>
+                            <tr><td class="empty-cell" colspan="8">No purchase transactions found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -68,19 +72,32 @@
     </div>
 
     @foreach ($transactions as $row)
-        <x-admin.modal id="{{ $row['id'] }}" title="View Transactions" wide>
+        <x-admin.modal id="{{ $row['id'] }}" title="VIEW TRANSACTIONS" wide>
             <div class="modal-heading-row">
-                <p class="detail-id">{{ $row['details']['Movement ID'] }}</p>
-                <p class="detail-id {{ $row['status'] === 'Stock In' || $row['status'] === 'Beginning' ? 'modal-complete' : 'modal-incomplete' }}">{{ $row['status'] }}</p>
+                <p class="detail-id">{{ $row['purchase_code'] }}</p>
+                <p class="detail-id {{ $row['status_class'] }}">{{ $row['status'] }}</p>
             </div>
-            <div class="modal-card">
-                <div class="detail-grid">
+            <div class="modal-card lift-transaction-modal">
+                <div class="lift-summary-grid">
                     @foreach ($row['details'] as $label => $value)
-                        <div class="detail-row">
-                            <div class="detail-label">{{ $label }}</div>
-                            <div class="detail-value">{{ $value }}</div>
-                        </div>
+                        <div><span>{{ $label }}</span><strong>{{ $value }}</strong></div>
                     @endforeach
+                </div>
+                <div class="lift-blocks" aria-label="Lift transactions for {{ $row['purchase_code'] }}">
+                    @forelse ($row['lifts'] as $lift)
+                        <div class="lift-block {{ $lift['counts_as_lifted'] ? 'is-complete' : 'is-open' }}" tabindex="0">
+                            <span>Lift {{ $lift['sequence'] }}</span>
+                            <strong>{{ $lift['quantity'] }}</strong>
+                            <em>{{ $lift['status'] }}</em>
+                            <div class="lift-tooltip" role="tooltip">
+                                @foreach ($lift['details'] as $label => $value)
+                                    <div><span>{{ $label }}</span><strong>{{ $value }}</strong></div>
+                                @endforeach
+                            </div>
+                        </div>
+                    @empty
+                        <div class="lift-empty">No lift assignments have been created for this purchase yet.</div>
+                    @endforelse
                 </div>
             </div>
         </x-admin.modal>

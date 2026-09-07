@@ -33,9 +33,9 @@ Route::post('/reset-password', [AuthController::class, 'resetPassword'])->middle
 Route::middleware(['auth'])->group(function () {
     Route::get('/dashboard', [AuthController::class, 'redirectToDashboard'])->name('dashboard');
     Route::get('/home', [AuthController::class, 'redirectToDashboard'])->name('home.dashboard');
-    Route::get('/purchase-receipts/{purchase}', [InventoryOfficerPurchaseController::class, 'receipt'])
+    Route::get('/withdrawal-receipts/{haul}', [InventoryOfficerPurchaseController::class, 'withdrawalReceipt'])
         ->middleware('role:admin,inventory_officer')
-        ->name('purchase-receipts.show');
+        ->name('withdrawal-receipts.show');
 
     Route::redirect('/admin', '/admin/dashboard')->middleware('role:admin')->name('admin.shortcut');
     Route::prefix('admin')->name('admin.')->middleware('role:admin')->group(function () {
@@ -70,11 +70,12 @@ Route::middleware(['auth'])->group(function () {
     Route::redirect('/dispatch', '/dispatch/fuel-lifting')->middleware('role:dispatch_officer')->name('dispatch.shortcut');
     Route::prefix('dispatch')->name('dispatch.')->middleware('role:dispatch_officer')->group(function () {
         Route::get('/fuel-lifting', [DispatchDeliveryController::class, 'index'])->name('fuel-lifting');
+        Route::post('/fuel-lifting/hauls', [DispatchDeliveryController::class, 'store'])->name('fuel-lifting.hauls.store');
         Route::patch('/fuel-lifting/hauls/{haul}/truck', [HaulTruckAssignmentController::class, 'update'])->name('fuel-lifting.hauls.truck');
         Route::patch('/fuel-lifting/hauls/{haul}/status', [DispatchLiftingStatusController::class, 'updateStatus'])->name('fuel-lifting.hauls.status');
         Route::get('/fuel-lifting/hauled', [DispatchDeliveryController::class, 'index'])->defaults('state', 'hauled')->name('fuel-lifting.hauled');
         Route::view('/ledger', 'dispatch.ledger')->name('ledger');
-        Route::view('/alerts', 'dispatch.alerts')->name('alerts');
+        Route::get('/alerts', [AdminMonitoringController::class, 'dispatchAlerts'])->name('alerts');
     });
 
     Route::redirect('/inventory-officer', '/inventory-officer/inventory')->middleware('role:inventory_officer')->name('inventory-officer.shortcut');
@@ -89,7 +90,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/inventory/stock-out', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'stock-out')->name('inventory.stock-out');
         Route::get('/ledger', InventoryOfficerLedgerController::class)->name('ledger');
         Route::get('/ledger/transactions', InventoryOfficerLedgerController::class)->defaults('state', 'transactions')->name('ledger.transactions');
-        Route::view('/alerts', 'inventory-officer.alerts')->name('alerts');
+        Route::get('/alerts', [AdminMonitoringController::class, 'inventoryOfficerAlerts'])->name('alerts');
     });
 
     Route::redirect('/sales-officer', '/sales-officer/sales')->middleware('role:sales_officer')->name('sales-officer.shortcut');
@@ -103,13 +104,14 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/sales/customers', [SalesOfficerCustomerController::class, 'store'])->name('sales.customers.store');
         Route::patch('/sales/customers/{customer}', [SalesOfficerCustomerController::class, 'update'])->name('sales.customers.update');
         Route::patch('/sales/customers/{customer}/deactivate', [SalesOfficerCustomerController::class, 'deactivate'])->name('sales.customers.deactivate');
-        Route::view('/alerts', 'sales-officer.alerts')->name('alerts');
+        Route::get('/alerts', [AdminMonitoringController::class, 'salesOfficerAlerts'])->name('alerts');
     });
 
     Route::redirect('/driver', '/driver/fuel-lifting')->middleware('role:driver')->name('driver.shortcut');
     Route::prefix('driver')->name('driver.')->middleware('role:driver')->group(function () {
         Route::get('/fuel-lifting', [DriverDeliveryController::class, 'index'])->name('fuel-lifting');
         Route::patch('/fuel-lifting/hauls/{haul}/status', [DriverLiftingStatusController::class, 'updateStatus'])->name('fuel-lifting.hauls.status');
+        Route::post('/fuel-lifting/hauls/{haul}/withdrawal-receipt', [DriverDeliveryController::class, 'storeWithdrawalReceipt'])->name('fuel-lifting.hauls.withdrawal-receipt.store');
         Route::get('/fuel-lifting/hauled', [DriverDeliveryController::class, 'index'])->defaults('state', 'hauled')->name('fuel-lifting.hauled');
         Route::get('/fuel-lifting/no-schedule', [DriverDeliveryController::class, 'index'])->defaults('state', 'no-schedule')->name('fuel-lifting.no-schedule');
         Route::get('/fuel-lifting/no-hauled', [DriverDeliveryController::class, 'index'])->defaults('state', 'no-hauled')->name('fuel-lifting.no-hauled');

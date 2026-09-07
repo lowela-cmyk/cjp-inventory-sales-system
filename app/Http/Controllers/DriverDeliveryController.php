@@ -4,8 +4,10 @@ namespace App\Http\Controllers;
 
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Query\Builder;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
@@ -50,6 +52,51 @@ class DriverDeliveryController extends Controller
             'hauledRows' => $rows->where('group', 'hauled')->values(),
             'liftingStatusIdempotencyKey' => (string) Str::uuid(),
         ]);
+    }
+
+    public function storeWithdrawalReceipt(Request $request, int $haul): RedirectResponse
+    {
+        $data = $request->validate([
+            'withdrawal_receipt' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+            'withdrawal_notes' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $driverId = (int) $request->user()->id;
+        $row = DB::table('hauls')
+            ->join('purchases', 'purchases.id', '=', 'hauls.purchase_id')
+            ->where('hauls.id', $haul)
+            ->where('hauls.driver_user_id', $driverId)
+            ->whereNull('purchases.deleted_at')
+            ->whereIn('hauls.status', ['lifted', 'completed'])
+            ->first(['hauls.id', 'hauls.haul_code', 'hauls.withdrawal_receipt_path']);
+
+        if (! $row) {
+            return back()
+                ->withErrors(['withdrawal_receipt' => 'The selected lifting task is not assigned to your driver account or is not ready for receipt upload.'])
+                ->withInput();
+        }
+
+        $file = $request->file('withdrawal_receipt');
+        $extension = $file->guessExtension() ?: $file->extension();
+        $path = $file->storeAs('withdrawal-receipts', (string) Str::uuid().'.'.$extension, 'local');
+
+        DB::table('hauls')
+            ->where('id', $row->id)
+            ->where('driver_user_id', $driverId)
+            ->update([
+                'withdrawal_receipt_path' => $path,
+                'withdrawal_receipt_notes' => $data['withdrawal_notes'] ?? null,
+                'withdrawal_receipt_uploaded_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+        if ($row->withdrawal_receipt_path && Storage::disk('local')->exists($row->withdrawal_receipt_path)) {
+            Storage::disk('local')->delete($row->withdrawal_receipt_path);
+        }
+
+        return redirect()
+            ->route('driver.fuel-lifting.hauled')
+            ->with('status', 'Withdrawal receipt uploaded successfully.');
     }
 
     /**
@@ -123,6 +170,9 @@ class DriverDeliveryController extends Controller
                 'hauls.scheduled_at',
                 'hauls.hauled_at',
                 'hauls.source_location',
+                'hauls.withdrawal_receipt_path',
+                'hauls.withdrawal_receipt_notes',
+                'hauls.withdrawal_receipt_uploaded_at',
                 'hauls.quantity_liters',
                 'hauls.status',
                 'purchases.purchase_code',
@@ -178,8 +228,13 @@ class DriverDeliveryController extends Controller
                         'Scheduled Date' => $this->formatDateTime($row->scheduled_at),
                         'Completed Date' => $row->hauled_at ? $this->formatDateTime($row->hauled_at) : 'N/A',
                         'Allocation Status' => $row->allocation_statuses ? $this->label(str_replace(',', ', ', $row->allocation_statuses)) : 'N/A',
+                        'Withdrawal Receipt' => $row->withdrawal_receipt_path ? 'Uploaded' : 'Not Uploaded',
+                        'Withdrawal Uploaded At' => $row->withdrawal_receipt_uploaded_at ? $this->formatDateTime($row->withdrawal_receipt_uploaded_at) : 'N/A',
+                        'Withdrawal Notes' => $row->withdrawal_receipt_notes ?: 'N/A',
                         'Status' => $this->label($row->status),
                     ],
+                    'can_upload_withdrawal' => in_array($row->status, ['lifted', 'completed'], true),
+                    'withdrawal_uploaded' => (bool) $row->withdrawal_receipt_path,
                 ];
             });
     }

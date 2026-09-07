@@ -12,7 +12,6 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
-use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class InventoryOfficerPurchaseController extends Controller
 {
@@ -55,13 +54,11 @@ class InventoryOfficerPurchaseController extends Controller
         $data = $this->validatedPurchaseData($request);
 
         DB::transaction(function () use ($request, $data): void {
-            $receiptPath = $this->storeReceipt($request);
-
             $purchaseId = DB::table('purchases')->insertGetId([
                 'purchase_code' => $this->nextCode('purchases', 'purchase_code', 'PUR'),
                 'depot_id' => $data['depot_id'],
                 'purchase_date' => $data['purchase_date'],
-                'receipt_reference' => $receiptPath ?: ($data['receipt_reference'] ?? null),
+                'receipt_reference' => null,
                 'payment_status' => $data['payment_status'],
                 'status' => $data['status'],
                 'created_by' => $request->user()->id,
@@ -100,16 +97,12 @@ class InventoryOfficerPurchaseController extends Controller
                 ->withInput();
         }
 
-        DB::transaction(function () use ($request, $row, $data): void {
-            $receiptPath = $this->storeReceipt($request);
-            $oldReceiptPath = $row->receipt_reference;
-
+        DB::transaction(function () use ($row, $data): void {
             DB::table('purchases')
                 ->where('id', $row->purchase_id)
                 ->update([
                     'depot_id' => $data['depot_id'],
                     'purchase_date' => $data['purchase_date'],
-                    'receipt_reference' => $receiptPath ?: ($data['receipt_reference'] ?? $oldReceiptPath),
                     'payment_status' => $data['payment_status'],
                     'status' => $data['status'],
                     'updated_at' => now(),
@@ -126,9 +119,6 @@ class InventoryOfficerPurchaseController extends Controller
                     'updated_at' => now(),
                 ]);
 
-            if ($receiptPath && $oldReceiptPath && $oldReceiptPath !== $receiptPath && Storage::disk('local')->exists($oldReceiptPath)) {
-                Storage::disk('local')->delete($oldReceiptPath);
-            }
         });
 
         return redirect()
@@ -136,21 +126,26 @@ class InventoryOfficerPurchaseController extends Controller
             ->with('status', 'Purchase record updated successfully.');
     }
 
-    public function receipt(int $purchase): StreamedResponse
+    public function withdrawalReceipt(int $haul)
     {
-        $row = DB::table('purchases')
-            ->where('id', $purchase)
-            ->whereNull('deleted_at')
-            ->first(['purchase_code', 'receipt_reference']);
+        $row = DB::table('hauls')
+            ->join('purchases', 'purchases.id', '=', 'hauls.purchase_id')
+            ->where('hauls.id', $haul)
+            ->whereNull('purchases.deleted_at')
+            ->first(['hauls.haul_code', 'hauls.withdrawal_receipt_path']);
 
-        abort_unless($row && $this->isStoredReceipt($row->receipt_reference), 404);
+        abort_unless($row && $this->isStoredWithdrawalReceipt($row->withdrawal_receipt_path), 404);
 
-        $extension = pathinfo((string) $row->receipt_reference, PATHINFO_EXTENSION);
+        $extension = pathinfo((string) $row->withdrawal_receipt_path, PATHINFO_EXTENSION);
 
-        return Storage::disk('local')->download(
-            $row->receipt_reference,
-            Str::slug($row->purchase_code).'-receipt.'.$extension
-        );
+        return response(Storage::disk('local')->get($row->withdrawal_receipt_path), 200, [
+            'Content-Type' => match (strtolower($extension)) {
+                'jpg', 'jpeg' => 'image/jpeg',
+                'webp' => 'image/webp',
+                default => 'image/png',
+            },
+            'Content-Disposition' => 'inline; filename="'.Str::slug($row->haul_code).'-withdrawal.'.$extension.'"',
+        ]);
     }
 
     public function cancel(Request $request, int $purchaseItem): RedirectResponse
@@ -314,8 +309,8 @@ class InventoryOfficerPurchaseController extends Controller
             'fuel_type_id' => ['required', 'integer', Rule::exists('fuel_types', 'id')->where(fn (Builder $query): Builder => $query->where('status', 'active'))],
             'quantity_ordered_liters' => ['required', 'numeric', 'gt:0', 'max:999999999999.99'],
             'unit_cost' => ['required', 'numeric', 'gte:0', 'max:9999999999.99'],
-            'receipt_reference' => ['nullable', 'string', 'max:255'],
-            'receipt_file' => ['nullable', 'file', 'mimetypes:application/pdf,image/jpeg,image/png', 'max:5120'],
+            'receipt_reference' => ['prohibited'],
+            'receipt_file' => ['prohibited'],
             'receipt_status' => ['prohibited'],
             'payment_status' => ['required', Rule::in(self::PAYMENT_STATUSES)],
             'status' => ['required', Rule::in(self::PURCHASE_STATUSES)],
@@ -352,6 +347,12 @@ class InventoryOfficerPurchaseController extends Controller
             ->selectRaw('hauls.purchase_item_id, COALESCE(SUM(inventory_movements.quantity_liters), 0) as received_liters')
             ->groupBy('hauls.purchase_item_id');
 
+        $withdrawalTotals = DB::table('hauls')
+            ->whereNotNull('withdrawal_receipt_path')
+            ->where('status', '!=', 'cancelled')
+            ->selectRaw('purchase_item_id, COUNT(*) as withdrawal_count, MAX(withdrawal_receipt_uploaded_at) as latest_withdrawal_at')
+            ->groupBy('purchase_item_id');
+
         $rows = DB::table('purchase_items')
             ->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
             ->join('depots', 'depots.id', '=', 'purchases.depot_id')
@@ -360,12 +361,12 @@ class InventoryOfficerPurchaseController extends Controller
             ->leftJoinSub($haulTotals, 'haul_totals', 'haul_totals.purchase_item_id', '=', 'purchase_items.id')
             ->leftJoinSub($allocationTotals, 'allocation_totals', 'allocation_totals.purchase_item_id', '=', 'purchase_items.id')
             ->leftJoinSub($receivedTotals, 'received_totals', 'received_totals.purchase_item_id', '=', 'purchase_items.id')
+            ->leftJoinSub($withdrawalTotals, 'withdrawal_totals', 'withdrawal_totals.purchase_item_id', '=', 'purchase_items.id')
             ->whereNull('purchases.deleted_at')
             ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
                 'purchases.purchase_code',
                 'depots.name',
                 'fuel_types.name',
-                'purchases.receipt_reference',
                 'purchases.payment_status',
                 'purchases.status',
                 'users.name',
@@ -396,6 +397,8 @@ class InventoryOfficerPurchaseController extends Controller
                 DB::raw('COALESCE(allocation_totals.garage_allocated_liters, 0) as garage_allocated_liters'),
                 DB::raw('COALESCE(allocation_totals.direct_allocated_liters, 0) as direct_allocated_liters'),
                 DB::raw('COALESCE(received_totals.received_liters, 0) as received_liters'),
+                DB::raw('COALESCE(withdrawal_totals.withdrawal_count, 0) as withdrawal_count'),
+                'withdrawal_totals.latest_withdrawal_at',
             ]);
 
         $dependencyMap = $this->purchaseDependencyMap($rows);
@@ -417,8 +420,8 @@ class InventoryOfficerPurchaseController extends Controller
                     'fuel_type_id' => $row->fuel_type_id,
                     'quantity_ordered_liters' => $row->quantity_ordered_liters,
                     'unit_cost' => $row->unit_cost,
-                    'receipt_reference' => $row->receipt_reference,
-                    'receipt_url' => $this->isStoredReceipt($row->receipt_reference) ? route('purchase-receipts.show', $row->purchase_id) : null,
+                    'receipt_url' => null,
+                    'withdrawals' => $this->withdrawalsForPurchaseItem((int) $row->id),
                     'payment_status' => $row->payment_status,
                     'purchase_status' => $row->purchase_status,
                     'has_dependencies' => $dependencyMap[(int) $row->id] ?? false,
@@ -436,7 +439,7 @@ class InventoryOfficerPurchaseController extends Controller
                         $this->label($inventoryStatus),
                         $this->formatNumber($row->unit_cost),
                         $this->formatNumber($row->line_total),
-                        $this->receiptStatus($row->receipt_reference),
+                        $this->withdrawalStatus((int) $row->withdrawal_count),
                         $this->label($row->payment_status),
                     ],
                     'details' => [
@@ -451,7 +454,8 @@ class InventoryOfficerPurchaseController extends Controller
                         'Inventory Status' => $this->label($inventoryStatus),
                         'Cost/Liter' => $this->formatNumber($row->unit_cost),
                         'Total Cost' => $this->formatNumber($row->line_total),
-                        'Delivery Receipt' => $this->receiptStatus($row->receipt_reference),
+                        'Withdrawal Receipts' => $this->withdrawalStatus((int) $row->withdrawal_count),
+                        'Latest Withdrawal Upload' => $this->formatDateTime($row->latest_withdrawal_at),
                         'Purchase Status' => $this->label($row->purchase_status),
                         'Item Status' => $this->label($row->item_status),
                         'Created By' => $row->created_by_name ?: 'N/A',
@@ -844,7 +848,6 @@ class InventoryOfficerPurchaseController extends Controller
                 'purchase_items.unit_cost',
                 'purchases.depot_id',
                 'purchases.purchase_date',
-                'purchases.receipt_reference',
             ]);
     }
 
@@ -1063,6 +1066,27 @@ class InventoryOfficerPurchaseController extends Controller
             ->groupBy('fuel_type_id');
     }
 
+    /**
+     * @return array<int, array<string, string|null>>
+     */
+    private function withdrawalsForPurchaseItem(int $purchaseItemId): array
+    {
+        return DB::table('hauls')
+            ->where('purchase_item_id', $purchaseItemId)
+            ->whereNotNull('withdrawal_receipt_path')
+            ->where('status', '!=', 'cancelled')
+            ->orderByDesc('withdrawal_receipt_uploaded_at')
+            ->orderByDesc('id')
+            ->get(['id', 'haul_code', 'withdrawal_receipt_notes', 'withdrawal_receipt_uploaded_at'])
+            ->map(fn (object $row): array => [
+                'haul_code' => $row->haul_code,
+                'uploaded_at' => $this->formatDateTime($row->withdrawal_receipt_uploaded_at),
+                'notes' => $row->withdrawal_receipt_notes ?: null,
+                'url' => route('withdrawal-receipts.show', $row->id),
+            ])
+            ->all();
+    }
+
     private function directDepotReleaseAllocationOptions()
     {
         $delivered = DB::table('stock_outs')
@@ -1183,36 +1207,17 @@ class InventoryOfficerPurchaseController extends Controller
         return round(((float) $quantity) * ((float) $unitCost), 2);
     }
 
-    private function storeReceipt(Request $request): ?string
-    {
-        if (! $request->hasFile('receipt_file')) {
-            return null;
-        }
-
-        $file = $request->file('receipt_file');
-        $extension = $file->guessExtension() ?: $file->extension();
-        $filename = (string) Str::uuid().'.'.$extension;
-
-        return $file->storeAs('purchase-receipts', $filename, 'local');
-    }
-
-    private function isStoredReceipt(?string $path): bool
+    private function isStoredWithdrawalReceipt(?string $path): bool
     {
         return is_string($path)
-            && str_starts_with($path, 'purchase-receipts/')
+            && str_starts_with($path, 'withdrawal-receipts/')
             && ! str_contains($path, '..')
             && Storage::disk('local')->exists($path);
     }
 
-    private function receiptStatus(?string $path): string
+    private function withdrawalStatus(int $count): string
     {
-        $reference = trim((string) $path);
-
-        if ($reference === '') {
-            return 'No Receipt';
-        }
-
-        return $this->isStoredReceipt($reference) ? 'Submitted' : 'Submitted ('.$reference.')';
+        return $count > 0 ? $count.' Uploaded' : 'No Withdrawal';
     }
 
     private function itemStatus(float $hauled, float $ordered): string

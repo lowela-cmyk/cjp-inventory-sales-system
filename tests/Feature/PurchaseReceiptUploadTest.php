@@ -13,122 +13,195 @@ class PurchaseReceiptUploadTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_inventory_officer_can_upload_pdf_jpg_and_png_receipts(): void
+    public function test_driver_uploads_withdrawal_receipt_for_assigned_lift_and_inventory_can_view_it(): void
     {
         Storage::fake('local');
-        $records = $this->baseRecords();
+        $records = $this->baseHaulRecords();
 
-        foreach ([
-            UploadedFile::fake()->create('receipt.pdf', 10, 'application/pdf'),
-            UploadedFile::fake()->create('receipt.jpg', 10, 'image/jpeg'),
-            UploadedFile::fake()->create('receipt.png', 10, 'image/png'),
-        ] as $file) {
-            $this->actingAs($records['inventoryOfficer'])
-                ->post(route('inventory-officer.inventory.purchases.store'), $this->payload($records, ['receipt_file' => $file]))
-                ->assertRedirect(route('inventory-officer.inventory'));
+        $this->actingAs($records['driver'])
+            ->post(route('driver.fuel-lifting.hauls.withdrawal-receipt.store', $records['haulId']), [
+                'withdrawal_receipt' => $this->tinyImage('withdrawal.png'),
+                'withdrawal_notes' => 'Received from depot dispatcher.',
+            ])
+            ->assertRedirect(route('driver.fuel-lifting.hauled'));
 
-            $purchase = DB::table('purchases')->latest('id')->first();
+        $haul = DB::table('hauls')->where('id', $records['haulId'])->first();
 
-            $this->assertStringStartsWith('purchase-receipts/', $purchase->receipt_reference);
-            Storage::disk('local')->assertExists($purchase->receipt_reference);
-        }
+        $this->assertStringStartsWith('withdrawal-receipts/', $haul->withdrawal_receipt_path);
+        $this->assertSame('Received from depot dispatcher.', $haul->withdrawal_receipt_notes);
+        Storage::disk('local')->assertExists($haul->withdrawal_receipt_path);
+
+        $this->actingAs($records['inventoryOfficer'])
+            ->get(route('inventory-officer.inventory'))
+            ->assertOk()
+            ->assertSee('1 Uploaded')
+            ->assertSee('Received from depot dispatcher.');
+
+        $this->actingAs($records['inventoryOfficer'])
+            ->get(route('withdrawal-receipts.show', $records['haulId']))
+            ->assertOk();
     }
 
-    public function test_receipt_upload_rejects_unsupported_and_oversized_files(): void
+    public function test_driver_upload_validates_image_type_size_ownership_and_lift_status(): void
     {
         Storage::fake('local');
-        $records = $this->baseRecords();
+        $records = $this->baseHaulRecords(['status' => 'scheduled', 'hauled_at' => null]);
+        $otherDriver = User::factory()->create(['role' => 'driver', 'status' => 'active']);
+
+        $this->actingAs($records['driver'])
+            ->post(route('driver.fuel-lifting.hauls.withdrawal-receipt.store', $records['haulId']), [
+                'withdrawal_receipt' => UploadedFile::fake()->create('receipt.pdf', 10, 'application/pdf'),
+            ])
+            ->assertSessionHasErrors('withdrawal_receipt');
+
+        $this->actingAs($records['driver'])
+            ->post(route('driver.fuel-lifting.hauls.withdrawal-receipt.store', $records['haulId']), [
+                'withdrawal_receipt' => $this->largeImage('large.png'),
+            ])
+            ->assertSessionHasErrors('withdrawal_receipt');
+
+        $this->actingAs($otherDriver)
+            ->post(route('driver.fuel-lifting.hauls.withdrawal-receipt.store', $records['haulId']), [
+                'withdrawal_receipt' => $this->tinyImage('other.png'),
+            ])
+            ->assertSessionHasErrors('withdrawal_receipt');
+
+        $this->actingAs($records['driver'])
+            ->post(route('driver.fuel-lifting.hauls.withdrawal-receipt.store', $records['haulId']), [
+                'withdrawal_receipt' => $this->tinyImage('early.png'),
+            ])
+            ->assertSessionHasErrors('withdrawal_receipt');
+
+        $this->assertNull(DB::table('hauls')->where('id', $records['haulId'])->value('withdrawal_receipt_path'));
+    }
+
+    public function test_reupload_replaces_existing_withdrawal_without_creating_duplicate_receipt_records(): void
+    {
+        Storage::fake('local');
+        $records = $this->baseHaulRecords();
+
+        $this->actingAs($records['driver'])
+            ->post(route('driver.fuel-lifting.hauls.withdrawal-receipt.store', $records['haulId']), [
+                'withdrawal_receipt' => $this->tinyImage('old.png'),
+            ]);
+
+        $oldPath = DB::table('hauls')->where('id', $records['haulId'])->value('withdrawal_receipt_path');
+
+        $this->actingAs($records['driver'])
+            ->post(route('driver.fuel-lifting.hauls.withdrawal-receipt.store', $records['haulId']), [
+                'withdrawal_receipt' => $this->tinyImage('new.png'),
+                'withdrawal_notes' => 'Updated note',
+            ])
+            ->assertRedirect(route('driver.fuel-lifting.hauled'));
+
+        $haul = DB::table('hauls')->where('id', $records['haulId'])->first();
+
+        $this->assertNotSame($oldPath, $haul->withdrawal_receipt_path);
+        $this->assertSame('Updated note', $haul->withdrawal_receipt_notes);
+        Storage::disk('local')->assertMissing($oldPath);
+        Storage::disk('local')->assertExists($haul->withdrawal_receipt_path);
+        $this->assertSame(1, DB::table('hauls')->where('purchase_item_id', $records['purchaseItemId'])->whereNotNull('withdrawal_receipt_path')->count());
+    }
+
+    public function test_purchase_form_rejects_receipt_upload_tampering(): void
+    {
+        Storage::fake('local');
+        $records = $this->basePurchaseRecords();
 
         $this->actingAs($records['inventoryOfficer'])
-            ->post(route('inventory-officer.inventory.purchases.store'), $this->payload($records, [
-                'receipt_file' => UploadedFile::fake()->create('script.php', 10, 'application/x-php'),
-            ]))
-            ->assertSessionHasErrors('receipt_file');
-
-        $this->actingAs($records['inventoryOfficer'])
-            ->post(route('inventory-officer.inventory.purchases.store'), $this->payload($records, [
-                'receipt_file' => UploadedFile::fake()->create('large.pdf', 6000, 'application/pdf'),
+            ->post(route('inventory-officer.inventory.purchases.store'), $this->purchasePayload($records, [
+                'receipt_file' => $this->tinyImage('not-from-driver.png'),
             ]))
             ->assertSessionHasErrors('receipt_file');
 
         $this->assertSame(0, DB::table('purchases')->count());
     }
 
-    public function test_receipt_links_to_correct_purchase_and_authorized_users_can_view_it(): void
+    /**
+     * @param array<string, mixed> $overrides
+     * @return array<string, mixed>
+     */
+    private function baseHaulRecords(array $overrides = []): array
     {
-        Storage::fake('local');
-        $records = $this->createPurchaseWithReceipt('purchase-a.pdf');
-        $other = $this->createPurchaseWithReceipt('purchase-b.pdf');
-        $admin = User::factory()->create(['role' => 'admin', 'status' => 'active']);
+        $records = $this->basePurchaseRecords();
+        $driver = User::factory()->create(['role' => 'driver', 'status' => 'active']);
+        $truckId = DB::table('trucks')->insertGetId([
+            'truck_code' => uniqid('TRK-'),
+            'capacity_liters' => 50000,
+            'truck_type' => 'hauling',
+            'status' => 'assigned',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $purchaseId = DB::table('purchases')->insertGetId([
+            'purchase_code' => 'PUR-WITHDRAWAL',
+            'depot_id' => $records['depotId'],
+            'purchase_date' => '2026-08-30',
+            'payment_status' => 'paid',
+            'status' => 'hauled',
+            'created_by' => $records['inventoryOfficer']->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $purchaseItemId = DB::table('purchase_items')->insertGetId([
+            'purchase_id' => $purchaseId,
+            'fuel_type_id' => $records['fuelTypeId'],
+            'quantity_ordered_liters' => 40000,
+            'unit_cost' => 50,
+            'line_total' => 2000000,
+            'quantity_hauled_liters' => 40000,
+            'status' => 'lifted',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $haulId = DB::table('hauls')->insertGetId(array_merge([
+            'haul_code' => 'LFT-WITHDRAWAL',
+            'purchase_id' => $purchaseId,
+            'purchase_item_id' => $purchaseItemId,
+            'depot_id' => $records['depotId'],
+            'fuel_type_id' => $records['fuelTypeId'],
+            'truck_id' => $truckId,
+            'driver_user_id' => $driver->id,
+            'scheduled_at' => '2026-08-31 08:00:00',
+            'hauled_at' => '2026-08-31 10:00:00',
+            'quantity_liters' => 40000,
+            'status' => 'lifted',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ], $overrides));
 
-        $this->actingAs($records['inventoryOfficer'])
-            ->get(route('purchase-receipts.show', $records['purchaseId']))
-            ->assertOk()
-            ->assertDownload('pur-000001-receipt.pdf');
-
-        $this->actingAs($admin)
-            ->get(route('purchase-receipts.show', $records['purchaseId']))
-            ->assertOk();
-
-        $this->assertNotSame(
-            DB::table('purchases')->where('id', $records['purchaseId'])->value('receipt_reference'),
-            DB::table('purchases')->where('id', $other['purchaseId'])->value('receipt_reference')
-        );
+        return array_merge($records, compact('driver', 'purchaseId', 'purchaseItemId', 'haulId'));
     }
 
-    public function test_unauthorized_roles_and_invalid_purchase_ids_cannot_access_receipts(): void
+    /**
+     * @return array<string, mixed>
+     */
+    private function basePurchaseRecords(): array
     {
-        Storage::fake('local');
-        $records = $this->createPurchaseWithReceipt();
-        $salesOfficer = User::factory()->create(['role' => 'sales_officer', 'status' => 'active']);
+        $inventoryOfficer = User::factory()->create(['role' => 'inventory_officer', 'status' => 'active']);
+        $depotId = DB::table('depots')->insertGetId([
+            'depot_code' => uniqid('DEP-'),
+            'name' => uniqid('Depot '),
+            'status' => 'active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $fuelTypeId = DB::table('fuel_types')->insertGetId([
+            'code' => uniqid('FUEL-'),
+            'name' => uniqid('Fuel '),
+            'status' => 'active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
 
-        $this->actingAs($salesOfficer)
-            ->get(route('purchase-receipts.show', $records['purchaseId']))
-            ->assertForbidden();
-
-        $this->actingAs($records['inventoryOfficer'])
-            ->get(route('purchase-receipts.show', 999999))
-            ->assertNotFound();
-    }
-
-    public function test_missing_receipt_does_not_break_purchase_page(): void
-    {
-        $records = $this->createPurchaseWithoutReceipt();
-
-        $this->actingAs($records['inventoryOfficer'])
-            ->get(route('inventory-officer.inventory'))
-            ->assertOk()
-            ->assertSee('No Receipt');
-
-        $this->actingAs($records['inventoryOfficer'])
-            ->get(route('purchase-receipts.show', $records['purchaseId']))
-            ->assertNotFound();
-    }
-
-    public function test_receipt_replacement_updates_reference_and_removes_old_file(): void
-    {
-        Storage::fake('local');
-        $records = $this->createPurchaseWithReceipt('old.pdf');
-        $oldPath = DB::table('purchases')->where('id', $records['purchaseId'])->value('receipt_reference');
-
-        $this->actingAs($records['inventoryOfficer'])
-            ->patch(route('inventory-officer.inventory.purchases.update', $records['purchaseItemId']), $this->payload($records, [
-                'receipt_file' => UploadedFile::fake()->create('new.png', 10, 'image/png'),
-            ]))
-            ->assertRedirect(route('inventory-officer.inventory'));
-
-        $newPath = DB::table('purchases')->where('id', $records['purchaseId'])->value('receipt_reference');
-
-        $this->assertNotSame($oldPath, $newPath);
-        Storage::disk('local')->assertMissing($oldPath);
-        Storage::disk('local')->assertExists($newPath);
+        return compact('inventoryOfficer', 'depotId', 'fuelTypeId');
     }
 
     /**
      * @param array<string, mixed> $overrides
      * @return array<string, mixed>
      */
-    private function payload(array $records, array $overrides = []): array
+    private function purchasePayload(array $records, array $overrides = []): array
     {
         return array_merge([
             'purchase_date' => '2026-08-30',
@@ -141,88 +214,13 @@ class PurchaseReceiptUploadTest extends TestCase
         ], $overrides);
     }
 
-    /**
-     * @return array<string, mixed>
-     */
-    private function createPurchaseWithReceipt(string $name = 'receipt.pdf'): array
+    private function tinyImage(string $name): UploadedFile
     {
-        $records = $this->baseRecords();
-
-        $this->actingAs($records['inventoryOfficer'])
-            ->post(route('inventory-officer.inventory.purchases.store'), $this->payload($records, [
-                'receipt_file' => str_ends_with($name, '.png')
-                    ? UploadedFile::fake()->create($name, 10, 'image/png')
-                    : UploadedFile::fake()->create($name, 10, 'application/pdf'),
-            ]));
-
-        $purchase = DB::table('purchases')->latest('id')->first();
-        $purchaseItem = DB::table('purchase_items')->where('purchase_id', $purchase->id)->first();
-
-        return array_merge($records, [
-            'purchaseId' => $purchase->id,
-            'purchaseItemId' => $purchaseItem->id,
-        ]);
+        return UploadedFile::fake()->createWithContent($name, base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII='));
     }
 
-    /**
-     * @return array<string, mixed>
-     */
-    private function createPurchaseWithoutReceipt(): array
+    private function largeImage(string $name): UploadedFile
     {
-        $records = $this->baseRecords();
-
-        $purchaseId = DB::table('purchases')->insertGetId([
-            'purchase_code' => 'PUR-NO-RECEIPT',
-            'depot_id' => $records['depotId'],
-            'purchase_date' => '2026-08-30',
-            'payment_status' => 'unpaid',
-            'status' => 'ordered',
-            'created_by' => $records['inventoryOfficer']->id,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
-        $purchaseItemId = DB::table('purchase_items')->insertGetId([
-            'purchase_id' => $purchaseId,
-            'fuel_type_id' => $records['fuelTypeId'],
-            'quantity_ordered_liters' => 40000,
-            'unit_cost' => 50,
-            'line_total' => 2000000,
-            'quantity_hauled_liters' => 0,
-            'status' => 'unlifted',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
-        return array_merge($records, compact('purchaseId', 'purchaseItemId'));
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function baseRecords(): array
-    {
-        $inventoryOfficer = User::factory()->create([
-            'role' => 'inventory_officer',
-            'status' => 'active',
-        ]);
-
-        $depotId = DB::table('depots')->insertGetId([
-            'depot_code' => uniqid('DEP-'),
-            'name' => uniqid('Depot '),
-            'status' => 'active',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
-        $fuelTypeId = DB::table('fuel_types')->insertGetId([
-            'code' => uniqid('FUEL-'),
-            'name' => uniqid('Fuel '),
-            'status' => 'active',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
-        return compact('inventoryOfficer', 'depotId', 'fuelTypeId');
+        return UploadedFile::fake()->createWithContent($name, base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=').str_repeat('0', 6 * 1024 * 1024));
     }
 }

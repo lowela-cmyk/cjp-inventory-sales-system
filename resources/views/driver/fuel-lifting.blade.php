@@ -231,6 +231,17 @@
                         <button class="btn btn-pill btn-primary" type="submit">Update</button>
                     </form>
                 @endif
+                @if (($row['kind'] ?? '') === 'Lift' && ! empty($row['can_upload_withdrawal']))
+                    <form class="withdrawal-upload-form" method="POST" action="{{ route('driver.fuel-lifting.hauls.withdrawal-receipt.store', $row['record_id']) }}" enctype="multipart/form-data">
+                        @csrf
+                        <label class="file-button">
+                            <span>{{ ! empty($row['withdrawal_uploaded']) ? 'Replace Withdrawal' : 'Upload Withdrawal' }}</span>
+                            <input name="withdrawal_receipt" type="file" accept="image/jpeg,image/png,image/webp" required>
+                        </label>
+                        <input name="withdrawal_notes" type="text" maxlength="1000" placeholder="Optional notes">
+                        <button class="btn btn-pill btn-primary" type="submit">Submit</button>
+                    </form>
+                @endif
                 <button class="btn btn-pill btn-secondary" type="button" data-modal-close>Close</button>
             </div>
         </x-admin.modal>

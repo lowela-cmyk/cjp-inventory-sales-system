@@ -157,14 +157,18 @@ class AuthController extends Controller
             'full_name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
             'contact_number' => ['nullable', 'string', 'max:30', 'regex:/^[0-9+()\\-\\s]+$/'],
+            'role' => ['nullable', 'string', 'max:50'],
             'password' => ['required', 'confirmed', Password::defaults()],
         ]);
+
+        $allowedRoles = ['inventory_officer', 'sales_officer', 'dispatch_officer', 'driver'];
+        $requestedRole = in_array($data['role'] ?? null, $allowedRoles, true) ? $data['role'] : 'driver';
 
         User::create([
             'name' => $data['full_name'],
             'email' => $data['email'],
             'phone' => $data['contact_number'] ?? null,
-            'role' => 'driver',
+            'role' => $requestedRole,
             'status' => 'active',
             'approval_status' => 'pending',
             'password' => $data['password'],
@@ -235,7 +239,9 @@ class AuthController extends Controller
         return redirect()
             ->route('login')
             ->with('status', 'You have been signed out of CJP Southern Star.')
-            ->with('toast_type', 'success');
+            ->with('toast_type', 'success')
+            ->with('toast_title', 'Signed out')
+            ->with('toast_context', 'logout');
     }
 
     private function dashboardRouteFor(string $role): string

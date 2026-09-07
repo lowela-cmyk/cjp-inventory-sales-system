@@ -80,6 +80,11 @@ document.addEventListener('click', (event) => {
         exportVisibleTable(exportButton);
     }
 
+    const toastDismiss = event.target.closest('[data-toast-dismiss]');
+    if (toastDismiss) {
+        toastDismiss.closest('.cjp-toast')?.remove();
+    }
+
     const addSaleItemButton = event.target.closest('[data-sales-item-add]');
     if (addSaleItemButton) {
         const modal = addSaleItemButton.closest('.modal-backdrop');

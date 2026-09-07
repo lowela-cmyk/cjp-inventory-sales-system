@@ -44,15 +44,13 @@
             </form>
             <div class="table-wrap">
                 <table class="admin-table">
-                    <thead><tr><th>Purchase-ID</th><th>Date</th><th>Fuel</th><th>Depot</th><th>Purchased (L)</th><th>Hauled (L)</th><th>Garage Allocation</th><th>Direct Allocation</th><th>Received</th><th>Inventory Status</th><th>Cost / Liter</th><th>Total Cost</th><th>Delivery Receipt</th><th>Payment Status</th><th>Actions</th></tr></thead>
+                    <thead><tr><th>Purchase-ID</th><th>Date</th><th>Fuel</th><th>Depot</th><th>Purchased (L)</th><th>Hauled (L)</th><th>Garage Allocation</th><th>Direct Allocation</th><th>Received</th><th>Inventory Status</th><th>Cost / Liter</th><th>Total Cost</th><th>Withdrawals</th><th>Payment Status</th><th>Actions</th></tr></thead>
                     <tbody>
                         @forelse ($purchases as $row)
                             <tr class="{{ $row['class'] }}">
                                 @foreach ($row['cells'] as $cell)
                                     @if ($loop->last || $loop->index === 9)
                                         <td><x-admin.status-badge :status="$cell" /></td>
-                                    @elseif ($loop->index === 12 && $row['receipt_url'])
-                                        <td><a href="{{ $row['receipt_url'] }}">{{ $cell }}</a></td>
                                     @else
                                         <td>{{ $cell }}</td>
                                     @endif
@@ -125,7 +123,7 @@
     </div>
 
     <x-admin.modal id="io-purchase-add" title="Add Purchase Record" wide>
-        <form method="POST" action="{{ route('inventory-officer.inventory.purchases.store') }}" enctype="multipart/form-data">
+        <form method="POST" action="{{ route('inventory-officer.inventory.purchases.store') }}">
             @csrf
             <div class="modal-card">
                 <div class="form-grid">
@@ -133,7 +131,6 @@
                     <div class="form-row"><label for="fuel_type_id">Fuel Type</label><select id="fuel_type_id" name="fuel_type_id" required><option value="" disabled @selected(! old('fuel_type_id'))>Select Fuel Type</option>@foreach ($fuelTypes as $fuelType)<option value="{{ $fuelType->id }}" @selected((string) old('fuel_type_id') === (string) $fuelType->id)>{{ $fuelType->name }}</option>@endforeach</select></div>
                     <div class="form-row"><label for="depot_id">Depot</label><select id="depot_id" name="depot_id" required><option value="" disabled @selected(! old('depot_id'))>Select Depot</option>@foreach ($depots as $depot)<option value="{{ $depot->id }}" @selected((string) old('depot_id') === (string) $depot->id)>{{ $depot->name }}</option>@endforeach</select></div>
                     <div class="form-row"><label for="quantity_ordered_liters">Quantity (Liters)</label><input id="quantity_ordered_liters" name="quantity_ordered_liters" type="number" min="0.01" step="0.01" placeholder="Enter Quantity (Liters)" value="{{ old('quantity_ordered_liters') }}" required></div>
-                    <div class="form-row"><label for="receipt_file">Delivery Receipt</label><input id="receipt_file" name="receipt_file" type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"></div>
                     <div class="form-row"><label for="unit_cost">Cost / Liter</label><input id="unit_cost" name="unit_cost" type="number" min="0" step="0.01" placeholder="Enter Cost / Liter" value="{{ old('unit_cost') }}" required></div>
                     <div class="form-row"><label for="payment_status">Payment Status</label><select id="payment_status" name="payment_status" required>@foreach ($paymentStatuses as $status)<option value="{{ $status }}" @selected(old('payment_status', 'unpaid') === $status)>{{ ucwords($status) }}</option>@endforeach</select></div>
                     <div class="form-row"><label for="purchase_status">Status</label><select id="purchase_status" name="status" required>@foreach ($purchaseStatuses as $status)<option value="{{ $status }}" @selected(old('status', 'ordered') === $status)>{{ ucwords(str_replace('_', ' ', $status)) }}</option>@endforeach</select></div>
@@ -145,7 +142,7 @@
 
     @foreach ($purchases as $row)
         <x-admin.modal id="{{ $row['modal_id'] }}" title="Edit Purchase Record">
-            <form id="purchase-update-{{ $row['id'] }}" method="POST" action="{{ route('inventory-officer.inventory.purchases.update', $row['id']) }}" enctype="multipart/form-data">
+            <form id="purchase-update-{{ $row['id'] }}" method="POST" action="{{ route('inventory-officer.inventory.purchases.update', $row['id']) }}">
                 @csrf
                 @method('PATCH')
             </form>
@@ -157,21 +154,32 @@
                         <div class="detail-row">
                             <div class="detail-label">{{ $label }}</div>
                             <div class="detail-value">
-                                @if ($label === 'Delivery Receipt' && $row['receipt_url'])
-                                    <a href="{{ $row['receipt_url'] }}">{{ $value }}</a>
-                                @else
-                                    {{ $value }}
-                                @endif
+                                {{ $value }}
                             </div>
                         </div>
                     @endforeach
+                    @if (! empty($row['withdrawals']))
+                        <div class="detail-row">
+                            <div class="detail-label">Withdrawal Files</div>
+                            <div class="detail-value withdrawal-list">
+                                @foreach ($row['withdrawals'] as $withdrawal)
+                                    <div>
+                                        <a class="btn btn-secondary btn-small" href="{{ $withdrawal['url'] }}">{{ $withdrawal['haul_code'] }}</a>
+                                        <span>{{ $withdrawal['uploaded_at'] }}</span>
+                                        @if ($withdrawal['notes'])
+                                            <span>{{ $withdrawal['notes'] }}</span>
+                                        @endif
+                                    </div>
+                                @endforeach
+                            </div>
+                        </div>
+                    @endif
                 </div>
                 <div class="form-grid" style="margin-top: 18px">
                     <div class="form-row"><label for="purchase_date_{{ $row['id'] }}">Date</label><input form="purchase-update-{{ $row['id'] }}" id="purchase_date_{{ $row['id'] }}" name="purchase_date" type="date" value="{{ old('purchase_date', $row['purchase_date']) }}" required></div>
                     <div class="form-row"><label for="fuel_type_id_{{ $row['id'] }}">Fuel Type</label><select form="purchase-update-{{ $row['id'] }}" id="fuel_type_id_{{ $row['id'] }}" name="fuel_type_id" required>@foreach ($fuelTypes as $fuelType)<option value="{{ $fuelType->id }}" @selected((string) old('fuel_type_id', $row['fuel_type_id']) === (string) $fuelType->id)>{{ $fuelType->name }}</option>@endforeach</select></div>
                     <div class="form-row"><label for="depot_id_{{ $row['id'] }}">Depot</label><select form="purchase-update-{{ $row['id'] }}" id="depot_id_{{ $row['id'] }}" name="depot_id" required>@foreach ($depots as $depot)<option value="{{ $depot->id }}" @selected((string) old('depot_id', $row['depot_id']) === (string) $depot->id)>{{ $depot->name }}</option>@endforeach</select></div>
                     <div class="form-row"><label for="quantity_ordered_liters_{{ $row['id'] }}">Quantity (Liters)</label><input form="purchase-update-{{ $row['id'] }}" id="quantity_ordered_liters_{{ $row['id'] }}" name="quantity_ordered_liters" type="number" min="0.01" step="0.01" value="{{ old('quantity_ordered_liters', $row['quantity_ordered_liters']) }}" required></div>
-                    <div class="form-row"><label for="receipt_file_{{ $row['id'] }}">Delivery Receipt</label><input form="purchase-update-{{ $row['id'] }}" id="receipt_file_{{ $row['id'] }}" name="receipt_file" type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"></div>
                     <div class="form-row"><label for="unit_cost_{{ $row['id'] }}">Cost / Liter</label><input form="purchase-update-{{ $row['id'] }}" id="unit_cost_{{ $row['id'] }}" name="unit_cost" type="number" min="0" step="0.01" value="{{ old('unit_cost', $row['unit_cost']) }}" required></div>
                     <div class="form-row"><label for="payment_status_{{ $row['id'] }}">Payment Status</label><select form="purchase-update-{{ $row['id'] }}" id="payment_status_{{ $row['id'] }}" name="payment_status" required>@foreach ($paymentStatuses as $status)<option value="{{ $status }}" @selected(old('payment_status', $row['payment_status']) === $status)>{{ ucwords($status) }}</option>@endforeach</select></div>
                     <div class="form-row"><label for="purchase_status_{{ $row['id'] }}">Status</label><select form="purchase-update-{{ $row['id'] }}" id="purchase_status_{{ $row['id'] }}" name="status" required>@foreach ($purchaseStatuses as $status)<option value="{{ $status }}" @selected(old('status', $row['purchase_status']) === $status)>{{ ucwords(str_replace('_', ' ', $status)) }}</option>@endforeach</select></div>

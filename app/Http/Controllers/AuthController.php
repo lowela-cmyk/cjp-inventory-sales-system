@@ -161,7 +161,7 @@ class AuthController extends Controller
             'password' => ['required', 'confirmed', Password::defaults()],
         ]);
 
-        $allowedRoles = ['inventory_officer', 'sales_officer', 'dispatch_officer', 'driver'];
+        $allowedRoles = ['admin', 'inventory_officer', 'sales_officer', 'dispatch_officer', 'driver'];
         $requestedRole = in_array($data['role'] ?? null, $allowedRoles, true) ? $data['role'] : 'driver';
 
         User::create([

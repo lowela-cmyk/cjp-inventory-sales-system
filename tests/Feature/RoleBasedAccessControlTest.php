@@ -418,7 +418,7 @@ class RoleBasedAccessControlTest extends TestCase
         $this->assertGuest();
     }
 
-    public function test_public_registration_cannot_create_privileged_accounts(): void
+    public function test_public_registration_can_request_admin_accounts_pending_approval(): void
     {
         $this->post('/register', [
             'full_name' => 'Self Escalating User',
@@ -433,14 +433,9 @@ class RoleBasedAccessControlTest extends TestCase
         $this->assertDatabaseHas('users', [
             'name' => 'Self Escalating User',
             'email' => 'self-escalate@example.com',
-            'role' => 'driver',
+            'role' => 'admin',
             'status' => 'active',
             'approval_status' => 'pending',
-        ]);
-
-        $this->assertDatabaseMissing('users', [
-            'email' => 'self-escalate@example.com',
-            'role' => 'admin',
         ]);
 
         $this->assertGuest();

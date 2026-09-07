@@ -33,6 +33,7 @@
                         <label for="role">ROLE</label>
                         <select id="role" name="role" required>
                             <option value="" disabled @selected(! old('role'))>Select Role</option>
+                            <option value="admin" @selected(old('role') === 'admin')>Admin</option>
                             <option value="inventory_officer" @selected(old('role') === 'inventory_officer')>Inventory Officer</option>
                             <option value="sales_officer" @selected(old('role') === 'sales_officer')>Sales Officer</option>
                             <option value="dispatch_officer" @selected(old('role') === 'dispatch_officer')>Dispatch Officer</option>

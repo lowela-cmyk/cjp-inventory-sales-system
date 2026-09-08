@@ -48,7 +48,6 @@
                     <img src="{{ asset('images/cjp-logo.png') }}" alt="">
                 </span>
                 <div>
-                    <span class="cjp-toast-status-icon" aria-hidden="true">{{ $toast['type'] === 'error' ? '!' : ($toast['type'] === 'warning' ? 'i' : '✓') }}</span>
                     <strong>{{ $toast['title'] }}</strong>
                     <span>{{ $toast['message'] }}</span>
                 </div>

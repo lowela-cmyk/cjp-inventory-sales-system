@@ -564,22 +564,6 @@ form[aria-busy="true"] {
     object-fit: contain;
 }
 
-.cjp-toast-status-icon {
-    display: inline-flex;
-    width: 24px;
-    height: 24px;
-    align-items: center;
-    justify-content: center;
-    float: left;
-    margin: 0 8px 2px 0;
-    border-radius: 50%;
-    background: var(--success);
-    color: #fff;
-    font-size: 14px;
-    line-height: 1;
-    font-weight: 900;
-}
-
 .cjp-toast strong,
 .cjp-toast span {
     display: block;
@@ -606,14 +590,6 @@ form[aria-busy="true"] {
 
 .cjp-toast-error {
     border-left-color: var(--danger);
-}
-
-.cjp-toast-warning .cjp-toast-status-icon {
-    background: var(--warning);
-}
-
-.cjp-toast-error .cjp-toast-status-icon {
-    background: var(--danger);
 }
 
 @keyframes cjp-toast-enter {

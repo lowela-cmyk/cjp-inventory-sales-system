@@ -21,6 +21,8 @@ const openModal = (modal) => {
     modal.setAttribute('aria-hidden', 'false');
 };
 
+let pendingConfirmForm = null;
+
 document.addEventListener('click', (event) => {
     const modalButton = event.target.closest('[data-modal-open]');
     if (modalButton) {
@@ -83,6 +85,16 @@ document.addEventListener('click', (event) => {
     const toastDismiss = event.target.closest('[data-toast-dismiss]');
     if (toastDismiss) {
         toastDismiss.closest('.cjp-toast')?.remove();
+    }
+
+    const confirmAccept = event.target.closest('[data-confirm-accept]');
+    if (confirmAccept && pendingConfirmForm) {
+        const form = pendingConfirmForm;
+
+        pendingConfirmForm = null;
+        form.dataset.confirmed = 'true';
+        closeModal(confirmAccept.closest('.modal-backdrop'));
+        form.requestSubmit();
     }
 
     const addSaleItemButton = event.target.closest('[data-sales-item-add]');
@@ -253,11 +265,23 @@ document.addEventListener('submit', (event) => {
     }
 
     const confirmation = form.dataset.confirmMessage;
-    if (confirmation && ! window.confirm(confirmation)) {
+    if (confirmation && form.dataset.confirmed !== 'true') {
         event.preventDefault();
+        pendingConfirmForm = form;
+
+        const confirmModal = document.getElementById('system-confirm-modal');
+        const confirmMessage = confirmModal?.querySelector('#system-confirm-message');
+
+        if (confirmMessage) {
+            confirmMessage.textContent = confirmation;
+        }
+
+        openModal(confirmModal);
 
         return;
     }
+
+    delete form.dataset.confirmed;
 
     const shouldPreventDoubleSubmit = form.matches('[data-ai-generate-form], [data-prevent-double-submit]')
         || form.method.toLowerCase() !== 'get';

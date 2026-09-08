@@ -29,7 +29,7 @@
     <div class="sidebar-account">
         <div class="sidebar-user">{{ strtoupper($user?->name ?? 'Account') }}</div>
         <div class="sidebar-role">{{ $user?->role_label ?? 'User' }}</div>
-        <form method="POST" action="{{ route('logout') }}">
+        <form method="POST" action="{{ route('logout') }}" data-confirm-message="Are you sure you want to sign out of CJP Southern Star?">
             @csrf
             <button class="btn btn-secondary btn-block" type="submit">Logout</button>
         </form>

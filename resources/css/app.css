@@ -510,10 +510,10 @@ form[aria-busy="true"] {
 
 .cjp-toast {
     display: grid;
-    grid-template-columns: 42px 1fr auto;
-    gap: 12px;
+    grid-template-columns: 74px 1fr auto;
+    gap: 14px;
     align-items: center;
-    padding: 13px 15px;
+    padding: 14px 15px;
     border: 1px solid var(--admin-ink);
     border-left: 7px solid var(--admin-red);
     border-radius: 8px;
@@ -526,26 +526,58 @@ form[aria-busy="true"] {
 .toast-dismiss {
     width: 30px;
     height: 30px;
-    border: 1px solid var(--admin-ink);
+    border: 2px solid var(--admin-ink);
     border-radius: 4px;
     background: #fff;
     color: var(--admin-ink);
     cursor: pointer;
     font-weight: 800;
     pointer-events: auto;
+    box-shadow: 0 2px 0 var(--admin-ink);
+    transition: transform .12s ease, box-shadow .12s ease, background-color .12s ease;
 }
 
-.cjp-toast-icon {
-    display: inline-flex;
-    width: 38px;
-    height: 38px;
+.toast-dismiss:hover,
+.toast-dismiss:focus {
+    background: #f7f7f7;
+    transform: translateY(-1px);
+    box-shadow: 0 3px 0 var(--danger);
+}
+
+.cjp-toast-logo {
+    display: flex;
+    width: 70px;
+    height: 44px;
     align-items: center;
     justify-content: center;
+    border: 1px solid #e4e4e4;
+    border-radius: 6px;
+    padding: 6px;
+    background: #fff;
+}
+
+.cjp-toast-logo img,
+.modal-brand-logo img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.cjp-toast-status-icon {
+    display: inline-flex;
+    width: 24px;
+    height: 24px;
+    align-items: center;
+    justify-content: center;
+    float: left;
+    margin: 0 8px 2px 0;
     border-radius: 50%;
-    background: var(--admin-ink);
+    background: var(--success);
     color: #fff;
-    font-size: 11px;
-    font-weight: 800;
+    font-size: 14px;
+    line-height: 1;
+    font-weight: 900;
 }
 
 .cjp-toast strong,
@@ -576,11 +608,11 @@ form[aria-busy="true"] {
     border-left-color: var(--danger);
 }
 
-.cjp-toast-warning .cjp-toast-icon {
+.cjp-toast-warning .cjp-toast-status-icon {
     background: var(--warning);
 }
 
-.cjp-toast-error .cjp-toast-icon {
+.cjp-toast-error .cjp-toast-status-icon {
     background: var(--danger);
 }
 
@@ -797,6 +829,7 @@ form[aria-busy="true"] {
     display: flex;
     align-items: center;
     justify-content: center;
+    padding: 0 76px 0 126px;
 }
 
 .modal-titlebar h2 {
@@ -804,6 +837,23 @@ form[aria-busy="true"] {
     font-size: 22px;
     line-height: 1;
     text-transform: uppercase;
+    text-align: center;
+}
+
+.modal-brand-logo {
+    position: absolute;
+    left: 16px;
+    top: 10px;
+    display: flex;
+    width: 90px;
+    height: 44px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgb(255 255 255 / 74%);
+    border-radius: 6px;
+    padding: 6px 8px;
+    background: #fff;
+    box-shadow: 0 6px 18px rgb(0 0 0 / 22%);
 }
 
 .modal-close {
@@ -837,6 +887,59 @@ form[aria-busy="true"] {
 
 .modal-body {
     padding: 26px;
+}
+
+.system-confirm-backdrop {
+    z-index: 90;
+}
+
+.system-confirm-modal {
+    width: min(470px, 100%);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.system-confirm-titlebar {
+    justify-content: flex-start;
+}
+
+.system-confirm-titlebar h2 {
+    font-size: 18px;
+}
+
+.system-confirm-body {
+    display: grid;
+    gap: 14px;
+    justify-items: center;
+    text-align: center;
+}
+
+.system-confirm-status {
+    display: grid;
+    width: 46px;
+    height: 46px;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--warning);
+    color: #fff;
+    font-size: 28px;
+    line-height: 1;
+    font-weight: 900;
+}
+
+.system-confirm-body p {
+    max-width: 360px;
+    margin: 0;
+    color: var(--admin-ink);
+    font-size: 16px;
+    line-height: 1.45;
+    font-weight: 700;
+}
+
+.system-confirm-actions {
+    width: 100%;
+    justify-content: center;
+    margin-top: 4px;
 }
 
 .mock-chart-line {
@@ -1915,6 +2018,37 @@ form[aria-busy="true"] {
         max-width: 72%;
         text-align: center;
         font-size: 18px;
+    }
+
+    .modal-titlebar {
+        min-height: 72px;
+        height: auto;
+        padding: 14px 60px 14px 104px;
+    }
+
+    .modal-brand-logo {
+        left: 12px;
+        top: 14px;
+        width: 78px;
+        height: 42px;
+        padding: 6px;
+    }
+
+    .toast-stack {
+        left: 12px;
+        bottom: 12px;
+        width: calc(100vw - 24px);
+    }
+
+    .cjp-toast {
+        grid-template-columns: 62px 1fr auto;
+        gap: 10px;
+    }
+
+    .cjp-toast-logo {
+        width: 60px;
+        height: 40px;
+        padding: 5px;
     }
 
     .alert-bar {

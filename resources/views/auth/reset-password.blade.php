@@ -12,16 +12,6 @@
             <div class="login-form-wrap">
                 <h1 id="reset-title">Enter Code</h1>
 
-                @if (session('status'))
-                    <div class="login-success reset-success" role="status">
-                        <span class="login-success-mark" aria-hidden="true">&check;</span>
-                        <div>
-                            <strong>Check your email</strong>
-                            <span>{{ session('status') }}</span>
-                        </div>
-                    </div>
-                @endif
-
                 <form class="login-form" aria-label="Reset password with code" method="POST" action="{{ route('password.update') }}">
                     @csrf
                     <div class="login-field">

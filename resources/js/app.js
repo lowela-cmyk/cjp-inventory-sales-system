@@ -116,6 +116,7 @@ document.addEventListener('click', (event) => {
         });
         items.appendChild(clone);
         reindexSaleItems(items);
+        updateSalesTotals(items);
     }
 
     const removeSaleItemButton = event.target.closest('[data-sales-item-remove]');
@@ -128,6 +129,13 @@ document.addEventListener('click', (event) => {
 
         removeSaleItemButton.closest('[data-sales-item]')?.remove();
         reindexSaleItems(items);
+        updateSalesTotals(items);
+    }
+});
+
+document.addEventListener('input', (event) => {
+    if (event.target.closest('[data-sales-item]')) {
+        updateSalesTotals(event.target.closest('[data-sales-items]'));
     }
 });
 
@@ -156,6 +164,40 @@ const reindexSaleItems = (items) => {
         }
     });
 };
+
+const updateSalesTotals = (items) => {
+    if (!items) {
+        return;
+    }
+
+    let total = 0;
+
+    items.querySelectorAll('[data-sales-item]').forEach((row) => {
+        const quantity = Number(row.querySelector('input[name*="[quantity_liters]"]')?.value || 0);
+        const unitPrice = Number(row.querySelector('input[name*="[unit_price]"]')?.value || 0);
+        const lineTotal = Number.isFinite(quantity * unitPrice) ? quantity * unitPrice : 0;
+        const output = row.querySelector('[data-sales-line-total]');
+
+        total += lineTotal;
+
+        if (output) {
+            output.textContent = lineTotal.toLocaleString(undefined, {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+            });
+        }
+    });
+
+    const totalOutput = items.parentElement?.querySelector('[data-sales-total-preview]');
+    if (totalOutput) {
+        totalOutput.textContent = `Total: ${total.toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        })}`;
+    }
+};
+
+document.querySelectorAll('[data-sales-items]').forEach(updateSalesTotals);
 
 const visibleTableFor = (trigger) => {
     const scope = trigger.closest('[data-tabs]') || trigger.closest('section') || document;

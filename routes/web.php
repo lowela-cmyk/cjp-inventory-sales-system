@@ -51,6 +51,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/inventory/stock-out', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'stock-out')->name('inventory.stock-out');
         Route::post('/inventory/fuel-types', [InventoryOfficerPurchaseController::class, 'storeFuelType'])->name('inventory.fuel-types.store');
         Route::post('/inventory/depots', [InventoryOfficerPurchaseController::class, 'storeDepot'])->name('inventory.depots.store');
+        Route::get('/inventory/depots', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'depots')->name('inventory.depots');
         Route::get('/ledger', [AdminMonitoringController::class, 'ledger'])->name('ledger');
         Route::get('/fuel-lifting', [AdminMonitoringController::class, 'fuelLifting'])->name('fuel-lifting');
         Route::patch('/fuel-lifting/hauls/{haul}/truck', [HaulTruckAssignmentController::class, 'update'])->name('fuel-lifting.hauls.truck');
@@ -100,6 +101,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/inventory/stock-out', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'stock-out')->name('inventory.stock-out');
         Route::post('/inventory/fuel-types', [InventoryOfficerPurchaseController::class, 'storeFuelType'])->name('inventory.fuel-types.store');
         Route::post('/inventory/depots', [InventoryOfficerPurchaseController::class, 'storeDepot'])->name('inventory.depots.store');
+        Route::get('/inventory/depots', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'depots')->name('inventory.depots');
         Route::get('/ledger', InventoryOfficerLedgerController::class)->name('ledger');
         Route::get('/ledger/transactions', InventoryOfficerLedgerController::class)->defaults('state', 'transactions')->name('ledger.transactions');
         Route::get('/alerts', [AdminMonitoringController::class, 'inventoryOfficerAlerts'])->name('alerts');

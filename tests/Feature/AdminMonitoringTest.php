@@ -30,7 +30,7 @@ class AdminMonitoringTest extends TestCase
             ->assertOk()
             ->assertSee('PUR-MONITOR')
             ->assertSee('LFT-MONITOR')
-            ->assertSee('Stock In');
+            ->assertSee('Lift ID');
 
         $this->actingAs($records['admin'])
             ->get(route('admin.fuel-lifting'))

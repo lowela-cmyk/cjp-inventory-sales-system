@@ -71,15 +71,14 @@ class CompleteWorkflowIntegrationTest extends TestCase
             'payment_method' => 'bank_transfer',
             'due_date' => '2026-09-30',
         ]);
-        $this->assertSame(40000.0, $this->garageBalance($records));
+        $this->assertSame(15000.0, $this->garageBalance($records));
         $this->assertDatabaseHas('receivables', ['sale_id' => $sale['saleId'], 'status' => 'pending']);
         $this->assertSame(0, DB::table('payments')->where('sale_id', $sale['saleId'])->count());
-
-        $this->actingAs($records['inventoryOfficer'])
-            ->post(route('inventory-officer.inventory.stock-out.store'), $this->stockOutPayload($records, $sale, [
-                'quantity_liters' => 10000,
-            ]))
-            ->assertRedirect(route('inventory-officer.inventory.stock-out'));
+        $this->assertSame(1, DB::table('stock_outs')->where('sale_id', $sale['saleId'])->where('source_type', 'garage')->count());
+        $this->assertDatabaseHas('sale_items', [
+            'id' => $sale['saleItemId'],
+            'fulfilled_quantity_liters' => '25000.00',
+        ]);
 
         $this->actingAs($records['inventoryOfficer'])
             ->from(route('inventory-officer.inventory.stock-out'))
@@ -89,20 +88,8 @@ class CompleteWorkflowIntegrationTest extends TestCase
             ->assertRedirect(route('inventory-officer.inventory.stock-out'))
             ->assertSessionHasErrors('stock_out');
 
-        $this->actingAs($records['inventoryOfficer'])
-            ->post(route('inventory-officer.inventory.stock-out.store'), $this->stockOutPayload($records, $sale, [
-                'quantity_liters' => 15000,
-                'stock_out_at' => '2026-08-31 15:00:00',
-            ]))
-            ->assertRedirect(route('inventory-officer.inventory.stock-out'));
-
         $this->assertSame(15000.0, $this->garageBalance($records));
-        $this->assertSame(2, DB::table('stock_outs')->where('sale_id', $sale['saleId'])->count());
-        $this->assertSame(2, DB::table('stock_outs')->where('sale_id', $sale['saleId'])->where('source_type', 'garage')->count());
-        $this->assertDatabaseHas('sale_items', [
-            'id' => $sale['saleItemId'],
-            'fulfilled_quantity_liters' => '25000.00',
-        ]);
+        $this->assertSame(1, DB::table('stock_outs')->where('sale_id', $sale['saleId'])->count());
 
         $this->actingAs($records['salesOfficer'])
             ->post(route('sales-officer.sales.payments.store', $sale['saleId']), $this->paymentPayload([

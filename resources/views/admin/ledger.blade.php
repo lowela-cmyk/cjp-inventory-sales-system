@@ -75,11 +75,6 @@
                 <p class="detail-id {{ $row['status_class'] }}">{{ $row['status'] }}</p>
             </div>
             <div class="modal-card lift-transaction-modal">
-                <div class="lift-summary-grid">
-                    @foreach ($row['details'] as $label => $value)
-                        <div><span>{{ $label }}</span><strong>{{ $value }}</strong></div>
-                    @endforeach
-                </div>
                 <div class="lift-blocks" aria-label="Lift transactions for {{ $row['purchase_code'] }}">
                     @forelse ($row['lifts'] as $lift)
                         <div class="lift-block {{ $lift['counts_as_lifted'] ? 'is-complete' : 'is-open' }}" tabindex="0">

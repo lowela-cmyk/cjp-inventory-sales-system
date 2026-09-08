@@ -199,19 +199,6 @@ class FunctionalTestingTest extends TestCase
             ->assertRedirect(route('sales-officer.sales'));
 
         $sale = DB::table('sales')->where('sale_code', 'SLS-FUNC-001')->first();
-        $saleItemId = (int) DB::table('sale_items')->where('sale_id', $sale->id)->value('id');
-
-        $this->actingAs($records['inventoryOfficer'])
-            ->post(route('inventory-officer.inventory.stock-out.store'), [
-                'idempotency_key' => (string) Str::uuid(),
-                'source_type' => 'garage',
-                'sale_item_id' => $saleItemId,
-                'storage_location_id' => $records['garageId'],
-                'quantity_liters' => 3000,
-                'stock_out_at' => '2026-09-04 10:00:00',
-                'remarks' => 'Functional stock-out',
-            ])
-            ->assertRedirect(route('inventory-officer.inventory.stock-out'));
 
         $this->assertDatabaseHas('stock_outs', [
             'sale_id' => $sale->id,

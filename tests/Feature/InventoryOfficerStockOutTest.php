@@ -592,13 +592,7 @@ class InventoryOfficerStockOutTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
-        $fuelTypeId = DB::table('fuel_types')->insertGetId([
-            'code' => 'DSL',
-            'name' => 'Diesel',
-            'status' => 'active',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        $fuelTypeId = DB::table('fuel_types')->where('code', 'DSL')->value('id');
         $garageId = DB::table('storage_locations')->insertGetId([
             'location_code' => 'GAR-STOCK-OUT',
             'name' => 'CJP Garage',

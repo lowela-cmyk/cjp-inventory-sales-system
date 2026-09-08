@@ -28,12 +28,13 @@ class MasterDataAndInventoryAccessTest extends TestCase
                     ->whereIn('tank_number', [1, 2])
                     ->count());
             });
+        $this->assertSame(['DSL', 'F1', 'PREM', 'UNL'], DB::table('fuel_types')->where('status', 'active')->orderBy('code')->pluck('code')->all());
     }
 
     public function test_admin_can_manage_inventory_and_create_purchase_records(): void
     {
         $admin = User::factory()->create(['role' => 'admin', 'status' => 'active']);
-        $fuelTypeId = DB::table('fuel_types')->where('code', 'ADO')->value('id');
+        $fuelTypeId = DB::table('fuel_types')->where('code', 'DSL')->value('id');
         $depotId = DB::table('depots')->where('depot_code', 'DEP-CJP-MAIN')->value('id');
 
         $this->actingAs($admin)
@@ -62,7 +63,7 @@ class MasterDataAndInventoryAccessTest extends TestCase
         ]);
     }
 
-    public function test_inventory_officer_can_add_fuel_type_and_its_two_garage_tanks_are_created(): void
+    public function test_inventory_officer_can_only_maintain_official_fuel_types(): void
     {
         $inventoryOfficer = User::factory()->create(['role' => 'inventory_officer', 'status' => 'active']);
 
@@ -70,20 +71,31 @@ class MasterDataAndInventoryAccessTest extends TestCase
             ->post(route('inventory-officer.inventory.fuel-types.store'), [
                 'code' => 'BIO',
                 'name' => 'Biodiesel',
-                'description' => 'Optional biodiesel stock.',
+                'description' => 'Not part of the CJP fuel list.',
+                'status' => 'active',
+            ])
+            ->assertSessionHasErrors('code');
+
+        $this->actingAs($inventoryOfficer)
+            ->post(route('inventory-officer.inventory.fuel-types.store'), [
+                'code' => 'DSL',
+                'name' => 'Diesel',
+                'description' => 'Official diesel product.',
                 'status' => 'active',
             ])
             ->assertRedirect(route('inventory-officer.inventory'));
 
-        $fuelTypeId = DB::table('fuel_types')->where('code', 'BIO')->value('id');
+        $fuelTypeId = DB::table('fuel_types')->where('code', 'DSL')->value('id');
 
         $this->assertNotNull($fuelTypeId);
         $this->assertSame(2, DB::table('storage_locations')
             ->where('type', 'garage')
             ->where('status', 'active')
             ->where('fuel_type_id', $fuelTypeId)
-            ->whereIn('tank_number', [1, 2])
-            ->count());
+                    ->whereIn('tank_number', [1, 2])
+                    ->count());
+        $this->assertSame(4, DB::table('fuel_types')->where('status', 'active')->count());
+        $this->assertSame(8, DB::table('storage_locations')->where('type', 'garage')->where('status', 'active')->count());
     }
 
     public function test_dispatch_ledger_uses_real_ledger_data_and_empty_state(): void

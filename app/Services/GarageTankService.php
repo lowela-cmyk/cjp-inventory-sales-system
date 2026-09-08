@@ -13,6 +13,19 @@ class GarageTankService
             ->where('status', 'active')
             ->orderBy('id')
             ->get(['id', 'name']);
+        $activeFuelTypeIds = $fuelTypes->pluck('id')->map(fn (mixed $id): int => (int) $id)->all();
+
+        DB::table('storage_locations')
+            ->where('type', 'garage')
+            ->where(function ($query) use ($activeFuelTypeIds): void {
+                $query->whereNull('fuel_type_id')
+                    ->orWhereNotIn('fuel_type_id', $activeFuelTypeIds ?: [0])
+                    ->orWhereNotIn('tank_number', [1, 2]);
+            })
+            ->update([
+                'status' => 'inactive',
+                'updated_at' => now(),
+            ]);
 
         foreach ($fuelTypes as $fuelType) {
             foreach ([1, 2] as $tankNumber) {
@@ -27,6 +40,7 @@ class GarageTankService
                         DB::table('storage_locations')
                             ->where('id', $existing->id)
                             ->update([
+                                'name' => $fuelType->name.' Garage Tank '.$tankNumber,
                                 'status' => 'active',
                                 'updated_at' => now(),
                             ]);

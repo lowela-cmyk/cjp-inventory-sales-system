@@ -151,13 +151,11 @@ class InventoryLedgerService
             ->map(fn (Collection $rows): Collection => $rows->values()->map(function (object $row, int $index): array {
                 $truck = trim($row->truck_code.($row->plate_number ? ' / '.$row->plate_number : ''));
                 $details = [
-                    'Lift/Transaction ID' => $row->haul_code,
+                    'Lift ID' => $row->haul_code,
+                    'Date Lifted' => $this->formatDateTime($row->hauled_at ?: $row->scheduled_at),
                     'Quantity' => $this->formatLiters($row->quantity_liters),
                     'Driver' => $row->driver_name,
                     'Truck' => $truck,
-                    'Truck Capacity' => $this->formatLiters($row->capacity_liters),
-                    'Assigned/Lift Date' => $this->formatDateTime($row->hauled_at ?: $row->scheduled_at),
-                    'DR Number' => $row->dr_number ?: 'N/A',
                     'Status' => $this->label($row->status),
                 ];
 

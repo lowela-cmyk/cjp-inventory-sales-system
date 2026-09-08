@@ -235,7 +235,7 @@
                     <form class="withdrawal-upload-form" method="POST" action="{{ route('driver.fuel-lifting.hauls.withdrawal-receipt.store', $row['record_id']) }}" enctype="multipart/form-data">
                         @csrf
                         <label class="file-button">
-                            <span>{{ ! empty($row['withdrawal_uploaded']) ? 'Replace Withdrawal' : 'Upload Withdrawal' }}</span>
+                            <span>Withdrawals</span>
                             <input name="withdrawal_receipt" type="file" accept="image/jpeg,image/png,image/webp" required>
                         </label>
                         <input name="withdrawal_notes" type="text" maxlength="1000" placeholder="Optional notes">

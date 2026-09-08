@@ -140,18 +140,6 @@ class DatabaseIntegrityTest extends TestCase
             'unit_price' => 6.25,
         ]);
 
-        $this->actingAs($records['inventoryOfficer'])
-            ->post(route('inventory-officer.inventory.stock-out.store'), [
-                'idempotency_key' => (string) Str::uuid(),
-                'source_type' => 'garage',
-                'sale_item_id' => $sale['saleItemId'],
-                'storage_location_id' => $records['garageId'],
-                'quantity_liters' => 12000,
-                'stock_out_at' => '2026-09-04 11:00:00',
-                'remarks' => 'Database integrity stock-out',
-            ])
-            ->assertRedirect(route('inventory-officer.inventory.stock-out'));
-
         $stockOut = DB::table('stock_outs')->where('sale_id', $sale['saleId'])->first();
 
         $this->assertNotNull($stockOut->inventory_movement_id);

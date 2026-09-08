@@ -1,12 +1,13 @@
 @php
-    $activeTab = in_array($activeTab ?? 'purchases', ['purchases', 'stock-in', 'stock-out'], true) ? $activeTab : 'purchases';
+    $activeTab = in_array($activeTab ?? 'purchases', ['purchases', 'stock-in', 'stock-out', 'depots'], true) ? $activeTab : 'purchases';
     $inventoryRoutePrefix = request()->routeIs('admin.inventory*') ? 'admin.inventory' : 'inventory-officer.inventory';
     $inventoryLayout = request()->routeIs('admin.inventory*') ? 'layouts.admin' : 'layouts.inventory-officer';
+    $headings = ['purchases' => 'Purchases', 'stock-in' => 'Stock-In', 'stock-out' => 'Stock-Out', 'depots' => 'Depots'];
 @endphp
 
 @component($inventoryLayout, ['title' => 'Inventory Management', 'active' => 'inventory'])
     <div data-tabs>
-        <h2 class="section-title" data-tab-heading>{{ ['purchases' => 'Purchases', 'stock-in' => 'Stock-In', 'stock-out' => 'Stock-Out'][$activeTab] }}</h2>
+        <h2 class="section-title" data-tab-heading>{{ $headings[$activeTab] }}</h2>
 
         @if (session('status'))
             <div class="admin-flash admin-flash-success" role="status">{{ session('status') }}</div>
@@ -20,6 +21,7 @@
             <button class="tab-button {{ $activeTab === 'purchases' ? 'is-active' : '' }}" type="button" data-tab-target="purchases" data-heading="Purchases">Purchases</button>
             <button class="tab-button {{ $activeTab === 'stock-in' ? 'is-active' : '' }}" type="button" data-tab-target="stock-in" data-heading="Stock-In">Stock-In</button>
             <button class="tab-button {{ $activeTab === 'stock-out' ? 'is-active' : '' }}" type="button" data-tab-target="stock-out" data-heading="Stock-Out">Stock Out</button>
+            <button class="tab-button {{ $activeTab === 'depots' ? 'is-active' : '' }}" type="button" data-tab-target="depots" data-heading="Depots">Depots</button>
         </div>
         <div class="actions-right"><button class="btn btn-secondary" type="button" data-export-table>Export</button></div>
 
@@ -119,6 +121,35 @@
                             <tr class="{{ $row[12] }}"><td>{{ $row[0] }}</td><td>{{ $row[1] }}</td><td>{{ $row[2] }}</td><td>{{ $row[3] }}</td><td>{{ $row[4] }}</td><td>{{ $row[5] }}</td><td>{{ $row[6] }}</td><td>{{ $row[7] }}</td><td>{{ $row[8] }}</td><td>{{ $row[9] }}</td><td>{{ $row[10] }}</td><td>{{ $row[11] }}</td></tr>
                         @empty
                             <tr><td class="empty-cell" colspan="12">No records found.</td></tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section data-tab-panel="depots" @hidden($activeTab !== 'depots')>
+            <form class="toolbar toolbar-inventory" method="GET" action="{{ route($inventoryRoutePrefix.'.depots') }}">
+                <input type="search" name="search" placeholder="Search..." aria-label="Search depots" value="{{ $search }}">
+                <button class="btn btn-primary" type="submit">Status</button>
+                <button class="btn btn-primary" type="submit">Depot</button>
+                <button class="btn btn-secondary" type="button" data-modal-open="io-depot-add">+ Depot</button>
+            </form>
+            <div class="table-wrap">
+                <table class="admin-table">
+                    <thead><tr><th>Depot Code</th><th>Name</th><th>Address</th><th>Contact Person</th><th>Phone</th><th>Status</th></tr></thead>
+                    <tbody>
+                        @forelse ($depotRows as $row)
+                            <tr>
+                                @foreach ($row as $cell)
+                                    @if ($loop->last)
+                                        <td><x-admin.status-badge :status="$cell" /></td>
+                                    @else
+                                        <td>{{ $cell }}</td>
+                                    @endif
+                                @endforeach
+                            </tr>
+                        @empty
+                            <tr><td class="empty-cell" colspan="6">No depot records found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>

@@ -547,21 +547,9 @@ class RoleBasedAccessControlTest extends TestCase
             'updated_at' => now(),
         ]);
 
-        $premiumId = DB::table('fuel_types')->insertGetId([
-            'code' => 'PREM',
-            'name' => 'Premium',
-            'status' => 'active',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        $premiumId = DB::table('fuel_types')->where('code', 'PREM')->value('id');
 
-        $dieselId = DB::table('fuel_types')->insertGetId([
-            'code' => 'DSL',
-            'name' => 'Diesel',
-            'status' => 'active',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        $dieselId = DB::table('fuel_types')->where('code', 'DSL')->value('id');
 
         $customerId = DB::table('customers')->insertGetId([
             'customer_code' => 'CUS-TEST',

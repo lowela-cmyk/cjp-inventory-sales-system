@@ -608,13 +608,7 @@ class InventoryOfficerStockInTest extends TestCase
             'updated_at' => now(),
         ]);
 
-        $fuelTypeId = DB::table('fuel_types')->insertGetId([
-            'code' => 'DSL',
-            'name' => 'Diesel',
-            'status' => 'active',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        $fuelTypeId = DB::table('fuel_types')->where('code', 'DSL')->value('id');
 
         return compact('inventoryOfficer', 'depotId', 'fuelTypeId');
     }

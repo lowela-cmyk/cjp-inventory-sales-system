@@ -17,10 +17,10 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         foreach ([
-            ['code' => 'ADO', 'name' => 'Automotive Diesel Oil'],
-            ['code' => 'RGP', 'name' => 'Regular Gasoline'],
-            ['code' => 'P95', 'name' => 'Premium Gasoline 95'],
-            ['code' => 'KRS', 'name' => 'Kerosene Fuel'],
+            ['code' => 'F1', 'name' => 'F1'],
+            ['code' => 'UNL', 'name' => 'Unleaded'],
+            ['code' => 'PREM', 'name' => 'Premium'],
+            ['code' => 'DSL', 'name' => 'Diesel'],
         ] as $fuelType) {
             DB::table('fuel_types')->updateOrInsert(
                 ['code' => $fuelType['code']],
@@ -33,6 +33,13 @@ class DatabaseSeeder extends Seeder
                 ]
             );
         }
+
+        DB::table('fuel_types')
+            ->whereNotIn('code', ['F1', 'UNL', 'PREM', 'DSL'])
+            ->update([
+                'status' => 'inactive',
+                'updated_at' => now(),
+            ]);
 
         DB::table('depots')->updateOrInsert(
             ['depot_code' => 'DEP-CJP-MAIN'],

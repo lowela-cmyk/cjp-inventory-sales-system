@@ -12,7 +12,7 @@ class SalesOfficerSalesManagementTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_sales_officer_can_create_sale_for_active_customer_without_reducing_inventory(): void
+    public function test_sales_officer_can_create_sale_for_active_customer_and_auto_stock_out_available_inventory(): void
     {
         $records = $this->baseRecords();
         $beforeInventory = DB::table('inventory_movements')->count();
@@ -56,8 +56,12 @@ class SalesOfficerSalesManagementTest extends TestCase
             'sale_id' => $sale->id,
             'status' => 'pending',
         ]);
-        $this->assertSame($beforeInventory, DB::table('inventory_movements')->count());
-        $this->assertSame(0, DB::table('stock_outs')->count());
+        $this->assertSame($beforeInventory + 1, DB::table('inventory_movements')->count());
+        $this->assertSame(1, DB::table('stock_outs')->where('sale_id', $sale->id)->where('source_type', 'garage')->count());
+        $this->assertDatabaseHas('sale_items', [
+            'sale_id' => $sale->id,
+            'fulfilled_quantity_liters' => '1500.25',
+        ]);
         $this->assertSame(0, DB::table('payments')->count());
     }
 

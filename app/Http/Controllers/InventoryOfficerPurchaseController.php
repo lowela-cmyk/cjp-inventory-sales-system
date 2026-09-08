@@ -31,7 +31,7 @@ class InventoryOfficerPurchaseController extends Controller
         ]);
 
         $search = trim((string) ($data['search'] ?? ''));
-        $activeTab = in_array($state, ['purchases', 'stock-in', 'stock-out'], true) ? $state : 'purchases';
+        $activeTab = in_array($state, ['purchases', 'stock-in', 'stock-out', 'depots'], true) ? $state : 'purchases';
         $purchases = $this->purchaseRows($search === '' ? null : $search);
         $stockIn = $this->stockInRows($search === '' ? null : $search);
         $stockOut = $this->stockOutRows($search === '' ? null : $search);
@@ -47,9 +47,9 @@ class InventoryOfficerPurchaseController extends Controller
             'stockOut' => $stockOut,
             'depots' => DB::table('depots')
                 ->where('status', 'active')
-                ->when($search !== '', fn (Builder $query): Builder => $query->whereIn('id', $purchaseDepotIds ?: [0]))
                 ->orderBy('name')
                 ->get(['id', 'name']),
+            'depotRows' => $this->depotRows($search === '' ? null : $search),
             'fuelTypes' => DB::table('fuel_types')
                 ->where('status', 'active')
                 ->when($search !== '', fn (Builder $query): Builder => $query->whereIn('id', $purchaseFuelTypeIds ?: [0]))
@@ -203,26 +203,35 @@ class InventoryOfficerPurchaseController extends Controller
     public function storeFuelType(Request $request, GarageTankService $garageTanks): RedirectResponse
     {
         $data = $request->validate([
-            'code' => ['required', 'string', 'max:30', Rule::unique('fuel_types', 'code')],
-            'name' => ['required', 'string', 'max:100', Rule::unique('fuel_types', 'name')],
+            'code' => ['required', 'string', 'max:30', Rule::in(['F1', 'UNL', 'PREM', 'DSL'])],
+            'name' => ['required', 'string', 'max:100', Rule::in(['F1', 'Unleaded', 'Premium', 'Diesel'])],
             'description' => ['nullable', 'string', 'max:1000'],
             'status' => ['required', Rule::in(['active', 'inactive'])],
         ]);
+        $namesByCode = ['F1' => 'F1', 'UNL' => 'Unleaded', 'PREM' => 'Premium', 'DSL' => 'Diesel'];
 
-        DB::table('fuel_types')->insert([
-            'code' => Str::upper($data['code']),
-            'name' => $data['name'],
-            'description' => $data['description'] ?? null,
-            'status' => $data['status'],
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        if ($namesByCode[Str::upper($data['code'])] !== $data['name']) {
+            return back()
+                ->withErrors(['fuel_type' => 'Fuel type code and name must match the official CJP fuel list.'])
+                ->withInput();
+        }
+
+        DB::table('fuel_types')->updateOrInsert(
+            ['code' => Str::upper($data['code'])],
+            [
+                'name' => $data['name'],
+                'description' => $data['description'] ?? null,
+                'status' => $data['status'],
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]
+        );
 
         $garageTanks->ensureForActiveFuelTypes();
 
         return redirect()
             ->route($this->inventoryRouteName($request))
-            ->with('status', 'Fuel type created successfully.');
+            ->with('status', 'Fuel type updated successfully.');
     }
 
     public function storeDepot(Request $request): RedirectResponse
@@ -544,6 +553,29 @@ class InventoryOfficerPurchaseController extends Controller
                     ],
                 ];
             });
+    }
+
+    private function depotRows(?string $search): Collection
+    {
+        return DB::table('depots')
+            ->when($search, fn (Builder $query): Builder => $query->where(function (Builder $query) use ($search): void {
+                $query->where('depot_code', 'like', '%'.$search.'%')
+                    ->orWhere('name', 'like', '%'.$search.'%')
+                    ->orWhere('address', 'like', '%'.$search.'%')
+                    ->orWhere('contact_person', 'like', '%'.$search.'%')
+                    ->orWhere('phone', 'like', '%'.$search.'%')
+                    ->orWhere('status', 'like', '%'.$search.'%');
+            }))
+            ->orderBy('name')
+            ->get(['depot_code', 'name', 'address', 'contact_person', 'phone', 'status'])
+            ->map(fn (object $row): array => [
+                $row->depot_code,
+                $row->name,
+                $row->address ?: 'N/A',
+                $row->contact_person ?: 'N/A',
+                $row->phone ?: 'N/A',
+                $row->status,
+            ]);
     }
 
     private function stockInRows(?string $search)

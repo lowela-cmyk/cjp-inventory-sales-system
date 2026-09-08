@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\DashboardSummaryService;
+use App\Services\StockOutReleaseService;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
@@ -194,7 +195,7 @@ class SalesOfficerCustomerController extends Controller
             ->with('status', 'Payment record '.$result['payment_code'].' recorded successfully.');
     }
 
-    public function storeSale(Request $request): RedirectResponse
+    public function storeSale(Request $request, StockOutReleaseService $stockOutRelease): RedirectResponse
     {
         $data = $this->validatedSaleData($request);
         $token = (string) $data['idempotency_key'];
@@ -207,9 +208,11 @@ class SalesOfficerCustomerController extends Controller
         }
 
         try {
-            $saleCode = DB::transaction(function () use ($request, $data): string {
+            $saleCode = DB::transaction(function () use ($request, $data, $stockOutRelease): string {
                 $saleCode = $this->saleCode($data['sale_code'] ?? null);
                 $items = $this->normalizedSaleItems($data);
+                $saleTotal = collect($items)->sum(fn (array $item): float => (float) $this->lineTotal($item['quantity_liters'], $item['unit_price']));
+                $status = $this->statusAllowedByPayments($data['status'] ?? 'confirmed', $saleTotal, 0);
 
                 $saleId = DB::table('sales')->insertGetId([
                     'sale_code' => $saleCode,
@@ -218,7 +221,7 @@ class SalesOfficerCustomerController extends Controller
                     'sale_date' => $data['sale_date'],
                     'payment_method' => $data['payment_method'],
                     'payment_terms' => $data['payment_terms'] ?? $this->defaultPaymentTerms($data['payment_method']),
-                    'status' => $data['status'] ?? 'confirmed',
+                    'status' => $status,
                     'created_by' => $request->user()->id,
                     'created_at' => now(),
                     'updated_at' => now(),
@@ -226,7 +229,7 @@ class SalesOfficerCustomerController extends Controller
 
                 $now = now();
                 foreach ($items as $item) {
-                    DB::table('sale_items')->insert([
+                    $saleItemId = DB::table('sale_items')->insertGetId([
                         'sale_id' => $saleId,
                         'fuel_type_id' => $item['fuel_type_id'],
                         'quantity_liters' => $item['quantity_liters'],
@@ -236,18 +239,39 @@ class SalesOfficerCustomerController extends Controller
                         'created_at' => $now,
                         'updated_at' => $now,
                     ]);
+
+                    $stockOutError = null;
+
+                    if (in_array($status, ['confirmed', 'unpaid', 'partially_paid', 'paid'], true)) {
+                        $stockOutError = $stockOutRelease->releaseSaleItemFromGarage(
+                            $saleItemId,
+                            round((float) $item['quantity_liters'], 2),
+                            $data['sale_date'].' 12:00:00',
+                            (int) $request->user()->id,
+                            null,
+                            'Automatic stock-out from sale '.$saleCode
+                        );
+                    }
+
+                    if ($stockOutError) {
+                        throw new \RuntimeException($stockOutError);
+                    }
                 }
 
                 DB::table('receivables')->insert([
                     'sale_id' => $saleId,
                     'due_date' => $data['due_date'] ?? null,
-                    'status' => 'pending',
+                    'status' => $status === 'cancelled' ? 'unpaid' : 'pending',
                     'created_at' => $now,
                     'updated_at' => $now,
                 ]);
 
                 return $saleCode;
             });
+        } catch (\RuntimeException $exception) {
+            return back()
+                ->withInput()
+                ->withErrors(['sale' => $exception->getMessage()]);
         } catch (QueryException) {
             return back()
                 ->withInput()
@@ -308,12 +332,23 @@ class SalesOfficerCustomerController extends Controller
                 }
             }
 
+            $saleTotal = $this->saleTotalForUpdate($sale);
+            $paidTotal = $this->paidTotalForSale($sale);
+            $status = $this->statusAllowedByPayments($data['status'] ?? 'confirmed', $saleTotal, $paidTotal);
+
+            DB::table('sales')
+                ->where('id', $sale)
+                ->update([
+                    'status' => $status,
+                    'updated_at' => now(),
+                ]);
+
             DB::table('receivables')
                 ->updateOrInsert(
                     ['sale_id' => $sale],
                     [
                         'due_date' => $data['due_date'] ?? null,
-                        'status' => ($data['status'] ?? 'confirmed') === 'cancelled' ? 'unpaid' : 'pending',
+                        'status' => $status === 'cancelled' ? 'unpaid' : $this->receivableStatus($saleTotal, $paidTotal),
                         'updated_at' => now(),
                         'created_at' => now(),
                     ]
@@ -818,8 +853,8 @@ class SalesOfficerCustomerController extends Controller
             ->get(['fuel_type_id', 'quantity_liters', 'unit_price'])
             ->map(fn (object $item): array => [
                 'fuel_type_id' => (int) $item->fuel_type_id,
-                'quantity_liters' => (string) $item->quantity_liters,
-                'unit_price' => (string) $item->unit_price,
+                'quantity_liters' => number_format((float) $item->quantity_liters, 2, '.', ''),
+                'unit_price' => number_format((float) $item->unit_price, 2, '.', ''),
             ])
             ->all();
 
@@ -1058,6 +1093,32 @@ class SalesOfficerCustomerController extends Controller
     private function defaultPaymentTerms(string $paymentMethod): string
     {
         return $paymentMethod === 'advance_payment' ? 'advance' : 'cod';
+    }
+
+    private function statusAllowedByPayments(string $requested, float $saleTotal, float $paidTotal): string
+    {
+        if (in_array($requested, ['draft', 'cancelled'], true)) {
+            return $requested;
+        }
+
+        if ($saleTotal > 0 && $paidTotal >= $saleTotal) {
+            return 'paid';
+        }
+
+        if ($paidTotal > 0) {
+            return 'partially_paid';
+        }
+
+        return $requested === 'unpaid' ? 'unpaid' : 'confirmed';
+    }
+
+    private function receivableStatus(float $saleTotal, float $paidTotal): string
+    {
+        if ($saleTotal > 0 && $paidTotal >= $saleTotal) {
+            return 'clear';
+        }
+
+        return $paidTotal > 0 ? 'partial' : 'pending';
     }
 
     /**

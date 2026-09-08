@@ -100,7 +100,7 @@ class InventoryLedgerTest extends TestCase
             ->assertSee('LFT-MODAL-1')
             ->assertSee('LFT-MODAL-2')
             ->assertSee('LFT-MODAL-3')
-            ->assertSee('Lift/Transaction ID')
+            ->assertSee('Lift ID')
             ->assertSee('Driver One')
             ->assertSee('TRK-LEDGER');
     }
@@ -210,13 +210,7 @@ class InventoryLedgerTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
-        $fuelTypeId = DB::table('fuel_types')->insertGetId([
-            'code' => 'DSL',
-            'name' => 'Diesel',
-            'status' => 'active',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        $fuelTypeId = DB::table('fuel_types')->where('code', 'DSL')->value('id');
         $truckId = DB::table('trucks')->insertGetId([
             'truck_code' => 'TRK-LEDGER',
             'plate_number' => 'CJP-100',

@@ -14,7 +14,7 @@ class DashboardSummaryService
     public const LIFTING_PROGRESS_STATUSES = ['unlifted', 'partial', 'lifted'];
     public const INVENTORY_VARIANCE_STATUSES = ['matched', 'variance'];
     private const STOCK_LEVEL_COLORS = ['#f7043a', '#3b9a35', '#e28a22', '#0d1424', '#6b7280'];
-    private const BASELINE_FUEL_CODES = ['ADO', 'RGP', 'P95', 'KRS'];
+    private const BASELINE_FUEL_CODES = ['F1', 'UNL', 'PREM', 'DSL'];
 
     /**
      * @var array<string, mixed>

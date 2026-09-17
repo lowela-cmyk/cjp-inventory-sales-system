@@ -201,9 +201,9 @@ class RoleAccessTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
-     * @param array{saleId: int, saleItemId: int} $sale
-     * @param array{purchaseId: int, purchaseItemId: int} $purchase
+     * @param  array<string, mixed>  $records
+     * @param  array{saleId: int, saleItemId: int}  $sale
+     * @param  array{purchaseId: int, purchaseItemId: int}  $purchase
      * @return array<int, array{method: string, url: string, payload: array<string, mixed>, allowed_roles: array<int, string>}>
      */
     private function protectedWriteActions(array $records, array $sale, array $purchase, int $stockOutId, int $allocationId, int $haulId): array
@@ -379,7 +379,7 @@ class RoleAccessTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      * @return array{purchaseId: int, purchaseItemId: int}
      */
     private function purchase(array $records, float $quantity): array
@@ -410,9 +410,9 @@ class RoleAccessTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
-     * @param array{purchaseId: int, purchaseItemId: int} $purchase
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $records
+     * @param  array{purchaseId: int, purchaseItemId: int}  $purchase
+     * @param  array<string, mixed>  $overrides
      */
     private function haul(array $records, array $purchase, float $quantity, array $overrides = []): int
     {
@@ -433,8 +433,8 @@ class RoleAccessTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
-     * @param array{purchaseId: int, purchaseItemId: int} $purchase
+     * @param  array<string, mixed>  $records
+     * @param  array{purchaseId: int, purchaseItemId: int}  $purchase
      */
     private function garageAllocation(array $records, array $purchase, float $quantity): int
     {
@@ -458,7 +458,7 @@ class RoleAccessTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      * @return array{saleId: int, saleItemId: int}
      */
     private function sale(array $records, float $quantity, float $unitPrice, ?string $code = null): array
@@ -496,8 +496,8 @@ class RoleAccessTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
-     * @param array{saleId: int, saleItemId: int} $sale
+     * @param  array<string, mixed>  $records
+     * @param  array{saleId: int, saleItemId: int}  $sale
      */
     private function stockOut(array $records, array $sale, float $quantity): int
     {
@@ -518,7 +518,7 @@ class RoleAccessTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      * @return array<string, mixed>
      */
     private function purchasePayload(array $records): array
@@ -535,7 +535,7 @@ class RoleAccessTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      * @return array<string, mixed>
      */
     private function salePayload(array $records): array

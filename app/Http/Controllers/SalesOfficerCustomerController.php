@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Rules\ApprovedFuelType;
 use App\Services\DashboardSummaryService;
-use App\Services\StockOutReleaseService;
+use App\Services\IdempotencyService;
+use App\Services\SaleConfirmationService;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
@@ -16,10 +18,19 @@ use Illuminate\View\View;
 
 class SalesOfficerCustomerController extends Controller
 {
+    public function __construct(
+        private readonly SaleConfirmationService $saleConfirmationService,
+        private readonly IdempotencyService $idempotencyService
+    ) {}
+
     private const PAYMENT_STATUSES = ['clear', 'pending', 'partial', 'unpaid'];
+
     private const ACCOUNT_STATUSES = ['active', 'inactive'];
+
     private const SALE_STATUSES = ['draft', 'confirmed', 'partially_paid', 'paid', 'unpaid', 'cancelled'];
+
     private const PAYMENT_METHODS = ['cash_on_delivery', 'cheque', 'advance_payment', 'bank_transfer'];
+
     private const PAYMENT_TERMS = ['cod', 'installment', 'advance'];
 
     public function index(Request $request, DashboardSummaryService $dashboardSummary, string $state = 'receivables'): View
@@ -42,7 +53,7 @@ class SalesOfficerCustomerController extends Controller
             'paymentStatuses' => self::PAYMENT_STATUSES,
             'accountStatuses' => self::ACCOUNT_STATUSES,
             'saleStatuses' => self::SALE_STATUSES,
-            'editableSaleStatuses' => array_values(array_diff(self::SALE_STATUSES, ['paid'])),
+            'editableSaleStatuses' => array_values(array_diff(self::SALE_STATUSES, ['paid', 'cancelled'])),
             'paymentMethods' => self::PAYMENT_METHODS,
             'paymentTerms' => self::PAYMENT_TERMS,
             'saleIdempotencyKey' => (string) Str::uuid(),
@@ -61,141 +72,138 @@ class SalesOfficerCustomerController extends Controller
                 ->with('status', 'Payment record was already submitted.');
         }
 
-        $result = DB::transaction(function () use ($request, $sale, $data): array {
-            $saleRow = DB::table('sales')
-                ->join('customers', 'customers.id', '=', 'sales.customer_id')
-                ->leftJoin('receivables', 'receivables.sale_id', '=', 'sales.id')
-                ->where('sales.id', $sale)
-                ->whereNull('sales.deleted_at')
-                ->whereNotIn('sales.status', ['draft', 'cancelled'])
-                ->lockForUpdate()
-                ->first([
-                    'sales.id',
-                    'sales.sale_code',
-                    'sales.customer_id',
-                    'sales.status',
-                    'receivables.due_date',
-                    'customers.status as customer_status',
-                ]);
+        try {
+            $idempotency = $this->idempotencyService->run(
+                $token,
+                'payments.store',
+                (int) $request->user()->id,
+                function () use ($request, $sale, $data): array {
+                    $saleRow = DB::table('sales')
+                        ->join('customers', 'customers.id', '=', 'sales.customer_id')
+                        ->leftJoin('receivables', 'receivables.sale_id', '=', 'sales.id')
+                        ->where('sales.id', $sale)
+                        ->whereNull('sales.deleted_at')
+                        ->whereNotIn('sales.status', ['draft', 'cancelled'])
+                        ->lockForUpdate()
+                        ->first([
+                            'sales.id',
+                            'sales.sale_code',
+                            'sales.customer_id',
+                            'sales.status',
+                            'receivables.due_date',
+                            'customers.status as customer_status',
+                        ]);
 
-            if (! $saleRow || $saleRow->customer_status !== 'active') {
-                return ['error' => 'The selected sale is not eligible for payment.'];
-            }
+                    if (! $saleRow || $saleRow->customer_status !== 'active') {
+                        throw new \RuntimeException('The selected sale is not eligible for payment.');
+                    }
 
-            DB::table('payments')
-                ->where('sale_id', $saleRow->id)
-                ->lockForUpdate()
-                ->get(['id']);
+                    DB::table('payments')
+                        ->where('sale_id', $saleRow->id)
+                        ->lockForUpdate()
+                        ->get(['id']);
 
-            $saleTotal = $this->saleTotalForUpdate((int) $saleRow->id);
-            $previousPaid = $this->paidTotalForSale((int) $saleRow->id);
-            $amount = round((float) $data['amount'], 2);
-            $remaining = round($saleTotal - $previousPaid, 2);
+                    $saleTotal = $this->saleTotalForUpdate((int) $saleRow->id);
+                    $previousPaid = $this->paidTotalForSale((int) $saleRow->id);
+                    $amount = round((float) $data['amount'], 2);
+                    $remaining = round($saleTotal - $previousPaid, 2);
 
-            if ($saleTotal <= 0) {
-                return ['error' => 'The selected sale has no billable items.'];
-            }
+                    if ($saleTotal <= 0) {
+                        throw new \RuntimeException('The selected sale has no billable items.');
+                    }
 
-            if ($remaining <= 0) {
-                return ['error' => 'The selected sale is already fully paid.'];
-            }
+                    if ($remaining <= 0) {
+                        throw new \RuntimeException('The selected sale is already fully paid.');
+                    }
 
-            if ($amount > $remaining) {
-                return ['error' => 'Payment amount cannot exceed the remaining balance.'];
-            }
+                    if ($amount > $remaining) {
+                        throw new \RuntimeException('Payment amount cannot exceed the remaining balance.');
+                    }
 
-            $paymentSchedule = null;
+                    $paymentSchedule = null;
 
-            if (! empty($data['payment_schedule_id'])) {
-                $paymentSchedule = $this->paymentScheduleForUpdate((int) $data['payment_schedule_id'], (int) $saleRow->id);
+                    if (! empty($data['payment_schedule_id'])) {
+                        $paymentSchedule = $this->paymentScheduleForUpdate((int) $data['payment_schedule_id'], (int) $saleRow->id);
 
-                if (! $paymentSchedule) {
-                    return ['error' => 'The selected installment schedule does not belong to this sale.'];
+                        if (! $paymentSchedule) {
+                            throw new \RuntimeException('The selected installment schedule does not belong to this sale.');
+                        }
+
+                        $schedulePaid = $this->paidTotalForSchedule((int) $paymentSchedule->id);
+                        $scheduleRemaining = round((float) $paymentSchedule->amount_due - $schedulePaid, 2);
+
+                        if ($scheduleRemaining <= 0) {
+                            throw new \RuntimeException('The selected installment is already fully paid.');
+                        }
+
+                        if ($amount > $scheduleRemaining) {
+                            throw new \RuntimeException('Payment amount cannot exceed the selected installment balance.');
+                        }
+                    }
+
+                    $referenceNumber = isset($data['reference_number']) && trim((string) $data['reference_number']) !== ''
+                        ? trim((string) $data['reference_number'])
+                        : null;
+
+                    if ($this->duplicatePaymentExists(
+                        (int) $saleRow->id,
+                        $paymentSchedule?->id ? (int) $paymentSchedule->id : null,
+                        (string) $data['payment_date'],
+                        $amount,
+                        (string) $data['method'],
+                        $referenceNumber
+                    )) {
+                        throw new \RuntimeException('This payment has already been recorded.');
+                    }
+
+                    return $this->idempotencyService->retryOnCollision('payment_code', function () use ($saleRow, $paymentSchedule, $data, $amount, $referenceNumber, $request): array {
+                        $paymentCode = $this->nextCode('payments', 'payment_code', 'PAY');
+
+                        $paymentId = DB::table('payments')->insertGetId([
+                            'payment_code' => $paymentCode,
+                            'sale_id' => $saleRow->id,
+                            'payment_schedule_id' => $paymentSchedule?->id,
+                            'payment_date' => $data['payment_date'],
+                            'amount' => $amount,
+                            'method' => $data['method'],
+                            'reference_number' => $referenceNumber,
+                            'remarks' => $data['remarks'] ?? null,
+                            'received_by' => $request->user()->id,
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ]);
+
+                        $this->saleConfirmationService->reconcile((int) $saleRow->id);
+
+                        $this->updatePaymentScheduleStatuses((int) $saleRow->id);
+
+                        return [
+                            'reference_id' => $paymentId,
+                            'response_reference' => $paymentCode,
+                        ];
+                    });
                 }
-
-                $schedulePaid = $this->paidTotalForSchedule((int) $paymentSchedule->id);
-                $scheduleRemaining = round((float) $paymentSchedule->amount_due - $schedulePaid, 2);
-
-                if ($scheduleRemaining <= 0) {
-                    return ['error' => 'The selected installment is already fully paid.'];
-                }
-
-                if ($amount > $scheduleRemaining) {
-                    return ['error' => 'Payment amount cannot exceed the selected installment balance.'];
-                }
-            }
-
-            $referenceNumber = isset($data['reference_number']) && trim((string) $data['reference_number']) !== ''
-                ? trim((string) $data['reference_number'])
-                : null;
-
-            if ($this->duplicatePaymentExists(
-                (int) $saleRow->id,
-                $paymentSchedule?->id ? (int) $paymentSchedule->id : null,
-                (string) $data['payment_date'],
-                $amount,
-                (string) $data['method'],
-                $referenceNumber
-            )) {
-                return ['error' => 'This payment has already been recorded.'];
-            }
-
-            $paymentCode = $this->nextCode('payments', 'payment_code', 'PAY');
-
-            DB::table('payments')->insert([
-                'payment_code' => $paymentCode,
-                'sale_id' => $saleRow->id,
-                'payment_schedule_id' => $paymentSchedule?->id,
-                'payment_date' => $data['payment_date'],
-                'amount' => $amount,
-                'method' => $data['method'],
-                'reference_number' => $referenceNumber,
-                'remarks' => $data['remarks'] ?? null,
-                'received_by' => $request->user()->id,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-
-            $totalPaid = round($previousPaid + $amount, 2);
-            $newStatus = $this->salePaymentStatus($saleTotal, $totalPaid);
-            $newReceivableStatus = $this->receivableStatusForSale($saleTotal, $totalPaid, $saleRow->due_date);
-
-            DB::table('sales')
-                ->where('id', $saleRow->id)
-                ->update([
-                    'status' => $newStatus,
-                    'updated_at' => now(),
-                ]);
-
-            DB::table('receivables')
-                ->updateOrInsert(
-                    ['sale_id' => $saleRow->id],
-                    [
-                        'status' => $newReceivableStatus,
-                        'updated_at' => now(),
-                        'created_at' => now(),
-                    ]
-                );
-
-            $this->updatePaymentScheduleStatuses((int) $saleRow->id);
-
-            return ['payment_code' => $paymentCode];
-        });
-
-        if (isset($result['error'])) {
+            );
+        } catch (\RuntimeException $e) {
             return back()
                 ->withInput()
-                ->withErrors(['payment' => $result['error']]);
+                ->withErrors(['payment' => $e->getMessage()]);
         }
 
-        $request->session()->put($sessionKey, $result['payment_code']);
+        if ($idempotency['duplicate']) {
+            return redirect()
+                ->route($this->salesRedirectRoute($request))
+                ->with('status', 'Payment record was already submitted.');
+        }
+
+        $request->session()->put($sessionKey, $idempotency['response_reference']);
 
         return redirect()
             ->route($this->salesRedirectRoute($request))
-            ->with('status', 'Payment record '.$result['payment_code'].' recorded successfully.');
+            ->with('status', 'Payment record '.$idempotency['response_reference'].' recorded successfully.');
     }
 
-    public function storeSale(Request $request, StockOutReleaseService $stockOutRelease): RedirectResponse
+    public function storeSale(Request $request): RedirectResponse
     {
         $data = $this->validatedSaleData($request);
         $token = (string) $data['idempotency_key'];
@@ -207,67 +215,72 @@ class SalesOfficerCustomerController extends Controller
                 ->with('status', 'Sale record was already submitted.');
         }
 
+        $requestedStatus = $data['status'] ?? 'confirmed';
+        $items = $this->normalizedSaleItems($data);
+        foreach ($items as $item) {
+            $lineTotal = (float) $this->lineTotal($item['quantity_liters'], $item['unit_price']);
+            if ($lineTotal > 999999999999.99) {
+                return back()
+                    ->withErrors(['quantity_liters' => 'Calculated line total exceeds allowed limit.'])
+                    ->withInput();
+            }
+        }
+
         try {
-            $saleCode = DB::transaction(function () use ($request, $data, $stockOutRelease): string {
-                $saleCode = $this->saleCode($data['sale_code'] ?? null);
-                $items = $this->normalizedSaleItems($data);
-                $saleTotal = collect($items)->sum(fn (array $item): float => (float) $this->lineTotal($item['quantity_liters'], $item['unit_price']));
-                $status = $this->statusAllowedByPayments($data['status'] ?? 'confirmed', $saleTotal, 0);
+            $idempotency = $this->idempotencyService->run(
+                $token,
+                'sales.store',
+                (int) $request->user()->id,
+                function () use ($request, $data, $items, $requestedStatus): array {
+                    return $this->idempotencyService->retryOnCollision('sale_code', function () use ($request, $data, $items, $requestedStatus): array {
+                        $saleCode = $this->saleCode($data['sale_code'] ?? null);
 
-                $saleId = DB::table('sales')->insertGetId([
-                    'sale_code' => $saleCode,
-                    'sales_order_number' => $this->blankToNull($data['sales_order_number'] ?? null),
-                    'customer_id' => $data['customer_id'],
-                    'sale_date' => $data['sale_date'],
-                    'payment_method' => $data['payment_method'],
-                    'payment_terms' => $data['payment_terms'] ?? $this->defaultPaymentTerms($data['payment_method']),
-                    'status' => $status,
-                    'created_by' => $request->user()->id,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
+                        $saleId = DB::table('sales')->insertGetId([
+                            'sale_code' => $saleCode,
+                            'sales_order_number' => $this->blankToNull($data['sales_order_number'] ?? null),
+                            'customer_id' => $data['customer_id'],
+                            'sale_date' => $data['sale_date'],
+                            'payment_method' => $data['payment_method'],
+                            'payment_terms' => $data['payment_terms'] ?? $this->defaultPaymentTerms($data['payment_method']),
+                            'status' => $requestedStatus === 'cancelled' ? 'cancelled' : 'draft',
+                            'created_by' => $request->user()->id,
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ]);
 
-                $now = now();
-                foreach ($items as $item) {
-                    $saleItemId = DB::table('sale_items')->insertGetId([
-                        'sale_id' => $saleId,
-                        'fuel_type_id' => $item['fuel_type_id'],
-                        'quantity_liters' => $item['quantity_liters'],
-                        'unit_price' => $item['unit_price'],
-                        'line_total' => $this->lineTotal($item['quantity_liters'], $item['unit_price']),
-                        'fulfilled_quantity_liters' => 0,
-                        'created_at' => $now,
-                        'updated_at' => $now,
-                    ]);
+                        $now = now();
+                        foreach ($items as $item) {
+                            DB::table('sale_items')->insertGetId([
+                                'sale_id' => $saleId,
+                                'fuel_type_id' => $item['fuel_type_id'],
+                                'quantity_liters' => $item['quantity_liters'],
+                                'unit_price' => $item['unit_price'],
+                                'line_total' => $this->lineTotal($item['quantity_liters'], $item['unit_price']),
+                                'fulfilled_quantity_liters' => 0,
+                                'created_at' => $now,
+                                'updated_at' => $now,
+                            ]);
+                        }
 
-                    $stockOutError = null;
+                        DB::table('receivables')->insert([
+                            'sale_id' => $saleId,
+                            'due_date' => $data['due_date'] ?? null,
+                            'status' => $requestedStatus === 'cancelled' ? 'clear' : 'pending',
+                            'created_at' => $now,
+                            'updated_at' => $now,
+                        ]);
 
-                    if (in_array($status, ['confirmed', 'unpaid', 'partially_paid', 'paid'], true)) {
-                        $stockOutError = $stockOutRelease->releaseSaleItemFromGarage(
-                            $saleItemId,
-                            round((float) $item['quantity_liters'], 2),
-                            $data['sale_date'].' 12:00:00',
-                            (int) $request->user()->id,
-                            null,
-                            'Automatic stock-out from sale '.$saleCode
-                        );
-                    }
+                        if (! in_array($requestedStatus, ['draft', 'cancelled'], true)) {
+                            $this->saleConfirmationService->confirm((int) $saleId, (int) $request->user()->id);
+                        }
 
-                    if ($stockOutError) {
-                        throw new \RuntimeException($stockOutError);
-                    }
+                        return [
+                            'reference_id' => $saleId,
+                            'response_reference' => $saleCode,
+                        ];
+                    });
                 }
-
-                DB::table('receivables')->insert([
-                    'sale_id' => $saleId,
-                    'due_date' => $data['due_date'] ?? null,
-                    'status' => $status === 'cancelled' ? 'unpaid' : 'pending',
-                    'created_at' => $now,
-                    'updated_at' => $now,
-                ]);
-
-                return $saleCode;
-            });
+            );
         } catch (\RuntimeException $exception) {
             return back()
                 ->withInput()
@@ -278,11 +291,17 @@ class SalesOfficerCustomerController extends Controller
                 ->withErrors(['sale' => 'Sale record could not be saved. Please review the details and try again.']);
         }
 
-        $request->session()->put($sessionKey, $saleCode);
+        if ($idempotency['duplicate']) {
+            return redirect()
+                ->route($this->salesRedirectRoute($request))
+                ->with('status', 'Sale record was already submitted.');
+        }
+
+        $request->session()->put($sessionKey, $idempotency['response_reference']);
 
         return redirect()
             ->route($this->salesRedirectRoute($request))
-            ->with('status', 'Sale record '.$saleCode.' created successfully.');
+            ->with('status', 'Sale record '.$idempotency['response_reference'].' created successfully.');
     }
 
     public function updateSale(Request $request, int $sale): RedirectResponse
@@ -292,68 +311,102 @@ class SalesOfficerCustomerController extends Controller
 
         abort_unless($row, 404);
 
-        if ($this->hasSaleDependentActivity($sale) && $this->changesProtectedSaleFields($row, $data)) {
+        $hasDependencies = $this->hasSaleDependentActivity($sale);
+        $requestedStatus = $data['status'] ?? $row->status;
+
+        if ($requestedStatus === 'cancelled') {
             return back()
                 ->withInput()
-                ->withErrors(['sale' => 'This sale already has payment, stock-out, inventory release, or haul activity, so customer, fuel, quantity, price, and date cannot be changed.']);
+                ->withErrors(['sale' => 'Sales cannot be cancelled through edit. Use the cancel sale action instead.']);
         }
 
-        DB::transaction(function () use ($sale, $data): void {
-            $items = $this->normalizedSaleItems($data);
-            $hasDependencies = $this->hasSaleDependentActivity($sale);
-
-            DB::table('sales')
-                ->where('id', $sale)
-                ->update([
-                    'sales_order_number' => $this->blankToNull($data['sales_order_number'] ?? null),
-                    'customer_id' => $data['customer_id'],
-                    'sale_date' => $data['sale_date'],
-                    'payment_method' => $data['payment_method'],
-                    'payment_terms' => $data['payment_terms'] ?? $this->defaultPaymentTerms($data['payment_method']),
-                    'status' => $data['status'] ?? 'confirmed',
-                    'updated_at' => now(),
-                ]);
-
-            if (! $hasDependencies) {
-                DB::table('sale_items')->where('sale_id', $sale)->delete();
-
-                $now = now();
-                foreach ($items as $item) {
-                    DB::table('sale_items')->insert([
-                        'sale_id' => $sale,
-                        'fuel_type_id' => $item['fuel_type_id'],
-                        'quantity_liters' => $item['quantity_liters'],
-                        'unit_price' => $item['unit_price'],
-                        'line_total' => $this->lineTotal($item['quantity_liters'], $item['unit_price']),
-                        'fulfilled_quantity_liters' => 0,
-                        'created_at' => $now,
-                        'updated_at' => $now,
-                    ]);
-                }
+        if ($hasDependencies) {
+            if ($this->changesProtectedSaleFields($row, $data)) {
+                return back()
+                    ->withInput()
+                    ->withErrors(['sale' => 'This sale already has payment, stock-out, inventory release, or haul activity, so customer, fuel, quantity, price, and date cannot be changed.']);
             }
 
-            $saleTotal = $this->saleTotalForUpdate($sale);
-            $paidTotal = $this->paidTotalForSale($sale);
-            $status = $this->statusAllowedByPayments($data['status'] ?? 'confirmed', $saleTotal, $paidTotal);
+            if (in_array($requestedStatus, ['draft', 'cancelled'], true)) {
+                return back()
+                    ->withInput()
+                    ->withErrors(['sale' => 'This sale already has dependent activity and cannot be changed to draft or cancelled.']);
+            }
+        }
 
-            DB::table('sales')
-                ->where('id', $sale)
-                ->update([
-                    'status' => $status,
-                    'updated_at' => now(),
-                ]);
+        $saleTotalBefore = $this->saleTotalForUpdate($sale);
+        $paidTotalBefore = $this->paidTotalForSale($sale);
+        if ($saleTotalBefore > 0 && $paidTotalBefore >= $saleTotalBefore && $requestedStatus !== 'paid') {
+            return back()
+                ->withInput()
+                ->withErrors(['sale' => 'A paid sale cannot be changed to a non-paid status.']);
+        }
 
-            DB::table('receivables')
-                ->updateOrInsert(
-                    ['sale_id' => $sale],
-                    [
-                        'due_date' => $data['due_date'] ?? null,
-                        'status' => $status === 'cancelled' ? 'unpaid' : $this->receivableStatus($saleTotal, $paidTotal),
+        $items = $this->normalizedSaleItems($data);
+        foreach ($items as $item) {
+            $lineTotal = (float) $this->lineTotal($item['quantity_liters'], $item['unit_price']);
+            if ($lineTotal > 999999999999.99) {
+                return back()
+                    ->withInput()
+                    ->withErrors(['quantity_liters' => 'Calculated line total exceeds allowed limit.']);
+            }
+        }
+
+        try {
+            DB::transaction(function () use ($sale, $row, $data, $items, $hasDependencies, $request, $requestedStatus): void {
+
+                DB::table('sales')
+                    ->where('id', $sale)
+                    ->update([
+                        'sales_order_number' => $this->blankToNull($data['sales_order_number'] ?? null),
+                        'customer_id' => $data['customer_id'],
+                        'sale_date' => $data['sale_date'],
+                        'payment_method' => $data['payment_method'],
+                        'payment_terms' => $data['payment_terms'] ?? $this->defaultPaymentTerms($data['payment_method']),
                         'updated_at' => now(),
-                        'created_at' => now(),
-                    ]
-                );
-        });
+                    ]);
+
+                if (! $hasDependencies && $this->changesProtectedSaleFields($row, $data)) {
+                    DB::table('sale_items')->where('sale_id', $sale)->delete();
+
+                    $now = now();
+                    foreach ($items as $item) {
+                        DB::table('sale_items')->insert([
+                            'sale_id' => $sale,
+                            'fuel_type_id' => $item['fuel_type_id'],
+                            'quantity_liters' => $item['quantity_liters'],
+                            'unit_price' => $item['unit_price'],
+                            'line_total' => $this->lineTotal($item['quantity_liters'], $item['unit_price']),
+                            'fulfilled_quantity_liters' => 0,
+                            'created_at' => $now,
+                            'updated_at' => $now,
+                        ]);
+                    }
+                }
+
+                if (isset($data['due_date'])) {
+                    DB::table('receivables')
+                        ->where('sale_id', $sale)
+                        ->update([
+                            'due_date' => $data['due_date'],
+                            'updated_at' => now(),
+                        ]);
+                }
+
+                if ($row->status === 'draft' && $requestedStatus !== 'draft') {
+                    $this->saleConfirmationService->confirm($sale, (int) $request->user()->id);
+                } else {
+                    if ($row->status === 'draft' && $requestedStatus === 'draft') {
+                        DB::table('sales')->where('id', $sale)->update(['status' => 'draft', 'updated_at' => now()]);
+                    }
+                    $this->saleConfirmationService->reconcile($sale);
+                }
+            });
+        } catch (\RuntimeException $exception) {
+            return back()
+                ->withInput()
+                ->withErrors(['sale' => $exception->getMessage()]);
+        }
 
         return redirect()
             ->route($this->salesRedirectRoute($request))
@@ -369,12 +422,16 @@ class SalesOfficerCustomerController extends Controller
                 ->withErrors(['sale' => 'This sale already has dependent activity and cannot be cancelled from Sales.']);
         }
 
-        DB::table('sales')
-            ->where('id', $sale)
-            ->update([
-                'status' => 'cancelled',
-                'updated_at' => now(),
-            ]);
+        DB::transaction(function () use ($sale): void {
+            DB::table('sales')
+                ->where('id', $sale)
+                ->update([
+                    'status' => 'cancelled',
+                    'updated_at' => now(),
+                ]);
+
+            $this->saleConfirmationService->reconcile($sale);
+        });
 
         return redirect()
             ->route($this->salesRedirectRoute($request))
@@ -481,9 +538,9 @@ class SalesOfficerCustomerController extends Controller
         ]);
     }
 
-    private function customerRows(?string $search)
+    private function customerRows(?string $search, ?int $perPage = 25)
     {
-        $rows = DB::table('customers')
+        $query = DB::table('customers')
             ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
                 'customer_code',
                 'name',
@@ -495,20 +552,29 @@ class SalesOfficerCustomerController extends Controller
                 'status',
             ]))
             ->orderByDesc('created_at')
-            ->orderByDesc('id')
-            ->get([
-                'id',
-                'customer_code',
-                'name',
-                'company_name',
-                'location',
-                'email',
-                'phone',
-                'payment_status',
-                'status',
-                'created_at',
-                'updated_at',
-            ]);
+            ->orderByDesc('id');
+
+        $columns = [
+            'id',
+            'customer_code',
+            'name',
+            'company_name',
+            'location',
+            'email',
+            'phone',
+            'payment_status',
+            'status',
+            'created_at',
+            'updated_at',
+        ];
+
+        $paginator = null;
+        if ($perPage !== null) {
+            $paginator = $query->paginate($perPage, $columns, 'customers_page')->withQueryString();
+            $rows = $paginator->getCollection();
+        } else {
+            $rows = $query->get($columns);
+        }
 
         $customerIds = $rows
             ->pluck('id')
@@ -520,42 +586,81 @@ class SalesOfficerCustomerController extends Controller
         $transactionSummaries = $this->transactionSummaries($customerIds);
         $outstandingTotals = $this->customerOutstandingTotals($customerIds);
 
-        return $rows
-            ->map(fn (object $row): array => [
-                'id' => (int) $row->id,
-                'modal_id' => 'so-customer-edit-'.$row->id,
-                'customer_code' => $row->customer_code,
-                'name' => $row->name,
-                'company_name' => $row->company_name,
-                'location' => $row->location,
-                'email' => $row->email,
-                'phone' => $row->phone,
-                'payment_status' => $row->payment_status,
-                'status' => $row->status,
-                'class' => $row->status === 'inactive' ? 'row-danger' : $this->rowClass($row->payment_status),
-                'cells' => [
-                    $row->customer_code,
-                    $row->name,
-                    $row->company_name,
-                    $row->location ?: 'N/A',
-                    $row->email ?: 'N/A',
-                    $row->phone ?: 'N/A',
-                    $this->label($row->payment_status),
-                ],
-                'details' => [
-                    'Customer Name' => $row->name,
-                    'Company Name' => $row->company_name,
-                    'Location' => $row->location ?: 'N/A',
-                    'Email' => $row->email ?: 'N/A',
-                    'Contact Number' => $row->phone ?: 'N/A',
-                    'Payment Status' => $this->label($row->payment_status),
-                    'Account Status' => $this->label($row->status),
-                    'Date Added' => $this->formatDateTime($row->created_at),
-                    'Last Updated' => $this->formatDateTime($row->updated_at),
-                    'Transactions' => $transactionSummaries[(int) $row->id] ?? 'No transaction records found',
-                    'Outstanding Receivables' => 'PHP '.$this->formatNumber($outstandingTotals[(int) $row->id] ?? 0),
-                ],
-            ]);
+        $overdueCustomerIds = $customerIds->isEmpty()
+            ? []
+            : DB::table('receivables')
+                ->join('sales', 'sales.id', '=', 'receivables.sale_id')
+                ->whereIn('sales.customer_id', $customerIds->all())
+                ->whereNull('sales.deleted_at')
+                ->where('sales.status', '!=', 'cancelled')
+                ->where('receivables.status', 'overdue')
+                ->pluck('sales.customer_id')
+                ->map(fn (mixed $id): int => (int) $id)
+                ->unique()
+                ->flip()
+                ->all();
+
+        $hasSalesCustomerIds = $customerIds->isEmpty()
+            ? []
+            : DB::table('sales')
+                ->whereIn('customer_id', $customerIds->all())
+                ->whereNull('deleted_at')
+                ->pluck('customer_id')
+                ->map(fn (mixed $id): int => (int) $id)
+                ->unique()
+                ->flip()
+                ->all();
+
+        $transformed = $rows
+            ->map(function (object $row) use ($transactionSummaries, $outstandingTotals, $overdueCustomerIds, $hasSalesCustomerIds): array {
+                $cid = (int) $row->id;
+                $outstanding = (float) ($outstandingTotals[$cid] ?? 0);
+                $hasOverdue = isset($overdueCustomerIds[$cid]);
+                $hasSales = isset($hasSalesCustomerIds[$cid]);
+                $derivedPaymentStatus = $hasSales
+                    ? ($hasOverdue ? 'overdue' : ($outstanding > 0 ? 'pending' : 'clear'))
+                    : ($row->payment_status ?: 'clear');
+
+                return [
+                    'id' => $cid,
+                    'modal_id' => 'so-customer-edit-'.$row->id,
+                    'customer_code' => $row->customer_code,
+                    'name' => $row->name,
+                    'company_name' => $row->company_name,
+                    'location' => $row->location,
+                    'email' => $row->email,
+                    'phone' => $row->phone,
+                    'payment_status' => $derivedPaymentStatus,
+                    'status' => $row->status,
+                    'created_at' => $row->created_at,
+                    'updated_at' => $row->updated_at,
+                    'class' => $row->status === 'inactive' ? 'row-danger' : $this->rowClass($derivedPaymentStatus),
+                    'cells' => [
+                        $row->customer_code,
+                        $row->name,
+                        $row->company_name,
+                        $row->location ?: 'N/A',
+                        $row->email ?: 'N/A',
+                        $row->phone ?: 'N/A',
+                        $this->label($derivedPaymentStatus),
+                    ],
+                    'details' => [
+                        'Customer Name' => $row->name,
+                        'Company Name' => $row->company_name,
+                        'Location' => $row->location ?: 'N/A',
+                        'Email' => $row->email ?: 'N/A',
+                        'Contact Number' => $row->phone ?: 'N/A',
+                        'Payment Status' => $this->label($derivedPaymentStatus),
+                        'Account Status' => $this->label($row->status),
+                        'Date Added' => $this->formatDateTime($row->created_at),
+                        'Last Updated' => $this->formatDateTime($row->updated_at),
+                        'Transactions' => $transactionSummaries[$cid] ?? 'No transaction records found',
+                        'Outstanding Receivables' => 'PHP '.$this->formatNumber($outstandingTotals[$cid] ?? 0),
+                    ],
+                ];
+            });
+
+        return $paginator ? $paginator->setCollection($transformed) : $transformed;
     }
 
     private function customerOptions(?string $search)
@@ -575,7 +680,7 @@ class SalesOfficerCustomerController extends Controller
             ->get(['id', 'name', 'company_name']);
     }
 
-    private function salesRows(?string $search)
+    private function salesRows(?string $search, ?int $perPage = 25)
     {
         $payments = DB::table('payments')
             ->selectRaw('sale_id, COALESCE(SUM(amount), 0) as total_paid')
@@ -586,7 +691,7 @@ class SalesOfficerCustomerController extends Controller
             ->selectRaw('sale_items.sale_id, COUNT(*) as item_count, SUM(sale_items.quantity_liters) as total_quantity_liters, SUM(sale_items.line_total) as sale_total, MIN(fuel_types.name) as first_fuel_name')
             ->groupBy('sale_items.sale_id');
 
-        $rows = DB::table('sales')
+        $query = DB::table('sales')
             ->joinSub($items, 'items_total', 'items_total.sale_id', '=', 'sales.id')
             ->join('customers', 'customers.id', '=', 'sales.customer_id')
             ->leftJoin('receivables', 'receivables.sale_id', '=', 'sales.id')
@@ -603,26 +708,35 @@ class SalesOfficerCustomerController extends Controller
                 'receivables.status',
             ]))
             ->orderByDesc('sales.sale_date')
-            ->orderByDesc('sales.id')
-            ->get([
-                'sales.id as sale_id',
-                'sales.sale_code',
-                'sales.sales_order_number',
-                'sales.sale_date',
-                'sales.customer_id',
-                'sales.payment_method',
-                'sales.payment_terms',
-                'sales.status',
-                'customers.name as customer_name',
-                'customers.company_name',
-                'items_total.item_count',
-                'items_total.total_quantity_liters',
-                'items_total.sale_total',
-                'items_total.first_fuel_name',
-                'receivables.due_date',
-                'receivables.status as receivable_status',
-                'payments_total.total_paid',
-            ]);
+            ->orderByDesc('sales.id');
+
+        $columns = [
+            'sales.id as sale_id',
+            'sales.sale_code',
+            'sales.sales_order_number',
+            'sales.sale_date',
+            'sales.customer_id',
+            'sales.payment_method',
+            'sales.payment_terms',
+            'sales.status',
+            'customers.name as customer_name',
+            'customers.company_name',
+            'items_total.item_count',
+            'items_total.total_quantity_liters',
+            'items_total.sale_total',
+            'items_total.first_fuel_name',
+            'receivables.due_date',
+            'receivables.status as receivable_status',
+            'payments_total.total_paid',
+        ];
+
+        $paginator = null;
+        if ($perPage !== null) {
+            $paginator = $query->paginate($perPage, $columns, 'sales_page')->withQueryString();
+            $rows = $paginator->getCollection();
+        } else {
+            $rows = $query->get($columns);
+        }
 
         $saleIds = $rows
             ->pluck('sale_id')
@@ -637,7 +751,7 @@ class SalesOfficerCustomerController extends Controller
         $paymentsBySale = $this->paymentsForSales($saleIds);
         $schedulesBySale = $this->paymentSchedulesForSales($saleIds);
 
-        return $rows
+        $transformed = $rows
             ->map(function (object $row) use ($itemsBySale, $latestPaymentDates, $dependencyMap, $paymentsBySale, $schedulesBySale): array {
                 $saleId = (int) $row->sale_id;
                 $paid = (float) ($row->total_paid ?? 0);
@@ -706,6 +820,8 @@ class SalesOfficerCustomerController extends Controller
                     'balance' => $this->formatNumber($balance),
                 ];
             });
+
+        return $paginator ? $paginator->setCollection($transformed) : $transformed;
     }
 
     /**
@@ -719,13 +835,21 @@ class SalesOfficerCustomerController extends Controller
             'sales_order_number' => ['nullable', 'string', 'max:60', Rule::unique('sales', 'sales_order_number')->ignore($saleId)->whereNull('deleted_at')],
             'customer_id' => ['required', 'integer', Rule::exists('customers', 'id')->where(fn (Builder $query): Builder => $query->where('status', 'active'))],
             'sale_date' => ['required', 'date'],
-            'fuel_type_id' => ['required_without:items', 'integer', Rule::exists('fuel_types', 'id')->where(fn (Builder $query): Builder => $query->where('status', 'active'))],
-            'quantity_liters' => ['required_without:items', 'numeric', 'gt:0', 'max:999999999999.99'],
-            'unit_price' => ['required_without:items', 'numeric', 'gt:0', 'max:9999999999.99'],
+            'fuel_type_id' => [
+                'required_without:items',
+                'integer',
+                ApprovedFuelType::rule(),
+            ],
+            'quantity_liters' => ['required_without:items', 'numeric', 'gt:0', 'max:1000000'],
+            'unit_price' => ['required_without:items', 'numeric', 'gt:0', 'max:10000'],
             'items' => ['nullable', 'array', 'min:1'],
-            'items.*.fuel_type_id' => ['required_with:items', 'integer', Rule::exists('fuel_types', 'id')->where(fn (Builder $query): Builder => $query->where('status', 'active'))],
-            'items.*.quantity_liters' => ['required_with:items', 'numeric', 'gt:0', 'max:999999999999.99'],
-            'items.*.unit_price' => ['required_with:items', 'numeric', 'gt:0', 'max:9999999999.99'],
+            'items.*.fuel_type_id' => [
+                'required_with:items',
+                'integer',
+                ApprovedFuelType::rule(),
+            ],
+            'items.*.quantity_liters' => ['required_with:items', 'numeric', 'gt:0', 'max:1000000'],
+            'items.*.unit_price' => ['required_with:items', 'numeric', 'gt:0', 'max:10000'],
             'payment_method' => ['required', Rule::in(self::PAYMENT_METHODS)],
             'payment_terms' => ['nullable', Rule::in(self::PAYMENT_TERMS)],
             'status' => ['nullable', Rule::in(array_diff(self::SALE_STATUSES, ['paid']))],
@@ -763,7 +887,7 @@ class SalesOfficerCustomerController extends Controller
     }
 
     /**
-     * @param array<string, mixed> $data
+     * @param  array<string, mixed>  $data
      * @return array<int, array{fuel_type_id: int, quantity_liters: mixed, unit_price: mixed}>
      */
     private function normalizedSaleItems(array $data): array
@@ -811,7 +935,7 @@ class SalesOfficerCustomerController extends Controller
     }
 
     /**
-     * @param Collection<int, int> $saleIds
+     * @param  Collection<int, int>  $saleIds
      * @return array<int, bool>
      */
     private function saleDependencyMap(Collection $saleIds): array
@@ -843,7 +967,7 @@ class SalesOfficerCustomerController extends Controller
     }
 
     /**
-     * @param array<string, mixed> $data
+     * @param  array<string, mixed>  $data
      */
     private function changesProtectedSaleFields(object $row, array $data): bool
     {
@@ -1037,7 +1161,7 @@ class SalesOfficerCustomerController extends Controller
     }
 
     /**
-     * @param Collection<int, int> $saleIds
+     * @param  Collection<int, int>  $saleIds
      * @return array<int, string|null>
      */
     private function latestPaymentDatesForSales(Collection $saleIds): array
@@ -1063,11 +1187,8 @@ class SalesOfficerCustomerController extends Controller
 
     private function nextCode(string $table, string $column, string $prefix): string
     {
-        $nextId = ((int) DB::table($table)->max('id')) + 1;
-
         do {
-            $code = $prefix.'-'.str_pad((string) $nextId, 6, '0', STR_PAD_LEFT);
-            $nextId++;
+            $code = $prefix.'-'.now()->format('ymd').'-'.Str::upper(Str::random(5));
         } while (DB::table($table)->where($column, $code)->exists());
 
         return $code;
@@ -1130,7 +1251,7 @@ class SalesOfficerCustomerController extends Controller
     }
 
     /**
-     * @param Collection<int, int> $saleIds
+     * @param  Collection<int, int>  $saleIds
      * @return array<int, array<int, array<string, mixed>>>
      */
     private function itemsForSales(Collection $saleIds): array
@@ -1189,6 +1310,7 @@ class SalesOfficerCustomerController extends Controller
         return DB::table('fuel_types')
             ->leftJoinSub($balances, 'balances', 'balances.fuel_type_id', '=', 'fuel_types.id')
             ->where('fuel_types.status', 'active')
+            ->whereIn('fuel_types.code', array_keys(config('fuels.approved', ['F1' => true, 'UNL' => true, 'DSL' => true, 'PREM' => true])))
             ->orderBy('fuel_types.name')
             ->get([
                 'fuel_types.id',
@@ -1206,7 +1328,7 @@ class SalesOfficerCustomerController extends Controller
     }
 
     /**
-     * @param Collection<int, int> $saleIds
+     * @param  Collection<int, int>  $saleIds
      * @return array<int, array<int, array<string, string>>>
      */
     private function paymentsForSales(Collection $saleIds): array
@@ -1272,7 +1394,7 @@ class SalesOfficerCustomerController extends Controller
     }
 
     /**
-     * @param Collection<int, int> $saleIds
+     * @param  Collection<int, int>  $saleIds
      * @return array<int, array<int, array<string, mixed>>>
      */
     private function paymentSchedulesForSales(Collection $saleIds): array
@@ -1333,7 +1455,7 @@ class SalesOfficerCustomerController extends Controller
     }
 
     /**
-     * @param array<int, string> $columns
+     * @param  array<int, string>  $columns
      */
     private function search(Builder $query, string $term, array $columns): Builder
     {
@@ -1350,7 +1472,7 @@ class SalesOfficerCustomerController extends Controller
     }
 
     /**
-     * @param Collection<int, int> $customerIds
+     * @param  Collection<int, int>  $customerIds
      * @return array<int, string>
      */
     private function transactionSummaries(Collection $customerIds): array
@@ -1398,7 +1520,7 @@ class SalesOfficerCustomerController extends Controller
     }
 
     /**
-     * @param Collection<int, int> $customerIds
+     * @param  Collection<int, int>  $customerIds
      * @return array<int, float>
      */
     private function customerOutstandingTotals(Collection $customerIds): array
@@ -1438,11 +1560,8 @@ class SalesOfficerCustomerController extends Controller
 
     private function nextCustomerCode(): string
     {
-        $nextId = ((int) DB::table('customers')->max('id')) + 1;
-
         do {
-            $code = 'CSM-'.str_pad((string) $nextId, 6, '0', STR_PAD_LEFT);
-            $nextId++;
+            $code = 'CSM-'.now()->format('ymd').'-'.Str::upper(Str::random(5));
         } while (DB::table('customers')->where('customer_code', $code)->exists());
 
         return $code;
@@ -1493,7 +1612,7 @@ class SalesOfficerCustomerController extends Controller
     }
 
     /**
-     * @param array<int, array<string, mixed>> $items
+     * @param  array<int, array<string, mixed>>  $items
      */
     private function itemPriceSummary(array $items): string
     {

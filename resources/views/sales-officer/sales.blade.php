@@ -91,6 +91,11 @@
                     </tbody>
                 </table>
             </div>
+            @if (method_exists($sales, 'links'))
+                <div class="pagination-wrap" style="margin-top: 16px;">
+                    {{ $sales->links() }}
+                </div>
+            @endif
         </section>
 
         <section data-tab-panel="customers" @hidden($activeTab !== 'customers')>
@@ -133,6 +138,11 @@
                     </tbody>
                 </table>
             </div>
+            @if (method_exists($customers, 'links'))
+                <div class="pagination-wrap" style="margin-top: 16px;">
+                    {{ $customers->links() }}
+                </div>
+            @endif
         </section>
     </div>
 

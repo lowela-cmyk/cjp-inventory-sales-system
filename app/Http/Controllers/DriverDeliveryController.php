@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Rules\ApprovedFuelType;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -16,14 +17,18 @@ class DriverDeliveryController extends Controller
 {
     private const TASK_STATUSES = ['scheduled', 'in_transit', 'lifted', 'completed', 'cancelled'];
 
-    public function index(Request $request, string $state = 'schedule'): View
+    public function index(Request $request, string $state = 'tasks'): View
     {
         $data = $request->validate([
             'search' => ['nullable', 'string', 'max:100'],
             'task_status' => ['nullable', Rule::in(self::TASK_STATUSES)],
             'source_type' => ['nullable', Rule::in(['depot', 'garage'])],
             'destination_type' => ['nullable', Rule::in(['garage', 'customer'])],
-            'fuel_type_id' => ['nullable', 'integer', Rule::exists('fuel_types', 'id')],
+            'fuel_type_id' => [
+                'nullable',
+                'integer',
+                ApprovedFuelType::rule(),
+            ],
             'date_from' => ['nullable', 'date'],
             'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
         ]);
@@ -100,7 +105,7 @@ class DriverDeliveryController extends Controller
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      */
     private function rows(int $driverId, ?string $search, array $filters)
     {
@@ -111,7 +116,7 @@ class DriverDeliveryController extends Controller
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      */
     private function haulRows(int $driverId, ?string $search, array $filters)
     {
@@ -310,7 +315,7 @@ class DriverDeliveryController extends Controller
     }
 
     /**
-     * @param array<int, string> $columns
+     * @param  array<int, string>  $columns
      */
     private function search(Builder $query, string $term, array $columns): Builder
     {

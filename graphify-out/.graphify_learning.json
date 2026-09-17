@@ -1,0 +1,102 @@
+{
+  "generated_at": "2026-09-16T11:07:30.462029+00:00",
+  "nodes": {
+    "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller": {
+      "code_fingerprint": "17f9989ba66e1170bb96a3433d716a67a6846bbe5b6efd9af9cb586409dac360",
+      "label": "InventoryOfficerPurchaseController",
+      "last": "2026-09-16T10:35:29.737894+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-16T10:35:29.737894+00:00",
+          "outcome": "useful",
+          "q": "Create a phased fix plan to tackle those problems, always opt for a simpler solution, write your plan in md"
+        }
+      ],
+      "score": 0.999486496,
+      "source_file": "app/Http/Controllers/InventoryOfficerPurchaseController.php",
+      "status": "tentative",
+      "uses": 1
+    },
+    "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller": {
+      "code_fingerprint": "05611d11480ca1a3fd1f3435cd15c85ec9365ef49e13dc434db0ddb96f7e1368",
+      "label": "SalesOfficerCustomerController",
+      "last": "2026-09-16T10:35:29.737894+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-16T10:35:29.737894+00:00",
+          "outcome": "useful",
+          "q": "Create a phased fix plan to tackle those problems, always opt for a simpler solution, write your plan in md"
+        }
+      ],
+      "score": 0.999486496,
+      "source_file": "app/Http/Controllers/SalesOfficerCustomerController.php",
+      "status": "tentative",
+      "uses": 1
+    },
+    "app_models_user_user": {
+      "code_fingerprint": "3530ad2b63bdfd30c71368aa80c809ebfe9312a3c126a684e57dfd5598b2638c",
+      "label": "User",
+      "last": "2026-09-16T10:35:29.737894+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-16T10:35:29.737894+00:00",
+          "outcome": "useful",
+          "q": "Create a phased fix plan to tackle those problems, always opt for a simpler solution, write your plan in md"
+        }
+      ],
+      "score": 0.999486496,
+      "source_file": "app/Models/User.php",
+      "status": "tentative",
+      "uses": 1
+    },
+    "app_services_dashboardsummaryservice_dashboardsummaryservice": {
+      "code_fingerprint": "cd9b2f4aa261a2229eddaae3b6463cd0e3340c27d5a1bfb8410644a5d0d95de6",
+      "label": "DashboardSummaryService",
+      "last": "2026-09-16T10:35:29.737894+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-16T10:35:29.737894+00:00",
+          "outcome": "useful",
+          "q": "Create a phased fix plan to tackle those problems, always opt for a simpler solution, write your plan in md"
+        }
+      ],
+      "score": 0.999486496,
+      "source_file": "app/Services/DashboardSummaryService.php",
+      "status": "tentative",
+      "uses": 1
+    },
+    "app_services_stockoutreleaseservice_stockoutreleaseservice": {
+      "code_fingerprint": "a87c99384c5fd4c3d0ae7a6c253a685050f7e776f4d5f50dadb2ac434677082b",
+      "label": "StockOutReleaseService",
+      "last": "2026-09-16T10:35:29.737894+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-16T10:35:29.737894+00:00",
+          "outcome": "useful",
+          "q": "Create a phased fix plan to tackle those problems, always opt for a simpler solution, write your plan in md"
+        }
+      ],
+      "score": 0.999486496,
+      "source_file": "app/Services/StockOutReleaseService.php",
+      "status": "tentative",
+      "uses": 1
+    },
+    "app_services_workflowsmoketestservice_workflowsmoketestservice": {
+      "code_fingerprint": "372dc9e803e560ad3d6a3f5b36636d4b889daba687a3e1b8ab8710be1de08855",
+      "label": "WorkflowSmokeTestService",
+      "last": "2026-09-16T10:35:29.737894+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-16T10:35:29.737894+00:00",
+          "outcome": "useful",
+          "q": "Create a phased fix plan to tackle those problems, always opt for a simpler solution, write your plan in md"
+        }
+      ],
+      "score": 0.999486496,
+      "source_file": "app/Services/WorkflowSmokeTestService.php",
+      "status": "tentative",
+      "uses": 1
+    }
+  },
+  "version": 1
+}

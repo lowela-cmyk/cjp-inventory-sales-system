@@ -6,6 +6,7 @@ use App\Models\User;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -311,7 +312,7 @@ class DatabaseIntegrityTest extends TestCase
     }
 
     /**
-     * @param callable(): mixed $callback
+     * @param  callable(): mixed  $callback
      */
     private function assertQueryFails(callable $callback): void
     {
@@ -350,13 +351,13 @@ class DatabaseIntegrityTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
-        $fuelTypeId = DB::table('fuel_types')->insertGetId([
-            'code' => 'DSL-DB',
-            'name' => 'Database Integrity Diesel',
+        $fuelTypeId = (int) (DB::table('fuel_types')->where('code', 'DSL')->value('id') ?? DB::table('fuel_types')->insertGetId([
+            'code' => 'DSL',
+            'name' => 'DIESEL',
             'status' => 'active',
             'created_at' => now(),
             'updated_at' => now(),
-        ]);
+        ]));
         $customerId = DB::table('customers')->insertGetId([
             'customer_code' => 'CUS-DB',
             'name' => 'Database Customer',
@@ -389,7 +390,7 @@ class DatabaseIntegrityTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      * @return array{purchaseId: int, purchaseItemId: int}
      */
     private function createPurchaseViaRoute(array $records, float $quantity): array
@@ -416,8 +417,8 @@ class DatabaseIntegrityTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
-     * @param array{purchaseId: int, purchaseItemId: int} $purchase
+     * @param  array<string, mixed>  $records
+     * @param  array{purchaseId: int, purchaseItemId: int}  $purchase
      */
     private function completedGarageHaul(array $records, array $purchase, float $quantity): int
     {
@@ -449,8 +450,8 @@ class DatabaseIntegrityTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $records
+     * @param  array<string, mixed>  $overrides
      * @return array{saleId: int, saleItemId: int}
      */
     private function createSaleViaRoute(array $records, array $overrides = []): array
@@ -471,8 +472,8 @@ class DatabaseIntegrityTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $records
+     * @param  array<string, mixed>  $overrides
      * @return array<string, mixed>
      */
     private function salePayload(array $records, array $overrides = []): array
@@ -492,7 +493,7 @@ class DatabaseIntegrityTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      */
     private function seedGarageStock(array $records, float $quantity): void
     {
@@ -514,7 +515,7 @@ class DatabaseIntegrityTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      */
     private function garageBalance(array $records): float
     {
@@ -553,8 +554,13 @@ class DatabaseIntegrityTest extends TestCase
         $this->assertSame(0, DB::table('stock_outs')
             ->leftJoin('sales', 'sales.id', '=', 'stock_outs.sale_id')
             ->leftJoin('inventory_movements', 'inventory_movements.id', '=', 'stock_outs.inventory_movement_id')
-            ->whereNull('sales.id')
-            ->orWhereNull('inventory_movements.id')
+            ->where(function ($query): void {
+                $query->whereNull('sales.id')
+                    ->orWhere(function ($query): void {
+                        $query->where('stock_outs.status', 'released')
+                            ->whereNull('inventory_movements.id');
+                    });
+            })
             ->count());
         $this->assertSame(0, DB::table('payments')
             ->leftJoin('sales', 'sales.id', '=', 'payments.sale_id')
@@ -564,6 +570,6 @@ class DatabaseIntegrityTest extends TestCase
             ->leftJoin('sales', 'sales.id', '=', 'receivables.sale_id')
             ->whereNull('sales.id')
             ->count());
-        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasTable('deliveries'));
+        $this->assertFalse(Schema::hasTable('deliveries'));
     }
 }

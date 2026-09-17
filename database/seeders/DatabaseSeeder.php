@@ -2,7 +2,7 @@
 
 namespace Database\Seeders;
 
-use App\Services\GarageTankService;
+use App\Services\OperationalDataRepairService;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
@@ -18,9 +18,9 @@ class DatabaseSeeder extends Seeder
     {
         foreach ([
             ['code' => 'F1', 'name' => 'F1'],
-            ['code' => 'UNL', 'name' => 'Unleaded'],
-            ['code' => 'PREM', 'name' => 'Premium'],
-            ['code' => 'DSL', 'name' => 'Diesel'],
+            ['code' => 'UNL', 'name' => 'UNLEADED'],
+            ['code' => 'PREM', 'name' => 'PREMIUM'],
+            ['code' => 'DSL', 'name' => 'DIESEL'],
         ] as $fuelType) {
             DB::table('fuel_types')->updateOrInsert(
                 ['code' => $fuelType['code']],
@@ -41,19 +41,6 @@ class DatabaseSeeder extends Seeder
                 'updated_at' => now(),
             ]);
 
-        DB::table('depots')->updateOrInsert(
-            ['depot_code' => 'DEP-CJP-MAIN'],
-            [
-                'name' => 'CJP Main Depot',
-                'address' => null,
-                'contact_person' => null,
-                'phone' => null,
-                'status' => 'active',
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]
-        );
-
-        app(GarageTankService::class)->ensureForActiveFuelTypes();
+        app(OperationalDataRepairService::class)->seedMasterData();
     }
 }

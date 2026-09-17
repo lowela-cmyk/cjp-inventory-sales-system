@@ -3,14 +3,21 @@
 namespace App\Http\Controllers;
 
 use App\Services\InventoryLedgerService;
-use Illuminate\Http\Request;
+use App\Services\PurchaseService;
 use Illuminate\Database\Query\Builder;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
 
 class AdminMonitoringController extends Controller
 {
+    public function __construct(
+        protected ?PurchaseService $purchaseService = null,
+    ) {
+        $this->purchaseService = $this->purchaseService ?? app(PurchaseService::class);
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -18,7 +25,7 @@ class AdminMonitoringController extends Controller
     {
         $search = $this->validatedSearch($request);
 
-        $purchaseRows = DB::table('purchase_items')
+        $rawPurchaseRows = DB::table('purchase_items')
             ->leftJoinSub(
                 DB::table('hauls')
                     ->whereNotNull('withdrawal_receipt_path')
@@ -60,39 +67,42 @@ class AdminMonitoringController extends Controller
                 'purchase_items.status as item_status',
                 DB::raw('COALESCE(withdrawal_totals.withdrawal_count, 0) as withdrawal_count'),
                 'withdrawal_totals.latest_withdrawal_at',
-            ])
-            ->map(fn (object $row): array => [
-                'id' => 'purchase-detail-'.$row->id,
-                'receipt_url' => null,
-                'withdrawals' => $this->withdrawalsForPurchaseItem((int) $row->id),
-                'cells' => [
-                    $row->purchase_code,
-                    $this->formatDate($row->purchase_date),
-                    $row->fuel_name,
-                    $row->depot_name,
-                    $this->formatNumber($row->quantity_ordered_liters),
-                    $this->formatNumber($row->unit_cost),
-                    $this->formatNumber($row->line_total),
-                    $this->withdrawalStatus((int) $row->withdrawal_count),
-                    $this->label($row->payment_status),
-                ],
-                'status' => $this->label($row->payment_status),
-                'class' => $this->rowClass($row->payment_status),
-                'details' => [
-                    'Date' => $this->formatDate($row->purchase_date),
-                    'Fuel' => $row->fuel_name,
-                    'Depot' => $row->depot_name,
-                    'QTY Ordered (L)' => $this->formatLiters($row->quantity_ordered_liters),
-                    'QTY Lifted (L)' => $this->formatLiters($row->quantity_hauled_liters),
-                    'Cost / Liter' => $this->formatNumber($row->unit_cost),
-                    'Total Cost' => $this->formatNumber($row->line_total),
-                    'Withdrawal Receipts' => $this->withdrawalStatus((int) $row->withdrawal_count),
-                    'Latest Withdrawal Upload' => $this->formatDateTime($row->latest_withdrawal_at),
-                    'Purchase Status' => $this->label($row->purchase_status),
-                    'Item Status' => $this->label($row->item_status),
-                    'Payment Status' => $this->label($row->payment_status),
-                ],
             ]);
+
+        $withdrawalsMap = $this->purchaseService->batchWithdrawalsForPurchaseItems($rawPurchaseRows);
+
+        $purchaseRows = $rawPurchaseRows->map(fn (object $row): array => [
+            'id' => 'purchase-detail-'.$row->id,
+            'receipt_url' => null,
+            'withdrawals' => $withdrawalsMap[(int) $row->id] ?? [],
+            'cells' => [
+                $row->purchase_code,
+                $this->formatDate($row->purchase_date),
+                $row->fuel_name,
+                $row->depot_name,
+                $this->formatNumber($row->quantity_ordered_liters),
+                $this->formatNumber($row->unit_cost),
+                $this->formatNumber($row->line_total),
+                $this->withdrawalStatus((int) $row->withdrawal_count),
+                $this->label($row->payment_status),
+            ],
+            'status' => $this->label($row->payment_status),
+            'class' => $this->rowClass($row->payment_status),
+            'details' => [
+                'Date' => $this->formatDate($row->purchase_date),
+                'Fuel' => $row->fuel_name,
+                'Depot' => $row->depot_name,
+                'QTY Ordered (L)' => $this->formatLiters($row->quantity_ordered_liters),
+                'QTY Lifted (L)' => $this->formatLiters($row->quantity_hauled_liters),
+                'Cost / Liter' => $this->formatNumber($row->unit_cost),
+                'Total Cost' => $this->formatNumber($row->line_total),
+                'Withdrawal Receipts' => $this->withdrawalStatus((int) $row->withdrawal_count),
+                'Latest Withdrawal Upload' => $this->formatDateTime($row->latest_withdrawal_at),
+                'Purchase Status' => $this->label($row->purchase_status),
+                'Item Status' => $this->label($row->item_status),
+                'Payment Status' => $this->label($row->payment_status),
+            ],
+        ]);
 
         $stockInRows = DB::table('inventory_movements')
             ->join('storage_locations', 'storage_locations.id', '=', 'inventory_movements.storage_location_id')
@@ -189,7 +199,7 @@ class AdminMonitoringController extends Controller
         $search = $this->validatedSearch($request);
 
         $sales = $this->salesRows($search);
-        $customers = DB::table('customers')
+        $rawCustomers = DB::table('customers')
             ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
                 'customer_code',
                 'name',
@@ -198,10 +208,68 @@ class AdminMonitoringController extends Controller
                 'email',
                 'phone',
                 'payment_status',
+                'status',
             ]))
             ->orderBy('id')
-            ->get()
-            ->map(fn (object $row): array => [
+            ->get();
+
+        $customerIds = $rawCustomers->pluck('id')->map(fn (mixed $id): int => (int) $id)->filter()->values();
+
+        $itemsSub = DB::table('sale_items')
+            ->selectRaw('sale_id, COALESCE(SUM(line_total), 0) as sale_total')
+            ->groupBy('sale_id');
+        $paymentsSub = DB::table('payments')
+            ->selectRaw('sale_id, COALESCE(SUM(amount), 0) as total_paid')
+            ->groupBy('sale_id');
+
+        $outstandingTotals = $customerIds->isEmpty()
+            ? []
+            : DB::table('sales')
+                ->joinSub($itemsSub, 'items_total', 'items_total.sale_id', '=', 'sales.id')
+                ->leftJoinSub($paymentsSub, 'payments_total', 'payments_total.sale_id', '=', 'sales.id')
+                ->whereIn('sales.customer_id', $customerIds->all())
+                ->whereNull('sales.deleted_at')
+                ->where('sales.status', '!=', 'cancelled')
+                ->selectRaw('sales.customer_id, COALESCE(SUM(CASE WHEN items_total.sale_total > COALESCE(payments_total.total_paid, 0) THEN items_total.sale_total - COALESCE(payments_total.total_paid, 0) ELSE 0 END), 0) as outstanding')
+                ->groupBy('sales.customer_id')
+                ->pluck('outstanding', 'customer_id')
+                ->all();
+
+        $overdueCustomerIds = $customerIds->isEmpty()
+            ? []
+            : DB::table('receivables')
+                ->join('sales', 'sales.id', '=', 'receivables.sale_id')
+                ->whereIn('sales.customer_id', $customerIds->all())
+                ->whereNull('sales.deleted_at')
+                ->where('sales.status', '!=', 'cancelled')
+                ->where('receivables.status', 'overdue')
+                ->pluck('sales.customer_id')
+                ->map(fn (mixed $id): int => (int) $id)
+                ->unique()
+                ->flip()
+                ->all();
+
+        $hasSalesCustomerIds = $customerIds->isEmpty()
+            ? []
+            : DB::table('sales')
+                ->whereIn('customer_id', $customerIds->all())
+                ->whereNull('deleted_at')
+                ->pluck('customer_id')
+                ->map(fn (mixed $id): int => (int) $id)
+                ->unique()
+                ->flip()
+                ->all();
+
+        $customers = $rawCustomers->map(function (object $row) use ($outstandingTotals, $overdueCustomerIds, $hasSalesCustomerIds): array {
+            $cid = (int) $row->id;
+            $outstanding = (float) ($outstandingTotals[$cid] ?? 0);
+            $hasOverdue = isset($overdueCustomerIds[$cid]);
+            $hasSales = isset($hasSalesCustomerIds[$cid]);
+            $derivedPaymentStatus = $hasSales
+                ? ($hasOverdue ? 'overdue' : ($outstanding > 0 ? 'pending' : 'clear'))
+                : ($row->payment_status ?: 'clear');
+
+            return [
                 'id' => 'customer-detail-'.$row->id,
                 'cells' => [
                     $row->customer_code,
@@ -217,10 +285,11 @@ class AdminMonitoringController extends Controller
                     'Location' => $row->location ?: 'N/A',
                     'Email' => $row->email ?: 'N/A',
                     'Contact Number' => $row->phone ?: 'N/A',
-                    'Payment Status' => $this->label($row->payment_status),
+                    'Payment Status' => $this->label($derivedPaymentStatus),
                     'Account Status' => $this->label($row->status),
                 ],
-            ]);
+            ];
+        });
 
         return view('admin.sales', [
             'search' => $search,
@@ -233,11 +302,12 @@ class AdminMonitoringController extends Controller
                 ->get(['id', 'name', 'company_name']),
             'fuelTypes' => DB::table('fuel_types')
                 ->where('status', 'active')
+                ->whereIn('code', array_keys(config('fuels.approved', ['F1' => true, 'UNL' => true, 'DSL' => true, 'PREM' => true])))
                 ->orderBy('name')
                 ->get(['id', 'name']),
             'paymentMethods' => ['cash_on_delivery', 'cheque', 'advance_payment', 'bank_transfer'],
             'paymentTerms' => ['cod', 'installment', 'advance'],
-            'editableSaleStatuses' => ['draft', 'confirmed', 'partially_paid', 'unpaid', 'cancelled'],
+            'editableSaleStatuses' => ['draft', 'confirmed', 'partially_paid', 'unpaid'],
             'saleIdempotencyKey' => (string) Str::uuid(),
         ]);
     }
@@ -338,7 +408,7 @@ class AdminMonitoringController extends Controller
     }
 
     /**
-     * @param array<int, string>|null $types
+     * @param  array<int, string>|null  $types
      */
     private function alertRows(?string $search, ?array $types = null)
     {
@@ -701,7 +771,7 @@ class AdminMonitoringController extends Controller
     }
 
     /**
-     * @param array<int, string> $columns
+     * @param  array<int, string>  $columns
      */
     private function search(Builder $query, string $term, array $columns): Builder
     {

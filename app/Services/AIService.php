@@ -11,8 +11,11 @@ use Throwable;
 class AIService
 {
     private const SAFE_FALLBACK_MESSAGE = 'AI insights are temporarily unavailable. System analytics are still available.';
+
     private const RATE_LIMIT_MESSAGE = 'AI service usage limit reached. Please try again later.';
+
     private const CONFIGURATION_MESSAGE = 'AI service is currently unavailable.';
+
     private const MAX_TEXT_LENGTH = 6000;
 
     /**

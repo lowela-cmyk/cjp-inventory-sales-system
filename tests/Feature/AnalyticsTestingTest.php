@@ -39,6 +39,20 @@ class AnalyticsTestingTest extends TestCase
         $this->payment($records, $septemberPaid['saleId'], 'PAY-ANA-PAID', 40000, '2026-09-04');
         $this->payment($records, $cancelledSale['saleId'], 'PAY-ANA-CANCELLED', 999999, '2026-09-04');
 
+        $directPurchase = $this->purchaseItem($records, 'PUR-ANA-DIRECT', 30000);
+        $directHaulId = $this->haul($records, $directPurchase, 'LFT-ANA-DIRECT', 30000, 'completed');
+        $directAllocationId = DB::table('haul_allocations')->insertGetId([
+            'haul_id' => $directHaulId,
+            'fuel_type_id' => $records['fuelTypeId'],
+            'destination_type' => 'customer',
+            'customer_id' => $records['customerId'],
+            'sale_id' => $augustSale['saleId'],
+            'quantity_liters' => 30000,
+            'status' => 'delivered',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
         DB::table('stock_outs')->insert([
             'stock_out_code' => 'STO-ANA-DIRECT',
             'sale_id' => $augustSale['saleId'],
@@ -48,6 +62,7 @@ class AnalyticsTestingTest extends TestCase
             'source_type' => 'depot',
             'storage_location_id' => null,
             'depot_id' => $records['depotId'],
+            'haul_allocation_id' => $directAllocationId,
             'quantity_liters' => 30000,
             'stock_out_at' => '2026-09-04 12:00:00',
             'status' => 'released',
@@ -71,8 +86,8 @@ class AnalyticsTestingTest extends TestCase
         $this->assertSame('90,000 L', $inventoryCards['Total Inventory']['value']);
         $this->assertSame('80,000 L', $inventoryCards['Stock-In Today']['value']);
         $this->assertSame('12,500 L', $inventoryCards['Stock-Out Today']['value']);
-        $this->assertSame(67500.0, $stockByFuel['Analytics Diesel']['liters']);
-        $this->assertSame(22500.0, $stockByFuel['Analytics Gasoline']['liters']);
+        $this->assertSame(67500.0, $stockByFuel['DIESEL']['liters']);
+        $this->assertSame(22500.0, $stockByFuel['UNLEADED']['liters']);
         $this->assertSame([67500.0, 22500.0], $stockLevels['chart']['datasets'][0]['data']);
         $this->assertSame(['67,500 L', '22,500 L'], $stockLevels['chart']['datasets'][0]['formattedData']);
 
@@ -255,7 +270,13 @@ class AnalyticsTestingTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
-        $fuelTypeId = $this->fuelType('ANA-DSL', 'Analytics Diesel');
+        $fuelTypeId = (int) (DB::table('fuel_types')->where('code', 'DSL')->value('id') ?? DB::table('fuel_types')->insertGetId([
+            'code' => 'DSL',
+            'name' => 'DIESEL',
+            'status' => 'active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]));
         $customerId = DB::table('customers')->insertGetId([
             'customer_code' => 'CUS-ANA',
             'name' => 'Analytics Customer',
@@ -290,9 +311,17 @@ class AnalyticsTestingTest extends TestCase
 
     private function fuelType(string $code, string $name): int
     {
+        $approvedCode = str_contains($code, 'GAS') ? 'UNL' : 'DSL';
+        $approvedName = str_contains($code, 'GAS') ? 'UNLEADED' : 'DIESEL';
+
+        $existing = DB::table('fuel_types')->where('code', $approvedCode)->first();
+        if ($existing) {
+            return (int) $existing->id;
+        }
+
         return DB::table('fuel_types')->insertGetId([
-            'code' => $code,
-            'name' => $name,
+            'code' => $approvedCode,
+            'name' => $approvedName,
             'status' => 'active',
             'created_at' => now(),
             'updated_at' => now(),
@@ -300,7 +329,7 @@ class AnalyticsTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      * @return array{purchaseId: int, purchaseItemId: int}
      */
     private function purchaseItem(array $records, string $code, float $quantity, ?int $depotId = null, ?int $fuelTypeId = null, string $status = 'ordered'): array
@@ -331,8 +360,8 @@ class AnalyticsTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
-     * @param array{purchaseId: int, purchaseItemId: int} $purchase
+     * @param  array<string, mixed>  $records
+     * @param  array{purchaseId: int, purchaseItemId: int}  $purchase
      */
     private function haul(array $records, array $purchase, string $code, float $quantity, string $status, ?int $depotId = null, ?int $fuelTypeId = null): int
     {
@@ -354,7 +383,7 @@ class AnalyticsTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      * @return array{saleId: int, saleItemId: int}
      */
     private function saleWithItem(array $records, string $code, string $date, float $quantity, float $unitPrice, string $status = 'confirmed', ?int $fuelTypeId = null): array
@@ -392,8 +421,8 @@ class AnalyticsTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
-     * @param array{saleId: int, saleItemId: int} $sale
+     * @param  array<string, mixed>  $records
+     * @param  array{saleId: int, saleItemId: int}  $sale
      */
     private function stockOut(array $records, array $sale, string $code, float $quantity, string $status = 'released', ?int $fuelTypeId = null): int
     {
@@ -414,7 +443,7 @@ class AnalyticsTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      */
     private function payment(array $records, int $saleId, string $code, float $amount, string $date): void
     {
@@ -422,7 +451,7 @@ class AnalyticsTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      * @return array<string, mixed>
      */
     private function paymentRow(array $records, int $saleId, string $code, float $amount, string $date): array
@@ -441,7 +470,7 @@ class AnalyticsTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      * @return array<string, mixed>
      */
     private function inventoryMovement(array $records, string $code, int $fuelTypeId, string $direction, float $quantity, string $date, string $type, int $referenceId): array

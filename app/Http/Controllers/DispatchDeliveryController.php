@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Rules\ApprovedFuelType;
+use App\Services\IdempotencyService;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -13,6 +15,10 @@ use Illuminate\View\View;
 
 class DispatchDeliveryController extends Controller
 {
+    public function __construct(
+        private readonly IdempotencyService $idempotencyService
+    ) {}
+
     private const ACTIVE_HAUL_STATUSES = ['scheduled', 'in_transit', 'lifted'];
 
     public function index(Request $request, string $state = 'schedule'): View
@@ -20,7 +26,11 @@ class DispatchDeliveryController extends Controller
         $data = $request->validate([
             'search' => ['nullable', 'string', 'max:100'],
             'status' => ['nullable', Rule::in(['scheduled', 'in_transit', 'lifted', 'completed', 'cancelled'])],
-            'fuel_type_id' => ['nullable', 'integer', Rule::exists('fuel_types', 'id')],
+            'fuel_type_id' => [
+                'nullable',
+                'integer',
+                ApprovedFuelType::rule(),
+            ],
             'driver_user_id' => ['nullable', 'integer', Rule::exists('users', 'id')->where(fn (Builder $query): Builder => $query->where('role', 'driver'))],
             'truck_id' => ['nullable', 'integer', Rule::exists('trucks', 'id')],
             'date_from' => ['nullable', 'date'],
@@ -63,7 +73,7 @@ class DispatchDeliveryController extends Controller
             'dr_number' => ['nullable', 'string', 'max:100'],
             'scheduled_at' => ['required', 'date'],
             'source_location' => ['nullable', 'string', 'max:255'],
-            'quantity_liters' => ['required', 'numeric', 'gt:0', 'max:999999999999.99'],
+            'quantity_liters' => ['required', 'numeric', 'gt:0', 'max:1000000'],
         ]);
         $sessionKey = 'hauls.created.'.((string) $data['idempotency_key']);
 
@@ -73,72 +83,90 @@ class DispatchDeliveryController extends Controller
                 ->with('status', 'Lift assignment was already submitted.');
         }
 
-        $result = DB::transaction(function () use ($data): ?string {
-            $purchaseItem = $this->purchaseItemForAssignment((int) $data['purchase_item_id']);
+        try {
+            $idempotency = $this->idempotencyService->run(
+                (string) $data['idempotency_key'],
+                'hauls.store',
+                (int) $request->user()->id,
+                function () use ($data): array {
+                    $purchaseItem = $this->purchaseItemForAssignment((int) $data['purchase_item_id']);
 
-            if (! $purchaseItem) {
-                return 'The selected purchase is not eligible for lifting.';
-            }
+                    if (! $purchaseItem) {
+                        throw new \RuntimeException('The selected purchase is not eligible for lifting.');
+                    }
 
-            $driver = $this->driverForAssignment((int) $data['driver_user_id']);
+                    $driver = $this->driverForAssignment((int) $data['driver_user_id']);
 
-            if (! $driver) {
-                return 'The selected driver is not eligible for lifting.';
-            }
+                    if (! $driver) {
+                        throw new \RuntimeException('The selected driver is not eligible for lifting.');
+                    }
 
-            $truck = $this->truckForAssignment((int) $data['truck_id']);
+                    $truck = $this->truckForAssignment((int) $data['truck_id']);
 
-            if (! $truck) {
-                return 'The selected truck is not eligible for lifting.';
-            }
+                    if (! $truck) {
+                        throw new \RuntimeException('The selected truck is not eligible for lifting.');
+                    }
 
-            $quantity = round((float) $data['quantity_liters'], 2);
-            $scheduledAt = CarbonImmutable::parse($data['scheduled_at']);
+                    $quantity = round((float) $data['quantity_liters'], 2);
+                    $scheduledAt = CarbonImmutable::parse($data['scheduled_at']);
 
-            if ($quantity <= 0) {
-                return 'Lift quantity must be greater than zero.';
-            }
+                    if ($quantity <= 0) {
+                        throw new \RuntimeException('Lift quantity must be greater than zero.');
+                    }
 
-            if ($quantity > round((float) $truck->capacity_liters, 2)) {
-                return 'Lift quantity cannot exceed the selected truck capacity.';
-            }
+                    if ($quantity > round((float) $truck->capacity_liters, 2)) {
+                        throw new \RuntimeException('Lift quantity cannot exceed the selected truck capacity.');
+                    }
 
-            $remaining = $this->remainingAssignablePurchaseItemQuantity((int) $purchaseItem->id, (float) $purchaseItem->quantity_ordered_liters);
+                    $remaining = $this->remainingAssignablePurchaseItemQuantity((int) $purchaseItem->id, (float) $purchaseItem->quantity_ordered_liters);
 
-            if ($quantity > $remaining) {
-                return 'Lift quantity cannot exceed the remaining purchase quantity.';
-            }
+                    if ($quantity > $remaining) {
+                        throw new \RuntimeException('Lift quantity cannot exceed the remaining purchase quantity.');
+                    }
 
-            if (! $this->truckIsAvailable((int) $truck->id, $scheduledAt)) {
-                return 'The selected truck already has an active trip at this schedule.';
-            }
+                    if (! $this->truckIsAvailable((int) $truck->id, $scheduledAt)) {
+                        throw new \RuntimeException('The selected truck already has an active trip at this schedule.');
+                    }
 
-            if ($this->duplicateHaulExists($purchaseItem, (int) $driver->id, (int) $truck->id, $quantity, $scheduledAt)) {
-                return 'This lift assignment has already been scheduled.';
-            }
+                    if ($this->duplicateHaulExists($purchaseItem, (int) $driver->id, (int) $truck->id, $quantity, $scheduledAt)) {
+                        throw new \RuntimeException('This lift assignment has already been scheduled.');
+                    }
 
-            DB::table('hauls')->insert([
-                'haul_code' => $this->nextCode('hauls', 'haul_code', 'LFT'),
-                'purchase_id' => $purchaseItem->purchase_id,
-                'purchase_item_id' => $purchaseItem->id,
-                'depot_id' => $purchaseItem->depot_id,
-                'fuel_type_id' => $purchaseItem->fuel_type_id,
-                'truck_id' => $truck->id,
-                'driver_user_id' => $driver->id,
-                'dr_number' => $data['dr_number'] ?? null,
-                'scheduled_at' => $scheduledAt->toDateTimeString(),
-                'source_location' => $data['source_location'] ?? null,
-                'quantity_liters' => $quantity,
-                'status' => 'scheduled',
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
+                    return $this->idempotencyService->retryOnCollision('haul_code', function () use ($purchaseItem, $truck, $driver, $data, $scheduledAt, $quantity): array {
+                        $haulCode = $this->nextCode('hauls', 'haul_code', 'LFT');
 
-            return null;
-        });
+                        $haulId = DB::table('hauls')->insertGetId([
+                            'haul_code' => $haulCode,
+                            'purchase_id' => $purchaseItem->purchase_id,
+                            'purchase_item_id' => $purchaseItem->id,
+                            'depot_id' => $purchaseItem->depot_id,
+                            'fuel_type_id' => $purchaseItem->fuel_type_id,
+                            'truck_id' => $truck->id,
+                            'driver_user_id' => $driver->id,
+                            'dr_number' => $data['dr_number'] ?? null,
+                            'scheduled_at' => $scheduledAt->toDateTimeString(),
+                            'source_location' => $data['source_location'] ?? null,
+                            'quantity_liters' => $quantity,
+                            'status' => 'scheduled',
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ]);
 
-        if ($result) {
-            return back()->withErrors(['lift' => $result])->withInput();
+                        return [
+                            'reference_id' => $haulId,
+                            'response_reference' => $haulCode,
+                        ];
+                    });
+                }
+            );
+        } catch (\RuntimeException $e) {
+            return back()->withErrors(['lift' => $e->getMessage()])->withInput();
+        }
+
+        if ($idempotency['duplicate']) {
+            return redirect()
+                ->route('dispatch.fuel-lifting')
+                ->with('status', 'Lift assignment was already submitted.');
         }
 
         $request->session()->put($sessionKey, true);
@@ -149,7 +177,7 @@ class DispatchDeliveryController extends Controller
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      */
     private function haulRows(?string $search, array $filters)
     {
@@ -246,14 +274,14 @@ class DispatchDeliveryController extends Controller
     {
         return [
             'statuses' => ['scheduled', 'in_transit', 'lifted', 'completed', 'cancelled'],
-            'fuelTypes' => DB::table('fuel_types')->where('status', 'active')->orderBy('name')->get(['id', 'name']),
+            'fuelTypes' => DB::table('fuel_types')->where('status', 'active')->whereIn('code', array_keys(config('fuels.approved', ['F1' => true, 'UNL' => true, 'DSL' => true, 'PREM' => true])))->orderBy('name')->get(['id', 'name']),
             'drivers' => $this->driverOptions(),
             'trucks' => $this->haulTruckOptions(),
         ];
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      */
     private function haulSummary(array $filters, ?string $search): array
     {
@@ -407,7 +435,7 @@ class DispatchDeliveryController extends Controller
     }
 
     /**
-     * @param array<int, string> $columns
+     * @param  array<int, string>  $columns
      */
     private function search(Builder $query, string $term, array $columns): Builder
     {

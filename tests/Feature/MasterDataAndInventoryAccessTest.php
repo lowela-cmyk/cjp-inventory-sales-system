@@ -63,37 +63,46 @@ class MasterDataAndInventoryAccessTest extends TestCase
         ]);
     }
 
-    public function test_inventory_officer_can_only_maintain_official_fuel_types(): void
+    public function test_fuel_types_catalog_is_fixed_and_creation_routes_are_not_available(): void
     {
-        $inventoryOfficer = User::factory()->create(['role' => 'inventory_officer', 'status' => 'active']);
+        $inventoryOfficer = User::factory()->create(['role' => 'inventory_officer', 'status' => 'active', 'approval_status' => 'approved']);
+        $salesOfficer = User::factory()->create(['role' => 'sales_officer', 'status' => 'active', 'approval_status' => 'approved']);
 
+        // Fuel-type creation routes must not exist
         $this->actingAs($inventoryOfficer)
-            ->post(route('inventory-officer.inventory.fuel-types.store'), [
+            ->post('/inventory-officer/inventory/fuel-types', [
                 'code' => 'BIO',
                 'name' => 'Biodiesel',
-                'description' => 'Not part of the CJP fuel list.',
                 'status' => 'active',
             ])
-            ->assertSessionHasErrors('code');
+            ->assertNotFound();
 
         $this->actingAs($inventoryOfficer)
-            ->post(route('inventory-officer.inventory.fuel-types.store'), [
-                'code' => 'DSL',
-                'name' => 'Diesel',
-                'description' => 'Official diesel product.',
+            ->post('/admin/inventory/fuel-types', [
+                'code' => 'BIO',
+                'name' => 'Biodiesel',
                 'status' => 'active',
             ])
-            ->assertRedirect(route('inventory-officer.inventory'));
+            ->assertNotFound();
 
+        // Unauthorized role cannot access master data endpoints
+        $this->actingAs($salesOfficer)
+            ->post('/inventory-officer/inventory/depots', [
+                'depot_code' => 'DEP-HACK',
+                'name' => 'Unauthorized Depot',
+                'status' => 'active',
+            ])
+            ->assertForbidden();
+
+        // Fixed approved catalog verification
         $fuelTypeId = DB::table('fuel_types')->where('code', 'DSL')->value('id');
-
         $this->assertNotNull($fuelTypeId);
         $this->assertSame(2, DB::table('storage_locations')
             ->where('type', 'garage')
             ->where('status', 'active')
             ->where('fuel_type_id', $fuelTypeId)
-                    ->whereIn('tank_number', [1, 2])
-                    ->count());
+            ->whereIn('tank_number', [1, 2])
+            ->count());
         $this->assertSame(4, DB::table('fuel_types')->where('status', 'active')->count());
         $this->assertSame(8, DB::table('storage_locations')->where('type', 'garage')->where('status', 'active')->count());
     }

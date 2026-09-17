@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Services\SaleConfirmationService;
+use App\Services\StockOutReleaseService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -63,6 +65,39 @@ class SalesOfficerSalesManagementTest extends TestCase
             'fulfilled_quantity_liters' => '1500.25',
         ]);
         $this->assertSame(0, DB::table('payments')->count());
+    }
+
+    public function test_sales_officer_sale_creates_prepared_stock_out_when_garage_inventory_is_insufficient(): void
+    {
+        $records = $this->baseRecords();
+        $beforeInventory = DB::table('inventory_movements')->count();
+
+        $this->actingAs($records['salesOfficer'])
+            ->post(route('sales-officer.sales.store'), $this->salePayload($records, [
+                'sale_code' => 'SLS-PREPARED-STOCK-OUT',
+                'quantity_liters' => '15000',
+                'unit_price' => '62.50',
+            ]))
+            ->assertRedirect(route('sales-officer.sales'));
+
+        $sale = DB::table('sales')->where('sale_code', 'SLS-PREPARED-STOCK-OUT')->first();
+        $saleItem = DB::table('sale_items')->where('sale_id', $sale->id)->first();
+        $stockOut = DB::table('stock_outs')->where('sale_id', $sale->id)->first();
+
+        $this->assertNotNull($stockOut);
+        $this->assertSame((int) $saleItem->id, (int) $stockOut->sale_item_id);
+        $this->assertSame((int) $records['customerId'], (int) $stockOut->customer_id);
+        $this->assertSame((int) $records['fuelTypeId'], (int) $stockOut->fuel_type_id);
+        $this->assertSame('garage', $stockOut->source_type);
+        $this->assertSame('prepared', $stockOut->status);
+        $this->assertNull($stockOut->storage_location_id);
+        $this->assertNull($stockOut->inventory_movement_id);
+        $this->assertSame(15000.0, round((float) $stockOut->quantity_liters, 2));
+        $this->assertSame($beforeInventory, DB::table('inventory_movements')->count());
+        $this->assertDatabaseHas('sale_items', [
+            'id' => $saleItem->id,
+            'fulfilled_quantity_liters' => '0.00',
+        ]);
     }
 
     public function test_sales_order_number_is_unique_and_payment_method_does_not_record_payment(): void
@@ -142,7 +177,7 @@ class SalesOfficerSalesManagementTest extends TestCase
             ->assertOk()
             ->assertSee('SLS-VISIBLE')
             ->assertSee('Sales Customer')
-            ->assertSee('Diesel Test')
+            ->assertSee('DIESEL')
             ->assertDontSee('Jay P. Calinisan');
 
         $this->actingAs($records['admin'])
@@ -176,7 +211,7 @@ class SalesOfficerSalesManagementTest extends TestCase
     public function test_multiple_sale_items_are_stored_under_one_sale_and_totaled_server_side(): void
     {
         $records = $this->baseRecords();
-        $gasolineId = $this->fuelType(['code' => 'GAS', 'name' => 'Gasoline Test']);
+        $gasolineId = $this->fuelType(['code' => 'UNL', 'name' => 'UNLEADED']);
 
         $this->actingAs($records['salesOfficer'])
             ->post(route('sales-officer.sales.store'), $this->salePayload($records, [
@@ -269,6 +304,235 @@ class SalesOfficerSalesManagementTest extends TestCase
         $this->assertDatabaseMissing('sale_items', ['sale_id' => $saleId, 'quantity_liters' => '9999.00']);
     }
 
+    public function test_paid_or_fulfilled_sale_cannot_be_changed_to_cancelled_via_edit_route(): void
+    {
+        $records = $this->baseRecords();
+        $saleId = $this->createSale($records, ['sale_code' => 'SLS-PAID-NO-CANCEL']);
+        DB::table('payments')->insert([
+            'payment_code' => 'PAY-PAID-NO-CANCEL',
+            'sale_id' => $saleId,
+            'payment_date' => '2026-08-30',
+            'amount' => 60000,
+            'method' => 'cash_on_delivery',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('receivables')->where('sale_id', $saleId)->update(['status' => 'clear']);
+
+        $this->actingAs($records['salesOfficer'])
+            ->patch(route('sales-officer.sales.update', $saleId), $this->salePayload($records, [
+                'status' => 'cancelled',
+            ]))
+            ->assertSessionHasErrors('sale');
+
+        $this->assertDatabaseMissing('sales', ['id' => $saleId, 'status' => 'cancelled']);
+        $this->assertDatabaseMissing('receivables', ['sale_id' => $saleId, 'status' => 'unpaid']);
+    }
+
+    public function test_changing_draft_sale_to_confirmed_performs_stock_out_preparation_or_release(): void
+    {
+        $records = $this->baseRecords();
+        $saleId = $this->createSale($records, [
+            'sale_code' => 'SLS-DRAFT-CONFIRM',
+            'status' => 'draft',
+        ]);
+        $saleItem = DB::table('sale_items')->where('sale_id', $saleId)->first();
+        $this->assertNotNull($saleItem);
+        $this->assertSame(0, DB::table('stock_outs')->where('sale_id', $saleId)->count());
+
+        $this->actingAs($records['salesOfficer'])
+            ->patch(route('sales-officer.sales.update', $saleId), $this->salePayload($records, [
+                'status' => 'confirmed',
+            ]))
+            ->assertRedirect(route('sales-officer.sales'));
+
+        $this->assertDatabaseHas('sales', ['id' => $saleId, 'status' => 'confirmed']);
+        $this->assertSame(1, DB::table('stock_outs')->where('sale_id', $saleId)->where('status', 'released')->count());
+        $this->assertDatabaseHas('sale_items', [
+            'id' => $saleItem->id,
+            'fulfilled_quantity_liters' => '1000.00',
+        ]);
+    }
+
+    public function test_draft_to_confirmed_without_sufficient_inventory_creates_prepared_stock_out_and_no_movement(): void
+    {
+        $records = $this->baseRecords();
+        $saleId = $this->createSale($records, [
+            'sale_code' => 'SLS-DRAFT-INSUFF',
+            'status' => 'draft',
+        ]);
+        DB::table('sale_items')->where('sale_id', $saleId)->update([
+            'quantity_liters' => 50000,
+            'line_total' => 3000000,
+        ]);
+
+        $movementCountBefore = DB::table('inventory_movements')->count();
+
+        $this->actingAs($records['salesOfficer'])
+            ->patch(route('sales-officer.sales.update', $saleId), $this->salePayload($records, [
+                'status' => 'confirmed',
+                'quantity_liters' => '50000',
+            ]))
+            ->assertRedirect(route('sales-officer.sales'));
+
+        $this->assertDatabaseHas('sales', ['id' => $saleId, 'status' => 'confirmed']);
+        $this->assertSame(1, DB::table('stock_outs')->where('sale_id', $saleId)->where('status', 'prepared')->count());
+        $this->assertSame($movementCountBefore, DB::table('inventory_movements')->count());
+        $this->assertDatabaseHas('sale_items', [
+            'sale_id' => $saleId,
+            'fulfilled_quantity_liters' => '0.00',
+        ]);
+    }
+
+    public function test_editing_harmless_metadata_on_confirmed_sale_does_not_create_additional_stock_out(): void
+    {
+        $records = $this->baseRecords();
+        $saleId = $this->createSale($records, ['sale_code' => 'SLS-METADATA']);
+
+        $this->actingAs($records['salesOfficer']);
+        app(SaleConfirmationService::class)->confirm($saleId, $records['salesOfficer']->id);
+
+        $stockOutCountBefore = DB::table('stock_outs')->where('sale_id', $saleId)->count();
+        $movementCountBefore = DB::table('inventory_movements')->count();
+        $this->assertSame(1, $stockOutCountBefore);
+
+        $this->patch(route('sales-officer.sales.update', $saleId), $this->salePayload($records, [
+            'sales_order_number' => 'SO-NEW-METADATA',
+            'payment_terms' => 'advance',
+            'due_date' => '2026-09-30',
+        ]))->assertRedirect(route('sales-officer.sales'));
+
+        $this->assertDatabaseHas('sales', [
+            'id' => $saleId,
+            'sales_order_number' => 'SO-NEW-METADATA',
+            'payment_terms' => 'advance',
+        ]);
+        $this->assertSame($stockOutCountBefore, DB::table('stock_outs')->where('sale_id', $saleId)->count());
+        $this->assertSame($movementCountBefore, DB::table('inventory_movements')->count());
+    }
+
+    public function test_paid_and_partially_paid_sale_cannot_be_returned_to_draft_or_non_paid_status(): void
+    {
+        $records = $this->baseRecords();
+        $saleId = $this->createSale($records, ['sale_code' => 'SLS-LOCKED-FINANCIAL']);
+
+        DB::table('payments')->insert([
+            'payment_code' => 'PAY-PARTIAL-LOCK',
+            'sale_id' => $saleId,
+            'payment_date' => '2026-08-30',
+            'amount' => 10000,
+            'method' => 'cash_on_delivery',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        app(SaleConfirmationService::class)->reconcile($saleId);
+
+        $this->actingAs($records['salesOfficer'])
+            ->patch(route('sales-officer.sales.update', $saleId), $this->salePayload($records, [
+                'status' => 'draft',
+            ]))
+            ->assertSessionHasErrors('sale');
+
+        DB::table('payments')->insert([
+            'payment_code' => 'PAY-FULL-LOCK',
+            'sale_id' => $saleId,
+            'payment_date' => '2026-08-30',
+            'amount' => 50000,
+            'method' => 'cash_on_delivery',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        app(SaleConfirmationService::class)->reconcile($saleId);
+
+        $this->assertDatabaseHas('sales', ['id' => $saleId, 'status' => 'paid']);
+
+        $this->patch(route('sales-officer.sales.update', $saleId), $this->salePayload($records, [
+            'status' => 'confirmed',
+        ]))->assertSessionHasErrors('sale');
+
+        $this->patch(route('sales-officer.sales.update', $saleId), $this->salePayload($records, [
+            'status' => 'draft',
+        ]))->assertSessionHasErrors('sale');
+
+        $this->assertDatabaseHas('sales', ['id' => $saleId, 'status' => 'paid']);
+    }
+
+    public function test_receivable_and_sale_statuses_reconcile_authoritatively_after_zero_partial_and_full_payment(): void
+    {
+        $records = $this->baseRecords();
+        $saleId = $this->createSale($records, ['sale_code' => 'SLS-RECONCILE-FLOW']);
+
+        app(SaleConfirmationService::class)->reconcile($saleId);
+        $this->assertDatabaseHas('sales', ['id' => $saleId, 'status' => 'confirmed']);
+        $this->assertDatabaseHas('receivables', ['sale_id' => $saleId, 'status' => 'pending']);
+
+        $this->actingAs($records['salesOfficer'])
+            ->post(route('sales-officer.sales.payments.store', $saleId), [
+                'idempotency_key' => (string) Str::uuid(),
+                'payment_date' => '2026-08-30',
+                'amount' => '25000',
+                'method' => 'cash_on_delivery',
+            ])
+            ->assertRedirect(route('sales-officer.sales'));
+
+        $this->assertDatabaseHas('sales', ['id' => $saleId, 'status' => 'partially_paid']);
+        $this->assertDatabaseHas('receivables', ['sale_id' => $saleId, 'status' => 'partial']);
+
+        $this->post(route('sales-officer.sales.payments.store', $saleId), [
+            'idempotency_key' => (string) Str::uuid(),
+            'payment_date' => '2026-08-30',
+            'amount' => '35000',
+            'method' => 'cash_on_delivery',
+        ])->assertRedirect(route('sales-officer.sales'));
+
+        $this->assertDatabaseHas('sales', ['id' => $saleId, 'status' => 'paid']);
+        $this->assertDatabaseHas('receivables', ['sale_id' => $saleId, 'status' => 'clear']);
+    }
+
+    public function test_multi_item_sale_confirmation_is_atomic_and_rolls_back_on_failure(): void
+    {
+        $records = $this->baseRecords();
+        $secondFuelId = $this->fuelType(['code' => 'UNL', 'name' => 'UNLEADED']);
+
+        $mock = $this->mock(StockOutReleaseService::class);
+        $callCount = 0;
+        $mock->shouldReceive('releaseSaleItemFromGarage')
+            ->andReturnUsing(function () use (&$callCount) {
+                $callCount++;
+                if ($callCount === 1) {
+                    return null;
+                }
+
+                return 'Forced failure on second item';
+            });
+
+        $this->actingAs($records['salesOfficer'])
+            ->post(route('sales-officer.sales.store'), [
+                'idempotency_key' => (string) Str::uuid(),
+                'sale_code' => 'SLS-ATOMIC-FAIL',
+                'customer_id' => $records['customerId'],
+                'sale_date' => '2026-08-30',
+                'payment_method' => 'cash_on_delivery',
+                'status' => 'confirmed',
+                'items' => [
+                    [
+                        'fuel_type_id' => $records['fuelTypeId'],
+                        'quantity_liters' => '1000',
+                        'unit_price' => '60',
+                    ],
+                    [
+                        'fuel_type_id' => $secondFuelId,
+                        'quantity_liters' => '2000',
+                        'unit_price' => '65',
+                    ],
+                ],
+            ])
+            ->assertSessionHasErrors('sale');
+
+        $this->assertDatabaseMissing('sales', ['sale_code' => 'SLS-ATOMIC-FAIL']);
+        $this->assertDatabaseMissing('sale_items', ['unit_price' => '60.00', 'quantity_liters' => '1000.00']);
+    }
+
     public function test_cancellation_preserves_sale_history_without_deleting_records(): void
     {
         $records = $this->baseRecords();
@@ -305,7 +569,7 @@ class SalesOfficerSalesManagementTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $overrides
      * @return array<string, mixed>
      */
     private function salePayload(array $records, array $overrides = []): array
@@ -336,7 +600,7 @@ class SalesOfficerSalesManagementTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $saleOverrides
+     * @param  array<string, mixed>  $saleOverrides
      */
     private function createSale(array $records, array $saleOverrides = []): int
     {
@@ -374,7 +638,7 @@ class SalesOfficerSalesManagementTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $overrides
      */
     private function customer(array $overrides = []): int
     {
@@ -393,15 +657,31 @@ class SalesOfficerSalesManagementTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $overrides
      */
     private function fuelType(array $overrides = []): int
     {
-        $suffix = Str::upper(Str::random(5));
+        if (isset($overrides['status']) && $overrides['status'] === 'inactive') {
+            return DB::table('fuel_types')->insertGetId(array_merge([
+                'code' => 'INACTIVE-'.Str::upper(Str::random(4)),
+                'name' => 'Inactive Fuel',
+                'status' => 'inactive',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ], $overrides));
+        }
+
+        $code = $overrides['code'] ?? 'DSL';
+        $name = $overrides['name'] ?? ($code === 'DSL' ? 'DIESEL' : ($code === 'UNL' ? 'UNLEADED' : $code));
+
+        $existing = DB::table('fuel_types')->where('code', $code)->first();
+        if ($existing && empty(array_diff_key($overrides, ['code' => true, 'name' => true]))) {
+            return (int) $existing->id;
+        }
 
         return DB::table('fuel_types')->insertGetId(array_merge([
-            'code' => 'DSL'.$suffix,
-            'name' => 'Diesel Test '.$suffix,
+            'code' => $code,
+            'name' => $name,
             'status' => 'active',
             'created_at' => now(),
             'updated_at' => now(),

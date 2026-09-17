@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\DB;
 class HaulTruckAssignmentController extends Controller
 {
     private const ASSIGNABLE_HAUL_STATUSES = ['scheduled'];
+
     private const ACTIVE_HAUL_STATUSES = ['scheduled', 'in_transit', 'lifted'];
 
     public function update(Request $request, int $haul): RedirectResponse

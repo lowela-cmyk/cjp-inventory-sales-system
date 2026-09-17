@@ -2,24 +2,40 @@
 
 namespace App\Http\Controllers;
 
+use App\Rules\ApprovedFuelType;
 use App\Services\DashboardSummaryService;
 use App\Services\GarageTankService;
+use App\Services\IdempotencyService;
+use App\Services\PurchaseService;
+use App\Services\StockInService;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class InventoryOfficerPurchaseController extends Controller
 {
+    public function __construct(
+        private readonly IdempotencyService $idempotencyService,
+        private readonly PurchaseService $purchaseService,
+        private readonly StockInService $stockInService
+    ) {}
+
     private const PURCHASE_STATUSES = ['draft', 'ordered', 'partially_hauled', 'hauled', 'cancelled'];
+
     private const PAYMENT_STATUSES = ['paid', 'partial', 'unpaid'];
+
     private const STOCK_IN_REFERENCE_TYPE = 'haul_allocation';
+
     private const STOCK_OUT_REFERENCE_TYPE = 'stock_out';
+
     private const ELIGIBLE_SALE_STATUSES = ['confirmed', 'partially_paid', 'paid', 'unpaid'];
 
     public function index(Request $request, DashboardSummaryService $dashboardSummary, GarageTankService $garageTanks, string $state = 'purchases'): View
@@ -52,6 +68,7 @@ class InventoryOfficerPurchaseController extends Controller
             'depotRows' => $this->depotRows($search === '' ? null : $search),
             'fuelTypes' => DB::table('fuel_types')
                 ->where('status', 'active')
+                ->whereIn('code', array_keys(config('fuels.approved', ['F1' => true, 'UNL' => true, 'DSL' => true, 'PREM' => true])))
                 ->when($search !== '', fn (Builder $query): Builder => $query->whereIn('id', $purchaseFuelTypeIds ?: [0]))
                 ->orderBy('name')
                 ->get(['id', 'name']),
@@ -81,31 +98,11 @@ class InventoryOfficerPurchaseController extends Controller
     {
         $data = $this->validatedPurchaseData($request);
 
-        DB::transaction(function () use ($request, $data): void {
-            $purchaseId = DB::table('purchases')->insertGetId([
-                'purchase_code' => $this->nextCode('purchases', 'purchase_code', 'PUR'),
-                'depot_id' => $data['depot_id'],
-                'purchase_date' => $data['purchase_date'],
-                'receipt_reference' => null,
-                'payment_status' => $data['payment_status'],
-                'status' => $data['status'],
-                'created_by' => $request->user()->id,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-
-            DB::table('purchase_items')->insert([
-                'purchase_id' => $purchaseId,
-                'fuel_type_id' => $data['fuel_type_id'],
-                'quantity_ordered_liters' => $data['quantity_ordered_liters'],
-                'unit_cost' => $data['unit_cost'],
-                'line_total' => $this->lineTotal($data['quantity_ordered_liters'], $data['unit_cost']),
-                'quantity_hauled_liters' => 0,
-                'status' => 'unlifted',
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-        });
+        try {
+            $this->purchaseService->createPurchase($data, (int) $request->user()->id);
+        } catch (ValidationException $e) {
+            return back()->withErrors($e->errors())->withInput();
+        }
 
         return redirect()
             ->route($this->inventoryRouteName($request))
@@ -115,39 +112,12 @@ class InventoryOfficerPurchaseController extends Controller
     public function update(Request $request, int $purchaseItem): RedirectResponse
     {
         $data = $this->validatedPurchaseData($request);
-        $row = $this->purchaseItemForUpdate($purchaseItem);
 
-        abort_unless($row, 404);
-
-        if ($this->hasDependentActivity($row) && $this->changesProtectedFields($row, $data)) {
-            return back()
-                ->withErrors(['purchase' => 'This purchase already has hauling activity, so quantity, fuel, depot, and date cannot be changed.'])
-                ->withInput();
+        try {
+            $this->purchaseService->updatePurchase($purchaseItem, $data);
+        } catch (ValidationException $e) {
+            return back()->withErrors($e->errors())->withInput();
         }
-
-        DB::transaction(function () use ($row, $data): void {
-            DB::table('purchases')
-                ->where('id', $row->purchase_id)
-                ->update([
-                    'depot_id' => $data['depot_id'],
-                    'purchase_date' => $data['purchase_date'],
-                    'payment_status' => $data['payment_status'],
-                    'status' => $data['status'],
-                    'updated_at' => now(),
-                ]);
-
-            DB::table('purchase_items')
-                ->where('id', $row->id)
-                ->update([
-                    'fuel_type_id' => $data['fuel_type_id'],
-                    'quantity_ordered_liters' => $data['quantity_ordered_liters'],
-                    'unit_cost' => $data['unit_cost'],
-                    'line_total' => $this->lineTotal($data['quantity_ordered_liters'], $data['unit_cost']),
-                    'status' => $this->itemStatus((float) $row->quantity_hauled_liters, (float) $data['quantity_ordered_liters']),
-                    'updated_at' => now(),
-                ]);
-
-        });
 
         return redirect()
             ->route($this->inventoryRouteName($request))
@@ -178,60 +148,15 @@ class InventoryOfficerPurchaseController extends Controller
 
     public function cancel(Request $request, int $purchaseItem): RedirectResponse
     {
-        $row = $this->purchaseItemForUpdate($purchaseItem);
-
-        abort_unless($row, 404);
-
-        if ($this->hasDependentActivity($row)) {
-            return back()
-                ->withErrors(['purchase' => 'This purchase already has dependent activity and cannot be cancelled from Purchases.'])
-                ->withInput();
+        try {
+            $this->purchaseService->cancelPurchase($purchaseItem);
+        } catch (ValidationException $e) {
+            return back()->withErrors($e->errors())->withInput();
         }
-
-        DB::table('purchases')
-            ->where('id', $row->purchase_id)
-            ->update([
-                'status' => 'cancelled',
-                'updated_at' => now(),
-            ]);
 
         return redirect()
             ->route($this->inventoryRouteName($request))
             ->with('status', 'Purchase record cancelled successfully.');
-    }
-
-    public function storeFuelType(Request $request, GarageTankService $garageTanks): RedirectResponse
-    {
-        $data = $request->validate([
-            'code' => ['required', 'string', 'max:30', Rule::in(['F1', 'UNL', 'PREM', 'DSL'])],
-            'name' => ['required', 'string', 'max:100', Rule::in(['F1', 'Unleaded', 'Premium', 'Diesel'])],
-            'description' => ['nullable', 'string', 'max:1000'],
-            'status' => ['required', Rule::in(['active', 'inactive'])],
-        ]);
-        $namesByCode = ['F1' => 'F1', 'UNL' => 'Unleaded', 'PREM' => 'Premium', 'DSL' => 'Diesel'];
-
-        if ($namesByCode[Str::upper($data['code'])] !== $data['name']) {
-            return back()
-                ->withErrors(['fuel_type' => 'Fuel type code and name must match the official CJP fuel list.'])
-                ->withInput();
-        }
-
-        DB::table('fuel_types')->updateOrInsert(
-            ['code' => Str::upper($data['code'])],
-            [
-                'name' => $data['name'],
-                'description' => $data['description'] ?? null,
-                'status' => $data['status'],
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]
-        );
-
-        $garageTanks->ensureForActiveFuelTypes();
-
-        return redirect()
-            ->route($this->inventoryRouteName($request))
-            ->with('status', 'Fuel type updated successfully.');
     }
 
     public function storeDepot(Request $request): RedirectResponse
@@ -266,65 +191,12 @@ class InventoryOfficerPurchaseController extends Controller
         $data = $request->validate([
             'haul_allocation_id' => ['required', 'integer', Rule::exists('haul_allocations', 'id')],
             'storage_location_id' => ['required', 'integer', Rule::exists('storage_locations', 'id')->where(fn (Builder $query): Builder => $query->where('type', 'garage')->where('status', 'active'))],
-            'quantity_liters' => ['required', 'numeric', 'gt:0', 'max:999999999999.99'],
+            'quantity_liters' => ['required', 'numeric', 'gt:0', 'max:1000000'],
             'movement_date' => ['required', 'date'],
             'remarks' => ['nullable', 'string', 'max:1000'],
         ]);
 
-        $result = DB::transaction(function () use ($request, $data): ?string {
-            $allocation = $this->garageAllocationForUpdate((int) $data['haul_allocation_id']);
-
-            if (! $allocation) {
-                return 'The selected stock-in source is invalid.';
-            }
-
-            if ((int) $allocation->storage_location_id !== (int) $data['storage_location_id']) {
-                return 'The selected garage does not match the haul allocation destination.';
-            }
-
-            if (! $this->haulAllocationsAreWithinQuantity((int) $allocation->haul_id, (float) $allocation->haul_quantity_liters)) {
-                return 'The selected haul has invalid allocation quantities.';
-            }
-
-            $quantity = round((float) $data['quantity_liters'], 2);
-            $remaining = $this->remainingReceivableForAllocation($allocation);
-
-            if ($quantity > $remaining) {
-                return 'Quantity received cannot exceed the remaining garage allocation.';
-            }
-
-            if ($this->duplicateStockInExists($allocation, (int) $data['storage_location_id'], $quantity, (string) $data['movement_date'])) {
-                return 'This stock-in receipt has already been recorded.';
-            }
-
-            DB::table('inventory_movements')->insert([
-                'movement_code' => $this->nextCode('inventory_movements', 'movement_code', 'MOV'),
-                'storage_location_id' => $data['storage_location_id'],
-                'fuel_type_id' => $allocation->fuel_type_id,
-                'movement_type' => 'stock_in',
-                'direction' => 'in',
-                'quantity_liters' => $quantity,
-                'unit_cost' => $allocation->unit_cost,
-                'reference_type' => self::STOCK_IN_REFERENCE_TYPE,
-                'reference_id' => $allocation->id,
-                'movement_date' => $data['movement_date'],
-                'remarks' => $data['remarks'] ?? null,
-                'created_by' => $request->user()->id,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-
-            $newRemaining = round($remaining - $quantity, 2);
-
-            DB::table('haul_allocations')
-                ->where('id', $allocation->id)
-                ->update([
-                    'status' => $newRemaining <= 0 ? 'received' : $allocation->status,
-                    'updated_at' => now(),
-                ]);
-
-            return null;
-        });
+        $result = $this->stockInService->recordStockIn($data, (int) $request->user()->id);
 
         if ($result) {
             return back()->withErrors(['stock_in' => $result])->withInput();
@@ -343,7 +215,7 @@ class InventoryOfficerPurchaseController extends Controller
             'sale_item_id' => ['required', 'integer', Rule::exists('sale_items', 'id')],
             'storage_location_id' => ['required_if:source_type,garage', 'nullable', 'integer', Rule::exists('storage_locations', 'id')->where(fn (Builder $query): Builder => $query->where('type', 'garage')->where('status', 'active'))],
             'haul_allocation_id' => ['required_if:source_type,depot', 'nullable', 'integer', Rule::exists('haul_allocations', 'id')],
-            'quantity_liters' => ['required', 'numeric', 'gt:0', 'max:999999999999.99'],
+            'quantity_liters' => ['required', 'numeric', 'gt:0', 'max:1000000'],
             'stock_out_at' => ['required', 'date'],
             'remarks' => ['nullable', 'string', 'max:1000'],
         ]);
@@ -355,29 +227,49 @@ class InventoryOfficerPurchaseController extends Controller
                 ->with('status', 'Stock-Out record was already submitted.');
         }
 
-        $result = DB::transaction(function () use ($request, $data): ?string {
-            $saleItem = $this->saleItemForStockOut((int) $data['sale_item_id']);
+        try {
+            $idempotency = $this->idempotencyService->run(
+                (string) $data['idempotency_key'],
+                'stock_outs.store',
+                (int) $request->user()->id,
+                function () use ($request, $data): array {
+                    $saleItem = $this->saleItemForStockOut((int) $data['sale_item_id']);
 
-            if (! $saleItem) {
-                return 'The selected sale is not eligible for stock-out.';
-            }
+                    if (! $saleItem) {
+                        throw new \RuntimeException('The selected sale is not eligible for stock-out.');
+                    }
 
-            $quantity = round((float) $data['quantity_liters'], 2);
-            $remaining = round((float) $saleItem->quantity_liters - (float) $saleItem->fulfilled_quantity_liters, 2);
+                    $quantity = round((float) $data['quantity_liters'], 2);
+                    $remaining = round((float) $saleItem->quantity_liters - (float) $saleItem->fulfilled_quantity_liters, 2);
 
-            if ($quantity > $remaining) {
-                return 'Quantity released cannot exceed the remaining sale quantity.';
-            }
+                    if ($quantity > $remaining) {
+                        throw new \RuntimeException('Quantity released cannot exceed the remaining sale quantity.');
+                    }
 
-            if ($data['source_type'] === 'garage') {
-                return $this->releaseFromGarage($request, $data, $saleItem, $quantity);
-            }
+                    if ($data['source_type'] === 'garage') {
+                        $error = $this->releaseFromGarage($request, $data, $saleItem, $quantity);
+                    } else {
+                        $error = $this->releaseDirectFromDepot($request, $data, $saleItem, $quantity);
+                    }
 
-            return $this->releaseDirectFromDepot($request, $data, $saleItem, $quantity);
-        });
+                    if ($error) {
+                        throw new \RuntimeException($error);
+                    }
 
-        if ($result) {
-            return back()->withErrors(['stock_out' => $result])->withInput();
+                    return [
+                        'reference_id' => (int) $saleItem->id,
+                        'response_reference' => 'stock_out',
+                    ];
+                }
+            );
+        } catch (\RuntimeException $e) {
+            return back()->withErrors(['stock_out' => $e->getMessage()])->withInput();
+        }
+
+        if ($idempotency['duplicate']) {
+            return redirect()
+                ->route($this->inventoryRouteName($request, 'stock-out'))
+                ->with('status', 'Stock-Out record was already submitted.');
         }
 
         $request->session()->put($sessionKey, true);
@@ -395,9 +287,13 @@ class InventoryOfficerPurchaseController extends Controller
         return $request->validate([
             'purchase_date' => ['required', 'date'],
             'depot_id' => ['required', 'integer', Rule::exists('depots', 'id')->where(fn (Builder $query): Builder => $query->where('status', 'active'))],
-            'fuel_type_id' => ['required', 'integer', Rule::exists('fuel_types', 'id')->where(fn (Builder $query): Builder => $query->where('status', 'active'))],
-            'quantity_ordered_liters' => ['required', 'numeric', 'gt:0', 'max:999999999999.99'],
-            'unit_cost' => ['required', 'numeric', 'gte:0', 'max:9999999999.99'],
+            'fuel_type_id' => [
+                'required',
+                'integer',
+                ApprovedFuelType::rule(),
+            ],
+            'quantity_ordered_liters' => ['required', 'numeric', 'gt:0', 'max:1000000'],
+            'unit_cost' => ['required', 'numeric', 'gte:0', 'max:10000'],
             'receipt_reference' => ['prohibited'],
             'receipt_file' => ['prohibited'],
             'receipt_status' => ['prohibited'],
@@ -406,158 +302,14 @@ class InventoryOfficerPurchaseController extends Controller
         ]);
     }
 
-    private function purchaseRows(?string $search)
+    private function purchaseRows(?string $search): LengthAwarePaginator
     {
-        $haulTotals = DB::table('hauls')
-            ->where('status', '!=', 'cancelled')
-            ->selectRaw('purchase_item_id, COALESCE(SUM(quantity_liters), 0) as hauled_liters')
-            ->groupBy('purchase_item_id');
-
-        $allocationTotals = DB::table('haul_allocations')
-            ->join('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')
-            ->where('haul_allocations.status', '!=', 'cancelled')
-            ->where('hauls.status', '!=', 'cancelled')
-            ->selectRaw("
-                hauls.purchase_item_id,
-                COALESCE(SUM(CASE WHEN haul_allocations.destination_type = 'garage' THEN haul_allocations.quantity_liters ELSE 0 END), 0) as garage_allocated_liters,
-                COALESCE(SUM(CASE WHEN haul_allocations.destination_type = 'customer' THEN haul_allocations.quantity_liters ELSE 0 END), 0) as direct_allocated_liters
-            ")
-            ->groupBy('hauls.purchase_item_id');
-
-        $receivedTotals = DB::table('inventory_movements')
-            ->join('haul_allocations', function ($join): void {
-                $join->on('haul_allocations.id', '=', 'inventory_movements.reference_id')
-                    ->where('inventory_movements.reference_type', self::STOCK_IN_REFERENCE_TYPE);
-            })
-            ->join('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')
-            ->where('inventory_movements.direction', 'in')
-            ->where('inventory_movements.movement_type', 'stock_in')
-            ->where('haul_allocations.status', '!=', 'cancelled')
-            ->selectRaw('hauls.purchase_item_id, COALESCE(SUM(inventory_movements.quantity_liters), 0) as received_liters')
-            ->groupBy('hauls.purchase_item_id');
-
-        $withdrawalTotals = DB::table('hauls')
-            ->whereNotNull('withdrawal_receipt_path')
-            ->where('status', '!=', 'cancelled')
-            ->selectRaw('purchase_item_id, COUNT(*) as withdrawal_count, MAX(withdrawal_receipt_uploaded_at) as latest_withdrawal_at')
-            ->groupBy('purchase_item_id');
-
-        $rows = DB::table('purchase_items')
-            ->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
-            ->join('depots', 'depots.id', '=', 'purchases.depot_id')
-            ->join('fuel_types', 'fuel_types.id', '=', 'purchase_items.fuel_type_id')
-            ->leftJoin('users', 'users.id', '=', 'purchases.created_by')
-            ->leftJoinSub($haulTotals, 'haul_totals', 'haul_totals.purchase_item_id', '=', 'purchase_items.id')
-            ->leftJoinSub($allocationTotals, 'allocation_totals', 'allocation_totals.purchase_item_id', '=', 'purchase_items.id')
-            ->leftJoinSub($receivedTotals, 'received_totals', 'received_totals.purchase_item_id', '=', 'purchase_items.id')
-            ->leftJoinSub($withdrawalTotals, 'withdrawal_totals', 'withdrawal_totals.purchase_item_id', '=', 'purchase_items.id')
-            ->whereNull('purchases.deleted_at')
-            ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
-                'purchases.purchase_code',
-                'depots.name',
-                'fuel_types.name',
-                'purchases.payment_status',
-                'purchases.status',
-                'users.name',
-            ]))
-            ->orderByDesc('purchases.purchase_date')
-            ->orderByDesc('purchase_items.id')
-            ->get([
-                'purchase_items.id',
-                'purchase_items.purchase_id',
-                'purchase_items.fuel_type_id',
-                'purchase_items.quantity_ordered_liters',
-                'purchase_items.quantity_hauled_liters',
-                'purchase_items.unit_cost',
-                'purchase_items.line_total',
-                'purchase_items.status as item_status',
-                'purchases.purchase_code',
-                'purchases.depot_id',
-                'purchases.purchase_date',
-                'purchases.receipt_reference',
-                'purchases.payment_status',
-                'purchases.status as purchase_status',
-                'purchases.created_at',
-                'purchases.updated_at',
-                'depots.name as depot_name',
-                'fuel_types.name as fuel_name',
-                'users.name as created_by_name',
-                DB::raw('COALESCE(haul_totals.hauled_liters, 0) as hauled_liters'),
-                DB::raw('COALESCE(allocation_totals.garage_allocated_liters, 0) as garage_allocated_liters'),
-                DB::raw('COALESCE(allocation_totals.direct_allocated_liters, 0) as direct_allocated_liters'),
-                DB::raw('COALESCE(received_totals.received_liters, 0) as received_liters'),
-                DB::raw('COALESCE(withdrawal_totals.withdrawal_count, 0) as withdrawal_count'),
-                'withdrawal_totals.latest_withdrawal_at',
-            ]);
-
-        $dependencyMap = $this->purchaseDependencyMap($rows);
-
-        return $rows
-            ->map(function (object $row) use ($dependencyMap): array {
-                $inventoryStatus = $this->inventoryLinkStatus(
-                    (float) $row->garage_allocated_liters,
-                    (float) $row->received_liters,
-                    (float) $row->direct_allocated_liters
-                );
-
-                return [
-                    'id' => $row->id,
-                    'modal_id' => 'io-purchase-edit-'.$row->id,
-                    'purchase_code' => $row->purchase_code,
-                    'purchase_date' => $row->purchase_date,
-                    'depot_id' => $row->depot_id,
-                    'fuel_type_id' => $row->fuel_type_id,
-                    'quantity_ordered_liters' => $row->quantity_ordered_liters,
-                    'unit_cost' => $row->unit_cost,
-                    'receipt_url' => null,
-                    'withdrawals' => $this->withdrawalsForPurchaseItem((int) $row->id),
-                    'payment_status' => $row->payment_status,
-                    'purchase_status' => $row->purchase_status,
-                    'has_dependencies' => $dependencyMap[(int) $row->id] ?? false,
-                    'class' => $this->rowClass($row->payment_status),
-                    'cells' => [
-                        $row->purchase_code,
-                        $this->formatDate($row->purchase_date),
-                        $row->fuel_name,
-                        $row->depot_name,
-                        $this->formatNumber($row->quantity_ordered_liters),
-                        $this->formatNumber($row->hauled_liters),
-                        $this->formatNumber($row->garage_allocated_liters),
-                        $this->formatNumber($row->direct_allocated_liters),
-                        $this->formatNumber($row->received_liters),
-                        $this->label($inventoryStatus),
-                        $this->formatNumber($row->unit_cost),
-                        $this->formatNumber($row->line_total),
-                        $this->withdrawalStatus((int) $row->withdrawal_count),
-                        $this->label($row->payment_status),
-                    ],
-                    'details' => [
-                        'Date' => $this->formatDate($row->purchase_date),
-                        'Fuel' => $row->fuel_name,
-                        'Depot' => $row->depot_name,
-                        'Quantity Purchased' => $this->formatLiters($row->quantity_ordered_liters),
-                        'Quantity Hauled' => $this->formatLiters($row->hauled_liters),
-                        'Garage Allocation' => $this->formatLiters($row->garage_allocated_liters),
-                        'Direct Client Allocation' => $this->formatLiters($row->direct_allocated_liters),
-                        'Received Into Garage' => $this->formatLiters($row->received_liters),
-                        'Inventory Status' => $this->label($inventoryStatus),
-                        'Cost/Liter' => $this->formatNumber($row->unit_cost),
-                        'Total Cost' => $this->formatNumber($row->line_total),
-                        'Withdrawal Receipts' => $this->withdrawalStatus((int) $row->withdrawal_count),
-                        'Latest Withdrawal Upload' => $this->formatDateTime($row->latest_withdrawal_at),
-                        'Purchase Status' => $this->label($row->purchase_status),
-                        'Item Status' => $this->label($row->item_status),
-                        'Created By' => $row->created_by_name ?: 'N/A',
-                        'Created At' => $this->formatDateTime($row->created_at),
-                        'Updated At' => $this->formatDateTime($row->updated_at),
-                    ],
-                ];
-            });
+        return $this->purchaseService->purchaseRows($search);
     }
 
-    private function depotRows(?string $search): Collection
+    private function depotRows(?string $search): LengthAwarePaginator
     {
-        return DB::table('depots')
+        $query = DB::table('depots')
             ->when($search, fn (Builder $query): Builder => $query->where(function (Builder $query) use ($search): void {
                 $query->where('depot_code', 'like', '%'.$search.'%')
                     ->orWhere('name', 'like', '%'.$search.'%')
@@ -567,90 +319,34 @@ class InventoryOfficerPurchaseController extends Controller
                     ->orWhere('status', 'like', '%'.$search.'%');
             }))
             ->orderBy('name')
-            ->get(['depot_code', 'name', 'address', 'contact_person', 'phone', 'status'])
-            ->map(fn (object $row): array => [
-                $row->depot_code,
-                $row->name,
-                $row->address ?: 'N/A',
-                $row->contact_person ?: 'N/A',
-                $row->phone ?: 'N/A',
-                $row->status,
-            ]);
+            ->select(['depot_code', 'name', 'address', 'contact_person', 'phone', 'status']);
+
+        $paginator = $query->paginate(25, ['*'], 'depots_page')->withQueryString();
+        $transformed = collect($paginator->items())->map(fn (object $row): array => [
+            $row->depot_code,
+            $row->name,
+            $row->address ?: 'N/A',
+            $row->contact_person ?: 'N/A',
+            $row->phone ?: 'N/A',
+            $row->status,
+        ]);
+        $paginator->setCollection($transformed);
+
+        return $paginator;
     }
 
-    private function stockInRows(?string $search)
+    private function stockInRows(?string $search): LengthAwarePaginator
     {
-        $movements = DB::table('inventory_movements')
-            ->join('storage_locations', 'storage_locations.id', '=', 'inventory_movements.storage_location_id')
-            ->join('fuel_types', 'fuel_types.id', '=', 'inventory_movements.fuel_type_id')
-            ->leftJoin('users', 'users.id', '=', 'inventory_movements.created_by')
-            ->where('inventory_movements.direction', 'in')
-            ->where('inventory_movements.movement_type', 'stock_in')
-            ->whereNotExists($this->cancelledHaulAllocationExists())
-            ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
-                'inventory_movements.movement_code',
-                'storage_locations.name',
-                'fuel_types.name',
-                'inventory_movements.movement_type',
-                'inventory_movements.remarks',
-                'users.name',
-            ]))
-            ->orderByDesc('inventory_movements.movement_date')
-            ->get([
-                'inventory_movements.id',
-                'inventory_movements.movement_code',
-                'inventory_movements.movement_date',
-                'inventory_movements.movement_type',
-                'inventory_movements.quantity_liters',
-                'inventory_movements.unit_cost',
-                'inventory_movements.reference_type',
-                'inventory_movements.reference_id',
-                'inventory_movements.remarks',
-                'storage_locations.name as location_name',
-                'fuel_types.name as fuel_name',
-                'users.name as created_by_name',
-            ]);
-
-        $references = $this->stockInReferenceLabels($movements);
-
-        return $movements
-            ->map(fn (object $row): array => [
-                'modal_id' => 'io-stockin-detail-'.$row->id,
-                'class' => 'row-success',
-                'cells' => [
-                    $references[$this->referenceKey($row->reference_type, (int) $row->reference_id)] ?? $row->movement_code,
-                    $this->formatDateTime($row->movement_date),
-                    $row->fuel_name,
-                    $row->location_name,
-                    $this->formatNumber($row->quantity_liters),
-                    $this->formatNumber($row->unit_cost),
-                    $this->formatNumber(((float) $row->quantity_liters) * ((float) ($row->unit_cost ?? 0))),
-                    $this->formatNumber($row->quantity_liters),
-                    '0.00',
-                    'Confirmed',
-                ],
-                'details' => [
-                    'Stock-In ID' => $row->movement_code,
-                    'Date' => $this->formatDateTime($row->movement_date),
-                    'Fuel' => $row->fuel_name,
-                    'Garage' => $row->location_name,
-                    'Quantity Received' => $this->formatLiters($row->quantity_liters),
-                    'Cost / Liter' => $this->formatNumber($row->unit_cost),
-                    'Source' => $references[$this->referenceKey($row->reference_type, (int) $row->reference_id)] ?? $this->label($row->reference_type).' #'.$row->reference_id,
-                    'Received By' => $row->created_by_name ?: 'N/A',
-                    'Remarks' => $row->remarks ?: 'N/A',
-                    'Status' => 'Confirmed',
-                ],
-            ]);
+        return $this->stockInService->stockInRows($search);
     }
 
-    private function stockOutRows(?string $search)
+    private function stockOutRows(?string $search): LengthAwarePaginator
     {
         $payments = DB::table('payments')
             ->selectRaw('sale_id, COALESCE(SUM(amount), 0) as total_paid')
             ->groupBy('sale_id');
 
-        return DB::table('stock_outs')
+        $query = DB::table('stock_outs')
             ->join('sales', 'sales.id', '=', 'stock_outs.sale_id')
             ->join('customers', 'customers.id', '=', 'stock_outs.customer_id')
             ->join('fuel_types', 'fuel_types.id', '=', 'stock_outs.fuel_type_id')
@@ -665,7 +361,7 @@ class InventoryOfficerPurchaseController extends Controller
                 'fuel_types.name',
             ]))
             ->orderByDesc('stock_outs.stock_out_at')
-            ->get([
+            ->select([
                 'stock_outs.stock_out_code',
                 'stock_outs.stock_out_at',
                 'stock_outs.quantity_liters',
@@ -678,22 +374,27 @@ class InventoryOfficerPurchaseController extends Controller
                 'sale_items.unit_price',
                 'sale_items.line_total',
                 'payments_total.total_paid',
-            ])
-            ->map(fn (object $row): array => [
-                $row->sale_code ?: $row->stock_out_code,
-                $this->formatDateTime($row->stock_out_at),
-                $row->customer_name,
-                $row->company_name,
-                $row->fuel_name,
-                $this->formatNumber($row->quantity_liters),
-                $this->formatNumber($row->unit_price),
-                $this->formatNumber($row->line_total),
-                $this->formatNumber($row->total_paid),
-                $row->source_type === 'depot' ? 'Depot' : 'Garage',
-                '0.00',
-                $this->formatNumber($row->line_total),
-                $this->rowClass($row->status),
             ]);
+
+        $paginator = $query->paginate(25, ['*'], 'stock_out_page')->withQueryString();
+        $transformed = collect($paginator->items())->map(fn (object $row): array => [
+            $row->sale_code ?: $row->stock_out_code,
+            $this->formatDateTime($row->stock_out_at),
+            $row->customer_name,
+            $row->company_name,
+            $row->fuel_name,
+            $this->formatNumber($row->quantity_liters),
+            $this->formatNumber($row->unit_price),
+            $this->formatNumber($row->line_total),
+            $this->formatNumber($row->total_paid),
+            $row->source_type === 'depot' ? 'Depot' : 'Garage',
+            '0.00',
+            $this->formatNumber($row->line_total),
+            $this->rowClass($row->status),
+        ]);
+        $paginator->setCollection($transformed);
+
+        return $paginator;
     }
 
     private function saleItemForStockOut(int $saleItemId): ?object
@@ -720,7 +421,7 @@ class InventoryOfficerPurchaseController extends Controller
     }
 
     /**
-     * @param array<string, mixed> $data
+     * @param  array<string, mixed>  $data
      */
     private function releaseFromGarage(Request $request, array $data, object $saleItem, float $quantity): ?string
     {
@@ -754,38 +455,63 @@ class InventoryOfficerPurchaseController extends Controller
             return 'Quantity released cannot exceed the remaining sale quantity.';
         }
 
-        $stockOutId = DB::table('stock_outs')->insertGetId([
-            'stock_out_code' => $this->nextCode('stock_outs', 'stock_out_code', 'STO'),
-            'sale_id' => $saleItem->sale_id,
-            'sale_item_id' => $saleItem->id,
-            'customer_id' => $saleItem->customer_id,
-            'fuel_type_id' => $saleItem->fuel_type_id,
-            'storage_location_id' => $garageId,
-            'source_type' => 'garage',
-            'quantity_liters' => $quantity,
-            'stock_out_at' => $data['stock_out_at'],
-            'status' => 'released',
-            'created_by' => $request->user()->id,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        $prepared = $this->preparedStockOutForSaleItem($saleItem);
+        $stockOutId = null;
 
-        $movementId = DB::table('inventory_movements')->insertGetId([
-            'movement_code' => $this->nextCode('inventory_movements', 'movement_code', 'MOV'),
-            'storage_location_id' => $garageId,
-            'fuel_type_id' => $saleItem->fuel_type_id,
-            'movement_type' => 'stock_out',
-            'direction' => 'out',
-            'quantity_liters' => $quantity,
-            'unit_cost' => null,
-            'reference_type' => self::STOCK_OUT_REFERENCE_TYPE,
-            'reference_id' => $stockOutId,
-            'movement_date' => $data['stock_out_at'],
-            'remarks' => $data['remarks'] ?? null,
-            'created_by' => $request->user()->id,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        if ($prepared && $this->sameQuantity((float) $prepared->quantity_liters, $quantity)) {
+            DB::table('stock_outs')
+                ->where('id', $prepared->id)
+                ->update([
+                    'storage_location_id' => $garageId,
+                    'source_type' => 'garage',
+                    'quantity_liters' => $quantity,
+                    'stock_out_at' => $data['stock_out_at'],
+                    'status' => 'released',
+                    'created_by' => $request->user()->id,
+                    'updated_at' => now(),
+                ]);
+
+            $stockOutId = (int) $prepared->id;
+        } else {
+            $this->reducePreparedStockOut($prepared, $quantity);
+
+            $stockOutId = $this->idempotencyService->retryOnCollision('stock_out_code', function () use ($saleItem, $garageId, $quantity, $data, $request): int {
+                return (int) DB::table('stock_outs')->insertGetId([
+                    'stock_out_code' => $this->nextCode('stock_outs', 'stock_out_code', 'STO'),
+                    'sale_id' => $saleItem->sale_id,
+                    'sale_item_id' => $saleItem->id,
+                    'customer_id' => $saleItem->customer_id,
+                    'fuel_type_id' => $saleItem->fuel_type_id,
+                    'storage_location_id' => $garageId,
+                    'source_type' => 'garage',
+                    'quantity_liters' => $quantity,
+                    'stock_out_at' => $data['stock_out_at'],
+                    'status' => 'released',
+                    'created_by' => $request->user()->id,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            });
+        }
+
+        $movementId = $this->idempotencyService->retryOnCollision('movement_code', function () use ($garageId, $saleItem, $quantity, $stockOutId, $data, $request): int {
+            return (int) DB::table('inventory_movements')->insertGetId([
+                'movement_code' => $this->nextCode('inventory_movements', 'movement_code', 'MOV'),
+                'storage_location_id' => $garageId,
+                'fuel_type_id' => $saleItem->fuel_type_id,
+                'movement_type' => 'stock_out',
+                'direction' => 'out',
+                'quantity_liters' => $quantity,
+                'unit_cost' => null,
+                'reference_type' => self::STOCK_OUT_REFERENCE_TYPE,
+                'reference_id' => $stockOutId,
+                'movement_date' => $data['stock_out_at'],
+                'remarks' => $data['remarks'] ?? null,
+                'created_by' => $request->user()->id,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        });
 
         DB::table('stock_outs')
             ->where('id', $stockOutId)
@@ -799,7 +525,7 @@ class InventoryOfficerPurchaseController extends Controller
     }
 
     /**
-     * @param array<string, mixed> $data
+     * @param  array<string, mixed>  $data
      */
     private function releaseDirectFromDepot(Request $request, array $data, object $saleItem, float $quantity): ?string
     {
@@ -867,23 +593,45 @@ class InventoryOfficerPurchaseController extends Controller
             return 'Quantity released cannot exceed the remaining sale quantity.';
         }
 
-        DB::table('stock_outs')->insert([
-            'stock_out_code' => $this->nextCode('stock_outs', 'stock_out_code', 'STO'),
-            'sale_id' => $saleItem->sale_id,
-            'sale_item_id' => $saleItem->id,
-            'customer_id' => $saleItem->customer_id,
-            'fuel_type_id' => $saleItem->fuel_type_id,
-            'source_type' => 'depot',
-            'storage_location_id' => null,
-            'depot_id' => $allocation->depot_id,
-            'haul_allocation_id' => $allocation->id,
-            'quantity_liters' => $quantity,
-            'stock_out_at' => $data['stock_out_at'],
-            'status' => 'released',
-            'created_by' => $request->user()->id,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        $prepared = $this->preparedStockOutForSaleItem($saleItem);
+
+        if ($prepared && $this->sameQuantity((float) $prepared->quantity_liters, $quantity)) {
+            DB::table('stock_outs')
+                ->where('id', $prepared->id)
+                ->update([
+                    'source_type' => 'depot',
+                    'storage_location_id' => null,
+                    'depot_id' => $allocation->depot_id,
+                    'haul_allocation_id' => $allocation->id,
+                    'quantity_liters' => $quantity,
+                    'stock_out_at' => $data['stock_out_at'],
+                    'status' => 'released',
+                    'created_by' => $request->user()->id,
+                    'updated_at' => now(),
+                ]);
+        } else {
+            $this->reducePreparedStockOut($prepared, $quantity);
+
+            $this->idempotencyService->retryOnCollision('stock_out_code', function () use ($saleItem, $allocation, $quantity, $data, $request): void {
+                DB::table('stock_outs')->insert([
+                    'stock_out_code' => $this->nextCode('stock_outs', 'stock_out_code', 'STO'),
+                    'sale_id' => $saleItem->sale_id,
+                    'sale_item_id' => $saleItem->id,
+                    'customer_id' => $saleItem->customer_id,
+                    'fuel_type_id' => $saleItem->fuel_type_id,
+                    'source_type' => 'depot',
+                    'storage_location_id' => null,
+                    'depot_id' => $allocation->depot_id,
+                    'haul_allocation_id' => $allocation->id,
+                    'quantity_liters' => $quantity,
+                    'stock_out_at' => $data['stock_out_at'],
+                    'status' => 'released',
+                    'created_by' => $request->user()->id,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            });
+        }
 
         if (round($allocationRemaining - $quantity, 2) <= 0) {
             DB::table('haul_allocations')
@@ -942,6 +690,41 @@ class InventoryOfficerPurchaseController extends Controller
             ->where('status', '!=', 'cancelled')
             ->lockForUpdate()
             ->first(['id']) !== null;
+    }
+
+    private function preparedStockOutForSaleItem(object $saleItem): ?object
+    {
+        return DB::table('stock_outs')
+            ->where('sale_id', $saleItem->sale_id)
+            ->where('sale_item_id', $saleItem->id)
+            ->where('customer_id', $saleItem->customer_id)
+            ->where('fuel_type_id', $saleItem->fuel_type_id)
+            ->where('status', 'prepared')
+            ->lockForUpdate()
+            ->orderBy('id')
+            ->first(['id', 'quantity_liters']);
+    }
+
+    private function reducePreparedStockOut(?object $prepared, float $quantity): void
+    {
+        if (! $prepared) {
+            return;
+        }
+
+        $remaining = round((float) $prepared->quantity_liters - $quantity, 2);
+
+        DB::table('stock_outs')
+            ->where('id', $prepared->id)
+            ->update([
+                'quantity_liters' => max(0, $remaining),
+                'status' => $remaining > 0 ? 'prepared' : 'cancelled',
+                'updated_at' => now(),
+            ]);
+    }
+
+    private function sameQuantity(float $left, float $right): bool
+    {
+        return abs(round($left, 2) - round($right, 2)) < 0.01;
     }
 
     private function duplicateDirectDepotReleaseExists(object $allocation, object $saleItem, float $quantity, string $stockOutAt): bool
@@ -1079,7 +862,7 @@ class InventoryOfficerPurchaseController extends Controller
     }
 
     /**
-     * @param Collection<int, object> $movements
+     * @param  Collection<int, object>  $movements
      * @return array<string, string>
      */
     private function stockInReferenceLabels(Collection $movements): array
@@ -1200,27 +983,6 @@ class InventoryOfficerPurchaseController extends Controller
             ->groupBy('fuel_type_id');
     }
 
-    /**
-     * @return array<int, array<string, string|null>>
-     */
-    private function withdrawalsForPurchaseItem(int $purchaseItemId): array
-    {
-        return DB::table('hauls')
-            ->where('purchase_item_id', $purchaseItemId)
-            ->whereNotNull('withdrawal_receipt_path')
-            ->where('status', '!=', 'cancelled')
-            ->orderByDesc('withdrawal_receipt_uploaded_at')
-            ->orderByDesc('id')
-            ->get(['id', 'haul_code', 'withdrawal_receipt_notes', 'withdrawal_receipt_uploaded_at'])
-            ->map(fn (object $row): array => [
-                'haul_code' => $row->haul_code,
-                'uploaded_at' => $this->formatDateTime($row->withdrawal_receipt_uploaded_at),
-                'notes' => $row->withdrawal_receipt_notes ?: null,
-                'url' => route('withdrawal-receipts.show', $row->id),
-            ])
-            ->all();
-    }
-
     private function directDepotReleaseAllocationOptions()
     {
         $delivered = DB::table('stock_outs')
@@ -1255,65 +1017,7 @@ class InventoryOfficerPurchaseController extends Controller
     }
 
     /**
-     * @param Collection<int, object> $rows
-     * @return array<int, bool>
-     */
-    private function purchaseDependencyMap(Collection $rows): array
-    {
-        $ids = $rows
-            ->pluck('id')
-            ->map(fn (mixed $id): int => (int) $id)
-            ->filter()
-            ->unique()
-            ->values();
-
-        if ($ids->isEmpty()) {
-            return [];
-        }
-
-        $dependentIds = $rows
-            ->filter(fn (object $row): bool => (float) ($row->quantity_hauled_liters ?? 0) > 0)
-            ->pluck('id')
-            ->merge(DB::table('hauls')->whereIn('purchase_item_id', $ids->all())->pluck('purchase_item_id'))
-            ->merge(DB::table('inventory_movements')
-                ->where('reference_type', 'purchase_item')
-                ->whereIn('reference_id', $ids->all())
-                ->pluck('reference_id'))
-            ->map(fn (mixed $id): int => (int) $id)
-            ->unique()
-            ->all();
-
-        $dependentSet = array_fill_keys($dependentIds, true);
-
-        return $ids
-            ->mapWithKeys(fn (int $id): array => [$id => isset($dependentSet[$id])])
-            ->all();
-    }
-
-    private function hasDependentActivity(object $row): bool
-    {
-        return (float) ($row->quantity_hauled_liters ?? 0) > 0
-            || DB::table('hauls')->where('purchase_item_id', $row->id)->exists()
-            || DB::table('inventory_movements')
-                ->where('reference_type', 'purchase_item')
-                ->where('reference_id', $row->id)
-                ->exists();
-    }
-
-    /**
-     * @param array<string, mixed> $data
-     */
-    private function changesProtectedFields(object $row, array $data): bool
-    {
-        return (int) $row->depot_id !== (int) $data['depot_id']
-            || (int) $row->fuel_type_id !== (int) $data['fuel_type_id']
-            || (string) $row->purchase_date !== (string) $data['purchase_date']
-            || (float) $row->quantity_ordered_liters !== (float) $data['quantity_ordered_liters']
-            || (float) $row->unit_cost !== (float) $data['unit_cost'];
-    }
-
-    /**
-     * @param array<int, string> $columns
+     * @param  array<int, string>  $columns
      */
     private function search(Builder $query, string $term, array $columns): Builder
     {
@@ -1326,11 +1030,8 @@ class InventoryOfficerPurchaseController extends Controller
 
     private function nextCode(string $table, string $column, string $prefix): string
     {
-        $nextId = ((int) DB::table($table)->max('id')) + 1;
-
         do {
-            $code = $prefix.'-'.str_pad((string) $nextId, 6, '0', STR_PAD_LEFT);
-            $nextId++;
+            $code = $prefix.'-'.now()->format('ymd').'-'.Str::upper(Str::random(5));
         } while (DB::table($table)->where($column, $code)->exists());
 
         return $code;

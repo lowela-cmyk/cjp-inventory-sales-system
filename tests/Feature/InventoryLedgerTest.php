@@ -48,7 +48,7 @@ class InventoryLedgerTest extends TestCase
         $rows = app(InventoryLedgerService::class)->rows();
         $active = $rows['ledger']->first(fn ($row): bool => $row[0] === 'PUR-100K-MULTI');
 
-        $this->assertSame(['PUR-100K-MULTI', 'Diesel', 'CJP Depot', '100,000.00', '80,000.00', '20,000.00', 'Partially Lifted'], $active);
+        $this->assertSame(['PUR-100K-MULTI', 'DIESEL', 'CJP Depot', '100,000.00', '80,000.00', '20,000.00', 'Partially Lifted'], $active);
 
         $this->haul($records, $purchase, 'LFT-20K-FINAL', 20000, 'completed', '2026-09-03 08:00:00');
 
@@ -225,7 +225,7 @@ class InventoryLedgerTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      * @return array<string, int>
      */
     private function purchase(array $records, string $code, float $quantity): array
@@ -257,8 +257,8 @@ class InventoryLedgerTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
-     * @param array<string, int> $purchase
+     * @param  array<string, mixed>  $records
+     * @param  array<string, int>  $purchase
      */
     private function haul(array $records, array $purchase, string $code, float $quantity, string $status, string $scheduledAt = '2026-09-01 08:00:00'): int
     {

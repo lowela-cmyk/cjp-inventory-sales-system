@@ -7,6 +7,7 @@ use App\Services\DashboardSummaryService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -237,7 +238,7 @@ class CompleteWorkflowIntegrationTest extends TestCase
 
         $this->assertSame(0, DB::table('inventory_movements')->count());
         $this->assertSame(0, DB::table('stock_outs')->count());
-        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasTable('deliveries'));
+        $this->assertFalse(Schema::hasTable('deliveries'));
         $this->assertSame(0, DB::table('payments')->count());
         $this->assertSame(0.0, $this->garageBalance($records));
     }
@@ -266,13 +267,13 @@ class CompleteWorkflowIntegrationTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
-        $fuelTypeId = DB::table('fuel_types')->insertGetId([
-            'code' => 'DSL-WORKFLOW',
-            'name' => 'Workflow Diesel',
+        $fuelTypeId = (int) (DB::table('fuel_types')->where('code', 'DSL')->value('id') ?? DB::table('fuel_types')->insertGetId([
+            'code' => 'DSL',
+            'name' => 'DIESEL',
             'status' => 'active',
             'created_at' => now(),
             'updated_at' => now(),
-        ]);
+        ]));
         $customerId = DB::table('customers')->insertGetId([
             'customer_code' => 'CUS-WORKFLOW',
             'name' => 'Workflow Customer',
@@ -295,7 +296,7 @@ class CompleteWorkflowIntegrationTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      * @return array{purchaseId: int, purchaseItemId: int}
      */
     private function createPurchaseThroughWorkflow(array $records, float $quantity): array
@@ -322,8 +323,8 @@ class CompleteWorkflowIntegrationTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
-     * @param array{purchaseId: int, purchaseItemId: int} $purchase
+     * @param  array<string, mixed>  $records
+     * @param  array{purchaseId: int, purchaseItemId: int}  $purchase
      */
     private function haul(array $records, array $purchase, float $quantity): int
     {
@@ -344,8 +345,8 @@ class CompleteWorkflowIntegrationTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $records
+     * @param  array<string, mixed>  $overrides
      */
     private function allocation(array $records, int $haulId, float $quantity, array $overrides = []): int
     {
@@ -365,8 +366,8 @@ class CompleteWorkflowIntegrationTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $records
+     * @param  array<string, mixed>  $overrides
      * @return array{saleId: int, saleItemId: int}
      */
     private function createSaleThroughWorkflow(array $records, array $overrides = []): array
@@ -396,8 +397,8 @@ class CompleteWorkflowIntegrationTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $records
+     * @param  array<string, mixed>  $overrides
      * @return array<string, mixed>
      */
     private function stockInPayload(array $records, int $allocationId, array $overrides = []): array
@@ -412,9 +413,9 @@ class CompleteWorkflowIntegrationTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
-     * @param array{saleId: int, saleItemId: int} $sale
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $records
+     * @param  array{saleId: int, saleItemId: int}  $sale
+     * @param  array<string, mixed>  $overrides
      * @return array<string, mixed>
      */
     private function stockOutPayload(array $records, array $sale, array $overrides = []): array
@@ -432,7 +433,7 @@ class CompleteWorkflowIntegrationTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $overrides
      * @return array<string, mixed>
      */
     private function paymentPayload(array $overrides = []): array
@@ -459,7 +460,7 @@ class CompleteWorkflowIntegrationTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      */
     private function garageBalance(array $records): float
     {

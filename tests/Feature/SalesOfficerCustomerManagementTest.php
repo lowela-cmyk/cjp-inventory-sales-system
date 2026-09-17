@@ -235,7 +235,7 @@ class SalesOfficerCustomerManagementTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $overrides
      */
     private function customer(array $overrides = []): int
     {

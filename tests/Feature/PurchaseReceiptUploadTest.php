@@ -118,7 +118,7 @@ class PurchaseReceiptUploadTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $overrides
      * @return array<string, mixed>
      */
     private function baseHaulRecords(array $overrides = []): array
@@ -198,7 +198,7 @@ class PurchaseReceiptUploadTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $overrides
      * @return array<string, mixed>
      */
     private function purchasePayload(array $records, array $overrides = []): array

@@ -200,8 +200,8 @@ class AdminSalesReportsTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $records
+     * @param  array<string, mixed>  $overrides
      */
     private function sale(array $records, array $overrides = []): int
     {
@@ -249,8 +249,8 @@ class AdminSalesReportsTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $records
+     * @param  array<string, mixed>  $overrides
      */
     private function payment(int $saleId, array $records, array $overrides = []): void
     {

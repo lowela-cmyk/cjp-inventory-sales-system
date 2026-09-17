@@ -446,17 +446,25 @@ class InventoryOfficerStockInTest extends TestCase
                 'remarks' => 'Visible to admin monitoring',
             ]);
 
+        $movementCode = (string) DB::table('inventory_movements')
+            ->where('storage_location_id', $records['garageId'])
+            ->latest('id')
+            ->value('movement_code');
+
+        $this->assertNotEmpty($movementCode);
+        $this->assertMatchesRegularExpression('/^MOV-\d{6}-[A-Z0-9]{5}$/', $movementCode);
+
         $this->actingAs($admin)
             ->get(route('admin.inventory'))
             ->assertOk()
-            ->assertSee('MOV-000001')
+            ->assertSee($movementCode)
             ->assertSee('PUR-STOCK-IN')
             ->assertSee('CJP Garage')
             ->assertSee('40,000.00');
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      */
     private function garageBalance(array $records): float
     {

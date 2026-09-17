@@ -73,8 +73,8 @@ class InventoryVarianceExplanationsTest extends TestCase
                 && str_contains($promptText, '"reason": "Missing Stock-Out"')
                 && str_contains($promptText, '"reason": "Quantity Mismatch"')
                 && str_contains($promptText, '"reason": "Missing Sale\/Receivable"')
-                && str_contains($promptText, '"fuel_type": "AI Diesel"')
-                && str_contains($promptText, '"fuel_type": "AI E10"')
+                && str_contains($promptText, '"fuel_type": "DIESEL"')
+                && str_contains($promptText, '"fuel_type": "UNLEADED"')
                 && str_contains($promptText, 'requires verification')
                 && str_contains($promptText, 'Unpaid or partially paid valid sales are not automatically inventory variance')
                 && ! str_contains($promptText, 'Variance Customer')
@@ -214,20 +214,20 @@ class InventoryVarianceExplanationsTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
-        $dieselId = DB::table('fuel_types')->insertGetId([
-            'code' => 'DSL-VAR-AI',
-            'name' => 'AI Diesel',
+        $dieselId = (int) (DB::table('fuel_types')->where('code', 'DSL')->value('id') ?? DB::table('fuel_types')->insertGetId([
+            'code' => 'DSL',
+            'name' => 'DIESEL',
             'status' => 'active',
             'created_at' => now(),
             'updated_at' => now(),
-        ]);
-        $e10Id = DB::table('fuel_types')->insertGetId([
-            'code' => 'E10-VAR-AI',
-            'name' => 'AI E10',
+        ]));
+        $e10Id = (int) (DB::table('fuel_types')->where('code', 'UNL')->value('id') ?? DB::table('fuel_types')->insertGetId([
+            'code' => 'UNL',
+            'name' => 'UNLEADED',
             'status' => 'active',
             'created_at' => now(),
             'updated_at' => now(),
-        ]);
+        ]));
 
         return compact('admin', 'salesOfficer', 'inventoryOfficer', 'driver', 'garageId', 'customerId', 'dieselId', 'e10Id');
     }

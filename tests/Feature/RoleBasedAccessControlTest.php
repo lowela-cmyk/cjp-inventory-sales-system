@@ -150,7 +150,7 @@ class RoleBasedAccessControlTest extends TestCase
     }
 
     /**
-     * @param array<int, string> $blockedUrls
+     * @param  array<int, string>  $blockedUrls
      */
     #[DataProvider('roleAccessProvider')]
     public function test_authenticated_users_can_only_access_their_role_pages(string $role, string $allowedUrl, array $blockedUrls): void
@@ -193,8 +193,8 @@ class RoleBasedAccessControlTest extends TestCase
     }
 
     /**
-     * @param array<int, string> $allowedUrls
-     * @param array<int, string> $blockedUrls
+     * @param  array<int, string>  $allowedUrls
+     * @param  array<int, string>  $blockedUrls
      */
     #[DataProvider('fullRoleAccessProvider')]
     public function test_every_role_route_is_enforced_server_side(string $role, array $allowedUrls, array $blockedUrls): void
@@ -218,8 +218,8 @@ class RoleBasedAccessControlTest extends TestCase
     }
 
     /**
-     * @param array<int, string> $allowedUrls
-     * @param array<int, string> $blockedUrls
+     * @param  array<int, string>  $allowedUrls
+     * @param  array<int, string>  $blockedUrls
      */
     #[DataProvider('fullRoleAccessProvider')]
     public function test_query_parameters_cannot_tamper_with_role_authorization(string $role, array $allowedUrls, array $blockedUrls): void
@@ -418,9 +418,9 @@ class RoleBasedAccessControlTest extends TestCase
         $this->assertGuest();
     }
 
-    public function test_public_registration_can_request_admin_accounts_pending_approval(): void
+    public function test_public_registration_cannot_request_admin_accounts(): void
     {
-        $this->post('/register', [
+        $this->from('/register')->post('/register', [
             'full_name' => 'Self Escalating User',
             'email' => 'self-escalate@example.com',
             'contact_number' => '09171234567',
@@ -428,14 +428,11 @@ class RoleBasedAccessControlTest extends TestCase
             'status' => 'active',
             'password' => 'password',
             'password_confirmation' => 'password',
-        ])->assertRedirect(route('login'));
+        ])->assertRedirect('/register')
+            ->assertSessionHasErrors('role');
 
-        $this->assertDatabaseHas('users', [
-            'name' => 'Self Escalating User',
+        $this->assertDatabaseMissing('users', [
             'email' => 'self-escalate@example.com',
-            'role' => 'admin',
-            'status' => 'active',
-            'approval_status' => 'pending',
         ]);
 
         $this->assertGuest();
@@ -698,9 +695,9 @@ class RoleBasedAccessControlTest extends TestCase
             ->assertSee('PHP 1,000,000')
             ->assertSee('60 KL')
             ->assertSee('40,000 L')
-            ->assertSee('Premium')
+            ->assertSee('PREMIUM')
             ->assertSee('1,000 L')
-            ->assertSee('Diesel')
+            ->assertSee('DIESEL')
             ->assertSee('PHP1,800,000')
             ->assertSee('PHP800,000')
             ->assertSee('PHP1,000,000')

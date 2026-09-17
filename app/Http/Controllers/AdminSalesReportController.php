@@ -39,20 +39,20 @@ class AdminSalesReportController extends Controller
         $filename = 'sales-report-'.now()->format('Ymd-His').'.csv';
         $handle = fopen('php://temp', 'r+');
 
-        fputcsv($handle, ['CJP Southern Star OPC Sales Report']);
-        fputcsv($handle, ['Date Range', $this->filterLabel($filters)]);
-        fputcsv($handle, ['Generated At', now()->format('M d, Y h:i A')]);
-        fputcsv($handle, []);
-        fputcsv($handle, ['Summary']);
+        $this->writeCsvRow($handle, ['CJP Southern Star OPC Sales Report']);
+        $this->writeCsvRow($handle, ['Date Range', $this->filterLabel($filters)]);
+        $this->writeCsvRow($handle, ['Generated At', now()->format('M d, Y h:i A')]);
+        $this->writeCsvRow($handle, []);
+        $this->writeCsvRow($handle, ['Summary']);
         foreach ($report['summary'] as $card) {
-            fputcsv($handle, [$card['label'], $card['raw']]);
+            $this->writeCsvRow($handle, [$card['label'], $card['raw']]);
         }
 
-        fputcsv($handle, []);
-        fputcsv($handle, ['Transactions']);
-        fputcsv($handle, ['Reference', 'Sales Order Number', 'Date', 'Customer', 'Company', 'Items', 'Quantity Liters', 'Sale Total', 'Total Paid', 'Balance', 'Payment Status']);
+        $this->writeCsvRow($handle, []);
+        $this->writeCsvRow($handle, ['Transactions']);
+        $this->writeCsvRow($handle, ['Reference', 'Sales Order Number', 'Date', 'Customer', 'Company', 'Items', 'Quantity Liters', 'Sale Total', 'Total Paid', 'Balance', 'Payment Status']);
         foreach ($report['transactions'] as $row) {
-            fputcsv($handle, [
+            $this->writeCsvRow($handle, [
                 $row['sale_code'],
                 $row['sales_order_number'],
                 $row['sale_date'],
@@ -67,11 +67,11 @@ class AdminSalesReportController extends Controller
             ]);
         }
 
-        fputcsv($handle, []);
-        fputcsv($handle, ['Payment History']);
-        fputcsv($handle, ['Payment Reference', 'Sale Reference', 'Sales Order Number', 'Payment Date', 'Customer', 'Method', 'Amount', 'Received By']);
+        $this->writeCsvRow($handle, []);
+        $this->writeCsvRow($handle, ['Payment History']);
+        $this->writeCsvRow($handle, ['Payment Reference', 'Sale Reference', 'Sales Order Number', 'Payment Date', 'Customer', 'Method', 'Amount', 'Received By']);
         foreach ($report['paymentHistory'] as $row) {
-            fputcsv($handle, [
+            $this->writeCsvRow($handle, [
                 $row['payment_code'],
                 $row['sale_code'],
                 $row['sales_order_number'],
@@ -83,11 +83,11 @@ class AdminSalesReportController extends Controller
             ]);
         }
 
-        fputcsv($handle, []);
-        fputcsv($handle, ['Receivables']);
-        fputcsv($handle, ['Customer', 'Reference', 'Sales Order Number', 'Sale Total', 'Total Paid', 'Balance', 'Status', 'Due Date']);
+        $this->writeCsvRow($handle, []);
+        $this->writeCsvRow($handle, ['Receivables']);
+        $this->writeCsvRow($handle, ['Customer', 'Reference', 'Sales Order Number', 'Sale Total', 'Total Paid', 'Balance', 'Status', 'Due Date']);
         foreach ($report['receivables'] as $row) {
-            fputcsv($handle, [
+            $this->writeCsvRow($handle, [
                 $row['customer_name'],
                 $row['sale_code'],
                 $row['sales_order_number'],
@@ -110,7 +110,7 @@ class AdminSalesReportController extends Controller
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return array<string, mixed>
      */
     private function reportData(array $filters): array
@@ -198,7 +198,7 @@ class AdminSalesReportController extends Controller
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      */
     private function saleRows(array $filters)
     {
@@ -250,7 +250,7 @@ class AdminSalesReportController extends Controller
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      */
     private function fuelBreakdown(array $filters)
     {
@@ -300,7 +300,7 @@ class AdminSalesReportController extends Controller
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      */
     private function paymentTotals(array $filters)
     {
@@ -339,7 +339,7 @@ class AdminSalesReportController extends Controller
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      */
     private function paymentHistory(array $filters)
     {
@@ -433,7 +433,7 @@ class AdminSalesReportController extends Controller
     }
 
     /**
-     * @param array<int, array{0: string, 1: float|int, 2: string}> $rows
+     * @param  array<int, array{0: string, 1: float|int, 2: string}>  $rows
      * @return array<int, array{label: string, value: string, height: int, color: string}>
      */
     private function bars(array $rows): array
@@ -449,7 +449,7 @@ class AdminSalesReportController extends Controller
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      */
     private function applyDateFilter(Builder $query, array $filters, string $column): Builder
     {
@@ -465,7 +465,7 @@ class AdminSalesReportController extends Controller
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      */
     private function filterLabel(array $filters): string
     {
@@ -520,5 +520,29 @@ class AdminSalesReportController extends Controller
     private function formatNumber(float $value): string
     {
         return number_format($value, 2);
+    }
+
+    /**
+     * Sanitize cell value to prevent CSV formula injection.
+     */
+    private function sanitizeCsvCell(mixed $value): mixed
+    {
+        if (is_string($value) && $value !== '') {
+            if (in_array($value[0], ['=', '+', '-', '@', "\t", "\r"], true)) {
+                return "'".$value;
+            }
+        }
+
+        return $value;
+    }
+
+    /**
+     * @param  resource  $handle
+     * @param  array<int, mixed>  $fields
+     */
+    private function writeCsvRow($handle, array $fields): void
+    {
+        $sanitized = array_map(fn ($cell) => $this->sanitizeCsvCell($cell), $fields);
+        fputcsv($handle, $sanitized);
     }
 }

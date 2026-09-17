@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -227,7 +228,7 @@ class InventoryOfficerStockOutTest extends TestCase
             ->assertSessionHasErrors('stock_out');
 
         $this->assertSame(9000.0, $this->garageBalance($records));
-        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasTable('deliveries'));
+        $this->assertFalse(Schema::hasTable('deliveries'));
         $this->assertDatabaseHas('sale_items', [
             'id' => $sale['saleItemId'],
             'fulfilled_quantity_liters' => '0.00',
@@ -420,9 +421,9 @@ class InventoryOfficerStockOutTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
-     * @param array<string, mixed> $sale
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $records
+     * @param  array<string, mixed>  $sale
+     * @param  array<string, mixed>  $overrides
      * @return array<string, mixed>
      */
     private function stockOutPayload(array $records, array $sale, array $overrides = []): array
@@ -440,8 +441,8 @@ class InventoryOfficerStockOutTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $records
+     * @param  array<string, mixed>  $overrides
      */
     private function garageMovement(array $records, array $overrides = []): void
     {
@@ -463,8 +464,8 @@ class InventoryOfficerStockOutTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $records
+     * @param  array<string, mixed>  $overrides
      * @return array<string, int>
      */
     private function sale(array $records, array $overrides = []): array
@@ -496,9 +497,9 @@ class InventoryOfficerStockOutTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
-     * @param array<string, mixed> $sale
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $records
+     * @param  array<string, mixed>  $sale
+     * @param  array<string, mixed>  $overrides
      */
     private function directAllocation(array $records, array $sale, array $overrides = []): int
     {
@@ -565,7 +566,7 @@ class InventoryOfficerStockOutTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      */
     private function garageBalance(array $records): float
     {

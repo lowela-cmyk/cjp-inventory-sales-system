@@ -6,6 +6,7 @@ use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -107,7 +108,7 @@ class DispatchLiftingStatusManagementTest extends TestCase
         $records = $this->baseRecords();
         $garageHaulId = $this->haul($records, ['haul_code' => 'LFT-GARAGE']);
         $directHaulId = $this->haul($records, ['haul_code' => 'LFT-DIRECT', 'destination_type' => 'customer']);
-        $deliveryTableExists = \Illuminate\Support\Facades\Schema::hasTable('deliveries');
+        $deliveryTableExists = Schema::hasTable('deliveries');
         $beforeStockOuts = DB::table('stock_outs')->count();
         $beforeMovements = DB::table('inventory_movements')->count();
 
@@ -241,7 +242,7 @@ class DispatchLiftingStatusManagementTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $overrides
      */
     private function statusPayload(string $status, array $overrides = []): array
     {
@@ -265,8 +266,8 @@ class DispatchLiftingStatusManagementTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $records
+     * @param  array<string, mixed>  $overrides
      */
     private function haul(array $records, array $overrides = []): int
     {

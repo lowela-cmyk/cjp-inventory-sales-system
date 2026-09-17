@@ -116,7 +116,7 @@ class InventoryLedgerService
     }
 
     /**
-     * @param array<int, int> $purchaseItemIds
+     * @param  array<int, int>  $purchaseItemIds
      * @return array<int, Collection<int, array<string, mixed>>>
      */
     private function liftsByPurchaseItem(array $purchaseItemIds): array
@@ -182,7 +182,7 @@ class InventoryLedgerService
     }
 
     /**
-     * @param array<int, int> $purchaseItemIds
+     * @param  array<int, int>  $purchaseItemIds
      * @return array<int, string>
      */
     private function movementSummariesByPurchaseItem(array $purchaseItemIds): array
@@ -233,7 +233,7 @@ class InventoryLedgerService
     }
 
     /**
-     * @param Collection<int, object> $movements
+     * @param  Collection<int, object>  $movements
      * @return array<string, string>
      */
     private function referenceLabels(Collection $movements): array
@@ -259,7 +259,7 @@ class InventoryLedgerService
     }
 
     /**
-     * @param array<int, int> $ids
+     * @param  array<int, int>  $ids
      * @return array<int, string>
      */
     private function purchaseItemReferences(array $ids): array
@@ -328,7 +328,7 @@ class InventoryLedgerService
     }
 
     /**
-     * @param array<int, int> $ids
+     * @param  array<int, int>  $ids
      * @return array<int, string>
      */
     private function haulAllocationReferences(array $ids): array
@@ -349,7 +349,7 @@ class InventoryLedgerService
     }
 
     /**
-     * @param array<int, int> $ids
+     * @param  array<int, int>  $ids
      * @return array<int, string>
      */
     private function stockOutReferences(array $ids): array

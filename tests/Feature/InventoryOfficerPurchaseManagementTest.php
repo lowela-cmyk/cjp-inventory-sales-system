@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 class InventoryOfficerPurchaseManagementTest extends TestCase
@@ -61,7 +62,7 @@ class InventoryOfficerPurchaseManagementTest extends TestCase
         $this->assertSame(2050025.63, (float) $item->line_total);
         $this->assertSame(0, DB::table('inventory_movements')->count());
         $this->assertSame(0, DB::table('hauls')->count());
-        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasTable('deliveries'));
+        $this->assertFalse(Schema::hasTable('deliveries'));
     }
 
     public function test_purchase_create_validation_rejects_invalid_values(): void

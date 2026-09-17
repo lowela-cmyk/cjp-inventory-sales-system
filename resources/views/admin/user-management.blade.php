@@ -57,6 +57,11 @@
                     </tbody>
                 </table>
             </div>
+            @if (method_exists($staff, 'links'))
+                <div class="pagination-wrap" style="margin-top: 16px;">
+                    {{ $staff->links() }}
+                </div>
+            @endif
         </section>
 
         <section data-tab-panel="drivers" {{ $activeTab !== 'drivers' ? 'hidden' : '' }}>
@@ -87,6 +92,11 @@
                     </tbody>
                 </table>
             </div>
+            @if (method_exists($drivers, 'links'))
+                <div class="pagination-wrap" style="margin-top: 16px;">
+                    {{ $drivers->links() }}
+                </div>
+            @endif
         </section>
 
         <section data-tab-panel="customers" {{ $activeTab !== 'customers' ? 'hidden' : '' }}>
@@ -116,6 +126,11 @@
                     </tbody>
                 </table>
             </div>
+            @if (method_exists($customers, 'links'))
+                <div class="pagination-wrap" style="margin-top: 16px;">
+                    {{ $customers->links() }}
+                </div>
+            @endif
         </section>
     </div>
 

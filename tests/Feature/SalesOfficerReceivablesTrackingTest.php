@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -144,7 +145,7 @@ class SalesOfficerReceivablesTrackingTest extends TestCase
         $this->assertSame($beforeInventory, DB::table('inventory_movements')->count());
         $this->assertSame(0, DB::table('stock_outs')->count());
         $this->assertSame(0, DB::table('hauls')->count());
-        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasTable('deliveries'));
+        $this->assertFalse(Schema::hasTable('deliveries'));
 
         $this->actingAs($records['salesOfficer'])
             ->get(route('sales-officer.sales'))
@@ -182,8 +183,8 @@ class SalesOfficerReceivablesTrackingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $records
+     * @param  array<string, mixed>  $overrides
      */
     private function sale(array $records, array $overrides = []): int
     {
@@ -222,8 +223,8 @@ class SalesOfficerReceivablesTrackingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $records
+     * @param  array<string, mixed>  $overrides
      */
     private function payment(int $saleId, array $records, array $overrides = []): void
     {

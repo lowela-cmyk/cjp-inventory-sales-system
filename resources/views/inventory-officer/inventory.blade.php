@@ -45,7 +45,6 @@
                 <button class="btn btn-primary" type="submit">Depot</button>
                 <button class="btn btn-primary" type="submit">Fuel Type (All)</button>
                 <button class="btn btn-primary" type="button" data-modal-open="io-purchase-add">+ Record Purchases</button>
-                <button class="btn btn-secondary" type="button" data-modal-open="io-fuel-type-add">+ Fuel Type</button>
                 <button class="btn btn-secondary" type="button" data-modal-open="io-depot-add">+ Depot</button>
             </form>
             <div class="table-wrap">
@@ -69,6 +68,11 @@
                     </tbody>
                 </table>
             </div>
+            @if (method_exists($purchases, 'links'))
+                <div class="pagination-wrap" style="margin-top: 16px;">
+                    {{ $purchases->links() }}
+                </div>
+            @endif
         </section>
 
         <section data-tab-panel="stock-in" @hidden($activeTab !== 'stock-in')>
@@ -102,6 +106,11 @@
                     </tbody>
                 </table>
             </div>
+            @if (method_exists($stockIn, 'links'))
+                <div class="pagination-wrap" style="margin-top: 16px;">
+                    {{ $stockIn->links() }}
+                </div>
+            @endif
         </section>
 
         <section data-tab-panel="stock-out" @hidden($activeTab !== 'stock-out')>
@@ -125,6 +134,11 @@
                     </tbody>
                 </table>
             </div>
+            @if (method_exists($stockOut, 'links'))
+                <div class="pagination-wrap" style="margin-top: 16px;">
+                    {{ $stockOut->links() }}
+                </div>
+            @endif
         </section>
 
         <section data-tab-panel="depots" @hidden($activeTab !== 'depots')>
@@ -134,8 +148,8 @@
                 <button class="btn btn-primary" type="submit">Depot</button>
                 <button class="btn btn-secondary" type="button" data-modal-open="io-depot-add">+ Depot</button>
             </form>
-            <div class="table-wrap">
-                <table class="admin-table">
+            <div class="table-wrap table-wrap-fit">
+                <table class="admin-table admin-table-fit depot-table">
                     <thead><tr><th>Depot Code</th><th>Name</th><th>Address</th><th>Contact Person</th><th>Phone</th><th>Status</th></tr></thead>
                     <tbody>
                         @forelse ($depotRows as $row)
@@ -154,6 +168,11 @@
                     </tbody>
                 </table>
             </div>
+            @if (method_exists($depotRows, 'links'))
+                <div class="pagination-wrap" style="margin-top: 16px;">
+                    {{ $depotRows->links() }}
+                </div>
+            @endif
         </section>
     </div>
 
@@ -274,21 +293,6 @@
                     <div class="form-row"><label for="stock_out_quantity_liters">Quantity (Liters)</label><input id="stock_out_quantity_liters" name="quantity_liters" type="number" min="0.01" step="0.01" placeholder="Enter Quantity (Liters)" value="{{ old('quantity_liters') }}" required></div>
                     <div class="form-row"><label for="stock_out_at">Date</label><input id="stock_out_at" name="stock_out_at" type="datetime-local" value="{{ old('stock_out_at', now()->format('Y-m-d\TH:i')) }}" required></div>
                     <div class="form-row"><label for="stock_out_remarks">Remarks</label><input id="stock_out_remarks" name="remarks" type="text" placeholder="Enter Remarks" value="{{ old('remarks') }}"></div>
-                </div>
-            </div>
-            <div class="modal-actions"><button class="btn btn-pill btn-secondary" type="submit">Add</button><button class="btn btn-pill btn-danger" type="button" data-modal-close>Cancel</button></div>
-        </form>
-    </x-admin.modal>
-
-    <x-admin.modal id="io-fuel-type-add" title="Add Fuel Type">
-        <form method="POST" action="{{ route($inventoryRoutePrefix.'.fuel-types.store') }}">
-            @csrf
-            <div class="modal-card">
-                <div class="form-grid">
-                    <div class="form-row"><label for="fuel_type_code">Code</label><input id="fuel_type_code" name="code" type="text" maxlength="30" value="{{ old('code') }}" required></div>
-                    <div class="form-row"><label for="fuel_type_name">Name</label><input id="fuel_type_name" name="name" type="text" maxlength="100" value="{{ old('name') }}" required></div>
-                    <div class="form-row"><label for="fuel_type_status">Status</label><select id="fuel_type_status" name="status" required><option value="active" @selected(old('status', 'active') === 'active')>Active</option><option value="inactive" @selected(old('status') === 'inactive')>Inactive</option></select></div>
-                    <div class="form-row form-row-full"><label for="fuel_type_description">Description</label><input id="fuel_type_description" name="description" type="text" maxlength="1000" value="{{ old('description') }}"></div>
                 </div>
             </div>
             <div class="modal-actions"><button class="btn btn-pill btn-secondary" type="submit">Add</button><button class="btn btn-pill btn-danger" type="button" data-modal-close>Cancel</button></div>

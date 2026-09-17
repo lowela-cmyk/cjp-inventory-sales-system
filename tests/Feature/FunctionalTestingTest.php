@@ -327,13 +327,13 @@ class FunctionalTestingTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
-        $fuelTypeId = DB::table('fuel_types')->insertGetId([
-            'code' => 'DSL-FUNC',
-            'name' => 'Functional Diesel',
+        $fuelTypeId = (int) (DB::table('fuel_types')->where('code', 'DSL')->value('id') ?? DB::table('fuel_types')->insertGetId([
+            'code' => 'DSL',
+            'name' => 'DIESEL',
             'status' => 'active',
             'created_at' => now(),
             'updated_at' => now(),
-        ]);
+        ]));
         $customerId = DB::table('customers')->insertGetId([
             'customer_code' => 'CUS-FUNC',
             'name' => 'Functional Customer',
@@ -356,7 +356,7 @@ class FunctionalTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      * @return array{purchaseId: int, purchaseItemId: int}
      */
     private function purchase(array $records, float $quantity): array
@@ -387,8 +387,8 @@ class FunctionalTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
-     * @param array{purchaseId: int, purchaseItemId: int} $purchase
+     * @param  array<string, mixed>  $records
+     * @param  array{purchaseId: int, purchaseItemId: int}  $purchase
      */
     private function haul(array $records, array $purchase, float $quantity, string $status = 'scheduled'): int
     {
@@ -410,7 +410,7 @@ class FunctionalTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      */
     private function garageAllocation(array $records, int $haulId, float $quantity): int
     {
@@ -428,7 +428,7 @@ class FunctionalTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      */
     private function seedGarageStock(array $records, float $quantity): void
     {
@@ -450,7 +450,7 @@ class FunctionalTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      * @return array{saleId: int, saleItemId: int}
      */
     private function manualSale(array $records, float $quantity): array
@@ -488,7 +488,7 @@ class FunctionalTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      */
     private function manualStockOut(array $records, int $saleId, int $saleItemId, float $quantity): int
     {

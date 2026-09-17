@@ -2,19 +2,35 @@
 
 namespace App\Services;
 
-use Closure;
 use Carbon\CarbonImmutable;
+use Closure;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 
 class DashboardSummaryService
 {
     public const VALID_SALE_STATUSES = ['confirmed', 'partially_paid', 'paid', 'unpaid'];
+
     public const SALES_TREND_PERIODS = ['week', 'month', 'year'];
+
     public const LIFTING_PROGRESS_STATUSES = ['unlifted', 'partial', 'lifted'];
+
     public const INVENTORY_VARIANCE_STATUSES = ['matched', 'variance'];
+
     private const STOCK_LEVEL_COLORS = ['#f7043a', '#3b9a35', '#e28a22', '#0d1424', '#6b7280'];
-    private const BASELINE_FUEL_CODES = ['F1', 'UNL', 'PREM', 'DSL'];
+
+    /**
+     * @return array<int, string>
+     */
+    private function approvedFuelCodes(): array
+    {
+        return array_keys(config('fuels.approved', [
+            'F1' => true,
+            'UNL' => true,
+            'PREM' => true,
+            'DSL' => true,
+        ]));
+    }
 
     /**
      * @var array<string, mixed>
@@ -84,44 +100,44 @@ class DashboardSummaryService
         $year = $year ?: CarbonImmutable::now()->year;
 
         return $this->remember('salesTrend:'.$period.':'.$year, function () use ($period, $year): array {
-        [$labels, $values] = match ($period) {
-            'month' => $this->monthlySalesTrend($year),
-            'year' => $this->yearlySalesTrend($year),
-            default => $this->weeklySalesTrend(),
-        };
+            [$labels, $values] = match ($period) {
+                'month' => $this->monthlySalesTrend($year),
+                'year' => $this->yearlySalesTrend($year),
+                default => $this->weeklySalesTrend(),
+            };
 
-        $max = max([1, ...array_map(fn (float $value): float => abs($value), $values)]);
-        $formattedValues = array_map(fn (float $value): string => $this->formatMoney($value, false), $values);
+            $max = max([1, ...array_map(fn (float $value): float => abs($value), $values)]);
+            $formattedValues = array_map(fn (float $value): string => $this->formatMoney($value, false), $values);
 
-        return [
-            'period' => $period,
-            'year' => $year,
-            'labels' => $labels,
-            'values' => $values,
-            'formattedValues' => $formattedValues,
-            'total' => array_sum($values),
-            'formattedTotal' => $this->formatMoney(array_sum($values)),
-            'datasetLabel' => 'Sales Revenue',
-            'bars' => collect($labels)
-                ->map(fn (string $label, int $index): array => [
-                    'label' => $label,
-                    'value' => $formattedValues[$index],
-                    'height' => $values[$index] === 0.0 ? 6 : max(6, (int) round((abs($values[$index]) / $max) * 96)),
-                ])
-                ->all(),
-            'chart' => [
+            return [
+                'period' => $period,
+                'year' => $year,
                 'labels' => $labels,
-                'datasets' => [[
-                    'label' => 'Sales Revenue',
-                    'data' => $values,
-                    'formattedData' => $formattedValues,
-                    'backgroundColor' => '#0d1424',
-                    'borderColor' => '#0d1424',
-                    'borderWidth' => 1,
-                    'borderRadius' => 5,
-                ]],
-            ],
-        ];
+                'values' => $values,
+                'formattedValues' => $formattedValues,
+                'total' => array_sum($values),
+                'formattedTotal' => $this->formatMoney(array_sum($values)),
+                'datasetLabel' => 'Sales Revenue',
+                'bars' => collect($labels)
+                    ->map(fn (string $label, int $index): array => [
+                        'label' => $label,
+                        'value' => $formattedValues[$index],
+                        'height' => $values[$index] === 0.0 ? 6 : max(6, (int) round((abs($values[$index]) / $max) * 96)),
+                    ])
+                    ->all(),
+                'chart' => [
+                    'labels' => $labels,
+                    'datasets' => [[
+                        'label' => 'Sales Revenue',
+                        'data' => $values,
+                        'formattedData' => $formattedValues,
+                        'backgroundColor' => '#0d1424',
+                        'borderColor' => '#0d1424',
+                        'borderWidth' => 1,
+                        'borderRadius' => 5,
+                    ]],
+                ],
+            ];
         });
     }
 
@@ -137,59 +153,59 @@ class DashboardSummaryService
     public function stockLevels(): array
     {
         return $this->remember('stockLevels', function (): array {
-        $rows = DB::table('fuel_types')
-            ->leftJoinSub($this->inventoryBalancesByFuelQuery(), 'inventory_balances', 'inventory_balances.fuel_type_id', '=', 'fuel_types.id')
-            ->where('fuel_types.status', 'active')
-            ->where(function (Builder $query): void {
-                $query->whereNotIn('fuel_types.code', self::BASELINE_FUEL_CODES)
-                    ->orWhereNotNull('inventory_balances.liters');
-            })
-            ->selectRaw('fuel_types.id, fuel_types.name, COALESCE(inventory_balances.liters, 0) as liters')
-            ->groupBy('fuel_types.id', 'fuel_types.name', 'inventory_balances.liters')
-            ->orderBy('fuel_types.name')
-            ->get();
+            $rows = DB::table('fuel_types')
+                ->leftJoinSub($this->inventoryBalancesByFuelQuery(), 'inventory_balances', 'inventory_balances.fuel_type_id', '=', 'fuel_types.id')
+                ->where('fuel_types.status', 'active')
+                ->where(function (Builder $query): void {
+                    $query->whereNotIn('fuel_types.code', $this->approvedFuelCodes())
+                        ->orWhereNotNull('inventory_balances.liters');
+                })
+                ->selectRaw('fuel_types.id, fuel_types.name, COALESCE(inventory_balances.liters, 0) as liters')
+                ->groupBy('fuel_types.id', 'fuel_types.name', 'inventory_balances.liters')
+                ->orderBy('fuel_types.name')
+                ->get();
 
-        $values = $rows->map(fn (object $row): float => round((float) $row->liters, 2))->all();
-        $labels = $rows->pluck('name')->map(fn (string $name): string => $name)->all();
-        $formattedValues = array_map(fn (float $liters): string => $this->formatLiters($liters), $values);
-        $max = max([1, ...array_map(fn (float $value): float => abs($value), $values)]);
+            $values = $rows->map(fn (object $row): float => round((float) $row->liters, 2))->all();
+            $labels = $rows->pluck('name')->map(fn (string $name): string => $name)->all();
+            $formattedValues = array_map(fn (float $liters): string => $this->formatLiters($liters), $values);
+            $max = max([1, ...array_map(fn (float $value): float => abs($value), $values)]);
 
-        return [
-            'rows' => $rows
-                ->values()
-                ->map(fn (object $row): array => [
-                    'fuel_type_id' => (int) $row->id,
-                    'label' => $row->name,
-                    'liters' => round((float) $row->liters, 2),
-                    'formatted_liters' => $this->formatLiters((float) $row->liters),
-                ])
-                ->all(),
-            'bars' => collect($labels)
-                ->map(fn (string $label, int $index): array => [
-                    'label' => $label,
-                    'value' => $formattedValues[$index],
-                    'height' => $values[$index] === 0.0 ? 2 : max(2, (int) round((abs($values[$index]) / $max) * 100)),
-                    'color' => self::STOCK_LEVEL_COLORS[$index % count(self::STOCK_LEVEL_COLORS)],
-                ])
-                ->all(),
-            'chart' => [
-                'labels' => $labels,
-                'datasets' => [[
-                    'label' => 'Available Stock',
-                    'data' => $values,
-                    'formattedData' => $formattedValues,
-                    'backgroundColor' => array_map(
-                        fn (int $index): string => self::STOCK_LEVEL_COLORS[$index % count(self::STOCK_LEVEL_COLORS)],
-                        array_keys($labels)
-                    ),
-                    'borderColor' => '#ffffff',
-                    'borderWidth' => 1,
-                    'borderRadius' => 5,
-                ]],
-            ],
-            'totalLiters' => array_sum($values),
-            'formattedTotal' => $this->formatLiters(array_sum($values)),
-        ];
+            return [
+                'rows' => $rows
+                    ->values()
+                    ->map(fn (object $row): array => [
+                        'fuel_type_id' => (int) $row->id,
+                        'label' => $row->name,
+                        'liters' => round((float) $row->liters, 2),
+                        'formatted_liters' => $this->formatLiters((float) $row->liters),
+                    ])
+                    ->all(),
+                'bars' => collect($labels)
+                    ->map(fn (string $label, int $index): array => [
+                        'label' => $label,
+                        'value' => $formattedValues[$index],
+                        'height' => $values[$index] === 0.0 ? 2 : max(2, (int) round((abs($values[$index]) / $max) * 100)),
+                        'color' => self::STOCK_LEVEL_COLORS[$index % count(self::STOCK_LEVEL_COLORS)],
+                    ])
+                    ->all(),
+                'chart' => [
+                    'labels' => $labels,
+                    'datasets' => [[
+                        'label' => 'Available Stock',
+                        'data' => $values,
+                        'formattedData' => $formattedValues,
+                        'backgroundColor' => array_map(
+                            fn (int $index): string => self::STOCK_LEVEL_COLORS[$index % count(self::STOCK_LEVEL_COLORS)],
+                            array_keys($labels)
+                        ),
+                        'borderColor' => '#ffffff',
+                        'borderWidth' => 1,
+                        'borderRadius' => 5,
+                    ]],
+                ],
+                'totalLiters' => array_sum($values),
+                'formattedTotal' => $this->formatLiters(array_sum($values)),
+            ];
         });
     }
 
@@ -206,52 +222,52 @@ class DashboardSummaryService
     public function receivablesMonitoring(int $limit = 5): array
     {
         return $this->remember('receivablesMonitoring:'.$limit, function () use ($limit): array {
-        $rows = $this->outstandingReceivableRowsQuery()
-            ->orderByRaw('(sale_totals.total - COALESCE(payment_totals.paid, 0)) desc')
-            ->orderBy('sales.sale_date')
-            ->orderBy('sales.id')
-            ->limit($limit)
-            ->get()
-            ->map(fn (object $row): array => $this->formatReceivableRow($row))
-            ->all();
+            $rows = $this->outstandingReceivableRowsQuery()
+                ->orderByRaw('(sale_totals.total - COALESCE(payment_totals.paid, 0)) desc')
+                ->orderBy('sales.sale_date')
+                ->orderBy('sales.id')
+                ->limit($limit)
+                ->get()
+                ->map(fn (object $row): array => $this->formatReceivableRow($row))
+                ->all();
 
-        $customerTotals = $this->receivableCustomerTotals($limit);
-        $paid = $this->collectedRevenue();
-        $outstanding = $this->outstandingReceivables();
+            $customerTotals = $this->receivableCustomerTotals($limit);
+            $paid = $this->collectedRevenue();
+            $outstanding = $this->outstandingReceivables();
 
-        return [
-            'rows' => $rows,
-            'customerTotals' => $customerTotals,
-            'chart' => [
-                'labels' => ['Payments Collected', 'Outstanding Receivables'],
-                'datasets' => [[
-                    'label' => 'Receivables Monitoring',
-                    'data' => [$paid, $outstanding],
-                    'formattedData' => [$this->formatMoney($paid), $this->formatMoney($outstanding)],
-                    'backgroundColor' => ['#238636', '#a7191d'],
-                    'borderColor' => '#ffffff',
-                    'borderWidth' => 1,
-                    'borderRadius' => 5,
-                ]],
-            ],
-            'totalOutstanding' => $outstanding,
-            'formattedTotalOutstanding' => $this->formatMoney($outstanding),
-            'outstandingSalesCount' => $this->outstandingSalesCount(),
-        ];
+            return [
+                'rows' => $rows,
+                'customerTotals' => $customerTotals,
+                'chart' => [
+                    'labels' => ['Payments Collected', 'Outstanding Receivables'],
+                    'datasets' => [[
+                        'label' => 'Receivables Monitoring',
+                        'data' => [$paid, $outstanding],
+                        'formattedData' => [$this->formatMoney($paid), $this->formatMoney($outstanding)],
+                        'backgroundColor' => ['#238636', '#a7191d'],
+                        'borderColor' => '#ffffff',
+                        'borderWidth' => 1,
+                        'borderRadius' => 5,
+                    ]],
+                ],
+                'totalOutstanding' => $outstanding,
+                'formattedTotalOutstanding' => $this->formatMoney($outstanding),
+                'outstandingSalesCount' => $this->outstandingSalesCount(),
+            ];
         });
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return array<string, mixed>
      */
     public function unliftedFuelMonitoring(array $filters = [], int $limit = 6): array
     {
         return $this->remember('unliftedFuelMonitoring:'.md5(json_encode([$filters, $limit], JSON_THROW_ON_ERROR)), function () use ($filters, $limit): array {
-        $base = $this->unliftedPurchaseItemsQuery($filters);
-        $summary = DB::query()
-            ->fromSub(clone $base, 'unlifted_items')
-            ->selectRaw("
+            $base = $this->unliftedPurchaseItemsQuery($filters);
+            $summary = DB::query()
+                ->fromSub(clone $base, 'unlifted_items')
+                ->selectRaw("
                 COALESCE(SUM(purchased_liters), 0) as purchased_liters,
                 COALESCE(SUM(lifted_liters), 0) as lifted_liters,
                 COALESCE(SUM(remaining_liters), 0) as remaining_liters,
@@ -259,131 +275,131 @@ class DashboardSummaryService
                 COALESCE(SUM(CASE WHEN lift_status = 'unlifted' THEN 1 ELSE 0 END), 0) as unlifted_count,
                 COALESCE(SUM(CASE WHEN lift_status = 'lifted' THEN 1 ELSE 0 END), 0) as lifted_count
             ")
-            ->first();
+                ->first();
 
-        $rows = DB::query()
-            ->fromSub(clone $base, 'unlifted_items')
-            ->where('remaining_liters', '>', 0)
-            ->orderByDesc('purchase_date')
-            ->orderBy('purchase_code')
-            ->limit($limit)
-            ->get()
-            ->map(fn (object $row): array => $this->formatUnliftedFuelRow($row))
-            ->all();
+            $rows = DB::query()
+                ->fromSub(clone $base, 'unlifted_items')
+                ->where('remaining_liters', '>', 0)
+                ->orderByDesc('purchase_date')
+                ->orderBy('purchase_code')
+                ->limit($limit)
+                ->get()
+                ->map(fn (object $row): array => $this->formatUnliftedFuelRow($row))
+                ->all();
 
-        $fuelBreakdown = DB::query()
-            ->fromSub(clone $base, 'unlifted_items')
-            ->where('remaining_liters', '>', 0)
-            ->selectRaw('fuel_type_id, fuel_name as label, COALESCE(SUM(remaining_liters), 0) as liters')
-            ->groupBy('fuel_type_id', 'fuel_name')
-            ->orderBy('fuel_name')
-            ->get()
-            ->map(fn (object $row): array => [
-                'fuel_type_id' => (int) $row->fuel_type_id,
-                'label' => $row->label,
-                'liters' => round((float) $row->liters, 2),
-                'formatted_liters' => $this->formatLiters((float) $row->liters),
-            ])
-            ->all();
+            $fuelBreakdown = DB::query()
+                ->fromSub(clone $base, 'unlifted_items')
+                ->where('remaining_liters', '>', 0)
+                ->selectRaw('fuel_type_id, fuel_name as label, COALESCE(SUM(remaining_liters), 0) as liters')
+                ->groupBy('fuel_type_id', 'fuel_name')
+                ->orderBy('fuel_name')
+                ->get()
+                ->map(fn (object $row): array => [
+                    'fuel_type_id' => (int) $row->fuel_type_id,
+                    'label' => $row->label,
+                    'liters' => round((float) $row->liters, 2),
+                    'formatted_liters' => $this->formatLiters((float) $row->liters),
+                ])
+                ->all();
 
-        $depotBreakdown = DB::query()
-            ->fromSub(clone $base, 'unlifted_items')
-            ->where('remaining_liters', '>', 0)
-            ->selectRaw('depot_id, depot_name as label, COALESCE(SUM(remaining_liters), 0) as liters')
-            ->groupBy('depot_id', 'depot_name')
-            ->orderBy('depot_name')
-            ->get()
-            ->map(fn (object $row): array => [
-                'depot_id' => (int) $row->depot_id,
-                'label' => $row->label,
-                'liters' => round((float) $row->liters, 2),
-                'formatted_liters' => $this->formatLiters((float) $row->liters),
-            ])
-            ->all();
+            $depotBreakdown = DB::query()
+                ->fromSub(clone $base, 'unlifted_items')
+                ->where('remaining_liters', '>', 0)
+                ->selectRaw('depot_id, depot_name as label, COALESCE(SUM(remaining_liters), 0) as liters')
+                ->groupBy('depot_id', 'depot_name')
+                ->orderBy('depot_name')
+                ->get()
+                ->map(fn (object $row): array => [
+                    'depot_id' => (int) $row->depot_id,
+                    'label' => $row->label,
+                    'liters' => round((float) $row->liters, 2),
+                    'formatted_liters' => $this->formatLiters((float) $row->liters),
+                ])
+                ->all();
 
-        $purchased = round((float) ($summary->purchased_liters ?? 0), 2);
-        $lifted = round((float) ($summary->lifted_liters ?? 0), 2);
-        $remaining = round((float) ($summary->remaining_liters ?? 0), 2);
+            $purchased = round((float) ($summary->purchased_liters ?? 0), 2);
+            $lifted = round((float) ($summary->lifted_liters ?? 0), 2);
+            $remaining = round((float) ($summary->remaining_liters ?? 0), 2);
 
-        return [
-            'summary' => [
-                'purchased_liters' => $purchased,
-                'lifted_liters' => $lifted,
-                'remaining_liters' => $remaining,
-                'partial_count' => (int) ($summary->partial_count ?? 0),
-                'unlifted_count' => (int) ($summary->unlifted_count ?? 0),
-                'lifted_count' => (int) ($summary->lifted_count ?? 0),
-                'formatted_purchased' => $this->formatLiters($purchased),
-                'formatted_lifted' => $this->formatLiters($lifted),
-                'formatted_remaining' => $this->formatLiters($remaining),
-            ],
-            'rows' => $rows,
-            'fuelBreakdown' => $fuelBreakdown,
-            'depotBreakdown' => $depotBreakdown,
-            'chart' => [
-                'labels' => ['Purchased', 'Lifted', 'Unlifted'],
-                'datasets' => [[
-                    'label' => 'Purchased vs Lifted vs Unlifted',
-                    'data' => [$purchased, $lifted, $remaining],
-                    'formattedData' => [$this->formatLiters($purchased), $this->formatLiters($lifted), $this->formatLiters($remaining)],
-                    'backgroundColor' => ['#0d1424', '#3b9a35', '#f7043a'],
-                    'borderColor' => '#ffffff',
-                    'borderWidth' => 1,
-                    'borderRadius' => 5,
-                ]],
-            ],
-        ];
+            return [
+                'summary' => [
+                    'purchased_liters' => $purchased,
+                    'lifted_liters' => $lifted,
+                    'remaining_liters' => $remaining,
+                    'partial_count' => (int) ($summary->partial_count ?? 0),
+                    'unlifted_count' => (int) ($summary->unlifted_count ?? 0),
+                    'lifted_count' => (int) ($summary->lifted_count ?? 0),
+                    'formatted_purchased' => $this->formatLiters($purchased),
+                    'formatted_lifted' => $this->formatLiters($lifted),
+                    'formatted_remaining' => $this->formatLiters($remaining),
+                ],
+                'rows' => $rows,
+                'fuelBreakdown' => $fuelBreakdown,
+                'depotBreakdown' => $depotBreakdown,
+                'chart' => [
+                    'labels' => ['Purchased', 'Lifted', 'Unlifted'],
+                    'datasets' => [[
+                        'label' => 'Purchased vs Lifted vs Unlifted',
+                        'data' => [$purchased, $lifted, $remaining],
+                        'formattedData' => [$this->formatLiters($purchased), $this->formatLiters($lifted), $this->formatLiters($remaining)],
+                        'backgroundColor' => ['#0d1424', '#3b9a35', '#f7043a'],
+                        'borderColor' => '#ffffff',
+                        'borderWidth' => 1,
+                        'borderRadius' => 5,
+                    ]],
+                ],
+            ];
         });
     }
 
     /**
      * Inventory variance follows the manuscript definition: stock-out vs receivables mismatch.
      *
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return array<string, mixed>
      */
     public function inventoryVarianceMonitoring(array $filters = [], int $limit = 6): array
     {
         return $this->remember('inventoryVarianceMonitoring:'.md5(json_encode([$filters, $limit], JSON_THROW_ON_ERROR)), function () use ($filters, $limit): array {
-        $rows = $this->inventoryVarianceRows($filters);
-        $totalChecked = $rows->count();
-        $varianceCount = $rows->where('variance_status', 'variance')->count();
-        $matchedCount = $totalChecked - $varianceCount;
-        $quantityVariance = round((float) $rows->sum('quantity_variance_liters'), 2);
-        $varianceRate = $totalChecked > 0 ? round(($varianceCount / $totalChecked) * 100, 1) : 0.0;
-        $details = $rows
-            ->where('variance_status', 'variance')
-            ->sortByDesc('transaction_date')
-            ->take($limit)
-            ->map(fn (array $row): array => $this->formatInventoryVarianceRow($row))
-            ->values()
-            ->all();
+            $rows = $this->inventoryVarianceRows($filters);
+            $totalChecked = $rows->count();
+            $varianceCount = $rows->where('variance_status', 'variance')->count();
+            $matchedCount = $totalChecked - $varianceCount;
+            $quantityVariance = round((float) $rows->sum('quantity_variance_liters'), 2);
+            $varianceRate = $totalChecked > 0 ? round(($varianceCount / $totalChecked) * 100, 1) : 0.0;
+            $details = $rows
+                ->where('variance_status', 'variance')
+                ->sortByDesc('transaction_date')
+                ->take($limit)
+                ->map(fn (array $row): array => $this->formatInventoryVarianceRow($row))
+                ->values()
+                ->all();
 
-        return [
-            'summary' => [
-                'total_checked' => $totalChecked,
-                'matched_count' => $matchedCount,
-                'variance_count' => $varianceCount,
-                'variance_rate' => $varianceRate,
-                'quantity_variance_liters' => $quantityVariance,
-                'formatted_variance_rate' => number_format($varianceRate, 1).'%',
-                'formatted_quantity_variance' => $this->formatLiters($quantityVariance),
-            ],
-            'rows' => $details,
-            'reasonBreakdown' => $this->inventoryVarianceReasonBreakdown($rows),
-            'chart' => [
-                'labels' => ['Matched', 'Requires Verification'],
-                'datasets' => [[
-                    'label' => 'Inventory Variance',
-                    'data' => [$matchedCount, $varianceCount],
-                    'formattedData' => [number_format($matchedCount), number_format($varianceCount)],
-                    'backgroundColor' => ['#3b9a35', '#f7043a'],
-                    'borderColor' => '#ffffff',
-                    'borderWidth' => 1,
-                    'borderRadius' => 5,
-                ]],
-            ],
-        ];
+            return [
+                'summary' => [
+                    'total_checked' => $totalChecked,
+                    'matched_count' => $matchedCount,
+                    'variance_count' => $varianceCount,
+                    'variance_rate' => $varianceRate,
+                    'quantity_variance_liters' => $quantityVariance,
+                    'formatted_variance_rate' => number_format($varianceRate, 1).'%',
+                    'formatted_quantity_variance' => $this->formatLiters($quantityVariance),
+                ],
+                'rows' => $details,
+                'reasonBreakdown' => $this->inventoryVarianceReasonBreakdown($rows),
+                'chart' => [
+                    'labels' => ['Matched', 'Requires Verification'],
+                    'datasets' => [[
+                        'label' => 'Inventory Variance',
+                        'data' => [$matchedCount, $varianceCount],
+                        'formattedData' => [number_format($matchedCount), number_format($varianceCount)],
+                        'backgroundColor' => ['#3b9a35', '#f7043a'],
+                        'borderColor' => '#ffffff',
+                        'borderWidth' => 1,
+                        'borderRadius' => 5,
+                    ]],
+                ],
+            ];
         });
     }
 
@@ -398,61 +414,61 @@ class DashboardSummaryService
         $year = $year ?: CarbonImmutable::now()->year;
 
         return $this->remember('expectedRevenue:'.$year, function () use ($year): array {
-        $labels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        $collectedByMonth = $this->collectedRevenueByPaymentMonth($year);
-        $dueOutstandingByMonth = $this->outstandingReceivablesByDueMonth($year);
+            $labels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            $collectedByMonth = $this->collectedRevenueByPaymentMonth($year);
+            $dueOutstandingByMonth = $this->outstandingReceivablesByDueMonth($year);
 
-        $collectedValues = array_map(fn (int $month): float => (float) ($collectedByMonth[$month] ?? 0), range(1, 12));
-        $dueOutstandingValues = array_map(fn (int $month): float => (float) ($dueOutstandingByMonth[$month] ?? 0), range(1, 12));
-        $expectedValues = array_map(
-            fn (float $collected, float $dueOutstanding): float => round($collected + $dueOutstanding, 2),
-            $collectedValues,
-            $dueOutstandingValues
-        );
-        $formattedValues = array_map(fn (float $value): string => $this->formatMoney($value), $expectedValues);
-        $totalCollected = array_sum($collectedValues);
-        $totalDueOutstanding = array_sum($dueOutstandingValues);
-        $totalExpected = array_sum($expectedValues);
-        $collectionRate = $totalExpected > 0 ? round(($totalCollected / $totalExpected) * 100, 1) : 0.0;
-        $max = max([1, ...array_map(fn (float $value): float => abs($value), $expectedValues)]);
+            $collectedValues = array_map(fn (int $month): float => (float) ($collectedByMonth[$month] ?? 0), range(1, 12));
+            $dueOutstandingValues = array_map(fn (int $month): float => (float) ($dueOutstandingByMonth[$month] ?? 0), range(1, 12));
+            $expectedValues = array_map(
+                fn (float $collected, float $dueOutstanding): float => round($collected + $dueOutstanding, 2),
+                $collectedValues,
+                $dueOutstandingValues
+            );
+            $formattedValues = array_map(fn (float $value): string => $this->formatMoney($value), $expectedValues);
+            $totalCollected = array_sum($collectedValues);
+            $totalDueOutstanding = array_sum($dueOutstandingValues);
+            $totalExpected = array_sum($expectedValues);
+            $collectionRate = $totalExpected > 0 ? round(($totalCollected / $totalExpected) * 100, 1) : 0.0;
+            $max = max([1, ...array_map(fn (float $value): float => abs($value), $expectedValues)]);
 
-        return [
-            'year' => $year,
-            'period' => (string) $year,
-            'labels' => $labels,
-            'values' => $expectedValues,
-            'collectedValues' => $collectedValues,
-            'dueOutstandingValues' => $dueOutstandingValues,
-            'formattedValues' => $formattedValues,
-            'totalExpected' => $totalExpected,
-            'totalCollected' => $totalCollected,
-            'totalDueOutstanding' => $totalDueOutstanding,
-            'formattedTotalExpected' => $this->formatMoney($totalExpected),
-            'formattedTotalCollected' => $this->formatMoney($totalCollected),
-            'formattedTotalDueOutstanding' => $this->formatMoney($totalDueOutstanding),
-            'collectionRate' => $collectionRate,
-            'formattedCollectionRate' => number_format($collectionRate, 1).'%',
-            'formula' => 'Expected Revenue = collected payments within the year + outstanding receivable balances due within the year.',
-            'bars' => collect($labels)
-                ->map(fn (string $label, int $index): array => [
-                    'label' => $label,
-                    'value' => $formattedValues[$index],
-                    'height' => $expectedValues[$index] === 0.0 ? 6 : max(6, (int) round((abs($expectedValues[$index]) / $max) * 96)),
-                ])
-                ->all(),
-            'chart' => [
+            return [
+                'year' => $year,
+                'period' => (string) $year,
                 'labels' => $labels,
-                'datasets' => [[
-                    'label' => 'Expected Revenue',
-                    'data' => $expectedValues,
-                    'formattedData' => $formattedValues,
-                    'backgroundColor' => '#0d1424',
-                    'borderColor' => '#0d1424',
-                    'borderWidth' => 1,
-                    'borderRadius' => 5,
-                ]],
-            ],
-        ];
+                'values' => $expectedValues,
+                'collectedValues' => $collectedValues,
+                'dueOutstandingValues' => $dueOutstandingValues,
+                'formattedValues' => $formattedValues,
+                'totalExpected' => $totalExpected,
+                'totalCollected' => $totalCollected,
+                'totalDueOutstanding' => $totalDueOutstanding,
+                'formattedTotalExpected' => $this->formatMoney($totalExpected),
+                'formattedTotalCollected' => $this->formatMoney($totalCollected),
+                'formattedTotalDueOutstanding' => $this->formatMoney($totalDueOutstanding),
+                'collectionRate' => $collectionRate,
+                'formattedCollectionRate' => number_format($collectionRate, 1).'%',
+                'formula' => 'Expected Revenue = collected payments within the year + outstanding receivable balances due within the year.',
+                'bars' => collect($labels)
+                    ->map(fn (string $label, int $index): array => [
+                        'label' => $label,
+                        'value' => $formattedValues[$index],
+                        'height' => $expectedValues[$index] === 0.0 ? 6 : max(6, (int) round((abs($expectedValues[$index]) / $max) * 96)),
+                    ])
+                    ->all(),
+                'chart' => [
+                    'labels' => $labels,
+                    'datasets' => [[
+                        'label' => 'Expected Revenue',
+                        'data' => $expectedValues,
+                        'formattedData' => $formattedValues,
+                        'backgroundColor' => '#0d1424',
+                        'borderColor' => '#0d1424',
+                        'borderWidth' => 1,
+                        'borderRadius' => 5,
+                    ]],
+                ],
+            ];
         });
     }
 
@@ -521,7 +537,7 @@ class DashboardSummaryService
             'fuelTypes' => DB::table('fuel_types')
                 ->where('status', 'active')
                 ->where(function (Builder $query): void {
-                    $query->whereNotIn('code', self::BASELINE_FUEL_CODES)
+                    $query->whereNotIn('code', $this->approvedFuelCodes())
                         ->orWhereExists(function (Builder $query): void {
                             $query->selectRaw('1')
                                 ->from('purchase_items')
@@ -549,7 +565,7 @@ class DashboardSummaryService
             'fuelTypes' => DB::table('fuel_types')
                 ->where('status', 'active')
                 ->where(function (Builder $query): void {
-                    $query->whereNotIn('code', self::BASELINE_FUEL_CODES)
+                    $query->whereNotIn('code', $this->approvedFuelCodes())
                         ->orWhereExists(function (Builder $query): void {
                             $query->selectRaw('1')
                                 ->from('stock_outs')
@@ -840,7 +856,7 @@ class DashboardSummaryService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      */
     private function unliftedPurchaseItemsQuery(array $filters = []): Builder
     {
@@ -931,7 +947,7 @@ class DashboardSummaryService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      */
     private function inventoryVarianceRows(array $filters = [])
     {
@@ -988,14 +1004,14 @@ class DashboardSummaryService
     private function saleItemReleaseTotals(): Builder
     {
         return DB::table('stock_outs')
-            ->where('status', '!=', 'cancelled')
+            ->where('status', 'released')
             ->whereNotNull('sale_item_id')
             ->selectRaw('sale_item_id, COALESCE(SUM(quantity_liters), 0) as released_liters')
             ->groupBy('sale_item_id');
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      */
     private function invalidStockOutRows(array $filters)
     {
@@ -1143,7 +1159,7 @@ class DashboardSummaryService
         ]);
     }
 
-    private function cancelledStockOutExists(): \Closure
+    private function cancelledStockOutExists(): Closure
     {
         return function (Builder $query): void {
             $query->selectRaw('1')
@@ -1154,7 +1170,7 @@ class DashboardSummaryService
         };
     }
 
-    private function cancelledHaulAllocationExists(): \Closure
+    private function cancelledHaulAllocationExists(): Closure
     {
         return function (Builder $query): void {
             $query->selectRaw('1')

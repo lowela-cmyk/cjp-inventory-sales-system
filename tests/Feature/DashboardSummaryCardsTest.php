@@ -547,7 +547,7 @@ class DashboardSummaryCardsTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      */
     private function dashboardData(array $records): void
     {
@@ -615,7 +615,7 @@ class DashboardSummaryCardsTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      */
     private function inventoryMovement(array $records, string $code, string $direction, float $quantity, string $date): array
     {
@@ -637,7 +637,7 @@ class DashboardSummaryCardsTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      */
     private function sale(array $records, string $code, string $date, string $status, float $lineTotal): int
     {
@@ -676,7 +676,7 @@ class DashboardSummaryCardsTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      */
     private function payment(array $records, int $saleId, string $code, float $amount): array
     {
@@ -693,7 +693,7 @@ class DashboardSummaryCardsTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      */
     private function stockOut(array $records, int $saleId, int $saleItemId, string $code, float $quantity, string $status): int
     {
@@ -981,7 +981,7 @@ class DashboardSummaryCardsTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      * @return array{0: int, 1: int}
      */
     private function purchaseItem(array $records, string $code, float $quantity, ?int $depotId = null, ?int $fuelTypeId = null, string $status = 'ordered'): array
@@ -1012,7 +1012,7 @@ class DashboardSummaryCardsTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      */
     private function haul(array $records, int $purchaseId, int $purchaseItemId, string $code, float $quantity, string $status, ?int $depotId = null, ?int $fuelTypeId = null): int
     {
@@ -1036,7 +1036,7 @@ class DashboardSummaryCardsTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      * @return array{0: int, 1: int}
      */
     private function saleWithItem(array $records, string $code, float $quantity, float $unitPrice, string $status, ?int $customerId = null, ?int $fuelTypeId = null): array
@@ -1074,7 +1074,7 @@ class DashboardSummaryCardsTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      */
     private function paymentForSale(array $records, int $saleId, string $code, float $amount, ?int $scheduleId = null): void
     {
@@ -1093,7 +1093,7 @@ class DashboardSummaryCardsTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      */
     private function stockOutForSale(array $records, int $saleId, int $saleItemId, string $code, float $quantity, ?int $fuelTypeId = null, ?int $customerId = null, string $status = 'released'): int
     {

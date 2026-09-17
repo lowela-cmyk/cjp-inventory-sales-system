@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -161,7 +162,7 @@ class SalesOfficerPaymentRecordingTest extends TestCase
         $this->assertSame($beforeInventory, DB::table('inventory_movements')->count());
         $this->assertSame(0, DB::table('stock_outs')->count());
         $this->assertSame(0, DB::table('hauls')->count());
-        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasTable('deliveries'));
+        $this->assertFalse(Schema::hasTable('deliveries'));
     }
 
     public function test_duplicate_physical_payment_with_new_token_is_rejected(): void
@@ -394,7 +395,7 @@ class SalesOfficerPaymentRecordingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $overrides
      * @return array<string, mixed>
      */
     private function paymentPayload(array $overrides = []): array
@@ -420,8 +421,8 @@ class SalesOfficerPaymentRecordingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $records
+     * @param  array<string, mixed>  $overrides
      */
     private function sale(array $records, array $overrides = []): int
     {
@@ -459,7 +460,7 @@ class SalesOfficerPaymentRecordingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $overrides
      */
     private function paymentSchedule(int $saleId, array $overrides = []): int
     {

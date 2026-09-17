@@ -7,6 +7,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -326,7 +327,7 @@ class FormValidationTest extends TestCase
             ->assertRedirect(route('driver.fuel-lifting'))
             ->assertSessionHasErrors(['idempotency_key', 'lifting_status']);
 
-        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasTable('deliveries'));
+        $this->assertFalse(Schema::hasTable('deliveries'));
         $this->assertDatabaseHas('hauls', ['id' => $haul['haulId'], 'status' => 'scheduled']);
     }
 
@@ -395,13 +396,13 @@ class FormValidationTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
-        $fuelTypeId = DB::table('fuel_types')->insertGetId([
-            'code' => 'DSL-VAL',
-            'name' => 'Validation Diesel',
+        $fuelTypeId = (int) (DB::table('fuel_types')->where('code', 'DSL')->value('id') ?? DB::table('fuel_types')->insertGetId([
+            'code' => 'DSL',
+            'name' => 'DIESEL',
             'status' => 'active',
             'created_at' => now(),
             'updated_at' => now(),
-        ]);
+        ]));
         $customerId = $this->customer();
         $truckId = DB::table('trucks')->insertGetId([
             'truck_code' => 'TRK-VAL',
@@ -416,7 +417,7 @@ class FormValidationTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $overrides
      */
     private function customer(array $overrides = []): int
     {
@@ -434,7 +435,7 @@ class FormValidationTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      */
     private function garageAllocation(array $records, float $quantity): int
     {
@@ -489,7 +490,7 @@ class FormValidationTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      * @return array{saleId: int, saleItemId: int}
      */
     private function sale(array $records, float $quantity, float $unitPrice): array
@@ -527,8 +528,8 @@ class FormValidationTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
-     * @param array{saleId: int, saleItemId: int} $sale
+     * @param  array<string, mixed>  $records
+     * @param  array{saleId: int, saleItemId: int}  $sale
      */
     private function stockOut(array $records, array $sale, float $quantity): int
     {
@@ -549,7 +550,7 @@ class FormValidationTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      * @return array{haulId: int, purchaseItemId: int}
      */
     private function haulForValidation(array $records, float $quantity): array

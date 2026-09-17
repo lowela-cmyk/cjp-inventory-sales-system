@@ -3,14 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Mail\PasswordResetCodeMail;
+use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use App\Models\User;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Carbon;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
@@ -106,12 +106,21 @@ class AuthController extends Controller
             'password' => ['required', 'string'],
         ]);
 
-        $user = User::query()
-            ->where(function ($query) use ($credentials): void {
-                $query->where('email', $credentials['username'])
-                    ->orWhere('name', $credentials['username']);
-            })
-            ->first();
+        $identifier = trim($credentials['username']);
+
+        if (filter_var($identifier, FILTER_VALIDATE_EMAIL)) {
+            $user = User::query()->where('email', $identifier)->first();
+        } else {
+            $matchingUsers = User::query()->where('name', $identifier)->get();
+
+            if ($matchingUsers->count() > 1) {
+                throw ValidationException::withMessages([
+                    'username' => 'Multiple accounts exist with this name. Please log in using your unique email address.',
+                ]);
+            }
+
+            $user = $matchingUsers->first();
+        }
 
         if (! $user || ! Hash::check($credentials['password'], $user->password)) {
             throw ValidationException::withMessages([
@@ -161,7 +170,13 @@ class AuthController extends Controller
             'password' => ['required', 'confirmed', Password::defaults()],
         ]);
 
-        $allowedRoles = ['admin', 'inventory_officer', 'sales_officer', 'dispatch_officer', 'driver'];
+        if (isset($data['role']) && strtolower($data['role']) === 'admin') {
+            throw ValidationException::withMessages([
+                'role' => 'The Administrator role cannot be requested through public registration.',
+            ]);
+        }
+
+        $allowedRoles = ['inventory_officer', 'sales_officer', 'dispatch_officer', 'driver'];
         $requestedRole = in_array($data['role'] ?? null, $allowedRoles, true) ? $data['role'] : 'driver';
 
         User::create([

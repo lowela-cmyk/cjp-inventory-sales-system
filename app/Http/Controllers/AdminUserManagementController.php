@@ -29,14 +29,15 @@ class AdminUserManagementController extends Controller
     ];
 
     private const STATUSES = ['active', 'inactive'];
+
     private const APPROVAL_STATUSES = ['pending', 'approved', 'rejected'];
 
     public function index(Request $request): View
     {
         return view('admin.user-management', [
-            'staff' => $this->staffRows(),
-            'drivers' => $this->driverRows(),
-            'customers' => $this->customerRows(),
+            'staff' => $this->staffRows(25),
+            'drivers' => $this->driverRows(25),
+            'customers' => $this->customerRows(25),
             'officeRoles' => self::OFFICE_ROLES,
             'roles' => self::ROLES,
             'statuses' => self::STATUSES,
@@ -54,16 +55,16 @@ class AdminUserManagementController extends Controller
         $filename = 'user-management-'.$tab.'-'.now()->format('Ymd-His').'.csv';
         $handle = fopen('php://temp', 'r+');
 
-        fputcsv($handle, ['CJP Southern Star OPC User Management']);
-        fputcsv($handle, ['Section', ucfirst($tab)]);
-        fputcsv($handle, ['Generated At', now()->format('M d, Y h:i A')]);
-        fputcsv($handle, []);
+        $this->writeCsvRow($handle, ['CJP Southern Star OPC User Management']);
+        $this->writeCsvRow($handle, ['Section', ucfirst($tab)]);
+        $this->writeCsvRow($handle, ['Generated At', now()->format('M d, Y h:i A')]);
+        $this->writeCsvRow($handle, []);
 
         if ($tab === 'drivers') {
-            fputcsv($handle, ['Driver ID', 'Name', 'License No.', 'Account Status', 'Approval Status', 'Email', 'Contact Number']);
+            $this->writeCsvRow($handle, ['Driver ID', 'Name', 'License No.', 'Account Status', 'Approval Status', 'Email', 'Contact Number']);
 
             foreach ($this->driverRows() as $row) {
-                fputcsv($handle, [
+                $this->writeCsvRow($handle, [
                     $this->driverCodeFor($row),
                     $row->name,
                     $row->license_number ?: 'N/A',
@@ -74,10 +75,10 @@ class AdminUserManagementController extends Controller
                 ]);
             }
         } elseif ($tab === 'customers') {
-            fputcsv($handle, ['Customer ID', 'Customer Name', 'Company Name', 'Location', 'Email', 'Contact Number']);
+            $this->writeCsvRow($handle, ['Customer ID', 'Customer Name', 'Company Name', 'Location', 'Email', 'Contact Number']);
 
             foreach ($this->customerRows() as $row) {
-                fputcsv($handle, [
+                $this->writeCsvRow($handle, [
                     'CSM-'.str_pad((string) $row->id, 6, '0', STR_PAD_LEFT),
                     $row->name,
                     $row->company_name,
@@ -87,10 +88,10 @@ class AdminUserManagementController extends Controller
                 ]);
             }
         } else {
-            fputcsv($handle, ['Staff ID', 'Name', 'Position', 'Account Status', 'Approval Status', 'Email', 'Contact Number']);
+            $this->writeCsvRow($handle, ['Staff ID', 'Name', 'Position', 'Account Status', 'Approval Status', 'Email', 'Contact Number']);
 
             foreach ($this->staffRows() as $row) {
-                fputcsv($handle, [
+                $this->writeCsvRow($handle, [
                     $this->staffCodeFor($row),
                     $row->name,
                     $row->role_label,
@@ -286,8 +287,8 @@ class AdminUserManagementController extends Controller
     }
 
     /**
-     * @param array<int, mixed> $passwordRules
-     * @param array<string, array<int, mixed>> $extraRules
+     * @param  array<int, mixed>  $passwordRules
+     * @param  array<string, array<int, mixed>>  $extraRules
      * @return array<string, array<int, mixed>>
      */
     private function accountRules(mixed $roleRule, array $passwordRules, ?User $user = null, array $extraRules = []): array
@@ -303,7 +304,7 @@ class AdminUserManagementController extends Controller
     }
 
     /**
-     * @param array<string, mixed> $data
+     * @param  array<string, mixed>  $data
      */
     private function updateUser(User $user, array $data): void
     {
@@ -323,7 +324,7 @@ class AdminUserManagementController extends Controller
     }
 
     /**
-     * @param array<string, mixed> $data
+     * @param  array<string, mixed>  $data
      */
     private function syncDriverProfileForRole(User $user, array $data): void
     {
@@ -414,31 +415,66 @@ class AdminUserManagementController extends Controller
             ->with('toast_type', 'success');
     }
 
-    private function staffRows()
+    private function staffRows(?int $perPage = null)
     {
-        return User::query()
+        $query = User::query()
             ->whereIn('role', array_keys(self::OFFICE_ROLES))
-            ->orderBy('id')
-            ->get();
+            ->orderBy('id');
+
+        return $perPage !== null
+            ? $query->paginate($perPage, ['*'], 'staff_page')->withQueryString()
+            : $query->get();
     }
 
-    private function driverRows()
+    private function driverRows(?int $perPage = null)
     {
-        return User::query()
+        $query = User::query()
             ->leftJoin('driver_profiles', 'driver_profiles.user_id', '=', 'users.id')
             ->where('users.role', 'driver')
-            ->orderBy('users.id')
-            ->get([
-                'users.*',
-                'driver_profiles.driver_code',
-                'driver_profiles.license_number',
-            ]);
+            ->orderBy('users.id');
+
+        $columns = [
+            'users.*',
+            'driver_profiles.driver_code',
+            'driver_profiles.license_number',
+        ];
+
+        return $perPage !== null
+            ? $query->paginate($perPage, $columns, 'drivers_page')->withQueryString()
+            : $query->get($columns);
     }
 
-    private function customerRows()
+    private function customerRows(?int $perPage = null)
     {
-        return DB::table('customers')
-            ->orderBy('id')
-            ->get();
+        $query = DB::table('customers')
+            ->orderBy('id');
+
+        return $perPage !== null
+            ? $query->paginate($perPage, ['*'], 'customers_page')->withQueryString()
+            : $query->get();
+    }
+
+    /**
+     * Sanitize cell value to prevent CSV formula injection.
+     */
+    private function sanitizeCsvCell(mixed $value): mixed
+    {
+        if (is_string($value) && $value !== '') {
+            if (in_array($value[0], ['=', '+', '-', '@', "\t", "\r"], true)) {
+                return "'".$value;
+            }
+        }
+
+        return $value;
+    }
+
+    /**
+     * @param  resource  $handle
+     * @param  array<int, mixed>  $fields
+     */
+    private function writeCsvRow($handle, array $fields): void
+    {
+        $sanitized = array_map(fn ($cell) => $this->sanitizeCsvCell($cell), $fields);
+        fputcsv($handle, $sanitized);
     }
 }

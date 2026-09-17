@@ -10,6 +10,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -155,7 +156,7 @@ class IntegrationTestingTest extends TestCase
         $this->assertSame(210000.0, $summary->receivablesMonitoring()['totalOutstanding']);
 
         $stockRows = collect($summary->stockLevels()['rows'])->keyBy('label');
-        $this->assertSame(25000.0, $stockRows['Integration Diesel']['liters']);
+        $this->assertSame(25000.0, $stockRows['DIESEL']['liters']);
 
         $variance = $summary->inventoryVarianceMonitoring();
         $this->assertSame(2, $variance['summary']['total_checked']);
@@ -258,7 +259,7 @@ class IntegrationTestingTest extends TestCase
 
         $this->assertSame(0, DB::table('inventory_movements')->count());
         $this->assertSame(0, DB::table('stock_outs')->count());
-        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasTable('deliveries'));
+        $this->assertFalse(Schema::hasTable('deliveries'));
         $this->assertSame(0, DB::table('payments')->count());
         $this->assertSame(0.0, $this->garageBalance($records));
     }
@@ -288,13 +289,13 @@ class IntegrationTestingTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
-        $fuelTypeId = DB::table('fuel_types')->insertGetId([
-            'code' => 'DSL-INT',
-            'name' => 'Integration Diesel',
+        $fuelTypeId = (int) (DB::table('fuel_types')->where('code', 'DSL')->value('id') ?? DB::table('fuel_types')->insertGetId([
+            'code' => 'DSL',
+            'name' => 'DIESEL',
             'status' => 'active',
             'created_at' => now(),
             'updated_at' => now(),
-        ]);
+        ]));
         $customerId = DB::table('customers')->insertGetId([
             'customer_code' => 'CUS-INT',
             'name' => 'Integration Customer',
@@ -317,7 +318,7 @@ class IntegrationTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      * @return array{purchaseId: int, purchaseItemId: int}
      */
     private function createPurchase(array $records, float $quantity): array
@@ -341,8 +342,8 @@ class IntegrationTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $records
+     * @param  array<string, mixed>  $overrides
      * @return array{saleId: int, saleItemId: int}
      */
     private function createSale(array $records, array $overrides = []): array
@@ -371,8 +372,8 @@ class IntegrationTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
-     * @param array{purchaseId: int, purchaseItemId: int} $purchase
+     * @param  array<string, mixed>  $records
+     * @param  array{purchaseId: int, purchaseItemId: int}  $purchase
      */
     private function haul(array $records, array $purchase, float $quantity): int
     {
@@ -393,8 +394,8 @@ class IntegrationTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $records
+     * @param  array<string, mixed>  $overrides
      */
     private function allocation(array $records, int $haulId, float $quantity, array $overrides = []): int
     {
@@ -414,7 +415,7 @@ class IntegrationTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      */
     private function progressHaul(array $records, int $haulId): void
     {
@@ -429,7 +430,7 @@ class IntegrationTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      */
     private function stockIn(array $records, int $allocationId, float $quantity, string $date): void
     {
@@ -445,9 +446,9 @@ class IntegrationTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
-     * @param array{saleId: int, saleItemId: int} $sale
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $records
+     * @param  array{saleId: int, saleItemId: int}  $sale
+     * @param  array<string, mixed>  $overrides
      * @return array<string, mixed>
      */
     private function stockOut(array $records, array $sale, array $overrides = []): array
@@ -462,9 +463,9 @@ class IntegrationTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
-     * @param array{saleId: int, saleItemId: int} $sale
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $records
+     * @param  array{saleId: int, saleItemId: int}  $sale
+     * @param  array<string, mixed>  $overrides
      * @return array<string, mixed>
      */
     private function stockOutPayload(array $records, array $sale, array $overrides = []): array
@@ -482,8 +483,8 @@ class IntegrationTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
-     * @param array<string, mixed> $payload
+     * @param  array<string, mixed>  $records
+     * @param  array<string, mixed>  $payload
      */
     private function payment(array $records, int $saleId, array $payload): void
     {
@@ -493,7 +494,7 @@ class IntegrationTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $overrides
      * @return array<string, mixed>
      */
     private function paymentPayload(array $overrides = []): array
@@ -509,7 +510,7 @@ class IntegrationTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      */
     private function garageBalance(array $records): float
     {

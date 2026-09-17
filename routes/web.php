@@ -9,8 +9,8 @@ use App\Http\Controllers\AdminSalesReportController;
 use App\Http\Controllers\AdminSalesTrendSummaryController;
 use App\Http\Controllers\AdminUserManagementController;
 use App\Http\Controllers\AuthController;
-use App\Http\Controllers\DispatchLiftingStatusController;
 use App\Http\Controllers\DispatchDeliveryController;
+use App\Http\Controllers\DispatchLiftingStatusController;
 use App\Http\Controllers\DriverDeliveryController;
 use App\Http\Controllers\DriverLiftingStatusController;
 use App\Http\Controllers\HaulTruckAssignmentController;
@@ -49,7 +49,6 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/inventory/stock-in', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'stock-in')->name('inventory.stock-in');
         Route::post('/inventory/stock-out', [InventoryOfficerPurchaseController::class, 'storeStockOut'])->name('inventory.stock-out.store');
         Route::get('/inventory/stock-out', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'stock-out')->name('inventory.stock-out');
-        Route::post('/inventory/fuel-types', [InventoryOfficerPurchaseController::class, 'storeFuelType'])->name('inventory.fuel-types.store');
         Route::post('/inventory/depots', [InventoryOfficerPurchaseController::class, 'storeDepot'])->name('inventory.depots.store');
         Route::get('/inventory/depots', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'depots')->name('inventory.depots');
         Route::get('/ledger', [AdminMonitoringController::class, 'ledger'])->name('ledger');
@@ -99,7 +98,6 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/inventory/stock-in', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'stock-in')->name('inventory.stock-in');
         Route::post('/inventory/stock-out', [InventoryOfficerPurchaseController::class, 'storeStockOut'])->name('inventory.stock-out.store');
         Route::get('/inventory/stock-out', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'stock-out')->name('inventory.stock-out');
-        Route::post('/inventory/fuel-types', [InventoryOfficerPurchaseController::class, 'storeFuelType'])->name('inventory.fuel-types.store');
         Route::post('/inventory/depots', [InventoryOfficerPurchaseController::class, 'storeDepot'])->name('inventory.depots.store');
         Route::get('/inventory/depots', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'depots')->name('inventory.depots');
         Route::get('/ledger', InventoryOfficerLedgerController::class)->name('ledger');

@@ -10,6 +10,7 @@ use Illuminate\Validation\Rule;
 class DispatchLiftingStatusController extends Controller
 {
     public const LIFTING_STATUSES = ['scheduled', 'in_transit', 'lifted', 'completed', 'cancelled'];
+
     public const STATUS_TRANSITIONS = [
         'scheduled' => ['in_transit', 'cancelled'],
         'in_transit' => ['lifted', 'cancelled'],

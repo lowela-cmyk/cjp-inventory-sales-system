@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Services\DashboardSummaryService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -262,7 +263,7 @@ class AIFeatureTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      */
     private function aiDataset(array $records): void
     {
@@ -281,7 +282,7 @@ class AIFeatureTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      */
     private function sale(array $records, string $code, string $date, float $quantity, float $unitPrice, string $status = 'confirmed'): int
     {
@@ -291,7 +292,7 @@ class AIFeatureTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      * @return array{0: int, 1: int}
      */
     private function saleWithItem(array $records, string $code, string $date, float $quantity, float $unitPrice, string $status = 'confirmed', ?int $fuelTypeId = null): array
@@ -329,7 +330,7 @@ class AIFeatureTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      */
     private function payment(array $records, int $saleId, string $code, float $amount): void
     {
@@ -347,7 +348,7 @@ class AIFeatureTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      */
     private function stockOut(array $records, int $saleId, int $saleItemId, string $code, float $quantity, int $fuelTypeId): void
     {
@@ -368,7 +369,7 @@ class AIFeatureTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      * @return array<string, mixed>
      */
     private function movement(array $records, string $code, int $fuelTypeId, float $quantity): array
@@ -391,7 +392,7 @@ class AIFeatureTestingTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param  array<string, mixed>  $records
      */
     private function purchase(array $records, string $code, float $quantity, int $fuelTypeId): void
     {
@@ -441,7 +442,7 @@ class AIFeatureTestingTest extends TestCase
     }
 
     /**
-     * @return \Illuminate\Http\Client\Response
+     * @return Response
      */
     private function groqResponse(string $text)
     {

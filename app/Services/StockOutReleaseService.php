@@ -4,9 +4,14 @@ namespace App\Services;
 
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class StockOutReleaseService
 {
+    public function __construct(
+        private readonly IdempotencyService $idempotencyService
+    ) {}
+
     public function releaseSaleItemFromGarage(int $saleItemId, float $quantity, string $stockOutAt, int $createdBy, ?int $preferredGarageId = null, ?string $remarks = null): ?string
     {
         $saleItem = $this->saleItemForStockOut($saleItemId);
@@ -15,7 +20,7 @@ class StockOutReleaseService
             return 'The selected sale is not eligible for stock-out.';
         }
 
-        if ($this->releasedQuantityForSaleItem((int) $saleItem->id) > 0) {
+        if ($this->stockOutExistsForSaleItem((int) $saleItem->id)) {
             return null;
         }
 
@@ -49,6 +54,8 @@ class StockOutReleaseService
         }
 
         if ($totalAvailable < $quantity) {
+            $this->insertPreparedGarageRelease($saleItem, $quantity, $stockOutAt, $createdBy);
+
             return null;
         }
 
@@ -91,14 +98,13 @@ class StockOutReleaseService
             ]);
     }
 
-    private function releasedQuantityForSaleItem(int $saleItemId): float
+    private function stockOutExistsForSaleItem(int $saleItemId): bool
     {
-        return round((float) DB::table('stock_outs')
+        return DB::table('stock_outs')
             ->where('sale_item_id', $saleItemId)
             ->where('status', '!=', 'cancelled')
             ->lockForUpdate()
-            ->selectRaw('COALESCE(SUM(quantity_liters), 0) as released_liters')
-            ->value('released_liters'), 2);
+            ->exists();
     }
 
     private function insertGarageRelease(object $saleItem, int $garageId, float $quantity, string $stockOutAt, int $createdBy, ?string $remarks): void
@@ -110,38 +116,42 @@ class StockOutReleaseService
                 'updated_at' => now(),
             ]);
 
-        $stockOutId = DB::table('stock_outs')->insertGetId([
-            'stock_out_code' => $this->nextCode('stock_outs', 'stock_out_code', 'STO'),
-            'sale_id' => $saleItem->sale_id,
-            'sale_item_id' => $saleItem->id,
-            'customer_id' => $saleItem->customer_id,
-            'fuel_type_id' => $saleItem->fuel_type_id,
-            'storage_location_id' => $garageId,
-            'source_type' => 'garage',
-            'quantity_liters' => $quantity,
-            'stock_out_at' => $stockOutAt,
-            'status' => 'released',
-            'created_by' => $createdBy,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        $stockOutId = $this->idempotencyService->retryOnCollision('stock_out_code', function () use ($saleItem, $garageId, $quantity, $stockOutAt, $createdBy): int {
+            return (int) DB::table('stock_outs')->insertGetId([
+                'stock_out_code' => $this->nextCode('stock_outs', 'stock_out_code', 'STO'),
+                'sale_id' => $saleItem->sale_id,
+                'sale_item_id' => $saleItem->id,
+                'customer_id' => $saleItem->customer_id,
+                'fuel_type_id' => $saleItem->fuel_type_id,
+                'storage_location_id' => $garageId,
+                'source_type' => 'garage',
+                'quantity_liters' => $quantity,
+                'stock_out_at' => $stockOutAt,
+                'status' => 'released',
+                'created_by' => $createdBy,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        });
 
-        $movementId = DB::table('inventory_movements')->insertGetId([
-            'movement_code' => $this->nextCode('inventory_movements', 'movement_code', 'MOV'),
-            'storage_location_id' => $garageId,
-            'fuel_type_id' => $saleItem->fuel_type_id,
-            'movement_type' => 'stock_out',
-            'direction' => 'out',
-            'quantity_liters' => $quantity,
-            'unit_cost' => null,
-            'reference_type' => 'stock_out',
-            'reference_id' => $stockOutId,
-            'movement_date' => $stockOutAt,
-            'remarks' => $remarks,
-            'created_by' => $createdBy,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        $movementId = $this->idempotencyService->retryOnCollision('movement_code', function () use ($garageId, $saleItem, $quantity, $stockOutId, $stockOutAt, $remarks, $createdBy): int {
+            return (int) DB::table('inventory_movements')->insertGetId([
+                'movement_code' => $this->nextCode('inventory_movements', 'movement_code', 'MOV'),
+                'storage_location_id' => $garageId,
+                'fuel_type_id' => $saleItem->fuel_type_id,
+                'movement_type' => 'stock_out',
+                'direction' => 'out',
+                'quantity_liters' => $quantity,
+                'unit_cost' => null,
+                'reference_type' => 'stock_out',
+                'reference_id' => $stockOutId,
+                'movement_date' => $stockOutAt,
+                'remarks' => $remarks,
+                'created_by' => $createdBy,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        });
 
         DB::table('stock_outs')
             ->where('id', $stockOutId)
@@ -149,6 +159,27 @@ class StockOutReleaseService
                 'inventory_movement_id' => $movementId,
                 'updated_at' => now(),
             ]);
+    }
+
+    private function insertPreparedGarageRelease(object $saleItem, float $quantity, string $stockOutAt, int $createdBy): void
+    {
+        $this->idempotencyService->retryOnCollision('stock_out_code', function () use ($saleItem, $quantity, $stockOutAt, $createdBy): void {
+            DB::table('stock_outs')->insert([
+                'stock_out_code' => $this->nextCode('stock_outs', 'stock_out_code', 'STO'),
+                'sale_id' => $saleItem->sale_id,
+                'sale_item_id' => $saleItem->id,
+                'customer_id' => $saleItem->customer_id,
+                'fuel_type_id' => $saleItem->fuel_type_id,
+                'storage_location_id' => null,
+                'source_type' => 'garage',
+                'quantity_liters' => $quantity,
+                'stock_out_at' => $stockOutAt,
+                'status' => 'prepared',
+                'created_by' => $createdBy,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        });
     }
 
     private function availableGarageStockForUpdate(int $garageId, int $fuelTypeId): float
@@ -194,11 +225,8 @@ class StockOutReleaseService
 
     private function nextCode(string $table, string $column, string $prefix): string
     {
-        $nextId = ((int) DB::table($table)->max('id')) + 1;
-
         do {
-            $code = $prefix.'-'.str_pad((string) $nextId, 6, '0', STR_PAD_LEFT);
-            $nextId++;
+            $code = $prefix.'-'.now()->format('ymd').'-'.Str::upper(Str::random(5));
         } while (DB::table($table)->where($column, $code)->exists());
 
         return $code;

@@ -8,15 +8,13 @@ use Illuminate\Support\Facades\DB;
 
 class AdminDashboardService
 {
-    public function __construct(private DashboardSummaryService $summary)
-    {
-    }
+    public function __construct(private DashboardSummaryService $summary) {}
 
     /**
      * @return array<string, mixed>
      */
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return array<string, mixed>
      */
     public function data(array $filters = []): array
@@ -140,8 +138,8 @@ class AdminDashboardService
     }
 
     /**
-     * @param array<int, string> $labels
-     * @param Collection<string, float> $totals
+     * @param  array<int, string>  $labels
+     * @param  Collection<string, float>  $totals
      * @return array<int, array{label: string, percent: int, hot: bool}>
      */
     private function normalizedDemandRows(array $labels, Collection $totals): array

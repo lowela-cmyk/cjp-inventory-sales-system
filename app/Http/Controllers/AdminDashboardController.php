@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Rules\ApprovedFuelType;
 use App\Services\AdminDashboardService;
 use App\Services\DashboardSummaryService;
 use Illuminate\Http\Request;
@@ -19,11 +20,19 @@ class AdminDashboardController extends Controller
             'unlifted_date_from' => ['nullable', 'date'],
             'unlifted_date_to' => ['nullable', 'date', 'after_or_equal:unlifted_date_from'],
             'unlifted_depot_id' => ['nullable', 'integer', Rule::exists('depots', 'id')],
-            'unlifted_fuel_type_id' => ['nullable', 'integer', Rule::exists('fuel_types', 'id')],
+            'unlifted_fuel_type_id' => [
+                'nullable',
+                'integer',
+                ApprovedFuelType::rule(),
+            ],
             'unlifted_lifting_status' => ['nullable', Rule::in(DashboardSummaryService::LIFTING_PROGRESS_STATUSES)],
             'variance_date_from' => ['nullable', 'date'],
             'variance_date_to' => ['nullable', 'date', 'after_or_equal:variance_date_from'],
-            'variance_fuel_type_id' => ['nullable', 'integer', Rule::exists('fuel_types', 'id')],
+            'variance_fuel_type_id' => [
+                'nullable',
+                'integer',
+                ApprovedFuelType::rule(),
+            ],
             'variance_customer_id' => ['nullable', 'integer', Rule::exists('customers', 'id')],
             'variance_status' => ['nullable', Rule::in(DashboardSummaryService::INVENTORY_VARIANCE_STATUSES)],
         ]);

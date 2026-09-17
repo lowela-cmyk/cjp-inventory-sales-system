@@ -36,6 +36,11 @@
                     </tbody>
                 </table>
             </div>
+            @if (method_exists($purchases, 'links'))
+                <div class="pagination-wrap" style="margin-top: 16px;">
+                    {{ $purchases->links() }}
+                </div>
+            @endif
         </section>
 
         <section data-tab-panel="stock-in" hidden>
@@ -66,6 +71,11 @@
                     </tbody>
                 </table>
             </div>
+            @if (method_exists($stockIn, 'links'))
+                <div class="pagination-wrap" style="margin-top: 16px;">
+                    {{ $stockIn->links() }}
+                </div>
+            @endif
         </section>
 
         <section data-tab-panel="stock-out" hidden>
@@ -95,6 +105,11 @@
                     </tbody>
                 </table>
             </div>
+            @if (method_exists($stockOut, 'links'))
+                <div class="pagination-wrap" style="margin-top: 16px;">
+                    {{ $stockOut->links() }}
+                </div>
+            @endif
         </section>
     </div>
 

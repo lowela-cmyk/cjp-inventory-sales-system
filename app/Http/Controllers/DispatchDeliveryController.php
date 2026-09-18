@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Rules\ApprovedFuelType;
 use App\Services\IdempotencyService;
+use App\Services\PurchaseWorkflowService;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -17,7 +18,7 @@ class DispatchDeliveryController extends Controller
 {
     public function __construct(
         private readonly IdempotencyService $idempotencyService,
-        private readonly \App\Services\PurchaseWorkflowService $purchaseWorkflow
+        private readonly PurchaseWorkflowService $purchaseWorkflow
     ) {}
 
     private const ACTIVE_HAUL_STATUSES = ['scheduled', 'in_transit', 'lifted'];

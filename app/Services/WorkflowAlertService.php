@@ -29,7 +29,7 @@ class WorkflowAlertService
         $items = DB::table('purchase_items')
             ->join('fuel_types', 'fuel_types.id', '=', 'purchase_items.fuel_type_id')
             ->where('purchase_items.purchase_id', $purchaseId)
-            ->selectRaw("GROUP_CONCAT(fuel_types.name) as fuel_names, COALESCE(SUM(purchase_items.quantity_ordered_liters), 0) as quantity_liters")
+            ->selectRaw('GROUP_CONCAT(fuel_types.name) as fuel_names, COALESCE(SUM(purchase_items.quantity_ordered_liters), 0) as quantity_liters')
             ->first();
         $deduplicationKey = 'purchase:'.$purchaseId.':'.$event.($haulId ? ':haul:'.$haulId : '');
 

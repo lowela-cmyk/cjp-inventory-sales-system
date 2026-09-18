@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\PurchaseWorkflowService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -9,7 +10,7 @@ use Illuminate\Validation\Rule;
 
 class DispatchLiftingStatusController extends Controller
 {
-    public function __construct(private readonly \App\Services\PurchaseWorkflowService $purchaseWorkflow) {}
+    public function __construct(private readonly PurchaseWorkflowService $purchaseWorkflow) {}
 
     public const LIFTING_STATUSES = ['scheduled', 'in_transit', 'lifted', 'completed', 'cancelled'];
 

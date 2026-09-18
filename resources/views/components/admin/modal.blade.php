@@ -1,11 +1,13 @@
-@props(['id', 'title', 'wide' => false])
+@props(['id', 'title', 'wide' => false, 'showBrand' => true])
 
 <div class="modal-backdrop" id="{{ $id }}" aria-hidden="true">
     <div class="admin-modal {{ $wide ? 'admin-modal-wide' : '' }}" role="dialog" aria-modal="true" aria-labelledby="{{ $id }}-title">
-        <div class="modal-titlebar">
-            <span class="modal-brand-logo" aria-hidden="true">
-                <img src="{{ asset('images/cjp-logo.png') }}" alt="">
-            </span>
+        <div class="modal-titlebar {{ $showBrand ? '' : 'modal-titlebar-without-brand' }}">
+            @if ($showBrand)
+                <span class="modal-brand-logo" aria-hidden="true">
+                    <img src="{{ asset('images/cjp-logo.png') }}" alt="">
+                </span>
+            @endif
             <h2 id="{{ $id }}-title">{{ $title }}</h2>
             <button class="modal-close" type="button" data-modal-close aria-label="Close modal"></button>
         </div>

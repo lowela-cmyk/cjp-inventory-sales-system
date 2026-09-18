@@ -69,23 +69,22 @@
     </div>
 
     @foreach ($transactions as $row)
-        <x-admin.modal id="{{ $row['id'] }}" title="VIEW TRANSACTIONS" wide>
+        <x-admin.modal id="{{ $row['id'] }}" title="VIEW TRANSACTIONS" :show-brand="false">
             <div class="modal-heading-row">
                 <p class="detail-id">{{ $row['purchase_code'] }}</p>
                 <p class="detail-id {{ $row['status_class'] }}">{{ $row['status'] }}</p>
             </div>
-            <div class="modal-card lift-transaction-modal">
+            <div class="lift-transaction-modal">
                 <div class="lift-blocks" aria-label="Lift transactions for {{ $row['purchase_code'] }}">
                     @forelse ($row['lifts'] as $lift)
-                        <div class="lift-block {{ $lift['counts_as_lifted'] ? 'is-complete' : 'is-open' }}" tabindex="0">
-                            <span>Lift {{ $lift['sequence'] }}</span>
-                            <strong>{{ $lift['quantity'] }}</strong>
-                            <em>{{ $lift['status'] }}</em>
-                            <div class="lift-tooltip" role="tooltip">
-                                @foreach ($lift['details'] as $label => $value)
-                                    <div><span>{{ $label }}</span><strong>{{ $value }}</strong></div>
-                                @endforeach
+                        <div class="lift-block {{ $lift['counts_as_lifted'] ? 'is-complete' : 'is-open' }}">
+                            <span class="visually-hidden">Lift {{ $lift['sequence'] }}</span>
+                            <div class="lift-block-meta" aria-label="Lift ID: {{ $lift['details']['Lift ID'] }}">
+                                <span>Lift-ID: {{ $lift['details']['Lift ID'] }}</span>
+                                <span>Date Lifted: {{ $lift['display_date'] }}</span>
                             </div>
+                            <strong class="lift-block-quantity">{{ $lift['display_quantity'] }}</strong>
+                            <span class="visually-hidden">Driver: {{ $lift['details']['Driver'] }}. Truck: {{ $lift['details']['Truck'] }}. Status: {{ $lift['status'] }}.</span>
                         </div>
                     @empty
                         <div class="lift-empty">No lift assignments have been created for this purchase yet.</div>

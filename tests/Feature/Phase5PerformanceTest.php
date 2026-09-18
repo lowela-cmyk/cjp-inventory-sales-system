@@ -585,4 +585,3 @@ class Phase5PerformanceTest extends TestCase
         $this->assertSame('The selected stock-in source is invalid.', $error);
     }
 }
-

@@ -5,12 +5,14 @@ access
 accessible
 account
 accounts
+action
 actions
 active
 activity
 actual
 add
 additional
+address
 adds
 admin
 after
@@ -52,6 +54,7 @@ assigned
 assignment
 assignments
 atomic
+atomically
 attempt
 attempts
 attribute
@@ -152,6 +155,7 @@ codes
 collected
 collection
 collision
+combined
 command
 compact
 company
@@ -171,6 +175,7 @@ confirm
 confirmation
 confirmed
 conflict
+connected
 connection
 consistent
 console
@@ -392,6 +397,7 @@ hover
 html
 http
 idempotency
+idempotent
 idempotently
 ids
 ignores
@@ -459,6 +465,7 @@ limits
 line
 link
 links
+list
 listen
 lists
 liters
@@ -485,6 +492,7 @@ manila
 manipulated
 manual
 map
+mark
 markup
 master
 match
@@ -541,6 +549,7 @@ numbers
 nunomaduro
 office
 officer
+official
 old
 omitted
 once
@@ -606,6 +615,7 @@ phone
 php
 phpunit
 physical
+pickup
 pint
 plugin
 plugins
@@ -846,6 +856,7 @@ switching
 symbol
 symfony
 sync
+synchronize
 syslog
 system
 tab

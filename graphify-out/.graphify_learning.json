@@ -1,11 +1,69 @@
 {
-  "generated_at": "2026-09-18T00:14:27.128399+00:00",
+  "generated_at": "2026-09-18T01:07:09.725707+00:00",
   "nodes": {
-    "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller": {
-      "code_fingerprint": "d37610ba3edcaa613206f3faea349f53f9aac001bf4cb858c876b16ef6f0ae98",
-      "label": "InventoryOfficerPurchaseController",
-      "last": "2026-09-16T11:09:33.286797+00:00",
+    "app_http_controllers_dispatchdeliverycontroller_dispatchdeliverycontroller": {
+      "code_fingerprint": "1d2bdf23c0b4e4d3267ade33d96110096cdcd1c3e5b17bfc4815c2e1a611eeba",
+      "label": "DispatchDeliveryController",
+      "last": "2026-09-18T00:55:57.452654+00:00",
       "provenance": [
+        {
+          "date": "2026-09-18T00:55:57.452654+00:00",
+          "outcome": "useful",
+          "q": "does the system allows many lifts"
+        },
+        {
+          "date": "2026-09-18T00:32:30.732814+00:00",
+          "outcome": "useful",
+          "q": "Inspect and fix the connected Inventory, Fuel Lifting, Ledger, Alerts, Dispatch Officer, and Driver workflow"
+        }
+      ],
+      "score": 1.999264433,
+      "source_file": "app/Http/Controllers/DispatchDeliveryController.php",
+      "status": "preferred",
+      "uses": 2
+    },
+    "app_http_controllers_dispatchliftingstatuscontroller_dispatchliftingstatuscontroller": {
+      "code_fingerprint": "9322b8eda9be30a81ec8a9b95e0bd256623ce48eeb1a3c42355bd22f4811a25b",
+      "label": "DispatchLiftingStatusController",
+      "last": "2026-09-18T00:32:30.732814+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-18T00:32:30.732814+00:00",
+          "outcome": "useful",
+          "q": "Inspect and fix the connected Inventory, Fuel Lifting, Ledger, Alerts, Dispatch Officer, and Driver workflow"
+        }
+      ],
+      "score": 0.999444195,
+      "source_file": "app/Http/Controllers/DispatchLiftingStatusController.php",
+      "status": "tentative",
+      "uses": 1
+    },
+    "app_http_controllers_driverdeliverycontroller_driverdeliverycontroller": {
+      "code_fingerprint": "89939573a6d5ab7edff377a9a1a3a5e811a73f5f4f77b7965584f23e273a8adc",
+      "label": "DriverDeliveryController",
+      "last": "2026-09-18T00:32:30.732814+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-18T00:32:30.732814+00:00",
+          "outcome": "useful",
+          "q": "Inspect and fix the connected Inventory, Fuel Lifting, Ledger, Alerts, Dispatch Officer, and Driver workflow"
+        }
+      ],
+      "score": 0.999444195,
+      "source_file": "app/Http/Controllers/DriverDeliveryController.php",
+      "status": "tentative",
+      "uses": 1
+    },
+    "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller": {
+      "code_fingerprint": "797f14a5f980794d931758153a6659211f2a8ee64c2e3cd70618b3886188ccd3",
+      "label": "InventoryOfficerPurchaseController",
+      "last": "2026-09-18T00:32:30.732814+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-18T00:32:30.732814+00:00",
+          "outcome": "useful",
+          "q": "Inspect and fix the connected Inventory, Fuel Lifting, Ledger, Alerts, Dispatch Officer, and Driver workflow"
+        },
         {
           "date": "2026-09-16T11:09:33.286797+00:00",
           "outcome": "useful",
@@ -17,10 +75,10 @@
           "q": "Create a phased fix plan to tackle those problems, always opt for a simpler solution, write your plan in md"
         }
       ],
-      "score": 1.929334906,
+      "score": 2.927148084,
       "source_file": "app/Http/Controllers/InventoryOfficerPurchaseController.php",
       "status": "preferred",
-      "uses": 2
+      "uses": 3
     },
     "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller": {
       "code_fingerprint": "b126414ffc0280545136a44ae785f763449709af4238816b89336260467731fd",
@@ -33,7 +91,7 @@
           "q": "Create a phased fix plan to tackle those problems, always opt for a simpler solution, write your plan in md"
         }
       ],
-      "score": 0.964403866,
+      "score": 0.963588581,
       "source_file": "app/Http/Controllers/SalesOfficerCustomerController.php",
       "status": "tentative",
       "uses": 1
@@ -49,8 +107,50 @@
           "q": "Create a phased fix plan to tackle those problems, always opt for a simpler solution, write your plan in md"
         }
       ],
-      "score": 0.964403866,
+      "score": 0.963588581,
       "source_file": "app/Services/DashboardSummaryService.php",
+      "status": "tentative",
+      "uses": 1
+    },
+    "app_services_inventoryledgerservice_inventoryledgerservice": {
+      "code_fingerprint": "537a9d1cb75141f087947031d2f0fc7748f13fabd98493e2cdabd176968c696c",
+      "label": "InventoryLedgerService",
+      "last": "2026-09-18T00:55:57.452654+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-18T00:55:57.452654+00:00",
+          "outcome": "useful",
+          "q": "does the system allows many lifts"
+        },
+        {
+          "date": "2026-09-18T00:53:21.945536+00:00",
+          "outcome": "useful",
+          "q": "fix this, it must be on this format, but make sure it is inside of the box"
+        },
+        {
+          "date": "2026-09-18T00:32:30.732814+00:00",
+          "outcome": "useful",
+          "q": "Inspect and fix the connected Inventory, Fuel Lifting, Ledger, Alerts, Dispatch Officer, and Driver workflow"
+        }
+      ],
+      "score": 2.999043094,
+      "source_file": "app/Services/InventoryLedgerService.php",
+      "status": "preferred",
+      "uses": 3
+    },
+    "app_services_stockinservice_stockinservice": {
+      "code_fingerprint": "05638b839b38626b51fe58fe85cf0cef1e0253f001af48cee6658ee11b58bd0a",
+      "label": "StockInService",
+      "last": "2026-09-18T00:32:30.732814+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-18T00:32:30.732814+00:00",
+          "outcome": "useful",
+          "q": "Inspect and fix the connected Inventory, Fuel Lifting, Ledger, Alerts, Dispatch Officer, and Driver workflow"
+        }
+      ],
+      "score": 0.999444195,
+      "source_file": "app/Services/StockInService.php",
       "status": "tentative",
       "uses": 1
     },
@@ -65,7 +165,7 @@
           "q": "Create a phased fix plan to tackle those problems, always opt for a simpler solution, write your plan in md"
         }
       ],
-      "score": 0.964403866,
+      "score": 0.963588581,
       "source_file": "app/Services/StockOutReleaseService.php",
       "status": "tentative",
       "uses": 1
@@ -86,10 +186,79 @@
           "q": "Create a phased fix plan to tackle those problems, always opt for a simpler solution, write your plan in md"
         }
       ],
-      "score": 1.929334906,
+      "score": 1.927703889,
       "source_file": "app/Services/WorkflowSmokeTestService.php",
       "status": "preferred",
       "uses": 2
+    },
+    "resources_views_admin_ledger_blade": {
+      "code_fingerprint": "f583eeb7f6326c6f09687c57405c89e23d7b2f6de4dfbf2348575546bcd81ed7",
+      "label": "admin/ledger.blade.php",
+      "last": "2026-09-18T00:53:21.945536+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-18T00:53:21.945536+00:00",
+          "outcome": "useful",
+          "q": "fix this, it must be on this format, but make sure it is inside of the box"
+        }
+      ],
+      "score": 0.999778661,
+      "source_file": "resources/views/admin/ledger.blade.php",
+      "status": "tentative",
+      "uses": 1
+    },
+    "resources_views_components_admin_modal_blade": {
+      "code_fingerprint": "56ce78b02149953cce5c3e52e78ae382617fa64a099d63100ace4d75f8fd7106",
+      "label": "modal.blade.php",
+      "last": "2026-09-18T01:02:42.369196+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-18T01:02:42.369196+00:00",
+          "outcome": "useful",
+          "q": "but on this, make the text centered"
+        },
+        {
+          "date": "2026-09-18T00:53:21.945536+00:00",
+          "outcome": "useful",
+          "q": "fix this, it must be on this format, but make sure it is inside of the box"
+        }
+      ],
+      "score": 1.999707168,
+      "source_file": "resources/views/components/admin/modal.blade.php",
+      "status": "preferred",
+      "uses": 2
+    },
+    "resources_views_inventory_officer_ledger_blade": {
+      "code_fingerprint": "de1f0b24f16b2f32989341d85f20d383afd5a102a943849399a475aa7510a6a6",
+      "label": "inventory-officer/ledger.blade.php",
+      "last": "2026-09-18T00:53:21.945536+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-18T00:53:21.945536+00:00",
+          "outcome": "useful",
+          "q": "fix this, it must be on this format, but make sure it is inside of the box"
+        }
+      ],
+      "score": 0.999778661,
+      "source_file": "resources/views/inventory-officer/ledger.blade.php",
+      "status": "tentative",
+      "uses": 1
+    },
+    "tests_feature_dispatchliftingstatusmanagementtest_dispatchliftingstatusmanagementtest": {
+      "code_fingerprint": "3c65df0bca5352a0a5b1ddd39bf2e4862e4e0560070c65f3bee757903bae2ade",
+      "label": "DispatchLiftingStatusManagementTest",
+      "last": "2026-09-18T00:55:57.452654+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-18T00:55:57.452654+00:00",
+          "outcome": "useful",
+          "q": "does the system allows many lifts"
+        }
+      ],
+      "score": 0.999820238,
+      "source_file": "tests/Feature/DispatchLiftingStatusManagementTest.php",
+      "status": "tentative",
+      "uses": 1
     },
     "tests_feature_formvalidationtest_formvalidationtest": {
       "code_fingerprint": "48420fd3d3f9166a8cd11df93903eb379a9d6b746e3cd946b5fcb880746a387e",
@@ -102,8 +271,24 @@
           "q": "also can you update the phased fix plan, this is the fuel types, F1, UNLEADED, DIESEL, PREMIUM"
         }
       ],
-      "score": 0.964931039,
+      "score": 0.964115308,
       "source_file": "tests/Feature/FormValidationTest.php",
+      "status": "tentative",
+      "uses": 1
+    },
+    "tests_feature_inventoryledgertest_inventoryledgertest": {
+      "code_fingerprint": "330f8fe349910a7c9e73bff8e2df6fcb87df5038602fde45cd2d81ed08910b5d",
+      "label": "InventoryLedgerTest",
+      "last": "2026-09-18T01:02:42.369196+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-18T01:02:42.369196+00:00",
+          "outcome": "useful",
+          "q": "but on this, make the text centered"
+        }
+      ],
+      "score": 0.999928507,
+      "source_file": "tests/Feature/InventoryLedgerTest.php",
       "status": "tentative",
       "uses": 1
     }

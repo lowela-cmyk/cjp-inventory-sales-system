@@ -248,6 +248,7 @@ class DashboardSummaryService
                         'borderColor' => '#ffffff',
                         'borderWidth' => 1,
                         'borderRadius' => 5,
+                        'minBarLength' => 6,
                     ]],
                 ],
                 'totalOutstanding' => $outstanding,

@@ -142,7 +142,7 @@ document.addEventListener('click', (event) => {
             clone.querySelectorAll('select').forEach((select) => { select.selectedIndex = 0; });
             clone.querySelectorAll('input').forEach((input) => { input.value = ''; });
             const summary = clone.querySelector('[data-purchase-summary]');
-            if (summary) summary.textContent = '—';
+            if (summary) summary.textContent = 'â€”';
             items.appendChild(clone);
             updateLiftingSchedule(form);
         }
@@ -202,12 +202,12 @@ const updateLiftingSchedule = (form) => {
             selectedIds.add(option.value);
             if (depotId && currentDepot !== depotId) error ||= 'All purchases must use the same pickup depot.';
             depotId ||= currentDepot;
-            depotLabel ||= `${option.dataset.depot}${option.dataset.address ? ` — ${option.dataset.address}` : ''}`;
+            depotLabel ||= `${option.dataset.depot}${option.dataset.address ? ` â€” ${option.dataset.address}` : ''}`;
             if (quantity > remaining) error ||= 'An amount to lift exceeds its remaining purchase quantity.';
             if (quantityInput) quantityInput.max = String(remaining);
             if (summary) summary.textContent = `${option.dataset.fuel} / ${remaining.toLocaleString()} L remaining`;
         } else if (summary) {
-            summary.textContent = '—';
+            summary.textContent = 'â€”';
         }
     });
 
@@ -524,6 +524,59 @@ document.querySelectorAll('[data-inventory-variance-chart]').forEach((canvas) =>
 });
 
 document.querySelectorAll('[data-receivables-chart]').forEach((canvas) => {
+    if (canvas.dataset.chartRendered === 'true') return;
+
+    let chartData;
+    try {
+        chartData = JSON.parse(canvas.dataset.chart || '{"labels":[],"datasets":[]}');
+    } catch {
+        canvas.hidden = true;
+        return;
+    }
+
+    const fallback = canvas.parentElement?.querySelector('.receivables-fallback');
+
+    try {
+        new Chart(canvas, {
+            type: 'bar',
+            data: chartData,
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: (context) =>
+                                context.dataset.formattedData?.[context.dataIndex]
+                                || `PHP ${Number(context.raw || 0).toLocaleString()}`,
+                        },
+                    },
+                },
+                scales: {
+                    x: {
+                        // Always show both x-axis labels even when one bar value is 0
+                        ticks: { display: true },
+                        grid: { display: false },
+                    },
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: (value) => `PHP ${Number(value).toLocaleString()}`,
+                        },
+                    },
+                },
+                // Ensure zero-value bars always render as a visible stub
+                datasets: { bar: { minBarLength: 6 } },
+            },
+        });
+    } catch {
+        canvas.hidden = true;
+        return;
+    }
+
+    canvas.dataset.chartRendered = 'true';
+    if (fallback) fallback.hidden = true;
     renderDashboardBarChart(
         canvas,
         '.receivables-fallback',
@@ -540,3 +593,38 @@ document.querySelectorAll('[data-expected-revenue-chart]').forEach((canvas) => {
         (value) => `PHP ${Number(value || 0).toLocaleString()}`,
     );
 });
+
+// â”€â”€ Responsive table scroll helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+/**
+ * Toggle the `.is-scrollable` class on every `.table-wrap` whose inner table
+ * is wider than the visible container width.  The class activates the CSS
+ * scroll-hint ("â† Scroll sideways to view more columns â†’").
+ */
+const syncScrollHints = () => {
+    document.querySelectorAll('.table-wrap').forEach((wrap) => {
+        const table = wrap.querySelector('table');
+        if (!table) return;
+        const isScrollable = table.scrollWidth > wrap.clientWidth + 2; // 2 px tolerance
+        wrap.classList.toggle('is-scrollable', isScrollable);
+    });
+};
+
+// Run on load and whenever the viewport resizes / fonts load
+syncScrollHints();
+window.addEventListener('resize', syncScrollHints, { passive: true });
+document.fonts?.ready?.then(syncScrollHints);
+
+/**
+ * Convert Shift + vertical mouse-wheel into horizontal scroll on the nearest
+ * `.table-wrap` ancestor so users without a touchpad can scroll wide tables
+ * using their scroll wheel.
+ */
+document.addEventListener('wheel', (event) => {
+    const wrap = event.target.closest('.table-wrap');
+    if (!wrap) return;
+    if (!event.shiftKey) return;
+
+    event.preventDefault();
+    wrap.scrollLeft += event.deltaY;
+}, { passive: false });

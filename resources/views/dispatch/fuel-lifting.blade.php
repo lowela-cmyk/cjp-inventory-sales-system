@@ -82,7 +82,7 @@
                             <th>Lift Date</th>
                             <th>Pickup Depot</th>
                             <th>Driver</th>
-                            <th>Driver's<br>Contact No.</th>
+                            <th>Driver's Contact No.</th>
                             <th>Truck-ID</th>
                             <th>Capacity</th>
                             <th>QTY Lift</th>
@@ -149,7 +149,7 @@
                             <th>Lift Date</th>
                             <th>Pickup Depot</th>
                             <th>Driver</th>
-                            <th>Driver's<br>Contact No.</th>
+                            <th>Driver's Contact No.</th>
                             <th>Truck-ID</th>
                             <th>Capacity</th>
                             <th>Lifted</th>

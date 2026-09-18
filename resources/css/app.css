@@ -389,17 +389,64 @@ form[aria-busy="true"] {
     margin-top: 22px;
 }
 
+/* ── Responsive table scroll container ─────────────────────────────────── */
 .table-wrap {
+    /* Horizontal scroll only; keep vertical visible so modals/dropdowns
+       positioned with JS (fixed/absolute) are never clipped. */
     overflow-x: auto;
+    overflow-y: visible;
+    -webkit-overflow-scrolling: touch; /* momentum scrolling on iOS/Safari */
+    position: relative;               /* stacking context for sticky columns */
     border: 1px solid var(--admin-line);
     border-radius: 4px;
     background: #fff;
     min-height: 260px;
+
+    /* Visible, styled scrollbar — wide enough to grab, not oversized */
+    scrollbar-width: thin;
+    scrollbar-color: var(--admin-line) transparent;
 }
 
+/* WebKit scrollbar (Chrome / Edge / Opera / Safari) */
+.table-wrap::-webkit-scrollbar {
+    height: 7px;
+}
+.table-wrap::-webkit-scrollbar-track {
+    background: transparent;
+}
+.table-wrap::-webkit-scrollbar-thumb {
+    background: var(--admin-line);
+    border-radius: 999px;
+}
+.table-wrap::-webkit-scrollbar-thumb:hover {
+    background: var(--admin-muted);
+}
+
+/* Scroll hint — only shown when the container is actually scrollable
+   (managed by JS that adds/removes the .is-scrollable class) */
+.table-wrap.is-scrollable::after {
+    content: "← Scroll sideways to view more columns →";
+    display: block;
+    padding: 5px 10px 4px;
+    background: #f5f5f5;
+    border-top: 1px solid var(--admin-soft-line);
+    color: var(--admin-muted);
+    font-size: 11px;
+    font-weight: 700;
+    text-align: center;
+    letter-spacing: .03em;
+    pointer-events: none;
+    /* Stick to the bottom of the visible viewport within the wrapper */
+    position: sticky;
+    left: 0;
+    right: 0;
+}
+
+/* ── Admin table ────────────────────────────────────────────────────────── */
 .admin-table {
-    width: 100%;
-    min-width: 980px;
+    /* Expand to accommodate all columns; never shrink below natural width */
+    width: max-content;
+    min-width: 100%;
     border-collapse: collapse;
     text-align: center;
 }
@@ -421,6 +468,10 @@ form[aria-busy="true"] {
     font-size: 15px;
     font-weight: 700;
     line-height: 1.25;
+    /* Keep all header text on one line */
+    white-space: nowrap;
+    overflow-wrap: normal;
+    word-break: normal;
 }
 
 .admin-table td {
@@ -430,7 +481,10 @@ form[aria-busy="true"] {
     font-size: 14px;
     line-height: 1.3;
     vertical-align: middle;
-    overflow-wrap: anywhere;
+    /* Keep all cell text on one line — overrides the global 'anywhere' rule */
+    white-space: nowrap;
+    overflow-wrap: normal;
+    word-break: normal;
 }
 
 .admin-table-fixed th,
@@ -464,6 +518,49 @@ form[aria-busy="true"] {
     padding: 0 12px;
     font-size: 13px;
 }
+
+/* ── Sticky Actions column (last th/td) ─────────────────────────────────
+   When the table scrolls horizontally, the Actions column sticks to the
+   right so users can always reach View/Edit/Delete without scrolling back.
+   Note: overflow-y: visible on .table-wrap is intentional — sticky children
+   require the scroll parent NOT to have overflow:hidden on the cross axis. */
+.admin-table th:last-child,
+.admin-table td:last-child {
+    position: sticky;
+    right: 0;
+    z-index: 2;
+    /* Shadow cue that content is hidden behind the column */
+    box-shadow: -3px 0 6px -2px rgba(0, 0, 0, .10);
+}
+
+.admin-table th:last-child {
+    background: var(--admin-head);
+}
+
+/* Preserve per-row colour on sticky td */
+.admin-table tbody tr td:last-child {
+    background: inherit;
+}
+
+/* Ensure coloured rows paint their background on the sticky cell */
+.row-danger td:last-child {
+    background: var(--danger-soft);
+}
+
+.row-warning td:last-child {
+    background: var(--warning-soft);
+}
+
+.row-success td:last-child {
+    background: var(--success-soft);
+}
+
+/* Fallback: plain white background when no row class is set */
+.admin-table tbody tr:not([class]) td:last-child,
+.admin-table tbody tr[class=""] td:last-child {
+    background: #fff;
+}
+
 
 .depot-table th,
 .depot-table td {
@@ -973,6 +1070,10 @@ form[aria-busy="true"] {
     text-align: center;
 }
 
+.modal-titlebar-without-brand {
+    padding-inline: 76px;
+}
+
 .modal-brand-logo {
     position: absolute;
     left: 16px;
@@ -1455,71 +1556,30 @@ form[aria-busy="true"] {
 }
 
 .lift-transaction-modal {
-    display: grid;
-    gap: 14px;
-}
-
-.lift-tooltip span {
-    display: block;
-    color: #f2caca;
-    font-size: 12px;
-    font-weight: 800;
-    text-transform: uppercase;
-}
-
-.lift-tooltip strong {
-    display: block;
-    margin-top: 3px;
-    color: #fff;
-    font-size: 15px;
+    margin-top: 24px;
+    border: 1px solid #111;
+    padding: 0;
+    overflow: hidden;
 }
 
 .lift-blocks {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     gap: 0;
-    overflow: visible;
-    border: 1px solid #8f2024;
-    border-radius: 8px;
+    width: 100%;
+    overflow: hidden;
 }
 
 .lift-block {
-    position: relative;
-    min-height: 132px;
+    min-width: 0;
+    min-height: 330px;
     border: 0;
     border-radius: 0;
-    padding: 18px 16px;
+    padding: 30px 18px;
     background: #a6282d;
     box-shadow: none;
-    cursor: help;
-    transition: transform 160ms ease, box-shadow 160ms ease, filter 160ms ease;
-}
-
-.lift-block:hover,
-.lift-block:focus {
-    z-index: 4;
-    box-shadow: 0 16px 30px rgba(0, 0, 0, 0.24);
-    filter: brightness(1.05);
-    outline: 0;
-    transform: translateY(-2px);
-}
-
-.lift-block span,
-.lift-block em {
-    display: block;
-    color: #f2d4d4;
-    font-size: 12px;
-    font-style: normal;
-    font-weight: 800;
-    text-transform: uppercase;
-}
-
-.lift-block strong {
-    display: block;
-    margin: 28px 0 6px;
     color: #fff;
-    font-size: 22px;
-    font-weight: 800;
+    text-align: center;
 }
 
 .lift-block.is-complete {
@@ -1538,29 +1598,40 @@ form[aria-busy="true"] {
     background: #74191d;
 }
 
-.lift-tooltip {
-    position: absolute;
-    left: 12px;
-    right: 12px;
-    top: calc(100% + 8px);
+.lift-block-meta {
     display: grid;
-    gap: 8px;
-    min-width: 230px;
-    border: 1px solid #3b080a;
-    border-radius: 8px;
-    padding: 12px;
-    background: #5c1215;
-    box-shadow: 0 16px 30px rgba(0, 0, 0, 0.22);
-    opacity: 0;
-    pointer-events: none;
-    transform: translateY(-4px);
-    transition: opacity 160ms ease, transform 160ms ease;
+    gap: 3px;
+    min-height: 82px;
+    align-content: center;
+    justify-items: center;
+    border-radius: 20px;
+    padding: 15px 18px;
+    background: rgba(83, 9, 12, .64);
+    font-size: 16px;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+    text-align: center;
 }
 
-.lift-block:hover .lift-tooltip,
-.lift-block:focus .lift-tooltip {
-    opacity: 1;
-    transform: translateY(0);
+.lift-block-quantity {
+    display: block;
+    margin-top: 34px;
+    font-size: clamp(28px, 3vw, 36px);
+    font-weight: 400;
+    line-height: 1.1;
+    text-align: center;
+}
+
+.visually-hidden {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
 }
 
 .lift-empty {
@@ -1570,6 +1641,20 @@ form[aria-busy="true"] {
     padding: 18px;
     color: #555;
     text-align: center;
+}
+
+@media (max-width: 760px) {
+    .lift-blocks {
+        grid-template-columns: 1fr;
+    }
+
+    .lift-block {
+        min-height: 220px;
+    }
+
+    .lift-block-meta {
+        width: min(100%, 320px);
+    }
 }
 
 .sales-items {

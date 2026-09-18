@@ -163,6 +163,8 @@ class InventoryLedgerService
                     'sequence' => $index + 1,
                     'code' => $row->haul_code,
                     'quantity' => $this->formatLiters($row->quantity_liters),
+                    'display_quantity' => $this->formatDisplayLiters($row->quantity_liters),
+                    'display_date' => $this->formatDate($row->hauled_at ?: $row->scheduled_at),
                     'status' => $this->label($row->status),
                     'counts_as_lifted' => $row->status === 'completed',
                     'details' => $details,
@@ -391,6 +393,14 @@ class InventoryLedgerService
     private function formatLiters(mixed $value): string
     {
         return $this->formatNumber($value).' L';
+    }
+
+    private function formatDisplayLiters(mixed $value): string
+    {
+        $liters = (float) ($value ?? 0);
+        $precision = abs($liters - round($liters)) < 0.005 ? 0 : 2;
+
+        return number_format($liters, $precision).' L';
     }
 
     private function formatNumber(mixed $value): string

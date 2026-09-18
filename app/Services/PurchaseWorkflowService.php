@@ -43,6 +43,7 @@ class PurchaseWorkflowService
 
         if ($purchase->status === 'cancelled') {
             $this->transition($purchaseId, 'cancelled', $userId, $haulId);
+
             return;
         }
 

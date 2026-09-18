@@ -80,7 +80,7 @@ class InventoryLedgerTest extends TestCase
         $this->assertTrue($transaction['lifts'][1]['counts_as_lifted']);
     }
 
-    public function test_view_transactions_modal_displays_all_lift_blocks_and_hover_details_from_database(): void
+    public function test_view_transactions_modal_displays_all_lift_blocks_and_contained_details_from_database(): void
     {
         $records = $this->baseRecords();
         $purchase = $this->purchase($records, 'PUR-MODAL-LIFTS', 100000);
@@ -100,7 +100,10 @@ class InventoryLedgerTest extends TestCase
             ->assertSee('LFT-MODAL-1')
             ->assertSee('LFT-MODAL-2')
             ->assertSee('LFT-MODAL-3')
-            ->assertSee('Lift ID')
+            ->assertSee('Lift-ID')
+            ->assertSee('Date Lifted: 9/1/2026')
+            ->assertSee('lift-block-meta', false)
+            ->assertDontSee('lift-tooltip', false)
             ->assertSee('Driver One')
             ->assertSee('TRK-LEDGER');
     }

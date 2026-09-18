@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\PurchaseWorkflowService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -9,7 +10,7 @@ use Illuminate\Validation\Rule;
 
 class DriverLiftingStatusController extends Controller
 {
-    public function __construct(private readonly \App\Services\PurchaseWorkflowService $purchaseWorkflow) {}
+    public function __construct(private readonly PurchaseWorkflowService $purchaseWorkflow) {}
 
     public const STATUS_TRANSITIONS = [
         'scheduled' => ['in_transit'],

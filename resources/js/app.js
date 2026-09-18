@@ -131,13 +131,100 @@ document.addEventListener('click', (event) => {
         reindexSaleItems(items);
         updateSalesTotals(items);
     }
+
+    const addLiftingItemButton = event.target.closest('[data-lifting-item-add]');
+    if (addLiftingItemButton) {
+        const form = addLiftingItemButton.closest('[data-lifting-schedule-form]');
+        const items = form?.querySelector('[data-lifting-items]');
+        const source = items?.querySelector('[data-lifting-item]:last-child');
+        if (items && source) {
+            const clone = source.cloneNode(true);
+            clone.querySelectorAll('select').forEach((select) => { select.selectedIndex = 0; });
+            clone.querySelectorAll('input').forEach((input) => { input.value = ''; });
+            const summary = clone.querySelector('[data-purchase-summary]');
+            if (summary) summary.textContent = '—';
+            items.appendChild(clone);
+            updateLiftingSchedule(form);
+        }
+    }
+
+    const removeLiftingItemButton = event.target.closest('[data-lifting-item-remove]');
+    if (removeLiftingItemButton) {
+        const form = removeLiftingItemButton.closest('[data-lifting-schedule-form]');
+        const items = form?.querySelector('[data-lifting-items]');
+        if (items?.querySelectorAll('[data-lifting-item]').length > 1) {
+            removeLiftingItemButton.closest('[data-lifting-item]')?.remove();
+            updateLiftingSchedule(form);
+        }
+    }
 });
 
 document.addEventListener('input', (event) => {
     if (event.target.closest('[data-sales-item]')) {
         updateSalesTotals(event.target.closest('[data-sales-items]'));
     }
+
+    const liftingForm = event.target.closest('[data-lifting-schedule-form]');
+    if (liftingForm) updateLiftingSchedule(liftingForm);
 });
+
+document.addEventListener('change', (event) => {
+    const liftingForm = event.target.closest('[data-lifting-schedule-form]');
+    if (liftingForm) updateLiftingSchedule(liftingForm);
+});
+
+const updateLiftingSchedule = (form) => {
+    if (!form) return;
+    const rows = [...form.querySelectorAll('[data-lifting-item]')];
+    const truckOption = form.querySelector('[name="truck_id"]')?.selectedOptions?.[0];
+    const capacity = Number(truckOption?.dataset.capacity || 0);
+    const selectedIds = new Set();
+    let total = 0;
+    let depotId = null;
+    let depotLabel = '';
+    let error = '';
+
+    rows.forEach((row, index) => {
+        row.querySelectorAll('[name]').forEach((field) => {
+            field.name = field.name.replace(/items\[\d+\]/, `items[${index}]`);
+        });
+        const select = row.querySelector('[data-lifting-purchase]');
+        const option = select?.selectedOptions?.[0];
+        const quantityInput = row.querySelector('[data-lifting-quantity]');
+        const quantity = Number(quantityInput?.value || 0);
+        const remaining = Number(option?.dataset.remaining || 0);
+        const currentDepot = option?.dataset.depotId || null;
+        const summary = row.querySelector('[data-purchase-summary]');
+        total += Number.isFinite(quantity) ? quantity : 0;
+
+        if (option?.value) {
+            if (selectedIds.has(option.value)) error ||= 'The same Purchase ID cannot be added twice.';
+            selectedIds.add(option.value);
+            if (depotId && currentDepot !== depotId) error ||= 'All purchases must use the same pickup depot.';
+            depotId ||= currentDepot;
+            depotLabel ||= `${option.dataset.depot}${option.dataset.address ? ` — ${option.dataset.address}` : ''}`;
+            if (quantity > remaining) error ||= 'An amount to lift exceeds its remaining purchase quantity.';
+            if (quantityInput) quantityInput.max = String(remaining);
+            if (summary) summary.textContent = `${option.dataset.fuel} / ${remaining.toLocaleString()} L remaining`;
+        } else if (summary) {
+            summary.textContent = '—';
+        }
+    });
+
+    if (capacity > 0 && total > capacity) error ||= 'Combined quantity exceeds the selected truck capacity.';
+    const format = (value) => `${Math.max(0, value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} L`;
+    const setText = (selector, value) => { const element = form.querySelector(selector); if (element) element.textContent = value; };
+    setText('[data-truck-capacity]', format(capacity));
+    setText('[data-lifting-total]', format(total));
+    setText('[data-lifting-remaining]', format(capacity - total));
+    setText('[data-pickup-depot]', depotLabel || 'Select a purchase to derive the official depot and address.');
+    setText('[data-lifting-warning]', error);
+    rows.forEach((row) => { const button = row.querySelector('[data-lifting-item-remove]'); if (button) button.disabled = rows.length === 1; });
+    const submit = form.querySelector('button[type="submit"]');
+    if (submit) submit.disabled = Boolean(error) || rows.some((row) => !row.querySelector('[data-lifting-purchase]')?.value) || capacity <= 0 || total <= 0;
+};
+
+document.querySelectorAll('[data-lifting-schedule-form]').forEach(updateLiftingSchedule);
 
 const reindexSaleItems = (items) => {
     const rows = items.querySelectorAll('[data-sales-item]');

@@ -80,7 +80,7 @@
                             <th>Purchase-ID</th>
                             <th>DR Number</th>
                             <th>Lift Date</th>
-                            <th>Location</th>
+                            <th>Pickup Depot</th>
                             <th>Driver</th>
                             <th>Driver's<br>Contact No.</th>
                             <th>Truck-ID</th>
@@ -147,7 +147,7 @@
                             <th>Purchase-ID</th>
                             <th>DR Number</th>
                             <th>Lift Date</th>
-                            <th>Location</th>
+                            <th>Pickup Depot</th>
                             <th>Driver</th>
                             <th>Driver's<br>Contact No.</th>
                             <th>Truck-ID</th>
@@ -176,30 +176,17 @@
     </div>
 
     <x-admin.modal id="dispatch-lift-add" title="Schedule Lift" wide>
-        <form method="POST" action="{{ route('dispatch.fuel-lifting.hauls.store') }}" data-prevent-double-submit>
+        <form method="POST" action="{{ route('dispatch.fuel-lifting.hauls.store') }}" data-prevent-double-submit data-lifting-schedule-form>
             @csrf
             <input type="hidden" name="idempotency_key" value="{{ $createIdempotencyKey }}">
             <div class="modal-card">
                 <div class="form-grid">
                     <div class="form-row">
-                        <label for="dispatch_purchase_item_id">Purchase ID</label>
-                        <select id="dispatch_purchase_item_id" name="purchase_item_id" required>
-                            <option value="">Select purchase</option>
-                            @foreach ($purchaseItems as $purchaseItem)
-                                <option value="{{ $purchaseItem->id }}" @selected((string) old('purchase_item_id') === (string) $purchaseItem->id)>{{ $purchaseItem->label }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-                    <div class="form-row">
-                        <label for="dispatch_quantity_liters">QTY Lift</label>
-                        <input id="dispatch_quantity_liters" name="quantity_liters" type="number" min="0.01" step="0.01" value="{{ old('quantity_liters') }}" required>
-                    </div>
-                    <div class="form-row">
                         <label for="dispatch_truck_id">Truck-ID</label>
                         <select id="dispatch_truck_id" name="truck_id" required>
                             <option value="">Select truck</option>
                             @foreach ($trucks as $truck)
-                                <option value="{{ $truck->id }}" @selected((string) old('truck_id') === (string) $truck->id)>{{ $truck->truck_code }}{{ $truck->plate_number ? ' / '.$truck->plate_number : '' }} / {{ number_format((float) $truck->capacity_liters, 2) }} L</option>
+                                <option value="{{ $truck->id }}" data-capacity="{{ $truck->capacity_liters }}" @selected((string) old('truck_id') === (string) $truck->id)>{{ $truck->truck_code }}{{ $truck->plate_number ? ' / '.$truck->plate_number : '' }} / {{ number_format((float) $truck->capacity_liters, 2) }} L</option>
                             @endforeach
                         </select>
                     </div>
@@ -220,11 +207,18 @@
                         <label for="dispatch_dr_number">DR Number</label>
                         <input id="dispatch_dr_number" name="dr_number" type="text" value="{{ old('dr_number') }}" maxlength="100">
                     </div>
-                    <div class="form-row form-row-full">
-                        <label for="dispatch_source_location">Location</label>
-                        <input id="dispatch_source_location" name="source_location" type="text" value="{{ old('source_location') }}" maxlength="255">
+                    <div class="form-row"><label>Truck Capacity</label><output data-truck-capacity>0.00 L</output></div>
+                    <div class="form-row form-row-full"><label>Pickup Depot</label><output data-pickup-depot>Select a purchase to derive the official depot and address.</output></div>
+                </div>
+                <div class="lifting-purchase-list" data-lifting-items>
+                    <div class="lifting-purchase-row" data-lifting-item>
+                        <div class="form-row"><label>Purchase ID</label><select name="items[0][purchase_item_id]" data-lifting-purchase required><option value="">Search/select purchase</option>@foreach ($purchaseItems as $purchaseItem)<option value="{{ $purchaseItem->id }}" data-depot-id="{{ $purchaseItem->depot_id }}" data-depot="{{ $purchaseItem->depot_name }}" data-address="{{ $purchaseItem->depot_address }}" data-fuel="{{ $purchaseItem->fuel_name }}" data-remaining="{{ $purchaseItem->remaining_liters }}">{{ $purchaseItem->label }}</option>@endforeach</select></div>
+                        <div class="form-row"><label>Fuel / Remaining</label><output data-purchase-summary>—</output></div>
+                        <div class="form-row"><label>Amount to Lift</label><input name="items[0][quantity_liters]" data-lifting-quantity type="number" min="0.01" step="0.01" required></div>
+                        <button class="btn btn-danger" type="button" data-lifting-item-remove disabled>Remove</button>
                     </div>
                 </div>
+                <div class="lifting-totals"><button class="btn btn-secondary" type="button" data-lifting-item-add>+ Add Purchase</button><strong>Total scheduled: <output data-lifting-total>0.00 L</output></strong><strong>Remaining capacity: <output data-lifting-remaining>0.00 L</output></strong><span data-lifting-warning role="alert"></span></div>
             </div>
             <div class="modal-actions"><button class="btn btn-pill btn-secondary" type="submit">Schedule Lift</button><button class="btn btn-pill btn-danger" type="button" data-modal-close>Cancel</button></div>
         </form>

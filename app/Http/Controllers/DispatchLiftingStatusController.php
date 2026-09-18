@@ -9,6 +9,8 @@ use Illuminate\Validation\Rule;
 
 class DispatchLiftingStatusController extends Controller
 {
+    public function __construct(private readonly \App\Services\PurchaseWorkflowService $purchaseWorkflow) {}
+
     public const LIFTING_STATUSES = ['scheduled', 'in_transit', 'lifted', 'completed', 'cancelled'];
 
     public const STATUS_TRANSITIONS = [
@@ -33,7 +35,7 @@ class DispatchLiftingStatusController extends Controller
                 ->with('status', 'Lifting status update was already submitted.');
         }
 
-        $result = DB::transaction(function () use ($haul, $data): ?string {
+        $result = DB::transaction(function () use ($haul, $data, $request): ?string {
             $row = $this->haulForUpdate($haul);
 
             if (! $row) {
@@ -66,8 +68,37 @@ class DispatchLiftingStatusController extends Controller
                 ->where('id', $row->id)
                 ->update($updates);
 
+            $purchaseIds = collect([(int) $row->purchase_id]);
+            if ($row->lifting_schedule_id) {
+                $siblings = DB::table('hauls')
+                    ->where('lifting_schedule_id', $row->lifting_schedule_id)
+                    ->where('id', '!=', $row->id)
+                    ->where('status', $row->status)
+                    ->lockForUpdate()
+                    ->get(['id', 'purchase_id', 'purchase_item_id']);
+
+                DB::table('hauls')
+                    ->whereIn('id', $siblings->pluck('id'))
+                    ->update($updates);
+                DB::table('lifting_schedules')->where('id', $row->lifting_schedule_id)->update([
+                    'status' => $nextStatus,
+                    'updated_at' => now(),
+                ]);
+                $purchaseIds = $purchaseIds->merge($siblings->pluck('purchase_id')->map(fn ($id): int => (int) $id));
+
+                if ($nextStatus === 'completed') {
+                    foreach ($siblings as $sibling) {
+                        $this->syncPurchaseProgress((int) $sibling->purchase_id, (int) $sibling->purchase_item_id);
+                    }
+                }
+            }
+
             if ($nextStatus === 'completed') {
                 $this->syncPurchaseProgress((int) $row->purchase_id, (int) $row->purchase_item_id);
+            }
+
+            foreach ($purchaseIds->unique() as $purchaseId) {
+                $this->purchaseWorkflow->synchronize((int) $purchaseId, (int) $request->user()->id, (int) $row->id);
             }
 
             return null;
@@ -108,6 +139,7 @@ class DispatchLiftingStatusController extends Controller
             ->lockForUpdate()
             ->first([
                 'hauls.id',
+                'hauls.lifting_schedule_id',
                 'hauls.purchase_id',
                 'hauls.purchase_item_id',
                 'hauls.depot_id',

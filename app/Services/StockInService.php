@@ -14,7 +14,8 @@ class StockInService
     private const STOCK_IN_REFERENCE_TYPE = 'haul_allocation';
 
     public function __construct(
-        private readonly IdempotencyService $idempotencyService
+        private readonly IdempotencyService $idempotencyService,
+        private readonly WorkflowAlertService $alerts
     ) {}
 
     /**
@@ -29,7 +30,21 @@ class StockInService
                 return 'The selected stock-in source is invalid.';
             }
 
-            if ((int) $allocation->storage_location_id !== (int) $data['storage_location_id']) {
+            $tank = DB::table('storage_locations')
+                ->where('id', (int) $data['storage_location_id'])
+                ->where('type', 'garage')
+                ->where('status', 'active')
+                ->where(function (Builder $query) use ($allocation): void {
+                    $query->whereNull('fuel_type_id')->orWhere('fuel_type_id', $allocation->fuel_type_id);
+                })
+                ->lockForUpdate()
+                ->first(['id']);
+
+            if (! $tank) {
+                return 'The selected destination tank is not active or does not match the fuel type.';
+            }
+
+            if ($allocation->storage_location_id && (int) $allocation->storage_location_id !== (int) $data['storage_location_id']) {
                 return 'The selected garage does not match the haul allocation destination.';
             }
 
@@ -48,8 +63,13 @@ class StockInService
                 return 'This stock-in receipt has already been recorded.';
             }
 
-            $this->idempotencyService->retryOnCollision('movement_code', function () use ($data, $allocation, $quantity, $userId): void {
-                DB::table('inventory_movements')->insert([
+            $receiptKey = (string) ($data['idempotency_key'] ?? Str::uuid());
+            if (DB::table('stock_receipts')->where('idempotency_key', $receiptKey)->lockForUpdate()->exists()) {
+                return 'This stock-in receipt has already been recorded.';
+            }
+
+            $movementId = $this->idempotencyService->retryOnCollision('movement_code', function () use ($data, $allocation, $quantity, $userId): int {
+                return (int) DB::table('inventory_movements')->insertGetId([
                     'movement_code' => $this->nextCode('inventory_movements', 'movement_code', 'MOV'),
                     'storage_location_id' => $data['storage_location_id'],
                     'fuel_type_id' => $allocation->fuel_type_id,
@@ -67,14 +87,32 @@ class StockInService
                 ]);
             });
 
+            DB::table('stock_receipts')->insert([
+                'receipt_code' => $this->nextCode('stock_receipts', 'receipt_code', 'RCV'),
+                'idempotency_key' => $receiptKey,
+                'haul_allocation_id' => $allocation->id,
+                'storage_location_id' => $data['storage_location_id'],
+                'inventory_movement_id' => $movementId,
+                'quantity_liters' => $quantity,
+                'received_at' => $data['movement_date'],
+                'status' => 'stock_posted',
+                'received_by' => $userId,
+                'remarks' => $data['remarks'] ?? null,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
             $newRemaining = round($remaining - $quantity, 2);
 
             DB::table('haul_allocations')
                 ->where('id', $allocation->id)
                 ->update([
                     'status' => $newRemaining <= 0 ? 'received' : $allocation->status,
+                    'storage_location_id' => $data['storage_location_id'],
                     'updated_at' => now(),
                 ]);
+
+            $this->alerts->purchase((int) $allocation->purchase_id, $newRemaining <= 0 ? 'received' : 'partially_received', $userId, (int) $allocation->haul_id);
 
             return null;
         });
@@ -86,13 +124,10 @@ class StockInService
             ->join('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')
             ->join('purchase_items', 'purchase_items.id', '=', 'hauls.purchase_item_id')
             ->join('purchases', 'purchases.id', '=', 'hauls.purchase_id')
-            ->join('storage_locations', 'storage_locations.id', '=', 'haul_allocations.storage_location_id')
+            ->leftJoin('storage_locations', 'storage_locations.id', '=', 'haul_allocations.storage_location_id')
             ->where('haul_allocations.id', $allocationId)
             ->where('haul_allocations.destination_type', 'garage')
-            ->whereNotNull('haul_allocations.storage_location_id')
             ->where('haul_allocations.status', '!=', 'cancelled')
-            ->where('storage_locations.type', 'garage')
-            ->where('storage_locations.status', 'active')
             ->where('hauls.status', 'completed')
             ->whereNull('purchases.deleted_at')
             ->whereColumn('hauls.purchase_id', 'purchase_items.purchase_id')
@@ -100,8 +135,15 @@ class StockInService
             ->whereColumn('hauls.fuel_type_id', 'purchase_items.fuel_type_id')
             ->whereColumn('haul_allocations.fuel_type_id', 'hauls.fuel_type_id')
             ->where(function (Builder $query): void {
-                $query->whereNull('storage_locations.fuel_type_id')
-                    ->orWhereColumn('storage_locations.fuel_type_id', 'haul_allocations.fuel_type_id');
+                $query->whereNull('haul_allocations.storage_location_id')
+                    ->orWhere(function (Builder $query): void {
+                        $query->where('storage_locations.type', 'garage')
+                            ->where('storage_locations.status', 'active')
+                            ->where(function (Builder $query): void {
+                                $query->whereNull('storage_locations.fuel_type_id')
+                                    ->orWhereColumn('storage_locations.fuel_type_id', 'haul_allocations.fuel_type_id');
+                            });
+                    });
             })
             ->lockForUpdate()
             ->first([
@@ -111,6 +153,7 @@ class StockInService
                 'haul_allocations.fuel_type_id',
                 'haul_allocations.quantity_liters',
                 'haul_allocations.status',
+                'purchases.id as purchase_id',
                 'hauls.quantity_liters as haul_quantity_liters',
                 'purchase_items.unit_cost',
             ]);

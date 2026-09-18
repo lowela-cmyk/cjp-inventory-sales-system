@@ -529,6 +529,59 @@ form[aria-busy="true"] {
     color: inherit !important;
 }
 
+.status-tone-pending,
+.status-tone-neutral {
+    background: #eef1f5;
+    border-color: #667085;
+}
+
+.status-tone-scheduled {
+    background: #dbeafe;
+    border-color: #1d4ed8;
+}
+
+.status-tone-progress {
+    background: #ffedd5;
+    border-color: #c2410c;
+}
+
+.status-tone-partial {
+    background: #fef3c7;
+    border-color: #a16207;
+}
+
+.status-tone-success {
+    background: #dcfce7;
+    border-color: #15803d;
+}
+
+.status-tone-danger {
+    background: #fee2e2;
+    border-color: #b91c1c;
+}
+
+.status-tone-available {
+    background: #ccfbf1;
+    border-color: #0f766e;
+}
+
+.status-tone-inactive {
+    background: #d1d5db;
+    border-color: #374151;
+}
+
+.workflow-alert-stack { display: grid; gap: 12px; }
+.workflow-alert-stack .alert-bar { grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; }
+.workflow-alert-stack .is-read { opacity: .72; }
+.workflow-alert-content { min-width: 0; }
+.workflow-alert-meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; font-size: 12px; }
+.workflow-alert-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.lifting-purchase-list { display: grid; gap: 10px; margin-top: 16px; }
+.lifting-purchase-row { display: grid; grid-template-columns: minmax(220px, 2fr) minmax(150px, 1fr) minmax(130px, 1fr) auto; gap: 10px; align-items: end; padding: 12px; border: 1px solid #d8dee9; border-radius: 12px; }
+.lifting-totals { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; margin-top: 14px; }
+.lifting-totals [role="alert"] { color: #b91c1c; font-weight: 700; }
+@media (max-width: 800px) { .lifting-purchase-row { grid-template-columns: 1fr; } .workflow-alert-stack .alert-bar { grid-template-columns: auto 1fr; } .workflow-alert-actions { grid-column: 1 / -1; } }
+
 .status-paid,
 .status-completed,
 .status-complete,

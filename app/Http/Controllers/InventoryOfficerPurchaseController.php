@@ -88,8 +88,8 @@ class InventoryOfficerPurchaseController extends Controller
             'garageAllocations' => $this->garageAllocationOptions(),
             'stockOutSaleItems' => $this->stockOutSaleItemOptions(),
             'directDeliveryAllocations' => $this->directDepotReleaseAllocationOptions(),
-            'purchaseStatuses' => self::PURCHASE_STATUSES,
             'paymentStatuses' => self::PAYMENT_STATUSES,
+            'purchaseIdempotencyKey' => (string) Str::uuid(),
             'stockOutIdempotencyKey' => (string) Str::uuid(),
         ]);
     }
@@ -97,16 +97,27 @@ class InventoryOfficerPurchaseController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $data = $this->validatedPurchaseData($request);
+        $idempotencyKey = (string) ($data['idempotency_key'] ?? Str::uuid());
+        unset($data['idempotency_key']);
 
         try {
-            $this->purchaseService->createPurchase($data, (int) $request->user()->id);
+            $result = $this->idempotencyService->run(
+                $idempotencyKey,
+                'purchases.store',
+                (int) $request->user()->id,
+                function () use ($data, $request): array {
+                    $purchaseId = $this->purchaseService->createPurchase($data, (int) $request->user()->id);
+
+                    return ['reference_id' => $purchaseId, 'response_reference' => 'purchase'];
+                }
+            );
         } catch (ValidationException $e) {
             return back()->withErrors($e->errors())->withInput();
         }
 
         return redirect()
             ->route($this->inventoryRouteName($request))
-            ->with('status', 'Purchase record created successfully.');
+            ->with('status', $result['duplicate'] ? 'Purchase request was already submitted.' : 'Purchase record created successfully.');
     }
 
     public function update(Request $request, int $purchaseItem): RedirectResponse
@@ -149,7 +160,7 @@ class InventoryOfficerPurchaseController extends Controller
     public function cancel(Request $request, int $purchaseItem): RedirectResponse
     {
         try {
-            $this->purchaseService->cancelPurchase($purchaseItem);
+            $this->purchaseService->cancelPurchase($purchaseItem, (int) $request->user()->id);
         } catch (ValidationException $e) {
             return back()->withErrors($e->errors())->withInput();
         }
@@ -189,6 +200,7 @@ class InventoryOfficerPurchaseController extends Controller
     public function storeStockIn(Request $request): RedirectResponse
     {
         $data = $request->validate([
+            'idempotency_key' => ['nullable', 'uuid'],
             'haul_allocation_id' => ['required', 'integer', Rule::exists('haul_allocations', 'id')],
             'storage_location_id' => ['required', 'integer', Rule::exists('storage_locations', 'id')->where(fn (Builder $query): Builder => $query->where('type', 'garage')->where('status', 'active'))],
             'quantity_liters' => ['required', 'numeric', 'gt:0', 'max:1000000'],
@@ -196,6 +208,7 @@ class InventoryOfficerPurchaseController extends Controller
             'remarks' => ['nullable', 'string', 'max:1000'],
         ]);
 
+        $data['idempotency_key'] ??= (string) Str::uuid();
         $result = $this->stockInService->recordStockIn($data, (int) $request->user()->id);
 
         if ($result) {
@@ -286,6 +299,7 @@ class InventoryOfficerPurchaseController extends Controller
     {
         return $request->validate([
             'purchase_date' => ['required', 'date'],
+            'idempotency_key' => ['nullable', 'uuid'],
             'depot_id' => ['required', 'integer', Rule::exists('depots', 'id')->where(fn (Builder $query): Builder => $query->where('status', 'active'))],
             'fuel_type_id' => [
                 'required',
@@ -298,7 +312,7 @@ class InventoryOfficerPurchaseController extends Controller
             'receipt_file' => ['prohibited'],
             'receipt_status' => ['prohibited'],
             'payment_status' => ['required', Rule::in(self::PAYMENT_STATUSES)],
-            'status' => ['required', Rule::in(self::PURCHASE_STATUSES)],
+            'status' => ['nullable', Rule::in(self::PURCHASE_STATUSES)],
         ]);
     }
 
@@ -767,7 +781,8 @@ class InventoryOfficerPurchaseController extends Controller
             ->join('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')
             ->join('purchase_items', 'purchase_items.id', '=', 'hauls.purchase_item_id')
             ->join('purchases', 'purchases.id', '=', 'hauls.purchase_id')
-            ->join('storage_locations', 'storage_locations.id', '=', 'haul_allocations.storage_location_id')
+            ->leftJoin('storage_locations', 'storage_locations.id', '=', 'haul_allocations.storage_location_id')
+            ->join('depots', 'depots.id', '=', 'hauls.depot_id')
             ->where('haul_allocations.id', $allocationId)
             ->where('haul_allocations.destination_type', 'garage')
             ->whereNotNull('haul_allocations.storage_location_id')
@@ -929,20 +944,22 @@ class InventoryOfficerPurchaseController extends Controller
             ->join('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')
             ->join('purchases', 'purchases.id', '=', 'hauls.purchase_id')
             ->join('fuel_types', 'fuel_types.id', '=', 'haul_allocations.fuel_type_id')
-            ->join('storage_locations', 'storage_locations.id', '=', 'haul_allocations.storage_location_id')
+            ->leftJoin('storage_locations', 'storage_locations.id', '=', 'haul_allocations.storage_location_id')
+            ->join('depots', 'depots.id', '=', 'hauls.depot_id')
             ->leftJoinSub($received, 'received', 'received.reference_id', '=', 'haul_allocations.id')
             ->where('haul_allocations.destination_type', 'garage')
             ->where('haul_allocations.status', '!=', 'cancelled')
             ->where('hauls.status', 'completed')
             ->whereNull('purchases.deleted_at')
-            ->selectRaw('haul_allocations.id, haul_allocations.storage_location_id, hauls.haul_code, purchases.purchase_code, fuel_types.name as fuel_name, storage_locations.name as garage_name, haul_allocations.quantity_liters, COALESCE(received.received_liters, 0) as received_liters')
+            ->selectRaw('haul_allocations.id, haul_allocations.storage_location_id, hauls.haul_code, hauls.scheduled_at, purchases.purchase_code, fuel_types.id as fuel_type_id, fuel_types.name as fuel_name, depots.name as depot_name, storage_locations.name as garage_name, haul_allocations.quantity_liters, COALESCE(received.received_liters, 0) as received_liters')
             ->orderByDesc('hauls.scheduled_at')
             ->get()
             ->filter(fn (object $row): bool => ((float) $row->quantity_liters - (float) $row->received_liters) > 0)
             ->values()
             ->map(function (object $row): object {
                 $row->remaining_liters = round((float) $row->quantity_liters - (float) $row->received_liters, 2);
-                $row->label = $row->haul_code.' / '.$row->purchase_code.' / '.$row->fuel_name.' / '.$row->garage_name.' / '.$this->formatLiters($row->remaining_liters);
+                $row->receipt_status = (float) $row->received_liters > 0 ? 'Partially Received' : 'Pending Receipt';
+                $row->label = $row->haul_code.' / '.$row->purchase_code.' / '.$row->fuel_name.' / '.($row->garage_name ?: 'Tank assignment required').' / '.$this->formatLiters($row->remaining_liters);
 
                 return $row;
             });

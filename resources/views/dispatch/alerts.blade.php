@@ -5,17 +5,5 @@
         <button class="btn btn-primary" type="submit">Search</button>
     </form>
 
-    <div class="dispatch-alert-stack">
-        @forelse ($alerts as $alert)
-            <div class="dispatch-alert dispatch-alert-{{ $alert['type'] }}">
-                <div class="dispatch-alert-icon" aria-hidden="true">!</div>
-                <div>
-                    <strong>{{ $alert['title'] }}</strong>
-                    <span>{{ $alert['message'] }}</span>
-                </div>
-            </div>
-        @empty
-            <div class="empty-state">No dispatch alerts found.</div>
-        @endforelse
-    </div>
+    <x-admin.alert-list :alerts="$alerts" read-route="dispatch.alerts.read" />
 @endcomponent

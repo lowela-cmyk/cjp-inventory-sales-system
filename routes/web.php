@@ -65,6 +65,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/reports/sales-trend-summary', AdminSalesTrendSummaryController::class)->name('reports.sales-trend-summary');
         Route::get('/reports/export', [AdminSalesReportController::class, 'export'])->name('reports.export');
         Route::get('/alerts', [AdminMonitoringController::class, 'alerts'])->name('alerts');
+        Route::patch('/alerts/{alert}/read', [AdminMonitoringController::class, 'markAlertRead'])->name('alerts.read');
         Route::get('/account-requests', [AdminUserManagementController::class, 'accountRequests'])->name('account-requests');
         Route::patch('/account-requests/{user}', [AdminUserManagementController::class, 'updateApproval'])->name('account-requests.update');
         Route::get('/user-management', [AdminUserManagementController::class, 'index'])->name('user-management');
@@ -86,6 +87,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/ledger', InventoryOfficerLedgerController::class)->name('ledger');
         Route::get('/ledger/transactions', InventoryOfficerLedgerController::class)->defaults('state', 'transactions')->name('ledger.transactions');
         Route::get('/alerts', [AdminMonitoringController::class, 'dispatchAlerts'])->name('alerts');
+        Route::patch('/alerts/{alert}/read', [AdminMonitoringController::class, 'markAlertRead'])->name('alerts.read');
     });
 
     Route::redirect('/inventory-officer', '/inventory-officer/inventory')->middleware('role:inventory_officer')->name('inventory-officer.shortcut');
@@ -103,6 +105,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/ledger', InventoryOfficerLedgerController::class)->name('ledger');
         Route::get('/ledger/transactions', InventoryOfficerLedgerController::class)->defaults('state', 'transactions')->name('ledger.transactions');
         Route::get('/alerts', [AdminMonitoringController::class, 'inventoryOfficerAlerts'])->name('alerts');
+        Route::patch('/alerts/{alert}/read', [AdminMonitoringController::class, 'markAlertRead'])->name('alerts.read');
     });
 
     Route::redirect('/sales-officer', '/sales-officer/sales')->middleware('role:sales_officer')->name('sales-officer.shortcut');
@@ -117,6 +120,7 @@ Route::middleware(['auth'])->group(function () {
         Route::patch('/sales/customers/{customer}', [SalesOfficerCustomerController::class, 'update'])->name('sales.customers.update');
         Route::patch('/sales/customers/{customer}/deactivate', [SalesOfficerCustomerController::class, 'deactivate'])->name('sales.customers.deactivate');
         Route::get('/alerts', [AdminMonitoringController::class, 'salesOfficerAlerts'])->name('alerts');
+        Route::patch('/alerts/{alert}/read', [AdminMonitoringController::class, 'markAlertRead'])->name('alerts.read');
     });
 
     Route::redirect('/driver', '/driver/fuel-lifting')->middleware('role:driver')->name('driver.shortcut');

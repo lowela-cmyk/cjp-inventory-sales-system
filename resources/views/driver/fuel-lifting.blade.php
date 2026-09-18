@@ -110,10 +110,10 @@
                     <thead>
                         <tr>
                             <th>Lift-ID</th>
-                            <th>Sale-ID</th>
-                            <th>Source Ref</th>
+                            <th>Purchase IDs</th>
+                            <th>Pickup Depot</th>
                             <th>Lift Date</th>
-                            <th>Location</th>
+                            <th>Depot Address</th>
                             <th>Truck-ID</th>
                             <th>Capacity</th>
                             <th>QTY to Lift</th>
@@ -125,7 +125,7 @@
                         @forelse ($scheduleRows as $row)
                             <tr>
                                 @foreach ($row['cells'] as $cell)
-                                    <td>{{ $cell }}</td>
+                                    <td>@if ($loop->last)<x-admin.status-badge :status="$cell" />@else{{ $cell }}@endif</td>
                                 @endforeach
                                 <td><button class="btn btn-secondary" type="button" data-modal-open="{{ $row['id'] }}">View</button></td>
                             </tr>
@@ -174,10 +174,10 @@
                     <thead>
                         <tr>
                             <th>Lift-ID</th>
-                            <th>Sale-ID</th>
-                            <th>Source Ref</th>
+                            <th>Purchase IDs</th>
+                            <th>Pickup Depot</th>
                             <th>Lift Date</th>
-                            <th>Location</th>
+                            <th>Depot Address</th>
                             <th>Truck-ID</th>
                             <th>Capacity</th>
                             <th>QTY Lifted</th>
@@ -189,7 +189,7 @@
                         @forelse ($hauledRows as $row)
                             <tr>
                                 @foreach ($row['cells'] as $cell)
-                                    <td>{{ $cell }}</td>
+                                    <td>@if ($loop->last)<x-admin.status-badge :status="$cell" />@else{{ $cell }}@endif</td>
                                 @endforeach
                                 <td><button class="btn btn-secondary" type="button" data-modal-open="{{ $row['id'] }}">View</button></td>
                             </tr>

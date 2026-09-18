@@ -15,7 +15,9 @@ class PurchaseService
     private const STOCK_IN_REFERENCE_TYPE = 'haul_allocation';
 
     public function __construct(
-        private readonly IdempotencyService $idempotencyService
+        private readonly IdempotencyService $idempotencyService,
+        private readonly WorkflowAlertService $alerts,
+        private readonly PurchaseWorkflowService $workflow
     ) {}
 
     /**
@@ -38,7 +40,8 @@ class PurchaseService
                     'purchase_date' => $data['purchase_date'],
                     'receipt_reference' => null,
                     'payment_status' => $data['payment_status'],
-                    'status' => $data['status'],
+                    'status' => 'ordered',
+                    'workflow_status' => 'pending',
                     'created_by' => $userId,
                     'created_at' => now(),
                     'updated_at' => now(),
@@ -56,6 +59,18 @@ class PurchaseService
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
+
+            DB::table('purchase_status_histories')->insert([
+                'purchase_id' => $purchaseId,
+                'previous_status' => null,
+                'new_status' => 'pending',
+                'changed_by' => $userId,
+                'changed_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            $this->alerts->purchase($purchaseId, 'created', $userId);
 
             return $purchaseId;
         });
@@ -91,7 +106,6 @@ class PurchaseService
                     'depot_id' => $data['depot_id'],
                     'purchase_date' => $data['purchase_date'],
                     'payment_status' => $data['payment_status'],
-                    'status' => $data['status'],
                     'updated_at' => now(),
                 ]);
 
@@ -108,7 +122,7 @@ class PurchaseService
         });
     }
 
-    public function cancelPurchase(int $purchaseItemId): void
+    public function cancelPurchase(int $purchaseItemId, ?int $userId = null): void
     {
         $row = $this->purchaseItemForUpdate($purchaseItemId);
         if (! $row) {
@@ -121,12 +135,16 @@ class PurchaseService
             ]);
         }
 
-        DB::table('purchases')
-            ->where('id', $row->purchase_id)
-            ->update([
-                'status' => 'cancelled',
-                'updated_at' => now(),
-            ]);
+        DB::transaction(function () use ($row, $userId): void {
+            DB::table('purchases')
+                ->where('id', $row->purchase_id)
+                ->update([
+                    'status' => 'cancelled',
+                    'updated_at' => now(),
+                ]);
+
+            $this->workflow->transition((int) $row->purchase_id, 'cancelled', $userId);
+        });
     }
 
     public function purchaseItemForUpdate(int $purchaseItemId): ?object
@@ -218,7 +236,8 @@ class PurchaseService
                 'purchases.purchase_date',
                 'purchases.receipt_reference',
                 'purchases.payment_status',
-                'purchases.status as purchase_status',
+                'purchases.status as legacy_purchase_status',
+                'purchases.workflow_status as purchase_status',
                 'purchases.created_at',
                 'purchases.updated_at',
                 'depots.name as depot_name',
@@ -274,6 +293,7 @@ class PurchaseService
                     $this->formatNumber($row->unit_cost),
                     $this->formatNumber($row->line_total),
                     $this->withdrawalStatus((int) $row->withdrawal_count),
+                    $this->label($row->purchase_status),
                     $this->label($row->payment_status),
                 ],
                 'details' => [

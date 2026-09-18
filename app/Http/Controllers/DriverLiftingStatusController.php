@@ -9,6 +9,8 @@ use Illuminate\Validation\Rule;
 
 class DriverLiftingStatusController extends Controller
 {
+    public function __construct(private readonly \App\Services\PurchaseWorkflowService $purchaseWorkflow) {}
+
     public const STATUS_TRANSITIONS = [
         'scheduled' => ['in_transit'],
         'in_transit' => ['lifted'],
@@ -67,6 +69,27 @@ class DriverLiftingStatusController extends Controller
                 ->where('status', $row->status)
                 ->update($updates);
 
+            $purchaseIds = collect([(int) $row->purchase_id]);
+            if ($row->lifting_schedule_id) {
+                $siblings = DB::table('hauls')
+                    ->where('lifting_schedule_id', $row->lifting_schedule_id)
+                    ->where('driver_user_id', $driverId)
+                    ->where('id', '!=', $row->id)
+                    ->where('status', $row->status)
+                    ->lockForUpdate()
+                    ->get(['id', 'purchase_id']);
+                DB::table('hauls')->whereIn('id', $siblings->pluck('id'))->update($updates);
+                DB::table('lifting_schedules')->where('id', $row->lifting_schedule_id)->update([
+                    'status' => $nextStatus,
+                    'updated_at' => now(),
+                ]);
+                $purchaseIds = $purchaseIds->merge($siblings->pluck('purchase_id')->map(fn ($id): int => (int) $id));
+            }
+
+            foreach ($purchaseIds->unique() as $purchaseId) {
+                $this->purchaseWorkflow->synchronize((int) $purchaseId, $driverId, (int) $row->id);
+            }
+
             return null;
         });
 
@@ -100,6 +123,7 @@ class DriverLiftingStatusController extends Controller
             ->lockForUpdate()
             ->first([
                 'hauls.id',
+                'hauls.lifting_schedule_id',
                 'hauls.purchase_id',
                 'hauls.purchase_item_id',
                 'hauls.depot_id',

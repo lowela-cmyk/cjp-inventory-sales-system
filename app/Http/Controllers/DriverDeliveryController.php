@@ -120,6 +120,13 @@ class DriverDeliveryController extends Controller
      */
     private function haulRows(int $driverId, ?string $search, array $filters)
     {
+        $scheduleItems = DB::table('hauls as schedule_hauls')
+            ->join('purchases as schedule_purchases', 'schedule_purchases.id', '=', 'schedule_hauls.purchase_id')
+            ->join('fuel_types as schedule_fuels', 'schedule_fuels.id', '=', 'schedule_hauls.fuel_type_id')
+            ->whereNotNull('schedule_hauls.lifting_schedule_id')
+            ->selectRaw('schedule_hauls.lifting_schedule_id, GROUP_CONCAT(DISTINCT schedule_purchases.purchase_code) as purchase_codes, GROUP_CONCAT(DISTINCT schedule_fuels.name) as fuel_names, SUM(schedule_hauls.quantity_liters) as scheduled_quantity_liters')
+            ->groupBy('schedule_hauls.lifting_schedule_id');
+
         $allocations = DB::table('haul_allocations')
             ->leftJoin('storage_locations', 'storage_locations.id', '=', 'haul_allocations.storage_location_id')
             ->leftJoin('customers', 'customers.id', '=', 'haul_allocations.customer_id')
@@ -138,6 +145,8 @@ class DriverDeliveryController extends Controller
             ->join('depots', 'depots.id', '=', 'hauls.depot_id')
             ->join('fuel_types', 'fuel_types.id', '=', 'hauls.fuel_type_id')
             ->join('trucks', 'trucks.id', '=', 'hauls.truck_id')
+            ->leftJoin('lifting_schedules', 'lifting_schedules.id', '=', 'hauls.lifting_schedule_id')
+            ->leftJoinSub($scheduleItems, 'schedule_items', 'schedule_items.lifting_schedule_id', '=', 'hauls.lifting_schedule_id')
             ->leftJoinSub($allocations, 'allocations', 'allocations.haul_id', '=', 'hauls.id')
             ->where('hauls.driver_user_id', $driverId)
             ->whereNull('purchases.deleted_at')
@@ -171,6 +180,7 @@ class DriverDeliveryController extends Controller
             ->orderByDesc('hauls.id')
             ->get([
                 'hauls.id',
+                'hauls.lifting_schedule_id',
                 'hauls.haul_code',
                 'hauls.scheduled_at',
                 'hauls.hauled_at',
@@ -182,7 +192,12 @@ class DriverDeliveryController extends Controller
                 'hauls.status',
                 'purchases.purchase_code',
                 'depots.name as depot_name',
+                'depots.address as depot_address',
                 'fuel_types.name as fuel_name',
+                'lifting_schedules.schedule_code',
+                'schedule_items.purchase_codes',
+                'schedule_items.fuel_names',
+                'schedule_items.scheduled_quantity_liters',
                 'trucks.truck_code',
                 'trucks.plate_number',
                 'trucks.capacity_liters',
@@ -200,36 +215,38 @@ class DriverDeliveryController extends Controller
                 return [
                     'id' => 'driver-haul-'.$row->id,
                     'record_id' => (int) $row->id,
+                    'schedule_group' => $row->lifting_schedule_id ? 'schedule-'.$row->lifting_schedule_id : 'haul-'.$row->id,
                     'kind' => 'Lift',
                     'raw_status' => $row->status,
                     'allowed_driver_statuses' => DriverLiftingStatusController::STATUS_TRANSITIONS[$row->status] ?? [],
                     'group' => in_array($row->status, ['lifted', 'completed', 'cancelled'], true) ? 'hauled' : 'schedule',
                     'sort_at' => (string) ($row->hauled_at ?: $row->scheduled_at ?: $row->id),
                     'cells' => [
-                        $row->haul_code,
-                        $row->sale_codes ?: $row->purchase_code,
-                        $row->source_location ?: $row->depot_name,
+                        $row->schedule_code ?: $row->haul_code,
+                        $row->purchase_codes ?: $row->purchase_code,
+                        $row->depot_name,
                         $this->formatDateTime($row->hauled_at ?: $row->scheduled_at),
-                        $destination,
+                        trim($row->depot_name.($row->depot_address ? ' — '.$row->depot_address : '')),
                         $truck,
                         $this->formatNumber($row->capacity_liters),
-                        $this->formatNumber($row->quantity_liters),
+                        $this->formatNumber($row->scheduled_quantity_liters ?: $row->quantity_liters),
                         $this->label($row->status),
                     ],
                     'details' => [
                         'Assignment Type' => 'Lift',
-                        'Lift Reference' => $row->haul_code,
-                        'Purchase Reference' => $row->purchase_code,
+                        'Lift Reference' => $row->schedule_code ?: $row->haul_code,
+                        'Purchase IDs' => $row->purchase_codes ?: $row->purchase_code,
                         'Sale Reference' => $row->sale_codes ?: 'N/A',
                         'Source' => 'Depot',
-                        'Source Name' => $row->depot_name,
-                        'Source Reference' => $row->source_location ?: $row->depot_name,
+                        'Pickup Depot' => $row->depot_name,
+                        'Depot Address' => $row->depot_address ?: 'N/A',
+                        'Source Reference' => $row->depot_name,
                         'Destination' => $destination,
                         'Destination Type' => $row->destination_types ? $this->label(str_replace(',', ', ', $row->destination_types)) : 'N/A',
-                        'Fuel Type' => $row->fuel_name,
+                        'Fuel Type' => $row->fuel_names ?: $row->fuel_name,
                         'Truck-ID' => $truck,
                         'Capacity' => $this->formatLiters($row->capacity_liters),
-                        'Quantity to Lift' => $this->formatLiters($row->quantity_liters),
+                        'Scheduled Quantity' => $this->formatLiters($row->scheduled_quantity_liters ?: $row->quantity_liters),
                         'Scheduled Date' => $this->formatDateTime($row->scheduled_at),
                         'Completed Date' => $row->hauled_at ? $this->formatDateTime($row->hauled_at) : 'N/A',
                         'Allocation Status' => $row->allocation_statuses ? $this->label(str_replace(',', ', ', $row->allocation_statuses)) : 'N/A',
@@ -241,7 +258,9 @@ class DriverDeliveryController extends Controller
                     'can_upload_withdrawal' => in_array($row->status, ['lifted', 'completed'], true),
                     'withdrawal_uploaded' => (bool) $row->withdrawal_receipt_path,
                 ];
-            });
+            })
+            ->unique('schedule_group')
+            ->values();
     }
 
     private function filterOptions(int $driverId): array

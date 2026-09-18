@@ -49,12 +49,12 @@
             </form>
             <div class="table-wrap">
                 <table class="admin-table">
-                    <thead><tr><th>Purchase-ID</th><th>Date</th><th>Fuel</th><th>Depot</th><th>Purchased (L)</th><th>Hauled (L)</th><th>Garage Allocation</th><th>Direct Allocation</th><th>Received</th><th>Inventory Status</th><th>Cost / Liter</th><th>Total Cost</th><th>Withdrawals</th><th>Payment Status</th><th>Actions</th></tr></thead>
+                    <thead><tr><th>Purchase-ID</th><th>Date</th><th>Fuel</th><th>Depot</th><th>Purchased (L)</th><th>Hauled (L)</th><th>Garage Allocation</th><th>Direct Allocation</th><th>Received</th><th>Inventory Status</th><th>Cost / Liter</th><th>Total Cost</th><th>Withdrawals</th><th>Purchase Status</th><th>Payment Status</th><th>Actions</th></tr></thead>
                     <tbody>
                         @forelse ($purchases as $row)
                             <tr class="{{ $row['class'] }}">
                                 @foreach ($row['cells'] as $cell)
-                                    @if ($loop->last || $loop->index === 9)
+                                    @if ($loop->last || $loop->index === 9 || $loop->index === 13)
                                         <td><x-admin.status-badge :status="$cell" /></td>
                                     @else
                                         <td>{{ $cell }}</td>
@@ -63,7 +63,7 @@
                                 <td><button class="btn btn-secondary" type="button" data-modal-open="{{ $row['modal_id'] }}">Edit</button></td>
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="15">No records found.</td></tr>
+                            <tr><td class="empty-cell" colspan="16">No records found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -83,8 +83,25 @@
                 <button class="btn btn-primary" type="submit">Date</button>
                 <button class="btn btn-primary" type="submit">Depot</button>
                 <button class="btn btn-primary" type="submit">Fuel Type (All)</button>
-                <button class="btn btn-primary" type="button" data-modal-open="io-stockin-add">+ Record Stock-In</button>
+                <span class="status-badge status-tone-pending">Pending receipts require tank assignment</span>
             </form>
+            <div class="table-wrap" style="margin-bottom:16px">
+                <table class="admin-table">
+                    <thead><tr><th>Purchase ID</th><th>Lift ID</th><th>Fuel</th><th>Pickup Depot</th><th>Received / Pending</th><th>Receiving Date</th><th>Tank</th><th>Status</th><th>Action</th></tr></thead>
+                    <tbody>
+                        @forelse ($garageAllocations as $allocation)
+                            <tr>
+                                <td>{{ $allocation->purchase_code }}</td><td>{{ $allocation->haul_code }}</td><td>{{ $allocation->fuel_name }}</td><td>{{ $allocation->depot_name }}</td>
+                                <td>{{ number_format((float) $allocation->received_liters, 2) }} / {{ number_format((float) $allocation->remaining_liters, 2) }} L</td>
+                                <td>{{ $allocation->scheduled_at }}</td><td>{{ $allocation->garage_name ?: 'Not assigned' }}</td><td><x-admin.status-badge :status="$allocation->receipt_status" /></td>
+                                <td><button class="btn btn-primary" type="button" data-modal-open="io-receipt-assign-{{ $allocation->id }}">Assign Tank</button></td>
+                            </tr>
+                        @empty
+                            <tr><td class="empty-cell" colspan="9">No pending fuel receipts require tank assignment.</td></tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
             <div class="table-wrap">
                 <table class="admin-table">
                     <thead><tr><th>Purchase / Haul</th><th>Received Date</th><th>Fuel</th><th>Garage</th><th>QTY Received (L)</th><th>Cost / Liter</th><th>Total Cost</th><th>Stock In</th><th>Stock Out</th><th>Status</th><th>Actions</th></tr></thead>
@@ -179,6 +196,7 @@
     <x-admin.modal id="io-purchase-add" title="Add Purchase Record" wide>
         <form method="POST" action="{{ route($inventoryRoutePrefix.'.purchases.store') }}">
             @csrf
+            <input type="hidden" name="idempotency_key" value="{{ old('idempotency_key', $purchaseIdempotencyKey) }}">
             <div class="modal-card">
                 <div class="form-grid">
                     <div class="form-row"><label for="purchase_date">Date</label><input id="purchase_date" name="purchase_date" type="date" value="{{ old('purchase_date', now()->toDateString()) }}" required></div>
@@ -187,7 +205,7 @@
                     <div class="form-row"><label for="quantity_ordered_liters">Quantity (Liters)</label><input id="quantity_ordered_liters" name="quantity_ordered_liters" type="number" min="0.01" step="0.01" placeholder="Enter Quantity (Liters)" value="{{ old('quantity_ordered_liters') }}" required></div>
                     <div class="form-row"><label for="unit_cost">Cost / Liter</label><input id="unit_cost" name="unit_cost" type="number" min="0" step="0.01" placeholder="Enter Cost / Liter" value="{{ old('unit_cost') }}" required></div>
                     <div class="form-row"><label for="payment_status">Payment Status</label><select id="payment_status" name="payment_status" required>@foreach ($paymentStatuses as $status)<option value="{{ $status }}" @selected(old('payment_status', 'unpaid') === $status)>{{ ucwords($status) }}</option>@endforeach</select></div>
-                    <div class="form-row"><label for="purchase_status">Status</label><select id="purchase_status" name="status" required>@foreach ($purchaseStatuses as $status)<option value="{{ $status }}" @selected(old('status', 'ordered') === $status)>{{ ucwords(str_replace('_', ' ', $status)) }}</option>@endforeach</select></div>
+                    <div class="form-row"><label>Purchase Status</label><x-admin.status-badge status="Pending" /></div>
                 </div>
             </div>
             <div class="modal-actions"><button class="btn btn-pill btn-secondary" type="submit">Add</button><button class="btn btn-pill btn-danger" type="button" data-modal-close>Cancel</button></div>
@@ -236,7 +254,7 @@
                     <div class="form-row"><label for="quantity_ordered_liters_{{ $row['id'] }}">Quantity (Liters)</label><input form="purchase-update-{{ $row['id'] }}" id="quantity_ordered_liters_{{ $row['id'] }}" name="quantity_ordered_liters" type="number" min="0.01" step="0.01" value="{{ old('quantity_ordered_liters', $row['quantity_ordered_liters']) }}" required></div>
                     <div class="form-row"><label for="unit_cost_{{ $row['id'] }}">Cost / Liter</label><input form="purchase-update-{{ $row['id'] }}" id="unit_cost_{{ $row['id'] }}" name="unit_cost" type="number" min="0" step="0.01" value="{{ old('unit_cost', $row['unit_cost']) }}" required></div>
                     <div class="form-row"><label for="payment_status_{{ $row['id'] }}">Payment Status</label><select form="purchase-update-{{ $row['id'] }}" id="payment_status_{{ $row['id'] }}" name="payment_status" required>@foreach ($paymentStatuses as $status)<option value="{{ $status }}" @selected(old('payment_status', $row['payment_status']) === $status)>{{ ucwords($status) }}</option>@endforeach</select></div>
-                    <div class="form-row"><label for="purchase_status_{{ $row['id'] }}">Status</label><select form="purchase-update-{{ $row['id'] }}" id="purchase_status_{{ $row['id'] }}" name="status" required>@foreach ($purchaseStatuses as $status)<option value="{{ $status }}" @selected(old('status', $row['purchase_status']) === $status)>{{ ucwords(str_replace('_', ' ', $status)) }}</option>@endforeach</select></div>
+                    <div class="form-row"><label>Purchase Status</label><x-admin.status-badge :status="ucwords(str_replace('_', ' ', $row['purchase_status']))" /></div>
                 </div>
             </div>
             <div class="modal-actions">
@@ -250,21 +268,30 @@
         </x-admin.modal>
     @endforeach
 
-    <x-admin.modal id="io-stockin-add" title="Edit Stock-In Record" wide>
-        <form method="POST" action="{{ route($inventoryRoutePrefix.'.stock-in.store') }}">
-            @csrf
-            <div class="modal-card">
-                <div class="form-grid">
-                    <div class="form-row"><label for="haul_allocation_id">Source Allocation</label><select id="haul_allocation_id" name="haul_allocation_id" required><option value="" disabled @selected(! old('haul_allocation_id'))>Select Allocation</option>@foreach ($garageAllocations as $allocation)<option value="{{ $allocation->id }}" @selected((string) old('haul_allocation_id') === (string) $allocation->id)>{{ $allocation->label }}</option>@endforeach</select></div>
-                    <div class="form-row"><label for="stock_in_storage_location_id">Garage</label><select id="stock_in_storage_location_id" name="storage_location_id" required><option value="" disabled @selected(! old('storage_location_id'))>Select Garage</option>@foreach ($garages as $garage)<option value="{{ $garage->id }}" @selected((string) old('storage_location_id') === (string) $garage->id)>{{ $garage->name }}</option>@endforeach</select></div>
-                    <div class="form-row"><label for="stock_in_quantity_liters">Quantity (Liters)</label><input id="stock_in_quantity_liters" name="quantity_liters" type="number" min="0.01" step="0.01" placeholder="Enter Quantity (Liters)" value="{{ old('quantity_liters') }}" required></div>
-                    <div class="form-row"><label for="stock_in_movement_date">Date</label><input id="stock_in_movement_date" name="movement_date" type="datetime-local" value="{{ old('movement_date', now()->format('Y-m-d\TH:i')) }}" required></div>
-                    <div class="form-row"><label for="stock_in_remarks">Remarks</label><input id="stock_in_remarks" name="remarks" type="text" placeholder="Enter Remarks" value="{{ old('remarks') }}"></div>
+    @foreach ($garageAllocations as $allocation)
+        <x-admin.modal id="io-receipt-assign-{{ $allocation->id }}" title="Assign Tank and Post Receipt" wide>
+            <form method="POST" action="{{ route($inventoryRoutePrefix.'.stock-in.store') }}" data-prevent-double-submit>
+                @csrf
+                <input type="hidden" name="idempotency_key" value="{{ (string) \Illuminate\Support\Str::uuid() }}">
+                <input type="hidden" name="haul_allocation_id" value="{{ $allocation->id }}">
+                <div class="modal-card">
+                    <div class="detail-grid">
+                        <div class="detail-row"><div class="detail-label">Purchase ID</div><div class="detail-value">{{ $allocation->purchase_code }}</div></div>
+                        <div class="detail-row"><div class="detail-label">Lifting Schedule</div><div class="detail-value">{{ $allocation->haul_code }}</div></div>
+                        <div class="detail-row"><div class="detail-label">Fuel / Depot</div><div class="detail-value">{{ $allocation->fuel_name }} / {{ $allocation->depot_name }}</div></div>
+                        <div class="detail-row"><div class="detail-label">Status</div><div class="detail-value"><x-admin.status-badge :status="$allocation->receipt_status" /></div></div>
+                    </div>
+                    <div class="form-grid" style="margin-top:18px">
+                        <div class="form-row"><label for="receipt_tank_{{ $allocation->id }}">Destination Tank</label><select id="receipt_tank_{{ $allocation->id }}" name="storage_location_id" required><option value="">Select tank</option>@foreach ($garages->where('fuel_type_id', $allocation->fuel_type_id) as $garage)<option value="{{ $garage->id }}" @selected((int) $allocation->storage_location_id === (int) $garage->id)>{{ $garage->name }}</option>@endforeach</select></div>
+                        <div class="form-row"><label for="receipt_qty_{{ $allocation->id }}">Verified Received Quantity</label><input id="receipt_qty_{{ $allocation->id }}" name="quantity_liters" type="number" min="0.01" max="{{ $allocation->remaining_liters }}" step="0.01" value="{{ $allocation->remaining_liters }}" required></div>
+                        <div class="form-row"><label for="receipt_date_{{ $allocation->id }}">Receiving Date</label><input id="receipt_date_{{ $allocation->id }}" name="movement_date" type="datetime-local" value="{{ now()->format('Y-m-d\TH:i') }}" required></div>
+                        <div class="form-row"><label for="receipt_notes_{{ $allocation->id }}">Remarks</label><input id="receipt_notes_{{ $allocation->id }}" name="remarks" type="text" maxlength="1000"></div>
+                    </div>
                 </div>
-            </div>
-            <div class="modal-actions"><button class="btn btn-pill btn-secondary" type="submit">Add</button><button class="btn btn-pill btn-danger" type="button" data-modal-close>Cancel</button></div>
-        </form>
-    </x-admin.modal>
+                <div class="modal-actions"><button class="btn btn-pill btn-primary" type="submit">Post Stock-In</button><button class="btn btn-pill btn-secondary" type="button" data-modal-close>Cancel</button></div>
+            </form>
+        </x-admin.modal>
+    @endforeach
 
     @foreach ($stockIn as $row)
         <x-admin.modal id="{{ $row['modal_id'] }}" title="Edit Stock-In Record">

@@ -4,7 +4,7 @@
 - cluster-only mode — file stats not available
 
 ## Summary
-- 1550 nodes · 3650 edges · 148 communities (89 shown, 59 thin omitted)
+- 1550 nodes · 3650 edges · 149 communities (88 shown, 61 thin omitted)
 - Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 48 edges (avg confidence: 0.85)
 - Token cost: 0 input · 0 output
 
@@ -51,7 +51,7 @@
 - CompleteWorkflowIntegrationTest
 - FormValidationTest
 - FunctionalTestingTest
-- .__invoke
+- AdminBusinessInsightController.php
 - scripts
 - AIDataPreparationServiceTest
 - AnalyticsTestingTest
@@ -60,7 +60,7 @@
 - GarageTankService.php
 - DispatchLiftingStatusManagementTest
 - .update
-- Controller
+- InventoryOfficerPurchaseController.php
 - app.js
 - InventoryLedgerTest
 - InventoryVarianceExplanationsTest
@@ -92,8 +92,8 @@
 - post-create-project-cmd
 - StatusBadgeTest.php
 - ExampleTest
-- autoload-dev
 - extra
+- keywords
 - CJP Brand Logo
 - admin.partials.lift-table
 - database.php
@@ -106,9 +106,10 @@
 - PurchaseWorkflowService
 - Laravel Framework
 - WorkflowAlertService
-- InventoryOfficerPurchaseController.php
 - DispatchLiftingStatusController
 - AuthController
+- AdminRevenueInsightController.php
+- AdminSalesTrendSummaryController.php
 
 ## God Nodes (most connected - your core abstractions)
 1. `User` - 81 edges
@@ -137,7 +138,7 @@
 ## Import Cycles
 - None detected.
 
-## Communities (148 total, 59 thin omitted)
+## Communities (149 total, 61 thin omitted)
 
 ### Community 0 - "AIDataPreparationService"
 Cohesion: 0.06
@@ -172,8 +173,8 @@ Cohesion: 0.09
 Nodes (6): User, Illuminate\Database\Eloquent\Factories\HasFactory, Illuminate\Foundation\Auth\User, Illuminate\Notifications\Notifiable, AdminUserManagementTest, Phase5PerformanceTest
 
 ### Community 12 - "web.php"
-Cohesion: 0.31
-Nodes (3): Illuminate\Http\Response, Illuminate\Validation\Rule, Illuminate\Validation\Rules\Password
+Cohesion: 0.16
+Nodes (7): AdminDashboardController, AdminInventoryVarianceExplanationController, ApprovedFuelType, Controller, Illuminate\Http\Response, Illuminate\Validation\Rule, Illuminate\Validation\Rules\Password
 
 ### Community 13 - "PurchaseService"
 Cohesion: 0.15
@@ -200,20 +201,20 @@ Cohesion: 0.14
 Nodes (9): UserFactory, Illuminate\Database\Eloquent\Factories\Factory, Illuminate\Http\Client\ConnectionException, Illuminate\Support\Facades\Cache, Illuminate\Support\Facades\Hash, Illuminate\Support\Facades\Log, RuntimeException, static (+1 more)
 
 ### Community 31 - "PurchaseWorkflowService"
-Cohesion: 0.16
+Cohesion: 0.18
 Nodes (3): DriverLiftingStatusController, PurchaseWorkflowService, WorkflowAlertService
 
-### Community 37 - ".__invoke"
-Cohesion: 0.16
-Nodes (5): AdminBusinessInsightController, AdminRevenueInsightController, AdminSalesTrendSummaryController, Controller, InventoryOfficerLedgerController
+### Community 37 - "AdminBusinessInsightController.php"
+Cohesion: 0.24
+Nodes (3): AdminBusinessInsightController, Controller, InventoryOfficerLedgerController
 
 ### Community 38 - "scripts"
 Cohesion: 0.14
 Nodes (14): scripts, dev, post-autoload-dump, post-update-cmd, pre-package-uninstall, test, Composer\\Config::disableProcessTimeout, Illuminate\\Foundation\\ComposerScripts::postAutoloadDump (+6 more)
 
-### Community 46 - "Controller"
-Cohesion: 0.29
-Nodes (4): AdminDashboardController, AdminInventoryVarianceExplanationController, ApprovedFuelType, Controller
+### Community 46 - "InventoryOfficerPurchaseController.php"
+Cohesion: 0.22
+Nodes (4): Illuminate\Auth\Access\AuthorizationException, Illuminate\Database\QueryException, Illuminate\Support\Facades\Validator, Illuminate\Validation\ValidationException
 
 ### Community 47 - "app.js"
 Cohesion: 0.21
@@ -225,7 +226,7 @@ Nodes (8): PasswordResetCodeMail, Illuminate\Bus\Queueable, Illuminate\Mail\Mail
 
 ### Community 52 - "composer.json"
 Cohesion: 0.18
-Nodes (10): description, keywords, license, minimum-stability, name, prefer-stable, $schema, type (+2 more)
+Nodes (10): autoload-dev, psr-4, description, license, minimum-stability, name, prefer-stable, Tests\\ (+2 more)
 
 ### Community 53 - "TurnoverReadinessTest"
 Cohesion: 0.20
@@ -267,26 +268,22 @@ Nodes (4): require, laravel/framework, laravel/tinker, php
 Cohesion: 0.50
 Nodes (4): post-create-project-cmd, @php artisan key:generate --ansi, @php artisan migrate --graceful --ansi, @php -r \"file_exists('database/database.sqlite') || touch('database/database.sqlite');\
 
-### Community 78 - "autoload-dev"
-Cohesion: 0.67
-Nodes (3): autoload-dev, psr-4, Tests\\
-
-### Community 79 - "extra"
+### Community 78 - "extra"
 Cohesion: 0.67
 Nodes (3): extra, laravel, dont-discover
+
+### Community 79 - "keywords"
+Cohesion: 0.67
+Nodes (3): keywords, framework, laravel
 
 ### Community 80 - "CJP Brand Logo"
 Cohesion: 0.67
 Nodes (3): CJP Brand Logo, CJP Monogram, Green Star Symbol
 
-### Community 145 - "InventoryOfficerPurchaseController.php"
-Cohesion: 0.22
-Nodes (4): Illuminate\Auth\Access\AuthorizationException, Illuminate\Database\QueryException, Illuminate\Support\Facades\Validator, Illuminate\Validation\ValidationException
-
 ## Knowledge Gaps
 - **66 isolated node(s):** `private`, `$schema`, `build`, `dev`, `type` (+61 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **59 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **61 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Work-memory lessons
 
@@ -300,12 +297,12 @@ Nodes (4): Illuminate\Auth\Access\AuthorizationException, Illuminate\Database\Qu
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `DashboardSummaryService` connect `DashboardSummaryService` to `AIDataPreparationService`, `SalesOfficerCustomerController`, `InventoryOfficerPurchaseController`, `Illuminate\Foundation\Testing\RefreshDatabase`, `web.php`, `Controller`, `InventoryOfficerPurchaseController.php`?**
-  _High betweenness centrality (0.123) - this node is a cross-community bridge._
-- **Why does `SalesOfficerCustomerController` connect `SalesOfficerCustomerController` to `web.php`, `Controller`, `OperationalDataRepairService`?**
+- **Why does `DashboardSummaryService` connect `DashboardSummaryService` to `AIDataPreparationService`, `SalesOfficerCustomerController`, `InventoryOfficerPurchaseController`, `Illuminate\Foundation\Testing\RefreshDatabase`, `web.php`, `InventoryOfficerPurchaseController.php`?**
+  _High betweenness centrality (0.122) - this node is a cross-community bridge._
+- **Why does `SalesOfficerCustomerController` connect `SalesOfficerCustomerController` to `web.php`, `OperationalDataRepairService`?**
   _High betweenness centrality (0.060) - this node is a cross-community bridge._
-- **Why does `User` connect `User` to `AIDataPreparationService`, `AdminMonitoringTest`, `Illuminate\Foundation\Testing\RefreshDatabase`, `AIDataPreparationServiceTest`, `BusinessInsightsTest`, `Controller`, `InventoryLedgerTest`, `InventoryOfficerPurchaseController.php`, `HaulTruckAssignmentTest`, `TestCase`, `ConnectedLiftingWorkflowTest`, `InventoryOfficerStockInTest`, `RevenueInsightsTest`, `AIServiceConfigurationTest.php`, `FrontendBugFixesTest`, `SalesTrendSummariesTest`?**
-  _High betweenness centrality (0.047) - this node is a cross-community bridge._
+- **Why does `User` connect `User` to `AIDataPreparationService`, `AdminMonitoringTest`, `Illuminate\Foundation\Testing\RefreshDatabase`, `AIDataPreparationServiceTest`, `BusinessInsightsTest`, `web.php`, `InventoryOfficerPurchaseController.php`, `InventoryLedgerTest`, `HaulTruckAssignmentTest`, `TestCase`, `ConnectedLiftingWorkflowTest`, `InventoryOfficerStockInTest`, `RevenueInsightsTest`, `AIServiceConfigurationTest.php`, `FrontendBugFixesTest`, `SalesTrendSummariesTest`?**
+  _High betweenness centrality (0.048) - this node is a cross-community bridge._
 - **Are the 14 inferred relationships involving `User` (e.g. with `.records()` and `.baseRecords()`) actually correct?**
   _`User` has 14 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `private`, `$schema`, `build` to the rest of the system?**

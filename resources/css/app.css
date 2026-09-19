@@ -563,6 +563,22 @@ form[aria-busy="true"] {
     background: #fff;
 }
 
+/* Center status chips/badges in all tables */
+.admin-table th:has(.status-badge),
+.admin-table td:has(.status-badge),
+.depot-table th:has(.status-badge),
+.depot-table td:has(.status-badge),
+.dispatch-table th:has(.status-badge),
+.dispatch-table td:has(.status-badge),
+.driver-table th:has(.status-badge),
+.driver-table td:has(.status-badge),
+.dashboard-mini-table th:has(.status-badge),
+.dashboard-mini-table td:has(.status-badge),
+table th:has(.status-badge),
+table td:has(.status-badge) {
+    text-align: center;
+}
+
 
 .depot-table th,
 .depot-table td {

@@ -14,7 +14,8 @@ class StockInService
 
     public function __construct(
         private readonly IdempotencyService $idempotencyService,
-        private readonly WorkflowAlertService $alerts
+        private readonly WorkflowAlertService $alerts,
+        private readonly PurchaseWorkflowService $purchaseWorkflow
     ) {}
 
     /**
@@ -111,6 +112,7 @@ class StockInService
                     'updated_at' => now(),
                 ]);
 
+            $this->purchaseWorkflow->synchronize((int) $allocation->purchase_id, $userId, (int) $allocation->haul_id);
             $this->alerts->purchase((int) $allocation->purchase_id, $newRemaining <= 0 ? 'received' : 'partially_received', $userId, (int) $allocation->haul_id);
 
             return null;

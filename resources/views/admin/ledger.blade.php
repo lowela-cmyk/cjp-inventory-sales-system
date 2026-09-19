@@ -71,13 +71,18 @@
     @foreach ($transactions as $row)
         <x-admin.modal id="{{ $row['id'] }}" title="VIEW TRANSACTIONS" :show-brand="false">
             <div class="modal-heading-row">
-                <p class="detail-id">{{ $row['purchase_code'] }}</p>
-                <p class="detail-id {{ $row['status_class'] }}">{{ $row['status'] }}</p>
+                <p class="detail-id">Purchase ID: {{ $row['purchase_code'] }}</p>
+                <x-admin.status-badge :status="$row['status']" />
+            </div>
+            <div class="lift-summary" aria-label="Purchase lifting totals">
+                <span>Purchased: <strong>{{ $row['purchased_liters'] }}</strong></span>
+                <span>Lifted: <strong>{{ $row['lifted_liters'] }}</strong></span>
+                <span>Remaining / Unlifted: <strong>{{ $row['remaining_liters'] }}</strong></span>
             </div>
             <div class="lift-transaction-modal">
                 <div class="lift-blocks" aria-label="Lift transactions for {{ $row['purchase_code'] }}">
                     @forelse ($row['lifts'] as $lift)
-                        <div class="lift-block {{ $lift['counts_as_lifted'] ? 'is-complete' : 'is-open' }}">
+                        <div class="lift-block {{ $lift['counts_as_lifted'] ? 'is-complete' : 'is-open' }}" tabindex="0" aria-label="Lift {{ $lift['sequence'] }}: {{ $lift['display_quantity'] }}. Lift ID: {{ $lift['code'] }}. Date Lifted: {{ $lift['display_date'] }}.">
                             <span class="visually-hidden">Lift {{ $lift['sequence'] }}</span>
                             <div class="lift-block-meta" aria-label="Lift ID: {{ $lift['details']['Lift ID'] }}">
                                 <span>Lift-ID: {{ $lift['details']['Lift ID'] }}</span>

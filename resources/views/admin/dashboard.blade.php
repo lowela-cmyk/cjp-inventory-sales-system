@@ -114,7 +114,7 @@
                                     <td>{{ $row['formatted_purchased'] }}</td>
                                     <td>{{ $row['formatted_lifted'] }}</td>
                                     <td>{{ $row['formatted_remaining'] }}</td>
-                                    <td>{{ $row['lift_status_label'] }}</td>
+                                    <td><x-admin.status-badge :status="$row['lift_status_label']" /></td>
                                     <td>{{ $row['formatted_purchase_date'] }}</td>
                                 </tr>
                             @endforeach
@@ -202,7 +202,7 @@
                                     <td>{{ $row['formatted_sale_quantity'] }}</td>
                                     <td>{{ $row['formatted_stock_out_quantity'] }}</td>
                                     <td>{{ $row['formatted_quantity_variance'] }}</td>
-                                    <td>{{ $row['receivable_status_label'] }}</td>
+                                    <td><x-admin.status-badge :status="$row['receivable_status_label']" /></td>
                                     <td>{{ $row['reason'] }}</td>
                                     <td>{{ $row['formatted_transaction_date'] }}</td>
                                 </tr>
@@ -255,7 +255,7 @@
             </div>
         </section>
 
-        <section class="chart-panel">
+        <section class="chart-panel chart-panel-wide">
             <div class="chart-header"><h2>Expected Revenue ({{ $expectedRevenue['period'] }})</h2></div>
             <div class="expected-revenue-chart">
                 <canvas data-expected-revenue-chart data-chart='@json($expectedRevenueChart)' aria-label="Expected revenue by month" role="img"></canvas>
@@ -298,7 +298,7 @@
                                     <td>{{ $row['sale_code'] }}</td>
                                     <td>{{ $row['formatted_paid'] }}</td>
                                     <td>{{ $row['formatted_balance'] }}</td>
-                                    <td>{{ $row['status_label'] }}</td>
+                                    <td><x-admin.status-badge :status="$row['status_label']" /></td>
                                 </tr>
                             @endforeach
                         </tbody>
@@ -309,7 +309,7 @@
             @endif
         </section>
 
-        <section class="chart-panel">
+        <section class="chart-panel chart-panel-wide">
             <div class="chart-header"><h2>Predicted Peak Demand</h2></div>
             <div class="demand-list">
                 <h3>Peak Days of the Week</h3>

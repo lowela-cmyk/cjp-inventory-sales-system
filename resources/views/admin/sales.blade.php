@@ -156,7 +156,7 @@
                 @method('PATCH')
             </form>
             <div class="modal-card">
-                <span class="detail-status">{{ $row['status'] }}</span>
+                <x-admin.status-badge :status="$row['status']" />
                 <p class="detail-id">{{ $row['cells'][0] }}</p>
                 <div class="detail-grid">
                     @foreach ($row['details'] as $label => $value)
@@ -224,7 +224,7 @@
                     <div class="detail-row"><div class="detail-label">Sale Total</div><div class="detail-value">PHP {{ $row['sale_total'] }}</div></div>
                     <div class="detail-row"><div class="detail-label">Total Paid</div><div class="detail-value">PHP {{ $row['total_paid'] }}</div></div>
                     <div class="detail-row"><div class="detail-label">Remaining Balance</div><div class="detail-value">PHP {{ $row['balance'] }}</div></div>
-                    <div class="detail-row"><div class="detail-label">Payment Status</div><div class="detail-value">{{ $row['status'] }}</div></div>
+                    <div class="detail-row"><div class="detail-label">Payment Status</div><div class="detail-value"><x-admin.status-badge :status="$row['status']" /></div></div>
                 </div>
                 @if (! empty($row['payment_schedules']))
                     <div class="table-wrap" style="margin-top:18px;min-height:auto">
@@ -243,7 +243,7 @@
                         <thead><tr><th>Installment</th><th>Payment ID</th><th>Date Recorded</th><th>Amount</th><th>Method</th><th>Reference</th><th>Recorded By</th><th>Status</th></tr></thead>
                         <tbody>
                             @forelse ($row['payments'] as $payment)
-                                <tr><td>{{ $payment['sequence'] }}</td><td>{{ $payment['code'] }}</td><td>{{ $payment['date'] }}</td><td>{{ $payment['amount'] }}</td><td>{{ $payment['method'] }}</td><td>{{ $payment['reference'] }}</td><td>{{ $payment['recorded_by'] }}</td><td>{{ $payment['status'] }}</td></tr>
+                                <tr><td>{{ $payment['sequence'] }}</td><td>{{ $payment['code'] }}</td><td>{{ $payment['date'] }}</td><td>{{ $payment['amount'] }}</td><td>{{ $payment['method'] }}</td><td>{{ $payment['reference'] }}</td><td>{{ $payment['recorded_by'] }}</td><td><x-admin.status-badge :status="$payment['status']" /></td></tr>
                             @empty
                                 <tr><td class="empty-cell" colspan="8">No payment records found.</td></tr>
                             @endforelse

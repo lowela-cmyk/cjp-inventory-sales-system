@@ -89,6 +89,7 @@ class InventoryOfficerStockInTest extends TestCase
 
         $this->assertSame(0, DB::table('hauls')->where('haul_code', 'MOV-000001')->count());
         $this->assertSame(36000.0, $this->garageBalance($records));
+        $this->assertDatabaseHas('purchases', ['id' => $records['purchaseId'], 'workflow_status' => 'completed']);
     }
 
     public function test_stock_in_rejects_over_receipt_and_prevents_duplicate_full_receipts(): void

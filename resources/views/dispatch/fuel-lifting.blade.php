@@ -227,7 +227,7 @@
     @foreach ($scheduledRows->merge($deliveredRows) as $row)
         <x-admin.modal id="{{ $row['id'] }}" title="Fuel Lifting Schedule">
             <div class="modal-card">
-                <span class="detail-status">{{ $row['status'] }}</span>
+                <x-admin.status-badge :status="$row['status']" />
                 <p class="detail-id">{{ $row['cells'][0] }}</p>
                 <div class="detail-grid">
                     @foreach ($row['details'] as $label => $value)

@@ -34,6 +34,9 @@ class InventoryLedgerService
                 'purchase_code' => $row->purchase_code,
                 'status' => $status,
                 'status_class' => $remaining <= 0 ? 'modal-complete' : 'modal-incomplete',
+                'purchased_liters' => $this->formatDisplayLiters($purchased),
+                'lifted_liters' => $this->formatDisplayLiters($lifted),
+                'remaining_liters' => $this->formatDisplayLiters($remaining),
                 'lifts' => $lifts,
                 'search_text' => strtolower(implode(' ', [
                     $row->purchase_code,
@@ -80,7 +83,7 @@ class InventoryLedgerService
     private function purchaseProgressRows(?string $search): Collection
     {
         $completedLifts = DB::table('hauls')
-            ->where('status', 'completed')
+            ->whereIn('status', ['lifted', 'completed'])
             ->selectRaw('purchase_item_id, COALESCE(SUM(quantity_liters), 0) as total_lifted_liters')
             ->groupBy('purchase_item_id');
 
@@ -152,7 +155,7 @@ class InventoryLedgerService
                 $truck = trim($row->truck_code.($row->plate_number ? ' / '.$row->plate_number : ''));
                 $details = [
                     'Lift ID' => $row->haul_code,
-                    'Date Lifted' => $this->formatDateTime($row->hauled_at ?: $row->scheduled_at),
+                    'Date Lifted' => $row->hauled_at ? $this->formatDateTime($row->hauled_at) : (in_array($row->status, ['lifted', 'completed'], true) ? 'Date unavailable' : 'Not yet lifted'),
                     'Quantity' => $this->formatLiters($row->quantity_liters),
                     'Driver' => $row->driver_name,
                     'Truck' => $truck,
@@ -164,9 +167,9 @@ class InventoryLedgerService
                     'code' => $row->haul_code,
                     'quantity' => $this->formatLiters($row->quantity_liters),
                     'display_quantity' => $this->formatDisplayLiters($row->quantity_liters),
-                    'display_date' => $this->formatDate($row->hauled_at ?: $row->scheduled_at),
+                    'display_date' => $row->hauled_at ? $this->formatDate($row->hauled_at) : (in_array($row->status, ['lifted', 'completed'], true) ? 'Date unavailable' : 'Not yet lifted'),
                     'status' => $this->label($row->status),
-                    'counts_as_lifted' => $row->status === 'completed',
+                    'counts_as_lifted' => in_array($row->status, ['lifted', 'completed'], true),
                     'details' => $details,
                     'search_text' => strtolower(implode(' ', $details)),
                 ];

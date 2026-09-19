@@ -185,7 +185,7 @@
                                     <td>{{ $row['sale_total'] }}</td>
                                     <td>{{ $row['paid'] }}</td>
                                     <td>{{ $row['balance'] }}</td>
-                                    <td>{{ $row['status'] }}</td>
+                                    <td><x-admin.status-badge :status="$row['status']" /></td>
                                     <td>{{ $row['latest_payment_date'] }}</td>
                                 </tr>
                             @empty
@@ -310,7 +310,7 @@
                                         <td>{{ $row['sale_total'] }}</td>
                                         <td>{{ $row['paid'] }}</td>
                                         <td>{{ $row['balance'] }}</td>
-                                        <td>{{ $row['status'] }}</td>
+                                        <td><x-admin.status-badge :status="$row['status']" /></td>
                                         <td>{{ $row['due_date'] ?: 'N/A' }}</td>
                                     </tr>
                                 @empty

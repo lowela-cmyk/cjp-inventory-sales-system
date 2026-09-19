@@ -1,3 +1,9 @@
+# CJP Southern Star OPC Inventory and Sales Management System
+
+For local setup, configure `.env`, then run `composer install`, `php artisan key:generate`, `npm ci`, `php artisan migrate`, `php artisan db:seed`, and `npm run build`. Run the tests with `php artisan test`.
+
+For client updates after pulling Git changes, follow [the deployment instructions](docs/client-deployment.md). The [connected-workflow audit](docs/connected-workflow-audit-2026-09-19.md) records the requirement checklist and fix plan.
+
 <p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
 
 <p align="center">

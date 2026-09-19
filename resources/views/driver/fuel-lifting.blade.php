@@ -43,7 +43,7 @@
 
         <div class="dashboard-grid">
             <div class="modal-card">
-                <span class="detail-status">{{ $driverProfile['Profile Status'] ?? 'N/A' }}</span>
+                <x-admin.status-badge :status="$driverProfile['Profile Status'] ?? 'N/A'" />
                 <p class="detail-id">{{ $driverProfile['Driver ID'] ?? 'N/A' }}</p>
                 <div class="detail-grid driver-detail-grid">
                     @foreach ($driverProfile as $label => $value)
@@ -55,7 +55,7 @@
                 </div>
             </div>
             <div class="modal-card">
-                <span class="detail-status">{{ $currentAssignment['details']['Status'] ?? 'N/A' }}</span>
+                <x-admin.status-badge :status="$currentAssignment['details']['Status'] ?? 'N/A'" />
                 <p class="detail-id">{{ $currentAssignment['cells'][0] ?? 'No Assignment' }}</p>
                 <div class="detail-grid driver-detail-grid">
                     @if ($currentAssignment)

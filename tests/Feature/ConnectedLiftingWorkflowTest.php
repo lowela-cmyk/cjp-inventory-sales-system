@@ -34,6 +34,11 @@ class ConnectedLiftingWorkflowTest extends TestCase
         $this->assertDatabaseCount('alerts', 1);
         $this->assertDatabaseCount('purchase_status_histories', 1);
         $this->assertDatabaseHas('purchases', ['status' => 'ordered', 'workflow_status' => 'pending']);
+        $this->assertDatabaseCount('inventory_movements', 0);
+        $this->actingAs($records['inventory'])->get(route('inventory-officer.inventory.stock-in'))
+            ->assertOk()
+            ->assertSee('Purchase Stock-In Pipeline')
+            ->assertSee((string) DB::table('purchases')->value('purchase_code'));
 
         $alertId = (int) DB::table('alerts')->value('id');
         $this->actingAs($records['inventory'])->get(route('inventory-officer.alerts'))->assertOk()->assertSee('Unread');
@@ -65,6 +70,116 @@ class ConnectedLiftingWorkflowTest extends TestCase
         $this->assertSame(2, DB::table('purchases')->where('workflow_status', 'scheduled')->count());
     }
 
+    public function test_purchase_edit_recomputes_workflow_status_from_haul_state(): void
+    {
+        $records = $this->records();
+        $this->actingAs($records['inventory'])->post(route('inventory-officer.inventory.purchases.store'), [
+            'purchase_date' => '2026-09-18',
+            'depot_id' => $records['depot'],
+            'fuel_type_id' => $records['fuel'],
+            'quantity_ordered_liters' => 10000,
+            'unit_cost' => 50,
+            'payment_status' => 'unpaid',
+        ])->assertRedirect();
+
+        $purchaseId = (int) DB::table('purchases')->value('id');
+        $itemId = (int) DB::table('purchase_items')->value('id');
+        DB::table('purchases')->where('id', $purchaseId)->update(['workflow_status' => 'scheduled']);
+
+        $payload = [
+            'purchase_date' => '2026-09-18',
+            'depot_id' => $records['depot'],
+            'fuel_type_id' => $records['fuel'],
+            'quantity_ordered_liters' => 10000,
+            'unit_cost' => 55,
+            'payment_status' => 'paid',
+            'status' => 'cancelled',
+        ];
+        $this->actingAs($records['inventory'])->patch(route('inventory-officer.inventory.purchases.update', $itemId), $payload)->assertRedirect();
+
+        $this->assertDatabaseHas('purchases', ['id' => $purchaseId, 'status' => 'ordered', 'workflow_status' => 'pending', 'payment_status' => 'paid']);
+        $this->assertDatabaseHas('purchase_status_histories', ['purchase_id' => $purchaseId, 'previous_status' => 'scheduled', 'new_status' => 'pending']);
+        $historyCount = DB::table('purchase_status_histories')->count();
+        $this->actingAs($records['inventory'])->patch(route('inventory-officer.inventory.purchases.update', $itemId), $payload)->assertRedirect();
+        $this->assertSame($historyCount, DB::table('purchase_status_histories')->count());
+    }
+
+    public function test_purchase_cancellation_updates_workflow_status_and_removes_stock_in_pipeline_row(): void
+    {
+        $records = $this->records();
+        $this->actingAs($records['inventory'])->post(route('inventory-officer.inventory.purchases.store'), [
+            'purchase_date' => '2026-09-18',
+            'depot_id' => $records['depot'],
+            'fuel_type_id' => $records['fuel'],
+            'quantity_ordered_liters' => 10000,
+            'unit_cost' => 50,
+            'payment_status' => 'unpaid',
+        ])->assertRedirect();
+
+        $purchaseId = (int) DB::table('purchases')->value('id');
+        $itemId = (int) DB::table('purchase_items')->value('id');
+        $this->actingAs($records['inventory'])->patch(route('inventory-officer.inventory.purchases.cancel', $itemId))->assertRedirect();
+
+        $this->assertDatabaseHas('purchases', ['id' => $purchaseId, 'status' => 'cancelled', 'workflow_status' => 'cancelled']);
+        $this->actingAs($records['inventory'])->get(route('inventory-officer.inventory.stock-in'))
+            ->assertOk()->assertViewHas('stockInPurchases', fn ($rows): bool => $rows->count() === 0);
+    }
+
+    public function test_dispatch_can_schedule_partial_then_exact_remaining_quantity(): void
+    {
+        $records = $this->records();
+        [$item] = $this->purchases($records, [10000]);
+        $base = [
+            'purchase_item_id' => $item,
+            'driver_user_id' => $records['driver']->id,
+            'truck_id' => $records['truck'],
+        ];
+
+        $this->actingAs($records['dispatch'])->post(route('dispatch.fuel-lifting.hauls.store'), $base + [
+            'idempotency_key' => (string) Str::uuid(), 'scheduled_at' => '2026-09-19 08:00:00', 'quantity_liters' => 6000,
+        ])->assertRedirect(route('dispatch.fuel-lifting'));
+
+        $this->actingAs($records['dispatch'])->get(route('dispatch.fuel-lifting'))->assertOk()->assertSee('4,000.00 L remaining');
+
+        $this->actingAs($records['dispatch'])->from(route('dispatch.fuel-lifting'))->post(route('dispatch.fuel-lifting.hauls.store'), $base + [
+            'idempotency_key' => (string) Str::uuid(), 'scheduled_at' => '2026-09-20 08:00:00', 'quantity_liters' => 4000.01,
+        ])->assertSessionHasErrors('lift');
+        $this->assertDatabaseCount('hauls', 1);
+
+        $this->actingAs($records['dispatch'])->post(route('dispatch.fuel-lifting.hauls.store'), $base + [
+            'idempotency_key' => (string) Str::uuid(), 'scheduled_at' => '2026-09-20 08:00:00', 'quantity_liters' => 4000,
+        ])->assertRedirect(route('dispatch.fuel-lifting'));
+        $this->assertDatabaseCount('hauls', 2);
+        $this->assertSame(10000.0, (float) DB::table('hauls')->sum('quantity_liters'));
+        $this->assertSame(0, DB::table('hauls')->where('status', 'cancelled')->count());
+    }
+
+    public function test_dispatch_rejects_mixed_depots_in_one_schedule(): void
+    {
+        $records = $this->records();
+        [$first, $second] = $this->purchases($records, [10000, 10000]);
+        $otherDepot = DB::table('depots')->insertGetId([
+            'depot_code' => 'DEP-OTHER', 'name' => 'Other Terminal', 'address' => 'Other Road', 'status' => 'active',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        DB::table('purchases')->where('id', DB::table('purchase_items')->where('id', $second)->value('purchase_id'))
+            ->update(['depot_id' => $otherDepot]);
+
+        $this->actingAs($records['dispatch'])->from(route('dispatch.fuel-lifting'))->post(route('dispatch.fuel-lifting.hauls.store'), [
+            'idempotency_key' => (string) Str::uuid(),
+            'items' => [
+                ['purchase_item_id' => $first, 'quantity_liters' => 5000],
+                ['purchase_item_id' => $second, 'quantity_liters' => 5000],
+            ],
+            'driver_user_id' => $records['driver']->id,
+            'truck_id' => $records['truck'],
+            'scheduled_at' => '2026-09-19 08:00:00',
+        ])->assertSessionHasErrors('lift');
+
+        $this->assertDatabaseCount('lifting_schedules', 0);
+        $this->assertDatabaseCount('hauls', 0);
+    }
+
     public function test_duplicate_purchase_and_combined_capacity_are_rejected_without_partial_rows(): void
     {
         $records = $this->records();
@@ -88,6 +203,14 @@ class ConnectedLiftingWorkflowTest extends TestCase
             'items' => [
                 ['purchase_item_id' => $first, 'quantity_liters' => 16000],
                 ['purchase_item_id' => $second, 'quantity_liters' => 16000],
+            ],
+        ])->assertSessionHasErrors('lift');
+
+        $this->actingAs($records['dispatch'])->from(route('dispatch.fuel-lifting'))->post(route('dispatch.fuel-lifting.hauls.store'), $base + [
+            'idempotency_key' => (string) Str::uuid(),
+            'items' => [
+                ['purchase_item_id' => $first, 'quantity_liters' => 20000.01],
+                ['purchase_item_id' => $second, 'quantity_liters' => 1000],
             ],
         ])->assertSessionHasErrors('lift');
 

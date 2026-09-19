@@ -86,6 +86,9 @@ class InventoryOfficerPurchaseController extends Controller
                 ->orderBy('name')
                 ->get(['id', 'name', 'fuel_type_id', 'tank_number']),
             'garageAllocations' => $this->garageAllocationOptions(),
+            'stockInPurchases' => $activeTab === 'stock-in'
+                ? $this->stockInPurchaseRows($search === '' ? null : $search)
+                : new LengthAwarePaginator([], 0, 25),
             'stockOutSaleItems' => $this->stockOutSaleItemOptions(),
             'directDeliveryAllocations' => $this->directDepotReleaseAllocationOptions(),
             'paymentStatuses' => self::PAYMENT_STATUSES,
@@ -125,7 +128,7 @@ class InventoryOfficerPurchaseController extends Controller
         $data = $this->validatedPurchaseData($request);
 
         try {
-            $this->purchaseService->updatePurchase($purchaseItem, $data);
+            $this->purchaseService->updatePurchase($purchaseItem, $data, (int) $request->user()->id);
         } catch (ValidationException $e) {
             return back()->withErrors($e->errors())->withInput();
         }
@@ -347,6 +350,54 @@ class InventoryOfficerPurchaseController extends Controller
         $paginator->setCollection($transformed);
 
         return $paginator;
+    }
+
+    private function stockInPurchaseRows(?string $search): LengthAwarePaginator
+    {
+        $assigned = DB::table('hauls')
+            ->where('status', '!=', 'cancelled')
+            ->selectRaw('purchase_item_id, COALESCE(SUM(quantity_liters), 0) as scheduled_liters')
+            ->groupBy('purchase_item_id');
+
+        $received = DB::table('inventory_movements')
+            ->join('haul_allocations', function ($join): void {
+                $join->on('haul_allocations.id', '=', 'inventory_movements.reference_id')
+                    ->where('inventory_movements.reference_type', self::STOCK_IN_REFERENCE_TYPE);
+            })
+            ->join('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')
+            ->where('inventory_movements.direction', 'in')
+            ->where('inventory_movements.movement_type', 'stock_in')
+            ->where('haul_allocations.status', '!=', 'cancelled')
+            ->where('hauls.status', '!=', 'cancelled')
+            ->selectRaw('hauls.purchase_item_id, COALESCE(SUM(inventory_movements.quantity_liters), 0) as received_liters')
+            ->groupBy('hauls.purchase_item_id');
+
+        return DB::table('purchase_items')
+            ->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
+            ->join('depots', 'depots.id', '=', 'purchases.depot_id')
+            ->join('fuel_types', 'fuel_types.id', '=', 'purchase_items.fuel_type_id')
+            ->leftJoinSub($assigned, 'assigned', 'assigned.purchase_item_id', '=', 'purchase_items.id')
+            ->leftJoinSub($received, 'received', 'received.purchase_item_id', '=', 'purchase_items.id')
+            ->whereNull('purchases.deleted_at')
+            ->where('purchases.status', '!=', 'cancelled')
+            ->when($search, fn (Builder $query): Builder => $query->where(function (Builder $query) use ($search): void {
+                $query->where('purchases.purchase_code', 'like', '%'.$search.'%')
+                    ->orWhere('depots.name', 'like', '%'.$search.'%')
+                    ->orWhere('fuel_types.name', 'like', '%'.$search.'%');
+            }))
+            ->orderByDesc('purchases.purchase_date')
+            ->orderByDesc('purchase_items.id')
+            ->paginate(25, [
+                'purchases.purchase_code',
+                'purchases.purchase_date',
+                'purchases.workflow_status',
+                'depots.name as depot_name',
+                'fuel_types.name as fuel_name',
+                'purchase_items.quantity_ordered_liters',
+                DB::raw('COALESCE(assigned.scheduled_liters, 0) as scheduled_liters'),
+                DB::raw('COALESCE(received.received_liters, 0) as received_liters'),
+            ], 'stock_in_purchases_page')
+            ->withQueryString();
     }
 
     private function stockInRows(?string $search): LengthAwarePaginator

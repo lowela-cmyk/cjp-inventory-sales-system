@@ -85,6 +85,29 @@
                 <button class="btn btn-primary" type="submit">Fuel Type (All)</button>
                 <span class="status-badge status-tone-pending">Pending receipts require tank assignment</span>
             </form>
+            <h3 class="section-title">Purchase Stock-In Pipeline</h3>
+            <div class="table-wrap" style="margin-bottom:16px">
+                <table class="admin-table">
+                    <thead><tr><th>Purchase ID</th><th>Date</th><th>Fuel</th><th>Pickup Depot</th><th>Purchased (L)</th><th>Scheduled (L)</th><th>Garage Received (L)</th><th>Purchase Status</th></tr></thead>
+                    <tbody>
+                        @forelse ($stockInPurchases as $purchase)
+                            <tr>
+                                <td>{{ $purchase->purchase_code }}</td>
+                                <td>{{ $purchase->purchase_date }}</td>
+                                <td>{{ $purchase->fuel_name }}</td>
+                                <td>{{ $purchase->depot_name }}</td>
+                                <td>{{ number_format((float) $purchase->quantity_ordered_liters, 2) }}</td>
+                                <td>{{ number_format((float) $purchase->scheduled_liters, 2) }}</td>
+                                <td>{{ number_format((float) $purchase->received_liters, 2) }}</td>
+                                <td><x-admin.status-badge :status="ucwords(str_replace('_', ' ', $purchase->workflow_status))" /></td>
+                            </tr>
+                        @empty
+                            <tr><td class="empty-cell" colspan="8">No purchases found.</td></tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+            <div class="pagination-wrap" style="margin-bottom:16px">{{ $stockInPurchases->links() }}</div>
             <div class="table-wrap" style="margin-bottom:16px">
                 <table class="admin-table">
                     <thead><tr><th>Purchase ID</th><th>Lift ID</th><th>Fuel</th><th>Pickup Depot</th><th>Received / Pending</th><th>Receiving Date</th><th>Tank</th><th>Status</th><th>Action</th></tr></thead>
@@ -219,7 +242,7 @@
                 @method('PATCH')
             </form>
             <div class="modal-card">
-                <span class="detail-status" style="{{ $row['payment_status'] === 'unpaid' ? 'color:#f50037' : '' }}">{{ ucwords($row['payment_status']) }}</span>
+                <x-admin.status-badge :status="ucwords($row['payment_status'])" />
                 <p class="detail-id">{{ $row['purchase_code'] }}</p>
                 <div class="detail-grid">
                     @foreach ($row['details'] as $label => $value)

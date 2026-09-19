@@ -26,7 +26,11 @@
                         @forelse ($purchases as $row)
                             <tr class="{{ $row['class'] }}">
                                 @foreach ($row['cells'] as $cell)
-                                    <td>{{ $cell }}</td>
+                                    @if ($loop->last)
+                                        <td><x-admin.status-badge :status="$cell" /></td>
+                                    @else
+                                        <td>{{ $cell }}</td>
+                                    @endif
                                 @endforeach
                                 <td><button class="btn btn-secondary" type="button" data-modal-open="{{ $row['id'] }}">View</button></td>
                             </tr>
@@ -121,7 +125,7 @@
     @foreach ($purchases as $row)
         <x-admin.modal id="{{ $row['id'] }}" title="Purchase Record">
             <div class="modal-card">
-                <span class="detail-status">{{ $row['status'] }}</span>
+                <x-admin.status-badge :status="$row['status']" />
                 <p class="detail-id">{{ $row['cells'][0] }}</p>
                 <div class="detail-grid">
                     @foreach ($row['details'] as $label => $value)
@@ -156,7 +160,7 @@
     @foreach ($stockIn as $row)
         <x-admin.modal id="{{ $row['id'] }}" title="Stock Details">
             <div class="modal-card">
-                <span class="detail-status">{{ $row['status'] }}</span>
+                <x-admin.status-badge :status="$row['status']" />
                 <p class="detail-id">{{ $row['cells'][0] }}</p>
                 <div class="detail-grid">
                     @foreach ($row['details'] as $label => $value)

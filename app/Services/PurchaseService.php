@@ -78,19 +78,8 @@ class PurchaseService
     /**
      * @param  array<string, mixed>  $data
      */
-    public function updatePurchase(int $purchaseItemId, array $data): void
+    public function updatePurchase(int $purchaseItemId, array $data, ?int $userId = null): void
     {
-        $row = $this->purchaseItemForUpdate($purchaseItemId);
-        if (! $row) {
-            abort(404);
-        }
-
-        if ($this->hasDependentActivity($row) && $this->changesProtectedFields($row, $data)) {
-            throw ValidationException::withMessages([
-                'purchase' => 'This purchase already has hauling activity, so quantity, fuel, depot, and date cannot be changed.',
-            ]);
-        }
-
         $lineTotal = $this->lineTotal($data['quantity_ordered_liters'], $data['unit_cost']);
         if ($lineTotal > 999999999999.99) {
             throw ValidationException::withMessages([
@@ -98,7 +87,18 @@ class PurchaseService
             ]);
         }
 
-        DB::transaction(function () use ($row, $data): void {
+        DB::transaction(function () use ($purchaseItemId, $data, $userId): void {
+            $row = $this->purchaseItemForUpdate($purchaseItemId);
+            if (! $row) {
+                abort(404);
+            }
+
+            if ($this->hasDependentActivity($row) && $this->changesProtectedFields($row, $data)) {
+                throw ValidationException::withMessages([
+                    'purchase' => 'This purchase already has hauling activity, so quantity, fuel, depot, and date cannot be changed.',
+                ]);
+            }
+
             DB::table('purchases')
                 ->where('id', $row->purchase_id)
                 ->update([
@@ -118,23 +118,25 @@ class PurchaseService
                     'status' => $this->itemStatus((float) $row->quantity_hauled_liters, (float) $data['quantity_ordered_liters']),
                     'updated_at' => now(),
                 ]);
+
+            $this->workflow->synchronize((int) $row->purchase_id, $userId);
         });
     }
 
     public function cancelPurchase(int $purchaseItemId, ?int $userId = null): void
     {
-        $row = $this->purchaseItemForUpdate($purchaseItemId);
-        if (! $row) {
-            abort(404);
-        }
+        DB::transaction(function () use ($purchaseItemId, $userId): void {
+            $row = $this->purchaseItemForUpdate($purchaseItemId);
+            if (! $row) {
+                abort(404);
+            }
 
-        if ($this->hasDependentActivity($row)) {
-            throw ValidationException::withMessages([
-                'purchase' => 'This purchase already has dependent activity and cannot be cancelled from Purchases.',
-            ]);
-        }
+            if ($this->hasDependentActivity($row)) {
+                throw ValidationException::withMessages([
+                    'purchase' => 'This purchase already has dependent activity and cannot be cancelled from Purchases.',
+                ]);
+            }
 
-        DB::transaction(function () use ($row, $userId): void {
             DB::table('purchases')
                 ->where('id', $row->purchase_id)
                 ->update([
@@ -152,6 +154,7 @@ class PurchaseService
             ->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
             ->where('purchase_items.id', $purchaseItemId)
             ->whereNull('purchases.deleted_at')
+            ->lockForUpdate()
             ->first([
                 'purchase_items.id',
                 'purchase_items.purchase_id',

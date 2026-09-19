@@ -34,6 +34,8 @@ class InventoryLedgerTest extends TestCase
             ->get(route('inventory-officer.ledger.transactions'))
             ->assertOk()
             ->assertSee('PUR-ZERO-LIFT')
+            ->assertSee('Lifted: <strong>0 L</strong>', false)
+            ->assertSee('Remaining / Unlifted: <strong>100,000 L</strong>', false)
             ->assertSee('No lift assignments have been created for this purchase yet.');
     }
 
@@ -59,6 +61,14 @@ class InventoryLedgerTest extends TestCase
         $this->assertSame('Complete', $transaction['status']);
         $this->assertSame('0.00', $transaction['cells'][5]);
         $this->assertSame(['LFT-40K-A', 'LFT-40K-B', 'LFT-20K-FINAL'], $transaction['lifts']->pluck('code')->all());
+
+        $this->actingAs($records['inventoryOfficer'])
+            ->get(route('inventory-officer.ledger.transactions'))
+            ->assertOk()
+            ->assertSee('Purchase ID: PUR-100K-MULTI')
+            ->assertSee('status-tone-success', false)
+            ->assertSee('Lifted: <strong>100,000 L</strong>', false)
+            ->assertSee('Remaining / Unlifted: <strong>0 L</strong>', false);
     }
 
     public function test_cancelled_lifts_remain_historical_but_do_not_count_toward_total_lifted(): void
@@ -78,6 +88,27 @@ class InventoryLedgerTest extends TestCase
         $this->assertSame(['LFT-CANCELLED', 'LFT-COMPLETED'], $transaction['lifts']->pluck('code')->all());
         $this->assertFalse($transaction['lifts'][0]['counts_as_lifted']);
         $this->assertTrue($transaction['lifts'][1]['counts_as_lifted']);
+    }
+
+    public function test_lifted_trip_counts_in_progress_and_modal_shows_unlifted_quantity(): void
+    {
+        $records = $this->baseRecords();
+        $purchase = $this->purchase($records, 'PUR-LIFTED-PROGRESS', 50000);
+        $this->haul($records, $purchase, 'LFT-LIFTED', 20000, 'lifted');
+
+        $transaction = app(InventoryLedgerService::class)->rows()['transactions']
+            ->firstWhere('purchase_item_id', $purchase['purchaseItemId']);
+
+        $this->assertSame('20,000.00', $transaction['cells'][4]);
+        $this->assertSame('30,000.00', $transaction['cells'][5]);
+        $this->assertSame('30,000 L', $transaction['remaining_liters']);
+        $this->assertTrue($transaction['lifts'][0]['counts_as_lifted']);
+
+        $this->actingAs($records['inventoryOfficer'])
+            ->get(route('inventory-officer.ledger.transactions'))
+            ->assertOk()
+            ->assertSee('Remaining / Unlifted:')
+            ->assertSee('30,000 L');
     }
 
     public function test_view_transactions_modal_displays_all_lift_blocks_and_contained_details_from_database(): void
@@ -102,10 +133,39 @@ class InventoryLedgerTest extends TestCase
             ->assertSee('LFT-MODAL-3')
             ->assertSee('Lift-ID')
             ->assertSee('Date Lifted: 9/1/2026')
+            ->assertSee('Date Lifted: Not yet lifted')
+            ->assertSee('Lifted: <strong>80,000 L</strong>', false)
+            ->assertSee('Remaining / Unlifted: <strong>20,000 L</strong>', false)
+            ->assertSee('tabindex="0"', false)
             ->assertSee('lift-block-meta', false)
             ->assertDontSee('lift-tooltip', false)
             ->assertSee('Driver One')
             ->assertSee('TRK-LEDGER');
+
+        $this->actingAs($records['dispatchOfficer'])
+            ->get(route('dispatch.ledger.transactions'))
+            ->assertOk()
+            ->assertSee('Lifted: <strong>80,000 L</strong>', false);
+
+        $admin = User::factory()->create(['role' => 'admin', 'status' => 'active']);
+        $this->actingAs($admin)
+            ->get(route('admin.ledger'))
+            ->assertOk()
+            ->assertSee('Lifted: <strong>80,000 L</strong>', false);
+    }
+
+    public function test_dispatch_schedule_form_shows_only_the_derived_pickup_depot(): void
+    {
+        $records = $this->baseRecords();
+        $this->purchase($records, 'PUR-DEPOT-DISPLAY', 10000);
+
+        $this->actingAs($records['dispatchOfficer'])
+            ->get(route('dispatch.fuel-lifting'))
+            ->assertOk()
+            ->assertSee('data-pickup-depot', false)
+            ->assertSee('CJP Depot')
+            ->assertDontSee('name="source_location"', false)
+            ->assertDontSee('name="location"', false);
     }
 
     public function test_dispatch_creates_lift_assignments_under_the_same_purchase_and_blocks_invalid_quantities(): void

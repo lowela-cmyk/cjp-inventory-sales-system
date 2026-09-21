@@ -15,10 +15,10 @@ class FuelCatalogRegressionTest extends TestCase
     public function test_only_approved_fuels_are_active_and_have_exact_codes_and_display_names(): void
     {
         $expected = [
-            'DSL' => 'DIESEL',
+            'DSL' => 'Diesel',
             'F1' => 'F1',
-            'PREM' => 'PREMIUM',
-            'UNL' => 'UNLEADED',
+            'PREM' => 'Premium',
+            'UNL' => 'Unleaded',
         ];
 
         $activeFuels = DB::table('fuel_types')

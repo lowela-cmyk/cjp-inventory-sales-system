@@ -200,7 +200,6 @@ class PurchaseService
 
         $withdrawalTotals = DB::table('hauls')
             ->whereNotNull('withdrawal_receipt_path')
-            ->where('status', '!=', 'cancelled')
             ->selectRaw('purchase_item_id, COUNT(*) as withdrawal_count, MAX(withdrawal_receipt_uploaded_at) as latest_withdrawal_at')
             ->groupBy('purchase_item_id');
 
@@ -346,7 +345,6 @@ class PurchaseService
         $withdrawals = DB::table('hauls')
             ->whereIn('purchase_item_id', $ids->all())
             ->whereNotNull('withdrawal_receipt_path')
-            ->where('status', '!=', 'cancelled')
             ->orderByDesc('withdrawal_receipt_uploaded_at')
             ->orderByDesc('id')
             ->get(['id', 'purchase_item_id', 'haul_code', 'withdrawal_receipt_notes', 'withdrawal_receipt_uploaded_at']);

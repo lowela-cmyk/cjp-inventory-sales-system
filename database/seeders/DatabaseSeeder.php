@@ -18,9 +18,9 @@ class DatabaseSeeder extends Seeder
     {
         foreach ([
             ['code' => 'F1', 'name' => 'F1'],
-            ['code' => 'UNL', 'name' => 'UNLEADED'],
-            ['code' => 'PREM', 'name' => 'PREMIUM'],
-            ['code' => 'DSL', 'name' => 'DIESEL'],
+            ['code' => 'UNL', 'name' => 'Unleaded'],
+            ['code' => 'PREM', 'name' => 'Premium'],
+            ['code' => 'DSL', 'name' => 'Diesel'],
         ] as $fuelType) {
             DB::table('fuel_types')->updateOrInsert(
                 ['code' => $fuelType['code']],

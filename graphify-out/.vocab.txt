@@ -5,8 +5,10 @@ access
 accessible
 account
 accounts
+across
 action
 actions
+activate
 active
 activity
 actual
@@ -20,6 +22,7 @@ aggregation
 alert
 alerts
 all
+allocated
 allocation
 allocations
 allow
@@ -70,12 +73,14 @@ auto
 autoload
 autoloader
 automatic
+availability
 available
 avoids
 aware
 axios
 back
 backend
+backfill
 bad
 badge
 balance
@@ -85,6 +90,7 @@ bar
 bars
 base
 based
+basis
 batch
 before
 behavior
@@ -116,6 +122,7 @@ bypass
 bypasses
 cache
 cacheable
+calculate
 calculated
 calculates
 call
@@ -144,6 +151,7 @@ checklist
 cheque
 cjp
 class
+classes
 classified
 clear
 client
@@ -182,12 +190,16 @@ console
 consolidated
 constraints
 construct
+contained
+content
 contracts
 control
 controller
 controls
 copy
 correct
+cost
+costs
 count
 counting
 counts
@@ -233,6 +245,8 @@ dependencies
 dependency
 dependent
 depot
+depots
+derived
 description
 destination
 detail
@@ -257,15 +271,18 @@ downstream
 draft
 driver
 drivers
+dropdown
 due
 dump
 duplicate
 duplicates
+duplication
 each
 edit
 edited
 editing
 effect
+effective
 effects
 eligible
 eloquent
@@ -304,6 +321,7 @@ explicitly
 export
 expose
 exposed
+extend
 extra
 extract
 extreme
@@ -334,6 +352,7 @@ fit
 five
 fixed
 fixes
+fleet
 flow
 flows
 for
@@ -390,15 +409,16 @@ hauls
 have
 header
 headers
+hints
 historical
 history
 hooks
-hover
 html
 http
 idempotency
 idempotent
 idempotently
+identifiers
 ids
 ignores
 illuminate
@@ -444,6 +464,7 @@ labels
 laravel
 large
 latest
+layout
 leave
 ledger
 legacy
@@ -473,6 +494,7 @@ live
 loading
 local
 location
+lock
 locked
 log
 logged
@@ -497,6 +519,7 @@ markup
 master
 match
 maximum
+meaningful
 message
 messages
 metadata
@@ -514,6 +537,7 @@ mockery
 modal
 model
 models
+module
 money
 monitor
 monitoring
@@ -617,6 +641,8 @@ phpunit
 physical
 pickup
 pint
+pipeline
+plates
 plugin
 plugins
 plus
@@ -642,6 +668,7 @@ process
 processor
 procurement
 profile
+profit
 progress
 project
 prompt
@@ -677,6 +704,7 @@ receipts
 receivable
 receivables
 rechecked
+recomputes
 reconcile
 reconciled
 reconciliation
@@ -706,6 +734,7 @@ related
 relationship
 release
 released
+releases
 remain
 remaining
 remains
@@ -729,10 +758,12 @@ requests
 require
 required
 requires
+reserves
 reset
 respects
 response
 responses
+responsive
 restricted
 retain
 retried
@@ -772,6 +803,7 @@ schema
 scoped
 script
 scripts
+scroll
 search
 second
 secure
@@ -843,6 +875,7 @@ strict
 structures
 submission
 submissions
+subquery
 succeeds
 success
 successful
@@ -892,7 +925,9 @@ tinker
 tiny
 toast
 today
+toggle
 token
+tones
 total
 totaled
 totals

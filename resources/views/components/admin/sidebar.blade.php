@@ -7,6 +7,7 @@
         ['route' => 'admin.inventory', 'label' => 'Inventory'],
         ['route' => 'admin.ledger', 'label' => 'Ledger'],
         ['route' => 'admin.fuel-lifting', 'label' => 'Fuel Lifting'],
+        ['route' => 'admin.trucks', 'label' => 'Trucks'],
         ['route' => 'admin.sales', 'label' => 'Sales'],
         ['route' => 'admin.reports', 'label' => 'Reports'],
         ['route' => 'admin.alerts', 'label' => 'Alerts'],

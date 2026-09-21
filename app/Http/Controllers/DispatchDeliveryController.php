@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Rules\ApprovedFuelType;
 use App\Services\IdempotencyService;
 use App\Services\PurchaseWorkflowService;
+use App\Services\TruckAvailabilityService;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -18,7 +19,8 @@ class DispatchDeliveryController extends Controller
 {
     public function __construct(
         private readonly IdempotencyService $idempotencyService,
-        private readonly PurchaseWorkflowService $purchaseWorkflow
+        private readonly PurchaseWorkflowService $purchaseWorkflow,
+        private readonly TruckAvailabilityService $truckAvailability
     ) {}
 
     private const ACTIVE_HAUL_STATUSES = ['scheduled', 'in_transit', 'lifted'];
@@ -139,10 +141,6 @@ class DispatchDeliveryController extends Controller
                         }
                     }
 
-                    if (! $this->truckIsAvailable((int) $truck->id, $scheduledAt)) {
-                        throw new \RuntimeException('The selected truck already has an active trip at this schedule.');
-                    }
-
                     $scheduleCode = $this->nextCode('lifting_schedules', 'schedule_code', 'LFT');
                     $scheduleId = DB::table('lifting_schedules')->insertGetId([
                         'schedule_code' => $scheduleCode,
@@ -178,6 +176,8 @@ class DispatchDeliveryController extends Controller
                         ]);
                         $this->purchaseWorkflow->synchronize((int) $purchaseItem->purchase_id, (int) $request->user()->id, $haulId);
                     }
+
+                    $this->truckAvailability->synchronizeStatus((int) $truck->id);
 
                     return ['reference_id' => $scheduleId, 'response_reference' => $scheduleCode];
                 }
@@ -339,10 +339,7 @@ class DispatchDeliveryController extends Controller
 
     private function haulTruckOptions()
     {
-        return DB::table('trucks')
-            ->whereIn('truck_type', ['hauling', 'mixed'])
-            ->orderBy('truck_code')
-            ->get(['id', 'truck_code', 'plate_number', 'capacity_liters']);
+        return $this->truckAvailability->assignableTrucks();
     }
 
     private function driverOptions()
@@ -432,12 +429,7 @@ class DispatchDeliveryController extends Controller
 
     private function truckForAssignment(int $truckId): ?object
     {
-        return DB::table('trucks')
-            ->where('id', $truckId)
-            ->whereIn('truck_type', ['hauling', 'mixed'])
-            ->whereNotIn('status', ['maintenance', 'inactive'])
-            ->lockForUpdate()
-            ->first(['id', 'capacity_liters']);
+        return $this->truckAvailability->lockAssignableTruck($truckId);
     }
 
     private function remainingAssignablePurchaseItemQuantity(int $purchaseItemId, float $orderedLiters): float
@@ -454,16 +446,6 @@ class DispatchDeliveryController extends Controller
             ->value('assigned_liters');
 
         return round(max(0, $orderedLiters - $assignedLiters), 2);
-    }
-
-    private function truckIsAvailable(int $truckId, CarbonImmutable $scheduledAt): bool
-    {
-        return ! DB::table('hauls')
-            ->where('truck_id', $truckId)
-            ->whereIn('status', self::ACTIVE_HAUL_STATUSES)
-            ->where('scheduled_at', $scheduledAt->toDateTimeString())
-            ->lockForUpdate()
-            ->exists();
     }
 
     private function duplicateHaulExists(object $purchaseItem, int $driverId, int $truckId, float $quantity, CarbonImmutable $scheduledAt): bool

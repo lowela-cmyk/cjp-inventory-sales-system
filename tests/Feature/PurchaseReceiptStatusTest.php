@@ -22,6 +22,7 @@ class PurchaseReceiptStatusTest extends TestCase
             ->get(route('inventory-officer.inventory'))
             ->assertOk()
             ->assertSee('PUR-NO-WITHDRAWAL')
+            ->assertSee('No Receipt')
             ->assertSee('No Withdrawal');
 
         $admin = User::factory()->create(['role' => 'admin', 'status' => 'active']);

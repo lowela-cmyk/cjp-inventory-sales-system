@@ -17,6 +17,7 @@ use App\Http\Controllers\HaulTruckAssignmentController;
 use App\Http\Controllers\InventoryOfficerLedgerController;
 use App\Http\Controllers\InventoryOfficerPurchaseController;
 use App\Http\Controllers\SalesOfficerCustomerController;
+use App\Http\Controllers\TruckController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', [AuthController::class, 'showLogin'])->name('home');
@@ -53,6 +54,10 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/inventory/depots', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'depots')->name('inventory.depots');
         Route::get('/ledger', [AdminMonitoringController::class, 'ledger'])->name('ledger');
         Route::get('/fuel-lifting', [AdminMonitoringController::class, 'fuelLifting'])->name('fuel-lifting');
+        Route::get('/trucks', [TruckController::class, 'index'])->name('trucks');
+        Route::post('/trucks', [TruckController::class, 'store'])->name('trucks.store');
+        Route::patch('/trucks/{truck}', [TruckController::class, 'update'])->name('trucks.update');
+        Route::patch('/trucks/{truck}/status', [TruckController::class, 'toggleStatus'])->name('trucks.status');
         Route::patch('/fuel-lifting/hauls/{haul}/truck', [HaulTruckAssignmentController::class, 'update'])->name('fuel-lifting.hauls.truck');
         Route::patch('/fuel-lifting/hauls/{haul}/status', [DispatchLiftingStatusController::class, 'updateStatus'])->name('fuel-lifting.hauls.status');
         Route::get('/sales', [AdminMonitoringController::class, 'sales'])->name('sales');
@@ -80,6 +85,10 @@ Route::middleware(['auth'])->group(function () {
     Route::redirect('/dispatch', '/dispatch/fuel-lifting')->middleware('role:dispatch_officer')->name('dispatch.shortcut');
     Route::prefix('dispatch')->name('dispatch.')->middleware('role:dispatch_officer')->group(function () {
         Route::get('/fuel-lifting', [DispatchDeliveryController::class, 'index'])->name('fuel-lifting');
+        Route::get('/trucks', [TruckController::class, 'index'])->name('trucks');
+        Route::post('/trucks', [TruckController::class, 'store'])->name('trucks.store');
+        Route::patch('/trucks/{truck}', [TruckController::class, 'update'])->name('trucks.update');
+        Route::patch('/trucks/{truck}/status', [TruckController::class, 'toggleStatus'])->name('trucks.status');
         Route::post('/fuel-lifting/hauls', [DispatchDeliveryController::class, 'store'])->name('fuel-lifting.hauls.store');
         Route::patch('/fuel-lifting/hauls/{haul}/truck', [HaulTruckAssignmentController::class, 'update'])->name('fuel-lifting.hauls.truck');
         Route::patch('/fuel-lifting/hauls/{haul}/status', [DispatchLiftingStatusController::class, 'updateStatus'])->name('fuel-lifting.hauls.status');

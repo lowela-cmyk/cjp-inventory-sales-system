@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Services\StockOutFinancialService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -12,6 +13,96 @@ use Tests\TestCase;
 class InventoryOfficerStockOutTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_stock_out_uses_inventory_cost_and_actual_payments_for_profit(): void
+    {
+        $records = $this->baseRecords();
+        $this->garageMovement($records, ['quantity_liters' => 100000, 'unit_cost' => 60]);
+        $sale = $this->sale($records, ['quantity_liters' => 100000, 'unit_price' => 65]);
+
+        DB::table('payments')->insert([
+            'payment_code' => 'PAY-STOCK-OUT-FULL',
+            'sale_id' => $sale['saleId'],
+            'payment_date' => '2026-08-30',
+            'amount' => 6500000,
+            'method' => 'cash_on_delivery',
+            'received_by' => $records['salesOfficer']->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($records['inventoryOfficer'])
+            ->post(route('inventory-officer.inventory.stock-out.store'), $this->stockOutPayload($records, $sale, [
+                'quantity_liters' => 100000,
+            ]))
+            ->assertRedirect(route('inventory-officer.inventory.stock-out'));
+
+        $stockOut = DB::table('stock_outs')->first();
+        $this->assertSame(60.0, (float) $stockOut->unit_cost);
+        $this->assertDatabaseHas('inventory_movements', [
+            'id' => $stockOut->inventory_movement_id,
+            'unit_cost' => '60.00',
+        ]);
+
+        $this->actingAs($records['inventoryOfficer'])
+            ->get(route('inventory-officer.inventory.stock-out'))
+            ->assertOk()
+            ->assertSeeTextInOrder([
+                'Cost / Unit',
+                'Total Cost',
+                'Price / Unit',
+                'Total Price',
+                'Total Paid',
+                'Source',
+                'Profit',
+            ])
+            ->assertSeeText('6,000,000.00')
+            ->assertSeeText('6,500,000.00')
+            ->assertSeeText('500,000.00');
+
+        $admin = User::factory()->create(['role' => 'admin', 'status' => 'active']);
+        $this->actingAs($admin)
+            ->get(route('admin.inventory'))
+            ->assertOk()
+            ->assertSeeText('Cost / Unit')
+            ->assertSeeText('6,000,000.00')
+            ->assertSeeText('500,000.00');
+    }
+
+    public function test_partial_payment_is_allocated_across_releases_without_duplication(): void
+    {
+        $records = $this->baseRecords();
+        $this->garageMovement($records, ['quantity_liters' => 100000, 'unit_cost' => 60]);
+        $sale = $this->sale($records, ['quantity_liters' => 100000, 'unit_price' => 65]);
+
+        DB::table('payments')->insert([
+            'payment_code' => 'PAY-STOCK-OUT-PARTIAL',
+            'sale_id' => $sale['saleId'],
+            'payment_date' => '2026-08-30',
+            'amount' => 3250000,
+            'method' => 'bank_transfer',
+            'received_by' => $records['salesOfficer']->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        foreach (['2026-08-30 11:00:00', '2026-08-30 12:00:00'] as $stockOutAt) {
+            $this->actingAs($records['inventoryOfficer'])
+                ->post(route('inventory-officer.inventory.stock-out.store'), $this->stockOutPayload($records, $sale, [
+                    'quantity_liters' => 50000,
+                    'stock_out_at' => $stockOutAt,
+                ]))
+                ->assertRedirect(route('inventory-officer.inventory.stock-out'));
+        }
+
+        $financials = app(StockOutFinancialService::class);
+        $rows = $financials->query()->orderBy('stock_outs.id')->get()->map(fn (object $row): array => $financials->calculate($row));
+
+        $this->assertCount(2, $rows);
+        $this->assertSame(3250000.0, round((float) $rows->sum('total_paid'), 2));
+        $this->assertSame(6000000.0, round((float) $rows->sum('total_cost'), 2));
+        $this->assertSame(-2750000.0, round((float) $rows->sum('profit'), 2));
+    }
 
     public function test_inventory_officer_records_garage_stock_out_and_deducts_inventory_once(): void
     {
@@ -482,12 +573,13 @@ class InventoryOfficerStockOutTest extends TestCase
             'updated_at' => now(),
         ], collect($overrides)->only(['sale_code', 'status'])->all()));
 
+        $unitPrice = $overrides['unit_price'] ?? 62.50;
         $saleItemId = DB::table('sale_items')->insertGetId([
             'sale_id' => $saleId,
             'fuel_type_id' => $records['fuelTypeId'],
             'quantity_liters' => $overrides['quantity_liters'] ?? 10000,
-            'unit_price' => 62.50,
-            'line_total' => (($overrides['quantity_liters'] ?? 10000) * 62.50),
+            'unit_price' => $unitPrice,
+            'line_total' => (($overrides['quantity_liters'] ?? 10000) * $unitPrice),
             'fulfilled_quantity_liters' => $overrides['fulfilled_quantity_liters'] ?? 0,
             'created_at' => now(),
             'updated_at' => now(),

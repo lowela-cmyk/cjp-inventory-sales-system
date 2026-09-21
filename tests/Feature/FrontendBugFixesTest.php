@@ -124,6 +124,48 @@ class FrontendBugFixesTest extends TestCase
             ->assertDontSee("<script>alert('x')</script>", false);
     }
 
+    public function test_inventory_tables_use_content_fit_responsive_layout_classes(): void
+    {
+        $styles = file_get_contents(resource_path('css/app.css')) ?: '';
+        $inventory = file_get_contents(resource_path('views/inventory-officer/inventory.blade.php')) ?: '';
+        $adminInventory = file_get_contents(resource_path('views/admin/inventory.blade.php')) ?: '';
+
+        $this->assertStringContainsString('.inventory-table-wrap', $styles);
+        $this->assertStringContainsString('width: fit-content;', $styles);
+        $this->assertStringContainsString('.inventory-table {', $styles);
+        $this->assertStringContainsString('width: max-content;', $styles);
+        $this->assertStringContainsString('inventory-table inventory-table-actions', $inventory);
+        $this->assertStringContainsString('inventory-table inventory-table-actions', $adminInventory);
+        $this->assertStringContainsString('View Receipt', $inventory);
+        $this->assertStringContainsString('View Receipt', $adminInventory);
+    }
+
+    public function test_alert_pages_use_full_width_responsive_shared_layout(): void
+    {
+        $styles = file_get_contents(resource_path('css/app.css')) ?: '';
+        $component = file_get_contents(resource_path('views/components/admin/alert-list.blade.php')) ?: '';
+
+        $this->assertStringContainsString('.alert-stack {', $styles);
+        $this->assertStringContainsString('max-width: none;', $styles);
+        $this->assertStringContainsString('.alerts-page {', $styles);
+        $this->assertStringContainsString('.workflow-alert-stack .alert-bar {', $styles);
+        $this->assertStringContainsString('grid-template-columns: 42px minmax(0, 1fr) auto;', $styles);
+        $this->assertStringContainsString('@media (max-width: 900px)', $styles);
+        $this->assertStringContainsString('grid-column: 1 / -1;', $styles);
+        $this->assertStringContainsString('workflow-alert-message', $component);
+        $this->assertStringContainsString('workflow-alert-actions', $component);
+
+        foreach ([
+            'admin/alerts.blade.php',
+            'inventory-officer/alerts.blade.php',
+            'sales-officer/alerts.blade.php',
+            'dispatch/alerts.blade.php',
+        ] as $view) {
+            $contents = file_get_contents(resource_path('views/'.$view)) ?: '';
+            $this->assertStringContainsString('class="alerts-page"', $contents, $view);
+        }
+    }
+
     /**
      * @return array<int, string>
      */

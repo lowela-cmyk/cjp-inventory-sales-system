@@ -29,6 +29,21 @@ class MasterDataAndInventoryAccessTest extends TestCase
                     ->count());
             });
         $this->assertSame(['DSL', 'F1', 'PREM', 'UNL'], DB::table('fuel_types')->where('status', 'active')->orderBy('code')->pluck('code')->all());
+        $this->assertSame([
+            'Diesel Tank 1',
+            'Diesel Tank 2',
+            'F1 Tank 1',
+            'F1 Tank 2',
+            'Premium Tank 1',
+            'Premium Tank 2',
+            'Unleaded Tank 1',
+            'Unleaded Tank 2',
+        ], DB::table('storage_locations')
+            ->where('type', 'garage')
+            ->where('status', 'active')
+            ->orderBy('name')
+            ->pluck('name')
+            ->all());
     }
 
     public function test_admin_can_manage_inventory_and_create_purchase_records(): void

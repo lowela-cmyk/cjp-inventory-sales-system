@@ -1,11 +1,42 @@
 {
-  "generated_at": "2026-09-18T01:07:09.725707+00:00",
+  "generated_at": "2026-09-21T13:54:37.952993+00:00",
   "nodes": {
-    "app_http_controllers_dispatchdeliverycontroller_dispatchdeliverycontroller": {
-      "code_fingerprint": "1d2bdf23c0b4e4d3267ade33d96110096cdcd1c3e5b17bfc4815c2e1a611eeba",
-      "label": "DispatchDeliveryController",
-      "last": "2026-09-18T00:55:57.452654+00:00",
+    "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller": {
+      "code_fingerprint": "8cd52208cf06a267dce90ca4668e6cb4ec470742f10c6a8ed3acc01fb26c7199",
+      "label": "AdminMonitoringController",
+      "last": "2026-09-21T13:43:25.165060+00:00",
       "provenance": [
+        {
+          "date": "2026-09-21T13:43:25.165060+00:00",
+          "outcome": "useful",
+          "q": "Inspect and fix Inventory Management Stock-Out Cost/Unit, Total Cost, and paid-basis Profit calculations."
+        },
+        {
+          "date": "2026-09-21T13:26:41.031788+00:00",
+          "outcome": "useful",
+          "q": "Inspect and update the CJP Southern Star OPC Inventory Management Module based on client requirements for content-fit tables and view-only withdrawal receipts."
+        }
+      ],
+      "score": 1.999371762,
+      "source_file": "app/Http/Controllers/AdminMonitoringController.php",
+      "status": "preferred",
+      "uses": 2
+    },
+    "app_http_controllers_dispatchdeliverycontroller_dispatchdeliverycontroller": {
+      "code_fingerprint": "6625b7fe766dfd8a8687a1490bfd0c33b1627602f25269a66bd736f581a2b4d9",
+      "label": "DispatchDeliveryController",
+      "last": "2026-09-21T12:46:26.292390+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-21T12:46:26.292390+00:00",
+          "outcome": "useful",
+          "q": "Inspect and improve Truck management and Schedule Lift workflow with availability, capacity validation, RBAC, and responsive UI"
+        },
+        {
+          "date": "2026-09-21T12:22:48.958296+00:00",
+          "outcome": "useful",
+          "q": "Inspect and implement the requested CJP Fuel Lifting driver, dispatch, withdrawal receipt, and eight garage tank fixes."
+        },
         {
           "date": "2026-09-18T00:55:57.452654+00:00",
           "outcome": "useful",
@@ -17,13 +48,13 @@
           "q": "Inspect and fix the connected Inventory, Fuel Lifting, Ledger, Alerts, Dispatch Officer, and Driver workflow"
         }
       ],
-      "score": 1.999264433,
+      "score": 3.839984314,
       "source_file": "app/Http/Controllers/DispatchDeliveryController.php",
       "status": "preferred",
-      "uses": 2
+      "uses": 4
     },
     "app_http_controllers_dispatchliftingstatuscontroller_dispatchliftingstatuscontroller": {
-      "code_fingerprint": "9322b8eda9be30a81ec8a9b95e0bd256623ce48eeb1a3c42355bd22f4811a25b",
+      "code_fingerprint": "b24fefc396ae5562d140e4cdf8db0d27d0ffa55a178790d2842b083ef4fdfd88",
       "label": "DispatchLiftingStatusController",
       "last": "2026-09-18T00:32:30.732814+00:00",
       "provenance": [
@@ -33,32 +64,68 @@
           "q": "Inspect and fix the connected Inventory, Fuel Lifting, Ledger, Alerts, Dispatch Officer, and Driver workflow"
         }
       ],
-      "score": 0.999444195,
+      "score": 0.921101725,
       "source_file": "app/Http/Controllers/DispatchLiftingStatusController.php",
       "status": "tentative",
       "uses": 1
     },
     "app_http_controllers_driverdeliverycontroller_driverdeliverycontroller": {
-      "code_fingerprint": "89939573a6d5ab7edff377a9a1a3a5e811a73f5f4f77b7965584f23e273a8adc",
+      "code_fingerprint": "bbef8ffe8896f4f5de21cb4d2a516b5eac558b2c76ab750095c1e8d33eb954d5",
       "label": "DriverDeliveryController",
-      "last": "2026-09-18T00:32:30.732814+00:00",
+      "last": "2026-09-21T13:26:41.031788+00:00",
       "provenance": [
+        {
+          "date": "2026-09-21T13:26:41.031788+00:00",
+          "outcome": "useful",
+          "q": "Inspect and update the CJP Southern Star OPC Inventory Management Module based on client requirements for content-fit tables and view-only withdrawal receipts."
+        },
+        {
+          "date": "2026-09-21T12:22:48.958296+00:00",
+          "outcome": "useful",
+          "q": "Inspect and implement the requested CJP Fuel Lifting driver, dispatch, withdrawal receipt, and eight garage tank fixes."
+        },
         {
           "date": "2026-09-18T00:32:30.732814+00:00",
           "outcome": "useful",
           "q": "Inspect and fix the connected Inventory, Fuel Lifting, Ledger, Alerts, Dispatch Officer, and Driver workflow"
         }
       ],
-      "score": 0.999444195,
+      "score": 2.919181268,
       "source_file": "app/Http/Controllers/DriverDeliveryController.php",
+      "status": "preferred",
+      "uses": 3
+    },
+    "app_http_controllers_haultruckassignmentcontroller_haultruckassignmentcontroller": {
+      "code_fingerprint": "f1f1b15c53c448251ae57c47ea52720e840f87ff90e306915fc94e080a01faa6",
+      "label": "HaulTruckAssignmentController",
+      "last": "2026-09-21T12:46:26.292390+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-21T12:46:26.292390+00:00",
+          "outcome": "useful",
+          "q": "Inspect and improve Truck management and Schedule Lift workflow with availability, capacity validation, RBAC, and responsive UI"
+        }
+      ],
+      "score": 0.998906415,
+      "source_file": "app/Http/Controllers/HaulTruckAssignmentController.php",
       "status": "tentative",
       "uses": 1
     },
     "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller": {
-      "code_fingerprint": "797f14a5f980794d931758153a6659211f2a8ee64c2e3cd70618b3886188ccd3",
+      "code_fingerprint": "4f7725bba53ca78a39ed98ecd46afbc84d2834f017b9646895413a23abff4390",
       "label": "InventoryOfficerPurchaseController",
-      "last": "2026-09-18T00:32:30.732814+00:00",
+      "last": "2026-09-21T13:43:25.165060+00:00",
       "provenance": [
+        {
+          "date": "2026-09-21T13:43:25.165060+00:00",
+          "outcome": "useful",
+          "q": "Inspect and fix Inventory Management Stock-Out Cost/Unit, Total Cost, and paid-basis Profit calculations."
+        },
+        {
+          "date": "2026-09-21T13:26:41.031788+00:00",
+          "outcome": "useful",
+          "q": "Inspect and update the CJP Southern Star OPC Inventory Management Module based on client requirements for content-fit tables and view-only withdrawal receipts."
+        },
         {
           "date": "2026-09-18T00:32:30.732814+00:00",
           "outcome": "useful",
@@ -75,10 +142,10 @@
           "q": "Create a phased fix plan to tackle those problems, always opt for a simpler solution, write your plan in md"
         }
       ],
-      "score": 2.927148084,
+      "score": 4.697072309,
       "source_file": "app/Http/Controllers/InventoryOfficerPurchaseController.php",
       "status": "preferred",
-      "uses": 3
+      "uses": 5
     },
     "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller": {
       "code_fingerprint": "b126414ffc0280545136a44ae785f763449709af4238816b89336260467731fd",
@@ -91,29 +158,34 @@
           "q": "Create a phased fix plan to tackle those problems, always opt for a simpler solution, write your plan in md"
         }
       ],
-      "score": 0.963588581,
+      "score": 0.888056691,
       "source_file": "app/Http/Controllers/SalesOfficerCustomerController.php",
       "status": "tentative",
       "uses": 1
     },
     "app_services_dashboardsummaryservice_dashboardsummaryservice": {
-      "code_fingerprint": "dab7cf77e31f974d72a9e467dae8ee71ea993557edf82d27e8e20186b96d4812",
+      "code_fingerprint": "4ceb382f63f33682a5a435c56e442f4561d3301843d5c439062a8ebb17a1280a",
       "label": "DashboardSummaryService",
-      "last": "2026-09-16T10:35:29.737894+00:00",
+      "last": "2026-09-21T13:43:25.165060+00:00",
       "provenance": [
+        {
+          "date": "2026-09-21T13:43:25.165060+00:00",
+          "outcome": "useful",
+          "q": "Inspect and fix Inventory Management Stock-Out Cost/Unit, Total Cost, and paid-basis Profit calculations."
+        },
         {
           "date": "2026-09-16T10:35:29.737894+00:00",
           "outcome": "useful",
           "q": "Create a phased fix plan to tackle those problems, always opt for a simpler solution, write your plan in md"
         }
       ],
-      "score": 0.963588581,
+      "score": 1.887876792,
       "source_file": "app/Services/DashboardSummaryService.php",
-      "status": "tentative",
-      "uses": 1
+      "status": "preferred",
+      "uses": 2
     },
     "app_services_inventoryledgerservice_inventoryledgerservice": {
-      "code_fingerprint": "537a9d1cb75141f087947031d2f0fc7748f13fabd98493e2cdabd176968c696c",
+      "code_fingerprint": "9a9142f600ae278f33c99fb71c2e69d4cfb1e18d33884d0ebb271bd13db737e7",
       "label": "InventoryLedgerService",
       "last": "2026-09-18T00:55:57.452654+00:00",
       "provenance": [
@@ -133,13 +205,13 @@
           "q": "Inspect and fix the connected Inventory, Fuel Lifting, Ledger, Alerts, Dispatch Officer, and Driver workflow"
         }
       ],
-      "score": 2.999043094,
+      "score": 2.763959992,
       "source_file": "app/Services/InventoryLedgerService.php",
       "status": "preferred",
       "uses": 3
     },
     "app_services_stockinservice_stockinservice": {
-      "code_fingerprint": "05638b839b38626b51fe58fe85cf0cef1e0253f001af48cee6658ee11b58bd0a",
+      "code_fingerprint": "1000772352db6225da9c63b0d371992e1dddf608c6fb1aa21922314bab986084",
       "label": "StockInService",
       "last": "2026-09-18T00:32:30.732814+00:00",
       "provenance": [
@@ -149,26 +221,31 @@
           "q": "Inspect and fix the connected Inventory, Fuel Lifting, Ledger, Alerts, Dispatch Officer, and Driver workflow"
         }
       ],
-      "score": 0.999444195,
+      "score": 0.921101725,
       "source_file": "app/Services/StockInService.php",
       "status": "tentative",
       "uses": 1
     },
     "app_services_stockoutreleaseservice_stockoutreleaseservice": {
-      "code_fingerprint": "92bb631e0ea0baa92ad2112a64d2a822e25bb282525087ae9a0910be27a6d60a",
+      "code_fingerprint": "fff8e8381f491062722a282645631b76e8e12e30c7360b209e183d8a44438a93",
       "label": "StockOutReleaseService",
-      "last": "2026-09-16T10:35:29.737894+00:00",
+      "last": "2026-09-21T13:43:25.165060+00:00",
       "provenance": [
+        {
+          "date": "2026-09-21T13:43:25.165060+00:00",
+          "outcome": "useful",
+          "q": "Inspect and fix Inventory Management Stock-Out Cost/Unit, Total Cost, and paid-basis Profit calculations."
+        },
         {
           "date": "2026-09-16T10:35:29.737894+00:00",
           "outcome": "useful",
           "q": "Create a phased fix plan to tackle those problems, always opt for a simpler solution, write your plan in md"
         }
       ],
-      "score": 0.963588581,
+      "score": 1.887876792,
       "source_file": "app/Services/StockOutReleaseService.php",
-      "status": "tentative",
-      "uses": 1
+      "status": "preferred",
+      "uses": 2
     },
     "app_services_workflowsmoketestservice_workflowsmoketestservice": {
       "code_fingerprint": "23e428590361b2f04c44b98fb61bfdf6bbfd2805fc7ac7bd3f4a6f508525bee8",
@@ -186,13 +263,29 @@
           "q": "Create a phased fix plan to tackle those problems, always opt for a simpler solution, write your plan in md"
         }
       ],
-      "score": 1.927703889,
+      "score": 1.776598822,
       "source_file": "app/Services/WorkflowSmokeTestService.php",
       "status": "preferred",
       "uses": 2
     },
+    "resources_views_admin_alerts_blade": {
+      "code_fingerprint": "5026a33e7c872ce9603ad568a0dd3f28818ff68067735329a3a3ac1aee7e3453",
+      "label": "admin/alerts.blade.php",
+      "last": "2026-09-21T13:54:37.694874+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-21T13:54:37.694874+00:00",
+          "outcome": "useful",
+          "q": "Fix the Alert Module cards so they fill the available main content width and remain responsive."
+        }
+      ],
+      "score": 0.999999931,
+      "source_file": "resources/views/admin/alerts.blade.php",
+      "status": "tentative",
+      "uses": 1
+    },
     "resources_views_admin_ledger_blade": {
-      "code_fingerprint": "f583eeb7f6326c6f09687c57405c89e23d7b2f6de4dfbf2348575546bcd81ed7",
+      "code_fingerprint": "25c11caae005eb50428376b2182676b55d6977b9af12c60620ea2c68c57359e4",
       "label": "admin/ledger.blade.php",
       "last": "2026-09-18T00:53:21.945536+00:00",
       "provenance": [
@@ -202,8 +295,24 @@
           "q": "fix this, it must be on this format, but make sure it is inside of the box"
         }
       ],
-      "score": 0.999778661,
+      "score": 0.921409974,
       "source_file": "resources/views/admin/ledger.blade.php",
+      "status": "tentative",
+      "uses": 1
+    },
+    "resources_views_components_admin_alert_list_blade": {
+      "code_fingerprint": "14a5daa93b001319cc0f5a7ffc2a2774707615bde774a7987b8c845ce6615407",
+      "label": "alert-list.blade.php",
+      "last": "2026-09-21T13:54:37.694874+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-21T13:54:37.694874+00:00",
+          "outcome": "useful",
+          "q": "Fix the Alert Module cards so they fill the available main content width and remain responsive."
+        }
+      ],
+      "score": 0.999999931,
+      "source_file": "resources/views/components/admin/alert-list.blade.php",
       "status": "tentative",
       "uses": 1
     },
@@ -223,13 +332,29 @@
           "q": "fix this, it must be on this format, but make sure it is inside of the box"
         }
       ],
-      "score": 1.999707168,
+      "score": 1.842958048,
       "source_file": "resources/views/components/admin/modal.blade.php",
       "status": "preferred",
       "uses": 2
     },
+    "resources_views_dispatch_alerts_blade": {
+      "code_fingerprint": "83883528c16dfd286659c772011a2361540d38c980a17dc68233f93ae41d85fb",
+      "label": "dispatch/alerts.blade.php",
+      "last": "2026-09-21T13:54:37.694874+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-21T13:54:37.694874+00:00",
+          "outcome": "useful",
+          "q": "Fix the Alert Module cards so they fill the available main content width and remain responsive."
+        }
+      ],
+      "score": 0.999999931,
+      "source_file": "resources/views/dispatch/alerts.blade.php",
+      "status": "tentative",
+      "uses": 1
+    },
     "resources_views_inventory_officer_ledger_blade": {
-      "code_fingerprint": "de1f0b24f16b2f32989341d85f20d383afd5a102a943849399a475aa7510a6a6",
+      "code_fingerprint": "98ccd82518a828cc7a16c05e7d0a58a14b8021a223f2baee7cf708608508ca0c",
       "label": "inventory-officer/ledger.blade.php",
       "last": "2026-09-18T00:53:21.945536+00:00",
       "provenance": [
@@ -239,13 +364,13 @@
           "q": "fix this, it must be on this format, but make sure it is inside of the box"
         }
       ],
-      "score": 0.999778661,
+      "score": 0.921409974,
       "source_file": "resources/views/inventory-officer/ledger.blade.php",
       "status": "tentative",
       "uses": 1
     },
     "tests_feature_dispatchliftingstatusmanagementtest_dispatchliftingstatusmanagementtest": {
-      "code_fingerprint": "3c65df0bca5352a0a5b1ddd39bf2e4862e4e0560070c65f3bee757903bae2ade",
+      "code_fingerprint": "094031945ae70d65d59c90a2aba68b86ba4216a1577aa01876d755262c9ae620",
       "label": "DispatchLiftingStatusManagementTest",
       "last": "2026-09-18T00:55:57.452654+00:00",
       "provenance": [
@@ -255,7 +380,7 @@
           "q": "does the system allows many lifts"
         }
       ],
-      "score": 0.999820238,
+      "score": 0.921448292,
       "source_file": "tests/Feature/DispatchLiftingStatusManagementTest.php",
       "status": "tentative",
       "uses": 1
@@ -271,13 +396,29 @@
           "q": "also can you update the phased fix plan, this is the fuel types, F1, UNLEADED, DIESEL, PREMIUM"
         }
       ],
-      "score": 0.964115308,
+      "score": 0.88854213,
       "source_file": "tests/Feature/FormValidationTest.php",
       "status": "tentative",
       "uses": 1
     },
+    "tests_feature_frontendbugfixestest_frontendbugfixestest": {
+      "code_fingerprint": "1ce4774dc288580dc0b518e3c5a781ea2bb4610b286fee2695304cd597c4e044",
+      "label": "FrontendBugFixesTest",
+      "last": "2026-09-21T13:54:37.694874+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-21T13:54:37.694874+00:00",
+          "outcome": "useful",
+          "q": "Fix the Alert Module cards so they fill the available main content width and remain responsive."
+        }
+      ],
+      "score": 0.999999931,
+      "source_file": "tests/Feature/FrontendBugFixesTest.php",
+      "status": "tentative",
+      "uses": 1
+    },
     "tests_feature_inventoryledgertest_inventoryledgertest": {
-      "code_fingerprint": "330f8fe349910a7c9e73bff8e2df6fcb87df5038602fde45cd2d81ed08910b5d",
+      "code_fingerprint": "2b5651c8d3e2cc7884f16071dfa5af2a6effe9a9348134e7c25b235668f20d54",
       "label": "InventoryLedgerTest",
       "last": "2026-09-18T01:02:42.369196+00:00",
       "provenance": [
@@ -287,8 +428,56 @@
           "q": "but on this, make the text centered"
         }
       ],
-      "score": 0.999928507,
+      "score": 0.921548074,
       "source_file": "tests/Feature/InventoryLedgerTest.php",
+      "status": "tentative",
+      "uses": 1
+    },
+    "tests_feature_inventoryofficerstockouttest_inventoryofficerstockouttest": {
+      "code_fingerprint": "2aa5b6cd54493fc0de3c689d12e82ed8ef64d1c2be13f50768d07070101370db",
+      "label": "InventoryOfficerStockOutTest",
+      "last": "2026-09-21T13:43:25.165060+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-21T13:43:25.165060+00:00",
+          "outcome": "useful",
+          "q": "Inspect and fix Inventory Management Stock-Out Cost/Unit, Total Cost, and paid-basis Profit calculations."
+        }
+      ],
+      "score": 0.999820101,
+      "source_file": "tests/Feature/InventoryOfficerStockOutTest.php",
+      "status": "tentative",
+      "uses": 1
+    },
+    "tests_feature_purchasereceiptstatustest_purchasereceiptstatustest": {
+      "code_fingerprint": "cc2e358228e2d8ea432ea3cf1026cff85115d024fe1cb4bd2e03ea1bf2552eb1",
+      "label": "PurchaseReceiptStatusTest",
+      "last": "2026-09-21T13:26:41.031788+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-21T13:26:41.031788+00:00",
+          "outcome": "useful",
+          "q": "Inspect and update the CJP Southern Star OPC Inventory Management Module based on client requirements for content-fit tables and view-only withdrawal receipts."
+        }
+      ],
+      "score": 0.999551662,
+      "source_file": "tests/Feature/PurchaseReceiptStatusTest.php",
+      "status": "tentative",
+      "uses": 1
+    },
+    "tests_feature_purchasereceiptuploadtest_purchasereceiptuploadtest": {
+      "code_fingerprint": "4a55ec0c7046622cf58bbc6493dcb29f7dfb0e844d9e3c30a62f3c87ce0e7fa0",
+      "label": "PurchaseReceiptUploadTest",
+      "last": "2026-09-21T12:22:48.958296+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-21T12:22:48.958296+00:00",
+          "outcome": "useful",
+          "q": "Inspect and implement the requested CJP Fuel Lifting driver, dispatch, withdrawal receipt, and eight garage tank fixes."
+        }
+      ],
+      "score": 0.998527881,
+      "source_file": "tests/Feature/PurchaseReceiptUploadTest.php",
       "status": "tentative",
       "uses": 1
     }

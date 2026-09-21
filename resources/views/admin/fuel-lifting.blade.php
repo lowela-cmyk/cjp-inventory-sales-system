@@ -68,7 +68,7 @@
                                     <option value="{{ $row['truck_id'] }}" selected>{{ $row['details']['Truck ID'] ?? 'Assigned Truck' }} / {{ $row['details']['Capacity'] ?? 'N/A' }} L</option>
                                 @endif
                                 @foreach ($trucks as $truck)
-                                    <option value="{{ $truck->id }}" @selected((string) old('truck_id', $row['truck_id']) === (string) $truck->id)>{{ $truck->truck_code }}{{ $truck->plate_number ? ' / '.$truck->plate_number : '' }} / {{ number_format((float) $truck->capacity_liters, 2) }} L</option>
+                                    <option value="{{ $truck->id }}" @selected((string) old('truck_id', $row['truck_id']) === (string) $truck->id)>{{ $truck->plate_number ?: 'No plate' }} – {{ $truck->truck_code }} – {{ number_format((float) $truck->capacity_liters, 2) }} L – Available</option>
                                 @endforeach
                             </select>
                         </div>

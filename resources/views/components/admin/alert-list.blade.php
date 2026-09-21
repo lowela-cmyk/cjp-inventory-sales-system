@@ -6,9 +6,13 @@
             <div class="alert-icon" aria-hidden="true">!</div>
             <div class="workflow-alert-content">
                 <div class="alert-title">{{ $alert['title'] }}</div>
-                <div>{{ $alert['message'] }}</div>
+                <div class="workflow-alert-message">{{ $alert['message'] }}</div>
                 <div class="workflow-alert-meta">
-                    {{ $alert['meta'] }} · <x-admin.status-badge :status="$alert['read_state']" /> · {{ $alert['time'] }}
+                    <span>{{ $alert['meta'] }}</span>
+                    <span aria-hidden="true">·</span>
+                    <x-admin.status-badge :status="$alert['read_state']" />
+                    <span aria-hidden="true">·</span>
+                    <time>{{ $alert['time'] }}</time>
                 </div>
             </div>
             <div class="workflow-alert-actions">

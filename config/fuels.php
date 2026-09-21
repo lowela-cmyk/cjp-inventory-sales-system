@@ -8,15 +8,15 @@ return [
         ],
         'UNL' => [
             'code' => 'UNL',
-            'name' => 'UNLEADED',
+            'name' => 'Unleaded',
         ],
         'DSL' => [
             'code' => 'DSL',
-            'name' => 'DIESEL',
+            'name' => 'Diesel',
         ],
         'PREM' => [
             'code' => 'PREM',
-            'name' => 'PREMIUM',
+            'name' => 'Premium',
         ],
     ],
 ];

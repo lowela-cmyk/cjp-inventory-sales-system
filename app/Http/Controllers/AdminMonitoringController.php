@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Services\InventoryLedgerService;
 use App\Services\PurchaseService;
+use App\Services\StockOutFinancialService;
+use App\Services\TruckAvailabilityService;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -15,8 +17,12 @@ class AdminMonitoringController extends Controller
 {
     public function __construct(
         protected ?PurchaseService $purchaseService = null,
+        protected ?TruckAvailabilityService $truckAvailability = null,
+        protected ?StockOutFinancialService $stockOutFinancials = null,
     ) {
         $this->purchaseService = $this->purchaseService ?? app(PurchaseService::class);
+        $this->truckAvailability = $this->truckAvailability ?? app(TruckAvailabilityService::class);
+        $this->stockOutFinancials = $this->stockOutFinancials ?? app(StockOutFinancialService::class);
     }
 
     /**
@@ -30,7 +36,6 @@ class AdminMonitoringController extends Controller
             ->leftJoinSub(
                 DB::table('hauls')
                     ->whereNotNull('withdrawal_receipt_path')
-                    ->where('status', '!=', 'cancelled')
                     ->selectRaw('purchase_item_id, COUNT(*) as withdrawal_count, MAX(withdrawal_receipt_uploaded_at) as latest_withdrawal_at')
                     ->groupBy('purchase_item_id'),
                 'withdrawal_totals',
@@ -347,65 +352,33 @@ class AdminMonitoringController extends Controller
 
     private function stockOutRows(?string $search)
     {
-        $currentStock = DB::table('inventory_movements')
-            ->selectRaw("fuel_type_id, COALESCE(SUM(CASE WHEN direction = 'in' THEN quantity_liters ELSE -quantity_liters END), 0) as current_stock")
-            ->groupBy('fuel_type_id');
-
-        $payments = DB::table('payments')
-            ->selectRaw('sale_id, COALESCE(SUM(amount), 0) as total_paid')
-            ->groupBy('sale_id');
-
-        return DB::table('stock_outs')
-            ->join('sales', 'sales.id', '=', 'stock_outs.sale_id')
-            ->join('customers', 'customers.id', '=', 'stock_outs.customer_id')
-            ->join('fuel_types', 'fuel_types.id', '=', 'stock_outs.fuel_type_id')
-            ->leftJoin('sale_items', 'sale_items.id', '=', 'stock_outs.sale_item_id')
-            ->leftJoinSub($payments, 'payments_total', 'payments_total.sale_id', '=', 'sales.id')
-            ->leftJoinSub($currentStock, 'current_stock', 'current_stock.fuel_type_id', '=', 'fuel_types.id')
-            ->whereNull('sales.deleted_at')
-            ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
-                'stock_outs.stock_out_code',
-                'sales.sale_code',
-                'sales.sales_order_number',
-                'customers.name',
-                'customers.company_name',
-                'fuel_types.name',
-                'stock_outs.status',
-            ]))
+        return $this->stockOutFinancials->query($search)
             ->orderByDesc('stock_outs.stock_out_at')
             ->orderByDesc('stock_outs.id')
-            ->get([
-                'stock_outs.id',
-                'stock_outs.stock_out_code',
-                'stock_outs.stock_out_at',
-                'stock_outs.quantity_liters',
-                'stock_outs.status',
-                'sales.sale_code',
-                'sales.sales_order_number',
-                'customers.name as customer_name',
-                'customers.company_name',
-                'fuel_types.name as fuel_name',
-                'sale_items.unit_price',
-                'sale_items.line_total',
-                'payments_total.total_paid',
-                'current_stock.current_stock',
-            ])
-            ->map(fn (object $row): array => [
-                'cells' => [
-                    $row->sale_code ?: $row->stock_out_code,
-                    $this->formatDateTime($row->stock_out_at),
-                    $row->customer_name,
-                    $row->company_name,
-                    $row->fuel_name,
-                    $this->formatNumber($row->quantity_liters),
-                    $this->formatNumber($row->unit_price),
-                    $this->formatNumber($row->line_total),
-                    $this->formatNumber($row->total_paid),
-                    $this->formatNumber($row->current_stock),
-                    $this->label($row->status),
-                ],
-                'class' => $this->rowClass($row->status),
-            ]);
+            ->get()
+            ->map(function (object $row): array {
+                $amounts = $this->stockOutFinancials->calculate($row);
+
+                return [
+                    'cells' => [
+                        $row->sale_code ?: $row->stock_out_code,
+                        $this->formatDateTime($row->stock_out_at),
+                        $row->customer_name,
+                        $row->company_name,
+                        $row->fuel_name,
+                        $this->formatNumber($amounts['quantity']),
+                        $this->formatFinancial($amounts['unit_cost']),
+                        $this->formatFinancial($amounts['total_cost']),
+                        $this->formatNumber($amounts['unit_price']),
+                        $this->formatNumber($amounts['total_price']),
+                        $this->formatNumber($amounts['total_paid']),
+                        $row->source_type === 'depot' ? 'Depot' : 'Garage',
+                        $this->formatFinancial($amounts['profit']),
+                    ],
+                    'class' => $this->rowClass($row->status),
+                    'profit' => $amounts['profit'],
+                ];
+            });
     }
 
     /**
@@ -676,11 +649,7 @@ class AdminMonitoringController extends Controller
 
     private function haulTruckOptions()
     {
-        return DB::table('trucks')
-            ->whereIn('truck_type', ['hauling', 'mixed'])
-            ->where('status', 'available')
-            ->orderBy('truck_code')
-            ->get(['id', 'truck_code', 'plate_number', 'capacity_liters']);
+        return $this->truckAvailability->assignableTrucks();
     }
 
     /**
@@ -944,7 +913,6 @@ class AdminMonitoringController extends Controller
         return DB::table('hauls')
             ->where('purchase_item_id', $purchaseItemId)
             ->whereNotNull('withdrawal_receipt_path')
-            ->where('status', '!=', 'cancelled')
             ->orderByDesc('withdrawal_receipt_uploaded_at')
             ->orderByDesc('id')
             ->get(['id', 'haul_code', 'withdrawal_receipt_notes', 'withdrawal_receipt_uploaded_at'])
@@ -975,6 +943,11 @@ class AdminMonitoringController extends Controller
     private function formatNumber(mixed $value): string
     {
         return number_format((float) ($value ?? 0), 2);
+    }
+
+    private function formatFinancial(float|int|null $value): string
+    {
+        return $value === null ? 'Unavailable' : $this->formatNumber($value);
     }
 
     private function formatLiters(mixed $value): string

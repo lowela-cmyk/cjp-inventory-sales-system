@@ -68,6 +68,62 @@ class ConnectedLiftingWorkflowTest extends TestCase
         $this->assertSame(1, DB::table('hauls')->distinct()->count('lifting_schedule_id'));
         $this->assertSame(0, DB::table('hauls')->whereNotNull('source_location')->count());
         $this->assertSame(2, DB::table('purchases')->where('workflow_status', 'scheduled')->count());
+
+        $haulCodes = DB::table('hauls')->orderBy('id')->pluck('haul_code')->all();
+        $driverPage = $this->actingAs($records['driver'])->get(route('driver.fuel-lifting'));
+
+        $driverPage->assertOk()
+            ->assertSee($haulCodes[0])
+            ->assertSee($haulCodes[1])
+            ->assertSee('driver-overview-card', false);
+        $this->assertSame(2, substr_count($driverPage->getContent(), 'Upload Withdrawal Receipt'));
+    }
+
+    public function test_active_lift_reserves_truck_until_cancelled_and_dropdown_only_lists_available_fleet(): void
+    {
+        $records = $this->records();
+        [$first, $second] = $this->purchases($records, [10000, 10000]);
+        DB::table('trucks')->where('id', $records['truck'])->update([
+            'plate_number' => 'CW-0001', 'name' => 'Workflow Tanker',
+        ]);
+        $availableTruck = DB::table('trucks')->insertGetId([
+            'truck_code' => 'TRK-CW-AVAILABLE', 'plate_number' => 'CW-0002', 'name' => 'Available Tanker',
+            'capacity_liters' => 25000, 'truck_type' => 'hauling', 'status' => 'available',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        DB::table('trucks')->insert([
+            'truck_code' => 'TRK-CW-MAINT', 'plate_number' => 'CW-0003', 'name' => 'Maintenance Tanker',
+            'capacity_liters' => 25000, 'truck_type' => 'hauling', 'status' => 'maintenance',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $this->actingAs($records['dispatch'])->post(route('dispatch.fuel-lifting.hauls.store'), [
+            'idempotency_key' => (string) Str::uuid(), 'purchase_item_id' => $first, 'quantity_liters' => 5000,
+            'driver_user_id' => $records['driver']->id, 'truck_id' => $records['truck'], 'scheduled_at' => '2026-09-19 08:00:00',
+        ])->assertRedirect(route('dispatch.fuel-lifting'));
+        $this->assertDatabaseHas('trucks', ['id' => $records['truck'], 'status' => 'assigned']);
+
+        $this->actingAs($records['dispatch'])->from(route('dispatch.fuel-lifting'))->post(route('dispatch.fuel-lifting.hauls.store'), [
+            'idempotency_key' => (string) Str::uuid(), 'purchase_item_id' => $second, 'quantity_liters' => 5000,
+            'driver_user_id' => $records['driver']->id, 'truck_id' => $records['truck'], 'scheduled_at' => '2026-09-20 08:00:00',
+        ])->assertSessionHasErrors('lift');
+        $this->assertDatabaseCount('hauls', 1);
+
+        $page = $this->actingAs($records['dispatch'])->get(route('dispatch.fuel-lifting'));
+        $page->assertOk()
+            ->assertDontSee('CW-0001 – TRK-CW – 30,000.00 L – Available')
+            ->assertSee('CW-0002 – TRK-CW-AVAILABLE – 25,000.00 L – Available')
+            ->assertDontSee('CW-0003 – TRK-CW-MAINT');
+
+        $haulId = (int) DB::table('hauls')->value('id');
+        $this->actingAs($records['dispatch'])->patch(route('dispatch.fuel-lifting.hauls.status', $haulId), [
+            'idempotency_key' => (string) Str::uuid(), 'status' => 'cancelled',
+        ])->assertRedirect(route('dispatch.fuel-lifting'));
+        $this->assertDatabaseHas('trucks', ['id' => $records['truck'], 'status' => 'available']);
+
+        $this->actingAs($records['dispatch'])->get(route('dispatch.fuel-lifting'))
+            ->assertOk()->assertSee('CW-0001 – TRK-CW – 30,000.00 L – Available');
+        $this->assertDatabaseHas('trucks', ['id' => $availableTruck, 'status' => 'available']);
     }
 
     public function test_purchase_edit_recomputes_workflow_status_from_haul_state(): void
@@ -129,6 +185,11 @@ class ConnectedLiftingWorkflowTest extends TestCase
     {
         $records = $this->records();
         [$item] = $this->purchases($records, [10000]);
+        $secondTruck = DB::table('trucks')->insertGetId([
+            'truck_code' => 'TRK-CW-2', 'plate_number' => 'CW-0002', 'name' => 'Second Workflow Truck',
+            'capacity_liters' => 30000, 'truck_type' => 'hauling', 'status' => 'available',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
         $base = [
             'purchase_item_id' => $item,
             'driver_user_id' => $records['driver']->id,
@@ -141,14 +202,16 @@ class ConnectedLiftingWorkflowTest extends TestCase
 
         $this->actingAs($records['dispatch'])->get(route('dispatch.fuel-lifting'))->assertOk()->assertSee('4,000.00 L remaining');
 
-        $this->actingAs($records['dispatch'])->from(route('dispatch.fuel-lifting'))->post(route('dispatch.fuel-lifting.hauls.store'), $base + [
+        $this->actingAs($records['dispatch'])->from(route('dispatch.fuel-lifting'))->post(route('dispatch.fuel-lifting.hauls.store'), array_merge($base, [
+            'truck_id' => $secondTruck,
             'idempotency_key' => (string) Str::uuid(), 'scheduled_at' => '2026-09-20 08:00:00', 'quantity_liters' => 4000.01,
-        ])->assertSessionHasErrors('lift');
+        ]))->assertSessionHasErrors('lift');
         $this->assertDatabaseCount('hauls', 1);
 
-        $this->actingAs($records['dispatch'])->post(route('dispatch.fuel-lifting.hauls.store'), $base + [
+        $this->actingAs($records['dispatch'])->post(route('dispatch.fuel-lifting.hauls.store'), array_merge($base, [
+            'truck_id' => $secondTruck,
             'idempotency_key' => (string) Str::uuid(), 'scheduled_at' => '2026-09-20 08:00:00', 'quantity_liters' => 4000,
-        ])->assertRedirect(route('dispatch.fuel-lifting'));
+        ]))->assertRedirect(route('dispatch.fuel-lifting'));
         $this->assertDatabaseCount('hauls', 2);
         $this->assertSame(10000.0, (float) DB::table('hauls')->sum('quantity_liters'));
         $this->assertSame(0, DB::table('hauls')->where('status', 'cancelled')->count());

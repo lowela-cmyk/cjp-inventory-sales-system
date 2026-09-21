@@ -31,7 +31,7 @@
         </div>
 
         @if (! empty($summaryCards))
-            <div class="metric-row">
+            <div class="metric-row driver-metric-row">
                 @foreach ($summaryCards as $card)
                     <div class="metric-card">
                         <em>{{ $card['label'] }}</em>
@@ -41,37 +41,22 @@
             </div>
         @endif
 
-        <div class="dashboard-grid">
-            <div class="modal-card">
+        <div class="driver-overview-card">
+            <div class="driver-overview-identity">
+                <span class="driver-overview-kicker">Driver</span>
+                <strong>{{ $driverProfile['Name'] ?? $driverName ?? 'Driver' }}</strong>
+                <span>{{ $driverProfile['Driver ID'] ?? 'ID unavailable' }}</span>
                 <x-admin.status-badge :status="$driverProfile['Profile Status'] ?? 'N/A'" />
-                <p class="detail-id">{{ $driverProfile['Driver ID'] ?? 'N/A' }}</p>
-                <div class="detail-grid driver-detail-grid">
-                    @foreach ($driverProfile as $label => $value)
-                        <div class="detail-row">
-                            <div class="detail-label">{{ $label }}</div>
-                            <div class="detail-value">{{ $value }}</div>
-                        </div>
-                    @endforeach
-                </div>
             </div>
-            <div class="modal-card">
-                <x-admin.status-badge :status="$currentAssignment['details']['Status'] ?? 'N/A'" />
-                <p class="detail-id">{{ $currentAssignment['cells'][0] ?? 'No Assignment' }}</p>
-                <div class="detail-grid driver-detail-grid">
-                    @if ($currentAssignment)
-                        @foreach ($currentAssignment['details'] as $label => $value)
-                            <div class="detail-row">
-                                <div class="detail-label">{{ $label }}</div>
-                                <div class="detail-value">{{ $value }}</div>
-                            </div>
-                        @endforeach
-                    @else
-                        <div class="detail-row">
-                            <div class="detail-label">Status</div>
-                            <div class="detail-value">No active assignment</div>
-                        </div>
-                    @endif
-                </div>
+            <div class="driver-current-lift">
+                <span class="driver-overview-kicker">Next assigned lift</span>
+                <strong>{{ $currentAssignment['cells'][0] ?? 'No active assignment' }}</strong>
+                @if ($currentAssignment)
+                    <span>{{ $currentAssignment['details']['Pickup Depot'] }} · {{ $currentAssignment['details']['Scheduled Date'] }}</span>
+                    <span>{{ $currentAssignment['details']['Fuel Type'] }} · {{ $currentAssignment['details']['Scheduled Quantity'] }}</span>
+                @else
+                    <span>Your schedule is currently clear.</span>
+                @endif
             </div>
         </div>
 
@@ -118,6 +103,7 @@
                             <th>Capacity</th>
                             <th>QTY to Lift</th>
                             <th>Status</th>
+                            <th>Receipt</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -127,11 +113,15 @@
                                 @foreach ($row['cells'] as $cell)
                                     <td>@if ($loop->last)<x-admin.status-badge :status="$cell" />@else{{ $cell }}@endif</td>
                                 @endforeach
-                                <td><button class="btn btn-secondary" type="button" data-modal-open="{{ $row['id'] }}">View</button></td>
+                                <td><span class="receipt-status {{ $row['withdrawal_uploaded'] ? 'is-uploaded' : '' }}">{{ $row['withdrawal_uploaded'] ? 'Uploaded' : 'Not uploaded' }}</span></td>
+                                <td class="driver-row-actions">
+                                    <button class="btn btn-secondary" type="button" data-modal-open="{{ $row['id'] }}">View</button>
+                                    <button class="btn btn-primary" type="button" data-modal-open="{{ $row['id'] }}" @disabled(! $row['can_upload_withdrawal']) title="{{ $row['can_upload_withdrawal'] ? 'Upload withdrawal receipt' : 'Available after this lift is marked Lifted' }}">Upload Withdrawal Receipt</button>
+                                </td>
                             </tr>
                         @empty
                             <tr>
-                                <td class="driver-empty-cell" colspan="10">No Schedules</td>
+                                <td class="driver-empty-cell" colspan="11">No Schedules</td>
                             </tr>
                         @endforelse
                     </tbody>
@@ -182,6 +172,7 @@
                             <th>Capacity</th>
                             <th>QTY Lifted</th>
                             <th>Status</th>
+                            <th>Receipt</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -191,11 +182,17 @@
                                 @foreach ($row['cells'] as $cell)
                                     <td>@if ($loop->last)<x-admin.status-badge :status="$cell" />@else{{ $cell }}@endif</td>
                                 @endforeach
-                                <td><button class="btn btn-secondary" type="button" data-modal-open="{{ $row['id'] }}">View</button></td>
+                                <td><span class="receipt-status {{ $row['withdrawal_uploaded'] ? 'is-uploaded' : '' }}">{{ $row['withdrawal_uploaded'] ? 'Uploaded' : 'Not uploaded' }}</span></td>
+                                <td class="driver-row-actions">
+                                    <button class="btn btn-secondary" type="button" data-modal-open="{{ $row['id'] }}">View</button>
+                                    @if ($row['can_upload_withdrawal'])
+                                        <button class="btn btn-primary" type="button" data-modal-open="{{ $row['id'] }}">{{ $row['withdrawal_uploaded'] ? 'Replace Withdrawal Receipt' : 'Upload Withdrawal Receipt' }}</button>
+                                    @endif
+                                </td>
                             </tr>
                         @empty
                             <tr>
-                                <td class="driver-empty-cell" colspan="10">No Records Available</td>
+                                <td class="driver-empty-cell" colspan="11">No Records Available</td>
                             </tr>
                         @endforelse
                     </tbody>
@@ -217,6 +214,15 @@
                     @endforeach
                 </div>
             </div>
+            <div class="withdrawal-status-card {{ $row['withdrawal_uploaded'] ? 'is-uploaded' : '' }}">
+                <strong>Withdrawal receipt: {{ $row['withdrawal_uploaded'] ? 'Uploaded' : 'Not uploaded' }}</strong>
+                @if ($row['withdrawal_uploaded_at'])
+                    <span>Uploaded {{ $row['withdrawal_uploaded_at'] }}</span>
+                @endif
+                @if ($row['withdrawal_notes'])
+                    <span>Notes: {{ $row['withdrawal_notes'] }}</span>
+                @endif
+            </div>
             <div class="modal-actions">
                 @if (($row['kind'] ?? '') === 'Lift' && ! empty($row['allowed_driver_statuses']))
                     <form method="POST" action="{{ route('driver.fuel-lifting.hauls.status', $row['record_id']) }}">
@@ -235,11 +241,11 @@
                     <form class="withdrawal-upload-form" method="POST" action="{{ route('driver.fuel-lifting.hauls.withdrawal-receipt.store', $row['record_id']) }}" enctype="multipart/form-data">
                         @csrf
                         <label class="file-button">
-                            <span>Withdrawals</span>
+                            <span>{{ $row['withdrawal_uploaded'] ? 'Choose replacement image' : 'Choose receipt image' }}</span>
                             <input name="withdrawal_receipt" type="file" accept="image/jpeg,image/png,image/webp" required>
                         </label>
                         <input name="withdrawal_notes" type="text" maxlength="1000" placeholder="Optional notes">
-                        <button class="btn btn-pill btn-primary" type="submit">Submit</button>
+                        <button class="btn btn-pill btn-primary" type="submit">{{ $row['withdrawal_uploaded'] ? 'Replace Receipt' : 'Upload Withdrawal Receipt' }}</button>
                     </form>
                 @endif
                 <button class="btn btn-pill btn-secondary" type="button" data-modal-close>Close</button>

@@ -33,15 +33,25 @@ class GarageTankService
                     ->where('type', 'garage')
                     ->where('fuel_type_id', $fuelType->id)
                     ->where('tank_number', $tankNumber)
-                    ->first(['id', 'status']);
+                    ->orderBy('id')
+                    ->get(['id', 'status']);
 
-                if ($existing) {
-                    if ($existing->status !== 'active') {
+                if ($existing->isNotEmpty()) {
+                    $primary = $existing->first();
+
+                    DB::table('storage_locations')
+                        ->where('id', $primary->id)
+                        ->update([
+                            'name' => $fuelType->name.' Tank '.$tankNumber,
+                            'status' => 'active',
+                            'updated_at' => now(),
+                        ]);
+
+                    if ($existing->count() > 1) {
                         DB::table('storage_locations')
-                            ->where('id', $existing->id)
+                            ->whereIn('id', $existing->skip(1)->pluck('id'))
                             ->update([
-                                'name' => $fuelType->name.' Garage Tank '.$tankNumber,
-                                'status' => 'active',
+                                'status' => 'inactive',
                                 'updated_at' => now(),
                             ]);
                     }
@@ -53,7 +63,7 @@ class GarageTankService
                     'location_code' => $this->nextLocationCode((int) $fuelType->id, $tankNumber),
                     'fuel_type_id' => $fuelType->id,
                     'tank_number' => $tankNumber,
-                    'name' => $fuelType->name.' Garage Tank '.$tankNumber,
+                    'name' => $fuelType->name.' Tank '.$tankNumber,
                     'type' => 'garage',
                     'status' => 'active',
                     'created_at' => now(),

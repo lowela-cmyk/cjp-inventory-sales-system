@@ -39,7 +39,24 @@ class PurchaseReceiptUploadTest extends TestCase
 
         $this->actingAs($records['inventoryOfficer'])
             ->get(route('withdrawal-receipts.show', $records['haulId']))
-            ->assertOk();
+            ->assertOk()
+            ->assertHeader('Cache-Control', 'max-age=0, no-store, private')
+            ->assertHeader('X-Content-Type-Options', 'nosniff');
+
+        $admin = User::factory()->create(['role' => 'admin', 'status' => 'active']);
+
+        $this->actingAs($admin)
+            ->get(route('admin.inventory'))
+            ->assertOk()
+            ->assertSee('1 Uploaded')
+            ->assertSee('Received from depot dispatcher.');
+
+        $this->actingAs($records['driver'])
+            ->get(route('driver.fuel-lifting.hauled'))
+            ->assertOk()
+            ->assertSee('Withdrawal receipt: Uploaded')
+            ->assertSee('Received from depot dispatcher.')
+            ->assertSee('Replace Withdrawal Receipt');
     }
 
     public function test_driver_upload_validates_image_type_size_ownership_and_lift_status(): void
@@ -73,6 +90,56 @@ class PurchaseReceiptUploadTest extends TestCase
             ->assertSessionHasErrors('withdrawal_receipt');
 
         $this->assertNull(DB::table('hauls')->where('id', $records['haulId'])->value('withdrawal_receipt_path'));
+    }
+
+    public function test_inventory_and_admin_can_view_every_haul_withdrawal_but_cannot_upload_them(): void
+    {
+        Storage::fake('local');
+        $records = $this->baseHaulRecords();
+        $secondHaulId = DB::table('hauls')->insertGetId([
+            'haul_code' => 'LFT-WITHDRAWAL-02',
+            'purchase_id' => $records['purchaseId'],
+            'purchase_item_id' => $records['purchaseItemId'],
+            'depot_id' => $records['depotId'],
+            'fuel_type_id' => $records['fuelTypeId'],
+            'truck_id' => DB::table('hauls')->where('id', $records['haulId'])->value('truck_id'),
+            'driver_user_id' => $records['driver']->id,
+            'scheduled_at' => '2026-09-01 08:00:00',
+            'hauled_at' => '2026-09-01 10:00:00',
+            'quantity_liters' => 10000,
+            'status' => 'completed',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        foreach ([
+            $records['haulId'] => ['first.png', 'First withdrawal'],
+            $secondHaulId => ['second.png', 'Second withdrawal'],
+        ] as $haulId => [$file, $notes]) {
+            $this->actingAs($records['driver'])->post(route('driver.fuel-lifting.hauls.withdrawal-receipt.store', $haulId), [
+                'withdrawal_receipt' => $this->tinyImage($file),
+                'withdrawal_notes' => $notes,
+            ])->assertRedirect(route('driver.fuel-lifting.hauled'));
+        }
+
+        $inventoryPage = $this->actingAs($records['inventoryOfficer'])->get(route('inventory-officer.inventory'));
+        $inventoryPage->assertOk()
+            ->assertSee('Uploaded')
+            ->assertSee('View Receipts')
+            ->assertSee('LFT-WITHDRAWAL')
+            ->assertSee('LFT-WITHDRAWAL-02')
+            ->assertSee(route('withdrawal-receipts.show', $records['haulId']), false)
+            ->assertSee(route('withdrawal-receipts.show', $secondHaulId), false);
+
+        $admin = User::factory()->create(['role' => 'admin', 'status' => 'active']);
+        $this->actingAs($admin)->get(route('admin.inventory'))
+            ->assertOk()->assertSee('View Receipts')->assertSee('Second withdrawal');
+
+        foreach ([$records['inventoryOfficer'], $admin] as $viewer) {
+            $this->actingAs($viewer)->post(route('driver.fuel-lifting.hauls.withdrawal-receipt.store', $records['haulId']), [
+                'withdrawal_receipt' => $this->tinyImage('forbidden.png'),
+            ])->assertForbidden();
+        }
     }
 
     public function test_reupload_replaces_existing_withdrawal_without_creating_duplicate_receipt_records(): void

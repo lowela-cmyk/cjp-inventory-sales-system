@@ -2,8 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use Carbon\CarbonImmutable;
-use Illuminate\Database\Query\Builder;
+use App\Services\TruckAvailabilityService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -12,7 +11,7 @@ class HaulTruckAssignmentController extends Controller
 {
     private const ASSIGNABLE_HAUL_STATUSES = ['scheduled'];
 
-    private const ACTIVE_HAUL_STATUSES = ['scheduled', 'in_transit', 'lifted'];
+    public function __construct(private readonly TruckAvailabilityService $truckAvailability) {}
 
     public function update(Request $request, int $haul): RedirectResponse
     {
@@ -39,32 +38,52 @@ class HaulTruckAssignmentController extends Controller
                 return 'This lift status does not allow truck assignment changes.';
             }
 
-            $truck = $this->truckForAssignment((int) $data['truck_id'], (int) $row->truck_id === (int) $data['truck_id']);
+            $truck = $this->truckAvailability->lockAssignableTruck(
+                (int) $data['truck_id'],
+                $row->lifting_schedule_id ? null : (int) $row->id,
+                $row->lifting_schedule_id ? (int) $row->lifting_schedule_id : null
+            );
 
             if (! $truck) {
-                return 'The selected truck is not eligible for lift assignment.';
+                return 'The selected truck is unavailable or already assigned to an active lift.';
             }
 
-            $quantity = round((float) $row->quantity_liters, 2);
+            $itemQuantity = round((float) $row->quantity_liters, 2);
+            $truckLoad = $row->lifting_schedule_id
+                ? round((float) DB::table('hauls')->where('lifting_schedule_id', $row->lifting_schedule_id)->sum('quantity_liters'), 2)
+                : $itemQuantity;
 
-            if ($quantity <= 0 || $quantity > round((float) $row->quantity_ordered_liters, 2)) {
+            if ($itemQuantity <= 0 || $itemQuantity > round((float) $row->quantity_ordered_liters, 2)) {
                 return 'Lift quantity must be positive and cannot exceed the authorized purchase item quantity.';
             }
 
-            if ($quantity > round((float) $truck->capacity_liters, 2)) {
+            if ($truckLoad > round((float) $truck->capacity_liters, 2)) {
                 return 'Lift quantity cannot exceed the selected truck capacity.';
             }
 
-            if (! $this->truckIsAvailable((int) $truck->id, CarbonImmutable::parse($row->scheduled_at), (int) $row->id)) {
-                return 'The selected truck already has an active trip at this schedule.';
-            }
+            $oldTruckIds = $row->lifting_schedule_id
+                ? DB::table('hauls')->where('lifting_schedule_id', $row->lifting_schedule_id)->pluck('truck_id')->unique()
+                : collect([(int) $row->truck_id]);
 
-            DB::table('hauls')
-                ->where('id', $row->id)
-                ->update([
+            $haulQuery = DB::table('hauls');
+            $row->lifting_schedule_id
+                ? $haulQuery->where('lifting_schedule_id', $row->lifting_schedule_id)
+                : $haulQuery->where('id', $row->id);
+            $haulQuery->update([
                     'truck_id' => $truck->id,
                     'updated_at' => now(),
                 ]);
+
+            if ($row->lifting_schedule_id) {
+                DB::table('lifting_schedules')->where('id', $row->lifting_schedule_id)->update([
+                    'truck_id' => $truck->id,
+                    'updated_at' => now(),
+                ]);
+            }
+
+            foreach ($oldTruckIds->push((int) $truck->id)->unique() as $truckId) {
+                $this->truckAvailability->synchronizeStatus((int) $truckId);
+            }
 
             return null;
         });
@@ -105,6 +124,7 @@ class HaulTruckAssignmentController extends Controller
             ->lockForUpdate()
             ->first([
                 'hauls.id',
+                'hauls.lifting_schedule_id',
                 'hauls.truck_id',
                 'hauls.scheduled_at',
                 'hauls.quantity_liters',
@@ -113,30 +133,4 @@ class HaulTruckAssignmentController extends Controller
             ]);
     }
 
-    private function truckForAssignment(int $truckId, bool $allowCurrent): ?object
-    {
-        return DB::table('trucks')
-            ->where('id', $truckId)
-            ->whereIn('truck_type', ['hauling', 'mixed'])
-            ->where(function (Builder $query) use ($allowCurrent): void {
-                $query->where('status', 'available');
-
-                if ($allowCurrent) {
-                    $query->orWhere('status', 'assigned');
-                }
-            })
-            ->lockForUpdate()
-            ->first(['id', 'capacity_liters']);
-    }
-
-    private function truckIsAvailable(int $truckId, CarbonImmutable $scheduledAt, int $exceptHaulId): bool
-    {
-        return ! DB::table('hauls')
-            ->where('truck_id', $truckId)
-            ->where('id', '!=', $exceptHaulId)
-            ->whereIn('status', self::ACTIVE_HAUL_STATUSES)
-            ->where('scheduled_at', $scheduledAt->toDateTimeString())
-            ->lockForUpdate()
-            ->exists();
-    }
 }

@@ -6,8 +6,10 @@ use App\Rules\ApprovedFuelType;
 use App\Services\DashboardSummaryService;
 use App\Services\GarageTankService;
 use App\Services\IdempotencyService;
+use App\Services\InventoryCostService;
 use App\Services\PurchaseService;
 use App\Services\StockInService;
+use App\Services\StockOutFinancialService;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -25,7 +27,9 @@ class InventoryOfficerPurchaseController extends Controller
     public function __construct(
         private readonly IdempotencyService $idempotencyService,
         private readonly PurchaseService $purchaseService,
-        private readonly StockInService $stockInService
+        private readonly StockInService $stockInService,
+        private readonly InventoryCostService $inventoryCost,
+        private readonly StockOutFinancialService $stockOutFinancials
     ) {}
 
     private const PURCHASE_STATUSES = ['draft', 'ordered', 'partially_hauled', 'hauled', 'cancelled'];
@@ -157,6 +161,8 @@ class InventoryOfficerPurchaseController extends Controller
                 default => 'image/png',
             },
             'Content-Disposition' => 'inline; filename="'.Str::slug($row->haul_code).'-withdrawal.'.$extension.'"',
+            'Cache-Control' => 'private, no-store, max-age=0',
+            'X-Content-Type-Options' => 'nosniff',
         ]);
     }
 
@@ -407,56 +413,34 @@ class InventoryOfficerPurchaseController extends Controller
 
     private function stockOutRows(?string $search): LengthAwarePaginator
     {
-        $payments = DB::table('payments')
-            ->selectRaw('sale_id, COALESCE(SUM(amount), 0) as total_paid')
-            ->groupBy('sale_id');
-
-        $query = DB::table('stock_outs')
-            ->join('sales', 'sales.id', '=', 'stock_outs.sale_id')
-            ->join('customers', 'customers.id', '=', 'stock_outs.customer_id')
-            ->join('fuel_types', 'fuel_types.id', '=', 'stock_outs.fuel_type_id')
-            ->leftJoin('sale_items', 'sale_items.id', '=', 'stock_outs.sale_item_id')
-            ->leftJoinSub($payments, 'payments_total', 'payments_total.sale_id', '=', 'sales.id')
-            ->whereNull('sales.deleted_at')
-            ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
-                'stock_outs.stock_out_code',
-                'sales.sale_code',
-                'customers.name',
-                'customers.company_name',
-                'fuel_types.name',
-            ]))
+        $query = $this->stockOutFinancials->query($search)
             ->orderByDesc('stock_outs.stock_out_at')
-            ->select([
-                'stock_outs.stock_out_code',
-                'stock_outs.stock_out_at',
-                'stock_outs.quantity_liters',
-                'stock_outs.status',
-                'stock_outs.source_type',
-                'sales.sale_code',
-                'customers.name as customer_name',
-                'customers.company_name',
-                'fuel_types.name as fuel_name',
-                'sale_items.unit_price',
-                'sale_items.line_total',
-                'payments_total.total_paid',
-            ]);
+            ->orderByDesc('stock_outs.id');
 
         $paginator = $query->paginate(25, ['*'], 'stock_out_page')->withQueryString();
-        $transformed = collect($paginator->items())->map(fn (object $row): array => [
-            $row->sale_code ?: $row->stock_out_code,
-            $this->formatDateTime($row->stock_out_at),
-            $row->customer_name,
-            $row->company_name,
-            $row->fuel_name,
-            $this->formatNumber($row->quantity_liters),
-            $this->formatNumber($row->unit_price),
-            $this->formatNumber($row->line_total),
-            $this->formatNumber($row->total_paid),
-            $row->source_type === 'depot' ? 'Depot' : 'Garage',
-            '0.00',
-            $this->formatNumber($row->line_total),
-            $this->rowClass($row->status),
-        ]);
+        $transformed = collect($paginator->items())->map(function (object $row): array {
+            $amounts = $this->stockOutFinancials->calculate($row);
+
+            return [
+                'cells' => [
+                    $row->sale_code ?: $row->stock_out_code,
+                    $this->formatDateTime($row->stock_out_at),
+                    $row->customer_name,
+                    $row->company_name,
+                    $row->fuel_name,
+                    $this->formatNumber($amounts['quantity']),
+                    $this->formatFinancial($amounts['unit_cost']),
+                    $this->formatFinancial($amounts['total_cost']),
+                    $this->formatNumber($amounts['unit_price']),
+                    $this->formatNumber($amounts['total_price']),
+                    $this->formatNumber($amounts['total_paid']),
+                    $row->source_type === 'depot' ? 'Depot' : 'Garage',
+                    $this->formatFinancial($amounts['profit']),
+                ],
+                'class' => $this->rowClass($row->status),
+                'profit' => $amounts['profit'],
+            ];
+        });
         $paginator->setCollection($transformed);
 
         return $paginator;
@@ -512,6 +496,12 @@ class InventoryOfficerPurchaseController extends Controller
             return 'Garage inventory is insufficient for this stock-out.';
         }
 
+        $unitCost = $this->inventoryCost->currentUnitCostForUpdate($garageId, (int) $saleItem->fuel_type_id);
+
+        if ($unitCost === null) {
+            return 'The selected garage inventory has no verifiable cost basis.';
+        }
+
         if ($this->duplicateGarageStockOutExists($saleItem, $garageId, $quantity, (string) $data['stock_out_at'])) {
             return 'This stock-out release has already been recorded.';
         }
@@ -530,6 +520,7 @@ class InventoryOfficerPurchaseController extends Controller
                     'storage_location_id' => $garageId,
                     'source_type' => 'garage',
                     'quantity_liters' => $quantity,
+                    'unit_cost' => $unitCost,
                     'stock_out_at' => $data['stock_out_at'],
                     'status' => 'released',
                     'created_by' => $request->user()->id,
@@ -540,7 +531,7 @@ class InventoryOfficerPurchaseController extends Controller
         } else {
             $this->reducePreparedStockOut($prepared, $quantity);
 
-            $stockOutId = $this->idempotencyService->retryOnCollision('stock_out_code', function () use ($saleItem, $garageId, $quantity, $data, $request): int {
+            $stockOutId = $this->idempotencyService->retryOnCollision('stock_out_code', function () use ($saleItem, $garageId, $quantity, $unitCost, $data, $request): int {
                 return (int) DB::table('stock_outs')->insertGetId([
                     'stock_out_code' => $this->nextCode('stock_outs', 'stock_out_code', 'STO'),
                     'sale_id' => $saleItem->sale_id,
@@ -550,6 +541,7 @@ class InventoryOfficerPurchaseController extends Controller
                     'storage_location_id' => $garageId,
                     'source_type' => 'garage',
                     'quantity_liters' => $quantity,
+                    'unit_cost' => $unitCost,
                     'stock_out_at' => $data['stock_out_at'],
                     'status' => 'released',
                     'created_by' => $request->user()->id,
@@ -559,7 +551,7 @@ class InventoryOfficerPurchaseController extends Controller
             });
         }
 
-        $movementId = $this->idempotencyService->retryOnCollision('movement_code', function () use ($garageId, $saleItem, $quantity, $stockOutId, $data, $request): int {
+        $movementId = $this->idempotencyService->retryOnCollision('movement_code', function () use ($garageId, $saleItem, $quantity, $unitCost, $stockOutId, $data, $request): int {
             return (int) DB::table('inventory_movements')->insertGetId([
                 'movement_code' => $this->nextCode('inventory_movements', 'movement_code', 'MOV'),
                 'storage_location_id' => $garageId,
@@ -567,7 +559,7 @@ class InventoryOfficerPurchaseController extends Controller
                 'movement_type' => 'stock_out',
                 'direction' => 'out',
                 'quantity_liters' => $quantity,
-                'unit_cost' => null,
+                'unit_cost' => $unitCost,
                 'reference_type' => self::STOCK_OUT_REFERENCE_TYPE,
                 'reference_id' => $stockOutId,
                 'movement_date' => $data['stock_out_at'],
@@ -620,6 +612,7 @@ class InventoryOfficerPurchaseController extends Controller
                 'hauls.depot_id',
                 'hauls.truck_id',
                 'hauls.driver_user_id',
+                'purchase_items.unit_cost',
             ]);
 
         if (! $allocation) {
@@ -669,6 +662,7 @@ class InventoryOfficerPurchaseController extends Controller
                     'depot_id' => $allocation->depot_id,
                     'haul_allocation_id' => $allocation->id,
                     'quantity_liters' => $quantity,
+                    'unit_cost' => $allocation->unit_cost,
                     'stock_out_at' => $data['stock_out_at'],
                     'status' => 'released',
                     'created_by' => $request->user()->id,
@@ -689,6 +683,7 @@ class InventoryOfficerPurchaseController extends Controller
                     'depot_id' => $allocation->depot_id,
                     'haul_allocation_id' => $allocation->id,
                     'quantity_liters' => $quantity,
+                    'unit_cost' => $allocation->unit_cost,
                     'stock_out_at' => $data['stock_out_at'],
                     'status' => 'released',
                     'created_by' => $request->user()->id,
@@ -1174,6 +1169,11 @@ class InventoryOfficerPurchaseController extends Controller
     private function formatNumber(mixed $value): string
     {
         return number_format((float) ($value ?? 0), 2);
+    }
+
+    private function formatFinancial(float|int|null $value): string
+    {
+        return $value === null ? 'Unavailable' : $this->formatNumber($value);
     }
 
     private function formatLiters(mixed $value): string

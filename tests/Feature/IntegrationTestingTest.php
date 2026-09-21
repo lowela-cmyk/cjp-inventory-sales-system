@@ -156,7 +156,7 @@ class IntegrationTestingTest extends TestCase
         $this->assertSame(210000.0, $summary->receivablesMonitoring()['totalOutstanding']);
 
         $stockRows = collect($summary->stockLevels()['rows'])->keyBy('label');
-        $this->assertSame(25000.0, $stockRows['DIESEL']['liters']);
+        $this->assertSame(25000.0, $stockRows['Diesel']['liters']);
 
         $variance = $summary->inventoryVarianceMonitoring();
         $this->assertSame(2, $variance['summary']['total_checked']);

@@ -231,9 +231,9 @@ class OperationalDataRepairService
         // 1. Approved Fuels
         foreach ([
             ['code' => 'F1', 'name' => 'F1'],
-            ['code' => 'UNL', 'name' => 'UNLEADED'],
-            ['code' => 'PREM', 'name' => 'PREMIUM'],
-            ['code' => 'DSL', 'name' => 'DIESEL'],
+            ['code' => 'UNL', 'name' => 'Unleaded'],
+            ['code' => 'PREM', 'name' => 'Premium'],
+            ['code' => 'DSL', 'name' => 'Diesel'],
         ] as $fuel) {
             DB::table('fuel_types')->updateOrInsert(
                 ['code' => $fuel['code']],

@@ -47,14 +47,23 @@
                 <button class="btn btn-primary" type="button" data-modal-open="io-purchase-add">+ Record Purchases</button>
                 <button class="btn btn-secondary" type="button" data-modal-open="io-depot-add">+ Depot</button>
             </form>
-            <div class="table-wrap">
-                <table class="admin-table">
-                    <thead><tr><th>Purchase-ID</th><th>Date</th><th>Fuel</th><th>Depot</th><th>Purchased (L)</th><th>Hauled (L)</th><th>Garage Allocation</th><th>Direct Allocation</th><th>Received</th><th>Inventory Status</th><th>Cost / Liter</th><th>Total Cost</th><th>Withdrawals</th><th>Purchase Status</th><th>Payment Status</th><th>Actions</th></tr></thead>
+            <div class="table-wrap inventory-table-wrap">
+                <table class="admin-table inventory-table inventory-table-actions">
+                    <thead><tr><th>Purchase-ID</th><th>Date</th><th>Fuel</th><th>Depot</th><th>Purchased (L)</th><th>Hauled (L)</th><th>Garage Allocation</th><th>Direct Allocation</th><th>Received</th><th class="inventory-status-column">Inventory Status</th><th>Cost / Liter</th><th>Total Cost</th><th>Withdrawals</th><th class="inventory-status-column">Purchase Status</th><th class="inventory-status-column">Payment Status</th><th>Actions</th></tr></thead>
                     <tbody>
                         @forelse ($purchases as $row)
                             <tr class="{{ $row['class'] }}">
                                 @foreach ($row['cells'] as $cell)
-                                    @if ($loop->last || $loop->index === 9 || $loop->index === 13)
+                                    @if ($loop->index === 12)
+                                        <td class="inventory-withdrawal-cell">
+                                            @if (empty($row['withdrawals']))
+                                                <x-admin.status-badge status="No Receipt" />
+                                            @else
+                                                <x-admin.status-badge status="Uploaded" />
+                                                <button class="btn btn-secondary btn-small" type="button" data-modal-open="{{ $row['modal_id'] }}">View Receipt{{ count($row['withdrawals']) > 1 ? 's' : '' }}</button>
+                                            @endif
+                                        </td>
+                                    @elseif ($loop->last || $loop->index === 9 || $loop->index === 13)
                                         <td><x-admin.status-badge :status="$cell" /></td>
                                     @else
                                         <td>{{ $cell }}</td>
@@ -86,9 +95,9 @@
                 <span class="status-badge status-tone-pending">Pending receipts require tank assignment</span>
             </form>
             <h3 class="section-title">Purchase Stock-In Pipeline</h3>
-            <div class="table-wrap" style="margin-bottom:16px">
-                <table class="admin-table">
-                    <thead><tr><th>Purchase ID</th><th>Date</th><th>Fuel</th><th>Pickup Depot</th><th>Purchased (L)</th><th>Scheduled (L)</th><th>Garage Received (L)</th><th>Purchase Status</th></tr></thead>
+            <div class="table-wrap inventory-table-wrap" style="margin-bottom:16px">
+                <table class="admin-table inventory-table">
+                    <thead><tr><th>Purchase ID</th><th>Date</th><th>Fuel</th><th>Pickup Depot</th><th>Purchased (L)</th><th>Scheduled (L)</th><th>Garage Received (L)</th><th class="inventory-status-column">Purchase Status</th></tr></thead>
                     <tbody>
                         @forelse ($stockInPurchases as $purchase)
                             <tr>
@@ -108,9 +117,9 @@
                 </table>
             </div>
             <div class="pagination-wrap" style="margin-bottom:16px">{{ $stockInPurchases->links() }}</div>
-            <div class="table-wrap" style="margin-bottom:16px">
-                <table class="admin-table">
-                    <thead><tr><th>Purchase ID</th><th>Lift ID</th><th>Fuel</th><th>Pickup Depot</th><th>Received / Pending</th><th>Receiving Date</th><th>Tank</th><th>Status</th><th>Action</th></tr></thead>
+            <div class="table-wrap inventory-table-wrap" style="margin-bottom:16px">
+                <table class="admin-table inventory-table inventory-table-actions">
+                    <thead><tr><th>Purchase ID</th><th>Lift ID</th><th>Fuel</th><th>Pickup Depot</th><th>Received / Pending</th><th>Receiving Date</th><th>Tank</th><th class="inventory-status-column">Status</th><th>Action</th></tr></thead>
                     <tbody>
                         @forelse ($garageAllocations as $allocation)
                             <tr>
@@ -125,9 +134,9 @@
                     </tbody>
                 </table>
             </div>
-            <div class="table-wrap">
-                <table class="admin-table">
-                    <thead><tr><th>Purchase / Haul</th><th>Received Date</th><th>Fuel</th><th>Garage</th><th>QTY Received (L)</th><th>Cost / Liter</th><th>Total Cost</th><th>Stock In</th><th>Stock Out</th><th>Status</th><th>Actions</th></tr></thead>
+            <div class="table-wrap inventory-table-wrap">
+                <table class="admin-table inventory-table inventory-table-actions">
+                    <thead><tr><th>Purchase / Haul</th><th>Received Date</th><th>Fuel</th><th>Garage</th><th>QTY Received (L)</th><th>Cost / Liter</th><th>Total Cost</th><th>Stock In</th><th>Stock Out</th><th class="inventory-status-column">Status</th><th>Actions</th></tr></thead>
                     <tbody>
                         @forelse ($stockIn as $row)
                             <tr class="{{ $row['class'] }}">
@@ -162,14 +171,22 @@
                 <button class="btn btn-primary" type="submit">Fuel Type (All)</button>
                 <button class="btn btn-primary" type="button" data-modal-open="io-stockout-add">+ Record Stock-Out</button>
             </form>
-            <div class="table-wrap">
-                <table class="admin-table">
-                    <thead><tr><th>Order-ID</th><th>Transaction Date</th><th>Customer Name</th><th>Company Name</th><th>Fuel</th><th>QTY Released</th><th>Price / Unit</th><th>Total Price</th><th>Total Paid</th><th>Source</th><th>Total Cost</th><th>Profit</th></tr></thead>
+            <div class="table-wrap inventory-table-wrap">
+                <table class="admin-table inventory-table">
+                    <thead><tr><th>Order-ID</th><th>Transaction Date</th><th>Customer Name</th><th>Company Name</th><th>Fuel</th><th>QTY Released</th><th>Cost / Unit</th><th>Total Cost</th><th>Price / Unit</th><th>Total Price</th><th>Total Paid</th><th>Source</th><th>Profit</th></tr></thead>
                     <tbody>
                         @forelse ($stockOut as $row)
-                            <tr class="{{ $row[12] }}"><td>{{ $row[0] }}</td><td>{{ $row[1] }}</td><td>{{ $row[2] }}</td><td>{{ $row[3] }}</td><td>{{ $row[4] }}</td><td>{{ $row[5] }}</td><td>{{ $row[6] }}</td><td>{{ $row[7] }}</td><td>{{ $row[8] }}</td><td>{{ $row[9] }}</td><td>{{ $row[10] }}</td><td>{{ $row[11] }}</td></tr>
+                            <tr class="{{ $row['class'] }}">
+                                @foreach ($row['cells'] as $cell)
+                                    <td @class([
+                                        'inventory-number' => in_array($loop->index, [5, 6, 7, 8, 9, 10, 12], true),
+                                        'inventory-profit' => $loop->last,
+                                        'is-negative' => $loop->last && is_numeric($row['profit']) && $row['profit'] < 0,
+                                    ])>{{ $cell }}</td>
+                                @endforeach
+                            </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="12">No records found.</td></tr>
+                            <tr><td class="empty-cell" colspan="13">No records found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -188,9 +205,9 @@
                 <button class="btn btn-primary" type="submit">Depot</button>
                 <button class="btn btn-secondary" type="button" data-modal-open="io-depot-add">+ Depot</button>
             </form>
-            <div class="table-wrap table-wrap-fit">
-                <table class="admin-table admin-table-fit depot-table">
-                    <thead><tr><th>Depot Code</th><th>Name</th><th>Address</th><th>Contact Person</th><th>Phone</th><th>Status</th></tr></thead>
+            <div class="table-wrap table-wrap-fit inventory-table-wrap">
+                <table class="admin-table admin-table-fit depot-table inventory-table">
+                    <thead><tr><th>Depot Code</th><th>Name</th><th>Address</th><th>Contact Person</th><th>Phone</th><th class="inventory-status-column">Status</th></tr></thead>
                     <tbody>
                         @forelse ($depotRows as $row)
                             <tr>

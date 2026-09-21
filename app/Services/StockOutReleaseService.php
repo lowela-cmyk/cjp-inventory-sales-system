@@ -9,7 +9,8 @@ use Illuminate\Support\Str;
 class StockOutReleaseService
 {
     public function __construct(
-        private readonly IdempotencyService $idempotencyService
+        private readonly IdempotencyService $idempotencyService,
+        private readonly InventoryCostService $inventoryCost
     ) {}
 
     public function releaseSaleItemFromGarage(int $saleItemId, float $quantity, string $stockOutAt, int $createdBy, ?int $preferredGarageId = null, ?string $remarks = null): ?string
@@ -109,6 +110,12 @@ class StockOutReleaseService
 
     private function insertGarageRelease(object $saleItem, int $garageId, float $quantity, string $stockOutAt, int $createdBy, ?string $remarks): void
     {
+        $unitCost = $this->inventoryCost->currentUnitCostForUpdate($garageId, (int) $saleItem->fuel_type_id);
+
+        if ($unitCost === null) {
+            throw new \RuntimeException('The selected garage inventory has no verifiable cost basis.');
+        }
+
         DB::table('sale_items')
             ->where('id', $saleItem->id)
             ->update([
@@ -116,7 +123,7 @@ class StockOutReleaseService
                 'updated_at' => now(),
             ]);
 
-        $stockOutId = $this->idempotencyService->retryOnCollision('stock_out_code', function () use ($saleItem, $garageId, $quantity, $stockOutAt, $createdBy): int {
+        $stockOutId = $this->idempotencyService->retryOnCollision('stock_out_code', function () use ($saleItem, $garageId, $quantity, $unitCost, $stockOutAt, $createdBy): int {
             return (int) DB::table('stock_outs')->insertGetId([
                 'stock_out_code' => $this->nextCode('stock_outs', 'stock_out_code', 'STO'),
                 'sale_id' => $saleItem->sale_id,
@@ -126,6 +133,7 @@ class StockOutReleaseService
                 'storage_location_id' => $garageId,
                 'source_type' => 'garage',
                 'quantity_liters' => $quantity,
+                'unit_cost' => $unitCost,
                 'stock_out_at' => $stockOutAt,
                 'status' => 'released',
                 'created_by' => $createdBy,
@@ -134,7 +142,7 @@ class StockOutReleaseService
             ]);
         });
 
-        $movementId = $this->idempotencyService->retryOnCollision('movement_code', function () use ($garageId, $saleItem, $quantity, $stockOutId, $stockOutAt, $remarks, $createdBy): int {
+        $movementId = $this->idempotencyService->retryOnCollision('movement_code', function () use ($garageId, $saleItem, $quantity, $unitCost, $stockOutId, $stockOutAt, $remarks, $createdBy): int {
             return (int) DB::table('inventory_movements')->insertGetId([
                 'movement_code' => $this->nextCode('inventory_movements', 'movement_code', 'MOV'),
                 'storage_location_id' => $garageId,
@@ -142,7 +150,7 @@ class StockOutReleaseService
                 'movement_type' => 'stock_out',
                 'direction' => 'out',
                 'quantity_liters' => $quantity,
-                'unit_cost' => null,
+                'unit_cost' => $unitCost,
                 'reference_type' => 'stock_out',
                 'reference_id' => $stockOutId,
                 'movement_date' => $stockOutAt,

@@ -50,7 +50,7 @@ class InventoryLedgerTest extends TestCase
         $rows = app(InventoryLedgerService::class)->rows();
         $active = $rows['ledger']->first(fn ($row): bool => $row[0] === 'PUR-100K-MULTI');
 
-        $this->assertSame(['PUR-100K-MULTI', 'DIESEL', 'CJP Depot', '100,000.00', '80,000.00', '20,000.00', 'Partially Lifted'], $active);
+        $this->assertSame(['PUR-100K-MULTI', 'Diesel', 'CJP Depot', '100,000.00', '80,000.00', '20,000.00', 'Partially Lifted'], $active);
 
         $this->haul($records, $purchase, 'LFT-20K-FINAL', 20000, 'completed', '2026-09-03 08:00:00');
 
@@ -163,6 +163,9 @@ class InventoryLedgerTest extends TestCase
             ->get(route('dispatch.fuel-lifting'))
             ->assertOk()
             ->assertSee('data-pickup-depot', false)
+            ->assertSee('lifting-schedule-form', false)
+            ->assertSee('+ Add Lift')
+            ->assertSee('Remove Lift')
             ->assertSee('CJP Depot')
             ->assertDontSee('name="source_location"', false)
             ->assertDontSee('name="location"', false);
@@ -172,6 +175,16 @@ class InventoryLedgerTest extends TestCase
     {
         $records = $this->baseRecords();
         $purchase = $this->purchase($records, 'PUR-DISPATCH-CREATE', 100000);
+        $secondTruckId = DB::table('trucks')->insertGetId([
+            'truck_code' => 'TRK-DISPATCH-2', 'plate_number' => 'DSP-0002', 'name' => 'Dispatch Tanker 2',
+            'capacity_liters' => 50000, 'truck_type' => 'hauling', 'status' => 'available',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $thirdTruckId = DB::table('trucks')->insertGetId([
+            'truck_code' => 'TRK-DISPATCH-3', 'plate_number' => 'DSP-0003', 'name' => 'Dispatch Tanker 3',
+            'capacity_liters' => 50000, 'truck_type' => 'hauling', 'status' => 'available',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
 
         $payload = [
             'idempotency_key' => (string) Str::uuid(),
@@ -190,6 +203,7 @@ class InventoryLedgerTest extends TestCase
 
         $payload['idempotency_key'] = (string) Str::uuid();
         $payload['scheduled_at'] = '2026-09-05 08:00:00';
+        $payload['truck_id'] = $secondTruckId;
 
         $this->actingAs($records['dispatchOfficer'])
             ->post(route('dispatch.fuel-lifting.hauls.store'), $payload)
@@ -199,6 +213,7 @@ class InventoryLedgerTest extends TestCase
 
         $payload['idempotency_key'] = (string) Str::uuid();
         $payload['scheduled_at'] = '2026-09-06 08:00:00';
+        $payload['truck_id'] = $thirdTruckId;
         $payload['quantity_liters'] = 40000;
 
         $this->actingAs($records['dispatchOfficer'])

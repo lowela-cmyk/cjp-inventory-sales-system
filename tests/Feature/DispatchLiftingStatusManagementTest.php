@@ -25,6 +25,11 @@ class DispatchLiftingStatusManagementTest extends TestCase
             $this->actingAs($records['dispatchOfficer'])
                 ->patch(route('dispatch.fuel-lifting.hauls.status', $haulId), $this->statusPayload($status))
                 ->assertRedirect(route('dispatch.fuel-lifting'));
+
+            $this->assertSame(
+                $status === 'completed' ? 'available' : 'in_use',
+                DB::table('trucks')->where('id', $records['truckId'])->value('status')
+            );
         }
 
         $haul = DB::table('hauls')->where('id', $haulId)->first();

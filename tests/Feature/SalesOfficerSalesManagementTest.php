@@ -177,7 +177,7 @@ class SalesOfficerSalesManagementTest extends TestCase
             ->assertOk()
             ->assertSee('SLS-VISIBLE')
             ->assertSee('Sales Customer')
-            ->assertSee('DIESEL')
+            ->assertSee('Diesel')
             ->assertDontSee('Jay P. Calinisan');
 
         $this->actingAs($records['admin'])

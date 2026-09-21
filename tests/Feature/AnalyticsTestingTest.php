@@ -86,8 +86,8 @@ class AnalyticsTestingTest extends TestCase
         $this->assertSame('90,000 L', $inventoryCards['Total Inventory']['value']);
         $this->assertSame('80,000 L', $inventoryCards['Stock-In Today']['value']);
         $this->assertSame('12,500 L', $inventoryCards['Stock-Out Today']['value']);
-        $this->assertSame(67500.0, $stockByFuel['DIESEL']['liters']);
-        $this->assertSame(22500.0, $stockByFuel['UNLEADED']['liters']);
+        $this->assertSame(67500.0, $stockByFuel['Diesel']['liters']);
+        $this->assertSame(22500.0, $stockByFuel['Unleaded']['liters']);
         $this->assertSame([67500.0, 22500.0], $stockLevels['chart']['datasets'][0]['data']);
         $this->assertSame(['67,500 L', '22,500 L'], $stockLevels['chart']['datasets'][0]['formattedData']);
 

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\PurchaseWorkflowService;
+use App\Services\TruckAvailabilityService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -10,7 +11,10 @@ use Illuminate\Validation\Rule;
 
 class DriverLiftingStatusController extends Controller
 {
-    public function __construct(private readonly PurchaseWorkflowService $purchaseWorkflow) {}
+    public function __construct(
+        private readonly PurchaseWorkflowService $purchaseWorkflow,
+        private readonly TruckAvailabilityService $truckAvailability
+    ) {}
 
     public const STATUS_TRANSITIONS = [
         'scheduled' => ['in_transit'],
@@ -90,6 +94,8 @@ class DriverLiftingStatusController extends Controller
             foreach ($purchaseIds->unique() as $purchaseId) {
                 $this->purchaseWorkflow->synchronize((int) $purchaseId, $driverId, (int) $row->id);
             }
+
+            $this->truckAvailability->synchronizeStatus((int) $row->truck_id);
 
             return null;
         });

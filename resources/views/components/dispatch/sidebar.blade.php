@@ -5,6 +5,7 @@
     $links = [
         ['route' => 'dispatch.ledger', 'label' => 'Ledger'],
         ['route' => 'dispatch.fuel-lifting', 'label' => 'Fuel Lifting'],
+        ['route' => 'dispatch.trucks', 'label' => 'Trucks'],
         ['route' => 'dispatch.alerts', 'label' => 'Alerts'],
     ];
 @endphp

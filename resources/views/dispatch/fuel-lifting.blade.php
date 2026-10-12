@@ -213,12 +213,12 @@
                 <div class="lifting-purchase-list" data-lifting-items>
                     <div class="lifting-purchase-row" data-lifting-item>
                         <div class="form-row"><label>Purchase ID</label><select name="items[0][purchase_item_id]" data-lifting-purchase required><option value="">Search/select purchase</option>@foreach ($purchaseItems as $purchaseItem)<option value="{{ $purchaseItem->id }}" data-depot-id="{{ $purchaseItem->depot_id }}" data-depot="{{ $purchaseItem->depot_name }}" data-address="{{ $purchaseItem->depot_address }}" data-fuel="{{ $purchaseItem->fuel_name }}" data-remaining="{{ $purchaseItem->remaining_liters }}">{{ $purchaseItem->label }}</option>@endforeach</select></div>
-                        <div class="form-row"><label>Fuel / Remaining</label><output data-purchase-summary>—</output></div>
+                        <div class="form-row"><label>Fuel / Remaining</label><output data-purchase-summary>&mdash;</output></div>
                         <div class="form-row"><label>Amount to Lift</label><input name="items[0][quantity_liters]" data-lifting-quantity type="number" min="0.01" step="0.01" required></div>
                         <button class="btn btn-danger lifting-remove-button" type="button" data-lifting-item-remove disabled>Remove Lift</button>
                     </div>
                 </div>
-                <div class="lifting-totals"><button class="btn btn-secondary" type="button" data-lifting-item-add>+ Add Lift</button><strong>Total scheduled: <output data-lifting-total>0.00 L</output></strong><strong>Remaining capacity: <output data-lifting-remaining>0.00 L</output></strong><span data-lifting-warning role="alert"></span></div>
+                <div class="lifting-totals"><button class="btn btn-secondary" type="button" data-lifting-item-add>+ Add Purchase</button><strong>Total scheduled: <output data-lifting-total>0.00 L</output></strong><strong>Remaining capacity: <output data-lifting-remaining>0.00 L</output></strong><span data-lifting-warning role="alert"></span></div>
             </div>
             <div class="modal-actions"><button class="btn btn-pill btn-secondary" type="submit">Schedule Lift</button><button class="btn btn-pill btn-danger" type="button" data-modal-close>Cancel</button></div>
         </form>

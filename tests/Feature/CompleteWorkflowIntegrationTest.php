@@ -72,6 +72,14 @@ class CompleteWorkflowIntegrationTest extends TestCase
             'payment_method' => 'bank_transfer',
             'due_date' => '2026-09-30',
         ]);
+        $this->assertDatabaseHas('sales', ['id' => $sale['saleId'], 'delivery_status' => 'pending']);
+        $this->assertSame(40000.0, $this->garageBalance($records));
+        $this->assertSame(0, DB::table('stock_outs')->where('sale_id', $sale['saleId'])->count());
+
+        $this->actingAs($records['salesOfficer'])
+            ->patch(route('sales-officer.sales.delivery-status.update', $sale['saleId']), ['delivery_status' => 'delivered'])
+            ->assertRedirect(route('sales-officer.sales'));
+
         $this->assertSame(15000.0, $this->garageBalance($records));
         $this->assertDatabaseHas('receivables', ['sale_id' => $sale['saleId'], 'status' => 'pending']);
         $this->assertSame(0, DB::table('payments')->where('sale_id', $sale['saleId'])->count());
@@ -157,14 +165,9 @@ class CompleteWorkflowIntegrationTest extends TestCase
                 ->assertRedirect(route('dispatch.fuel-lifting'));
         }
 
-        $this->actingAs($records['inventoryOfficer'])
-            ->post(route('inventory-officer.inventory.stock-out.store'), $this->stockOutPayload($records, $sale, [
-                'source_type' => 'depot',
-                'storage_location_id' => null,
-                'haul_allocation_id' => $allocationId,
-                'quantity_liters' => 18000,
-            ]))
-            ->assertRedirect(route('inventory-officer.inventory.stock-out'));
+        $this->actingAs($records['salesOfficer'])
+            ->patch(route('sales-officer.sales.delivery-status.update', $sale['saleId']), ['delivery_status' => 'delivered'])
+            ->assertRedirect(route('sales-officer.sales'));
 
         $this->assertSame(0.0, $this->garageBalance($records));
         $this->assertSame(0, DB::table('inventory_movements')->count());
@@ -177,6 +180,7 @@ class CompleteWorkflowIntegrationTest extends TestCase
             'status' => 'released',
         ]);
         $this->assertDatabaseHas('haul_allocations', ['id' => $allocationId, 'status' => 'delivered']);
+        $this->assertDatabaseHas('sales', ['id' => $sale['saleId'], 'delivery_status' => 'delivered']);
         $this->assertDatabaseHas('sale_items', [
             'id' => $sale['saleItemId'],
             'fulfilled_quantity_liters' => '18000.00',

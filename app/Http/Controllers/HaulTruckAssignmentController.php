@@ -70,9 +70,9 @@ class HaulTruckAssignmentController extends Controller
                 ? $haulQuery->where('lifting_schedule_id', $row->lifting_schedule_id)
                 : $haulQuery->where('id', $row->id);
             $haulQuery->update([
-                    'truck_id' => $truck->id,
-                    'updated_at' => now(),
-                ]);
+                'truck_id' => $truck->id,
+                'updated_at' => now(),
+            ]);
 
             if ($row->lifting_schedule_id) {
                 DB::table('lifting_schedules')->where('id', $row->lifting_schedule_id)->update([
@@ -132,5 +132,4 @@ class HaulTruckAssignmentController extends Controller
                 'purchase_items.quantity_ordered_liters',
             ]);
     }
-
 }

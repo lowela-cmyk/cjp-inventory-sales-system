@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Services\InventoryLedgerService;
 use App\Services\PurchaseService;
+use App\Services\SaleCorrectionService;
 use App\Services\StockOutFinancialService;
 use App\Services\TruckAvailabilityService;
 use Illuminate\Database\Query\Builder;
@@ -19,10 +20,12 @@ class AdminMonitoringController extends Controller
         protected ?PurchaseService $purchaseService = null,
         protected ?TruckAvailabilityService $truckAvailability = null,
         protected ?StockOutFinancialService $stockOutFinancials = null,
+        protected ?SaleCorrectionService $saleCorrectionService = null,
     ) {
         $this->purchaseService = $this->purchaseService ?? app(PurchaseService::class);
         $this->truckAvailability = $this->truckAvailability ?? app(TruckAvailabilityService::class);
         $this->stockOutFinancials = $this->stockOutFinancials ?? app(StockOutFinancialService::class);
+        $this->saleCorrectionService = $this->saleCorrectionService ?? app(SaleCorrectionService::class);
     }
 
     /**
@@ -314,6 +317,7 @@ class AdminMonitoringController extends Controller
             'paymentMethods' => ['cash_on_delivery', 'cheque', 'advance_payment', 'bank_transfer'],
             'paymentTerms' => ['cod', 'installment', 'advance'],
             'editableSaleStatuses' => ['draft', 'confirmed', 'partially_paid', 'unpaid'],
+            'editableDeliveryStatuses' => ['pending', 'out_for_delivery', 'delivered'],
             'saleIdempotencyKey' => (string) Str::uuid(),
         ]);
     }
@@ -478,6 +482,7 @@ class AdminMonitoringController extends Controller
                 'customers.company_name',
                 'items_total.first_fuel_name',
                 'sales.status',
+                'sales.delivery_status',
                 'sales.payment_method',
                 'receivables.status',
             ]))
@@ -492,6 +497,7 @@ class AdminMonitoringController extends Controller
                 'sales.payment_method',
                 'sales.payment_terms',
                 'sales.status',
+                'sales.delivery_status',
                 'customers.name as customer_name',
                 'customers.company_name',
                 'items_total.item_count',
@@ -505,9 +511,10 @@ class AdminMonitoringController extends Controller
             ->map(function (object $row): array {
                 $paid = (float) ($row->total_paid ?? 0);
                 $saleTotal = (float) $row->sale_total;
-                $balance = max(0, $saleTotal - $paid);
-                $receivableStatus = $this->receivableStatusForSale($saleTotal, $paid, $row->due_date);
-                $status = $this->receivableStatusLabel($receivableStatus);
+                $isCancelled = $row->status === 'cancelled';
+                $balance = $isCancelled ? 0 : max(0, $saleTotal - $paid);
+                $receivableStatus = $isCancelled ? 'clear' : $this->receivableStatusForSale($saleTotal, $paid, $row->due_date);
+                $status = $isCancelled ? 'Cancelled' : $this->receivableStatusLabel($receivableStatus);
                 $latestPaymentDate = $this->latestPaymentDateForSale((int) $row->sale_id);
 
                 return [
@@ -521,6 +528,8 @@ class AdminMonitoringController extends Controller
                     'payment_method' => $row->payment_method,
                     'payment_terms' => $row->payment_terms,
                     'raw_status' => $row->status,
+                    'delivery_status' => $row->delivery_status,
+                    'correction_action' => $this->saleCorrectionService->correctionMode((int) $row->sale_id),
                     'due_date' => $row->due_date,
                     'items' => $this->itemsForSale((int) $row->sale_id),
                     'cells' => [
@@ -537,6 +546,7 @@ class AdminMonitoringController extends Controller
                         $this->formatNumber($balance),
                         $row->due_date ? $this->formatDate($row->due_date) : 'N/A',
                         $latestPaymentDate ? $this->formatDate($latestPaymentDate) : 'N/A',
+                        $this->label($row->delivery_status),
                         $status,
                     ],
                     'status' => $status,
@@ -556,8 +566,10 @@ class AdminMonitoringController extends Controller
                         'Due Date' => $row->due_date ? $this->formatDate($row->due_date) : 'N/A',
                         'Latest Payment Date' => $latestPaymentDate ? $this->formatDate($latestPaymentDate) : 'N/A',
                         'Receivable Status' => $status,
+                        'Delivery Status' => $this->label($row->delivery_status),
                         'Payment Terms' => $this->label($row->payment_terms),
                         'Payment Method' => $this->paymentMethodLabel($row->payment_method),
+                        'Order Status' => $this->label($row->status),
                     ],
                     'payments' => $this->paymentsForSale((int) $row->sale_id),
                     'payment_schedules' => $this->paymentSchedulesForSale((int) $row->sale_id),

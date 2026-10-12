@@ -624,17 +624,21 @@ table td:has(.status-badge) {
     text-align: center;
 }
 
-/* Inventory tables size columns from their content instead of distributing
-   unused page width. The wrapper only scrolls when the intrinsic table is wider. */
+/* Inventory tables expand to full container width like other tables,
+   and allow horizontal scrolling when columns exceed page width. */
 .inventory-table-wrap {
-    width: fit-content;
+    width: 100%;
     max-width: 100%;
     min-height: 0;
 }
 
+.table-wrap-fit.inventory-table-wrap {
+    width: fit-content;
+}
+
 .inventory-table {
     width: max-content;
-    min-width: 0;
+    min-width: 100%;
     table-layout: auto;
 }
 
@@ -1889,6 +1893,55 @@ table td:has(.status-badge) {
     color: var(--admin-red);
 }
 
+.sales-payment-summary {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid var(--admin-soft-line);
+    border-radius: 8px;
+    background: #f7f7f7;
+}
+
+.sales-payment-stat,
+.sales-payment-entry {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+}
+
+.sales-payment-stat span,
+.sales-payment-entry span {
+    color: var(--admin-muted);
+    font-size: 13px;
+    font-weight: 800;
+}
+
+.sales-payment-stat output,
+.sales-payment-entry input {
+    display: flex;
+    width: 100%;
+    min-height: 42px;
+    align-items: center;
+    border: 0;
+    border-radius: 8px;
+    padding: 0 12px;
+    background: #fff;
+    color: #222;
+    font: inherit;
+    font-weight: 900;
+}
+
+.sales-payment-stat:last-child output {
+    color: var(--admin-red);
+}
+
+@media (max-width: 720px) {
+    .sales-payment-summary {
+        grid-template-columns: 1fr;
+    }
+}
+
 .sales-items-table {
     min-height: auto;
     margin-top: 18px;
@@ -2411,6 +2464,17 @@ table td:has(.status-badge) {
     white-space: nowrap;
 }
 
+.sales-row-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+}
+
+.sales-row-actions form {
+    margin: 0;
+}
+
 .receipt-status {
     display: inline-flex;
     min-width: 92px;
@@ -2718,6 +2782,27 @@ table td:has(.status-badge) {
         border-right: 0;
         border-bottom: 1px solid var(--admin-line);
     }
+
+    .dashboard-grid,
+    .dashboard-grid > .chart-panel,
+    .chart-header,
+    .chart-tabs {
+        width: 100%;
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    .chart-tabs a,
+    .chart-tabs span {
+        flex: 1 1 88px;
+        min-width: 0;
+        padding-inline: 8px;
+        text-align: center;
+    }
+
+    .chart-panel canvas {
+        max-width: 100% !important;
+    }
 }
 
 body.login-page {
@@ -2804,11 +2889,71 @@ body.login-page {
     box-shadow: 0 0 0 4px rgba(245, 0, 55, .22);
 }
 
+.password-input-wrap {
+    position: relative;
+    width: 100%;
+    display: flex;
+    align-items: center;
+}
+
+.password-input-wrap input {
+    width: 100%;
+}
+
+.password-toggle-btn {
+    position: absolute;
+    right: 20px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    margin: 0;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: #64748b;
+    cursor: pointer;
+    transition: color .15s ease, background-color .15s ease;
+    z-index: 2;
+}
+
+.password-toggle-btn:hover {
+    color: #f50037;
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+.password-toggle-btn:focus-visible {
+    outline: 2px solid #f50037;
+    outline-offset: -2px;
+}
+
+.password-toggle-btn .eye-icon {
+    width: 26px;
+    height: 26px;
+    stroke: currentColor;
+}
+
+.password-toggle-btn .eye-hide {
+    display: none;
+}
+
+.password-toggle-btn.is-visible .eye-show {
+    display: none;
+}
+
+.password-toggle-btn.is-visible .eye-hide {
+    display: block;
+}
+
 .login-submit {
     width: 100%;
     height: 84px;
     margin-top: 68px;
-    border: 2px solid #fff;
+    border: none;
     border-radius: 5px;
     background: #f50037;
     color: #fff;
@@ -2828,55 +2973,13 @@ body.login-page {
     font-weight: 700;
 }
 
-.login-success {
-    position: relative;
-    display: flex;
-    gap: 14px;
-    align-items: center;
-    margin: 22px 0 -14px;
-    border: 1px solid rgba(255, 255, 255, .7);
-    border-left: 7px solid #f50037;
-    border-radius: 5px;
-    padding: 14px 18px;
-    background: #fff;
-    color: #111827;
-    box-shadow: 0 14px 30px rgba(0, 0, 0, .22);
-}
-
-.login-success-mark {
-    display: inline-flex;
-    width: 34px;
-    height: 34px;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    background: #f50037;
+.login-notice {
+    margin: 8px 0 -10px;
     color: #fff;
-    font-size: 20px;
-    line-height: 1;
-    font-weight: 800;
-    flex: 0 0 auto;
-}
-
-.login-success strong,
-.login-success span {
-    display: block;
-}
-
-.login-success strong {
-    margin-bottom: 3px;
-    font-size: 16px;
-    font-weight: 800;
-}
-
-.login-success span {
-    color: #263248;
+    text-align: center;
     font-size: 14px;
-    line-height: 1.35;
-}
-
-.reset-success {
-    margin: -12px 0 18px;
+    font-weight: 700;
+    line-height: 1.4;
 }
 
 .login-submit:hover,
@@ -3040,6 +3143,21 @@ body.login-page {
     .login-field select {
         height: 66px;
         padding: 0 24px;
+    }
+
+    .password-input-wrap input {
+        padding-right: 56px;
+    }
+
+    .password-toggle-btn {
+        right: 10px;
+        width: 40px;
+        height: 40px;
+    }
+
+    .password-toggle-btn .eye-icon {
+        width: 22px;
+        height: 22px;
     }
 
     .login-submit {

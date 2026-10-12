@@ -33,21 +33,32 @@
             </form>
             <div class="table-wrap">
                 <table class="admin-table">
-                    <thead><tr><th>Order-ID</th><th>Sales Order No.</th><th>Transaction Date</th><th>Customer Name</th><th>Company Name</th><th>Fuel</th><th>QTY</th><th>Price / Liter</th><th>Total</th><th>Total Paid</th><th>Balance</th><th>Due Date</th><th>Latest Payment</th><th>Status</th><th>Actions</th></tr></thead>
+                    <thead><tr><th>Order-ID</th><th>Sales Order No.</th><th>Transaction Date</th><th>Customer Name</th><th>Company Name</th><th>Fuel</th><th>QTY</th><th>Price / Liter</th><th>Total</th><th>Total Paid</th><th>Balance</th><th>Due Date</th><th>Latest Payment</th><th>Delivery Status</th><th>Status</th><th>Actions</th></tr></thead>
                     <tbody>
                         @forelse ($sales as $row)
                             <tr class="{{ $row['class'] }}">
                                 @foreach ($row['cells'] as $cell)
-                                    @if ($loop->last)
+                                    @if ($loop->last || $loop->index === count($row['cells']) - 2)
                                         <td><x-admin.status-badge :status="$cell" /></td>
                                     @else
                                         <td>{{ $cell }}</td>
                                     @endif
                                 @endforeach
-                                <td><button class="btn btn-secondary" type="button" data-modal-open="{{ $row['id'] }}">View</button></td>
+                                <td>
+                                    <div class="sales-row-actions">
+                                        <button class="btn btn-secondary" type="button" data-modal-open="{{ $row['id'] }}">View</button>
+                                        @if ($row['correction_action'])
+                                            <form method="POST" action="{{ route('admin.sales.cancel', $row['sale_id']) }}" data-confirm-message="{{ $row['correction_action'] === 'delete' ? 'Delete this untouched draft sale? This cannot be undone.' : 'Cancel this sale? Related payments and transaction history will be preserved, while stock and receivable effects will be reversed.' }}">
+                                                @csrf
+                                                @method('PATCH')
+                                                <button class="btn btn-danger" type="submit">{{ $row['correction_action'] === 'delete' ? 'Delete' : 'Cancel' }}</button>
+                                            </form>
+                                        @endif
+                                    </div>
+                                </td>
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="15">No records found.</td></tr>
+                            <tr><td class="empty-cell" colspan="16">No records found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -86,7 +97,6 @@
             <input type="hidden" name="idempotency_key" value="{{ old('idempotency_key', $saleIdempotencyKey) }}">
             <div class="modal-card">
                 <div class="form-grid">
-                    <div class="form-row"><label for="admin_sale_code">Order ID</label><input id="admin_sale_code" name="sale_code" type="text" maxlength="30" placeholder="Auto-generated if blank" value="{{ old('sale_code') }}"></div>
                     <div class="form-row"><label for="admin_sales_order_number">Sales Order Number</label><input id="admin_sales_order_number" name="sales_order_number" type="text" maxlength="60" placeholder="Customer receipt/order number" value="{{ old('sales_order_number') }}"></div>
                     <div class="form-row"><label for="admin_sale_date">Transaction Date</label><input id="admin_sale_date" name="sale_date" type="date" value="{{ old('sale_date', now()->toDateString()) }}" required></div>
                     <div class="form-row">
@@ -117,7 +127,12 @@
                             </div>
                         @endforeach
                     </div>
-                    <div class="sales-item-actions"><button class="btn btn-primary" type="button" data-sales-item-add>Add Item</button><output class="sales-total-preview" data-sales-total-preview>Total: 0.00</output></div>
+                    <div class="sales-item-actions"><button class="btn btn-primary" type="button" data-sales-item-add>Add Item</button></div>
+                    <div class="sales-payment-summary" data-sales-payment-summary>
+                        <div class="sales-payment-stat"><span>Total</span><output data-sales-total-preview>PHP 0.00</output></div>
+                        <label class="sales-payment-entry" for="admin_sale_amount_paid"><span>Amount Paid by Customer</span><input id="admin_sale_amount_paid" name="amount_paid" type="number" min="0" step="0.01" value="{{ old('amount_paid', '0.00') }}" data-sales-amount-paid></label>
+                        <div class="sales-payment-stat"><span>Remaining Balance</span><output data-sales-balance-preview>PHP 0.00</output></div>
+                    </div>
                     <div class="form-row">
                         <label for="admin_sale_payment_method">Payment Method</label>
                         <select id="admin_sale_payment_method" name="payment_method" required>
@@ -143,6 +158,7 @@
                             @endforeach
                         </select>
                     </div>
+                    <div class="form-row"><label>Delivery Status</label><output>Pending — no Stock-Out until Delivered</output></div>
                 </div>
             </div>
             <div class="modal-actions"><button class="btn btn-pill btn-secondary" type="submit">Add</button><button class="btn btn-pill btn-danger" type="button" data-modal-close>Cancel</button></div>
@@ -155,14 +171,33 @@
                 @csrf
                 @method('PATCH')
             </form>
+            @if (! in_array($row['delivery_status'], ['delivered', 'cancelled'], true))
+                <form id="admin-sale-delivery-{{ $row['sale_id'] }}" method="POST" action="{{ route('admin.sales.delivery-status.update', $row['sale_id']) }}" data-confirm-message="Update this delivery status? Selecting Delivered will create Stock-Out and deduct inventory.">
+                    @csrf
+                    @method('PATCH')
+                </form>
+            @endif
             <div class="modal-card">
-                <x-admin.status-badge :status="$row['status']" />
+                <div class="sales-row-actions"><x-admin.status-badge :status="$row['delivery_status']" /><x-admin.status-badge :status="$row['status']" /></div>
                 <p class="detail-id">{{ $row['cells'][0] }}</p>
                 <div class="detail-grid">
                     @foreach ($row['details'] as $label => $value)
                         <div class="detail-row"><div class="detail-label">{{ $label }}</div><div class="detail-value">{{ $value }}</div></div>
                     @endforeach
                 </div>
+                @if (! in_array($row['delivery_status'], ['delivered', 'cancelled'], true))
+                    <div class="form-grid" style="margin-top:18px">
+                        <div class="form-row">
+                            <label for="admin_sale_delivery_status_{{ $row['sale_id'] }}">Delivery Status</label>
+                            <select form="admin-sale-delivery-{{ $row['sale_id'] }}" id="admin_sale_delivery_status_{{ $row['sale_id'] }}" name="delivery_status">
+                                @foreach ($editableDeliveryStatuses as $deliveryStatus)
+                                    <option value="{{ $deliveryStatus }}" @selected($row['delivery_status'] === $deliveryStatus)>{{ ucwords(str_replace('_', ' ', $deliveryStatus)) }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div class="form-row"><label>Inventory</label><button class="btn btn-primary" type="submit" form="admin-sale-delivery-{{ $row['sale_id'] }}">Update Delivery</button></div>
+                    </div>
+                @endif
                 <div class="form-grid" style="margin-top:18px">
                     <div class="form-row"><label for="admin_sales_order_number_{{ $row['sale_id'] }}">Sales Order Number</label><input form="admin-sale-update-{{ $row['sale_id'] }}" id="admin_sales_order_number_{{ $row['sale_id'] }}" name="sales_order_number" type="text" maxlength="60" value="{{ old('sales_order_number', $row['sales_order_number']) }}"></div>
                     <div class="form-row"><label for="admin_sale_date_{{ $row['sale_id'] }}">Transaction Date</label><input form="admin-sale-update-{{ $row['sale_id'] }}" id="admin_sale_date_{{ $row['sale_id'] }}" name="sale_date" type="date" value="{{ old('sale_date', $row['sale_date']) }}" required></div>
@@ -208,12 +243,16 @@
             </div>
             <div class="modal-actions">
                 <button class="btn btn-pill btn-success" type="button" data-modal-open="{{ $row['payment_id'] }}">Payment History</button>
-                <button class="btn btn-pill btn-secondary" type="submit" form="admin-sale-update-{{ $row['sale_id'] }}">Edit</button>
-                <form method="POST" action="{{ route('admin.sales.cancel', $row['sale_id']) }}">
-                    @csrf
-                    @method('PATCH')
-                    <button class="btn btn-pill btn-danger" type="submit">Delete</button>
-                </form>
+                @if ($row['raw_status'] !== 'cancelled')
+                    <button class="btn btn-pill btn-secondary" type="submit" form="admin-sale-update-{{ $row['sale_id'] }}">Edit</button>
+                @endif
+                @if ($row['correction_action'])
+                    <form method="POST" action="{{ route('admin.sales.cancel', $row['sale_id']) }}" data-confirm-message="{{ $row['correction_action'] === 'delete' ? 'Delete this untouched draft sale? This cannot be undone.' : 'Cancel this sale? Related payments and transaction history will be preserved, while stock and receivable effects will be reversed.' }}">
+                        @csrf
+                        @method('PATCH')
+                        <button class="btn btn-pill btn-danger" type="submit">{{ $row['correction_action'] === 'delete' ? 'Delete' : 'Cancel' }}</button>
+                    </form>
+                @endif
             </div>
         </x-admin.modal>
 

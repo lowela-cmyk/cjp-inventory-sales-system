@@ -1,7 +1,7 @@
 @props([
     'title' => 'Fuel Lifting Operations',
     'subtitle' => 'INVENTORY AND SALES MANAGEMENT SYSTEM',
-    'driverName' => 'Manuel Ligaya',
+    'driverName' => 'Account',
 ])
 
 @php($user = auth()->user())

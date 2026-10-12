@@ -24,6 +24,27 @@ const openModal = (modal) => {
 let pendingConfirmForm = null;
 
 document.addEventListener('click', (event) => {
+    const passwordToggle = event.target.closest('[data-password-toggle]');
+    if (passwordToggle) {
+        event.preventDefault();
+        const targetId = passwordToggle.dataset.passwordToggle;
+        const input = (targetId ? document.getElementById(targetId) : null) || passwordToggle.closest('.password-input-wrap')?.querySelector('input');
+        if (input) {
+            const isPassword = input.type === 'password';
+            input.type = isPassword ? 'text' : 'password';
+            passwordToggle.classList.toggle('is-visible', isPassword);
+            passwordToggle.setAttribute('aria-pressed', isPassword ? 'true' : 'false');
+            passwordToggle.setAttribute('aria-label', isPassword ? 'Hide password' : 'Show password');
+            passwordToggle.setAttribute('title', isPassword ? 'Hide password' : 'Show password');
+            input.focus();
+            if (typeof input.selectionStart === 'number') {
+                const len = input.value.length;
+                input.setSelectionRange(len, len);
+            }
+        }
+        return;
+    }
+
     const modalButton = event.target.closest('[data-modal-open]');
     if (modalButton) {
         const modal = document.getElementById(modalButton.dataset.modalOpen);
@@ -142,7 +163,7 @@ document.addEventListener('click', (event) => {
             clone.querySelectorAll('select').forEach((select) => { select.selectedIndex = 0; });
             clone.querySelectorAll('input').forEach((input) => { input.value = ''; });
             const summary = clone.querySelector('[data-purchase-summary]');
-            if (summary) summary.textContent = 'â€”';
+            if (summary) summary.textContent = '—';
             items.appendChild(clone);
             updateLiftingSchedule(form);
         }
@@ -162,6 +183,11 @@ document.addEventListener('click', (event) => {
 document.addEventListener('input', (event) => {
     if (event.target.closest('[data-sales-item]')) {
         updateSalesTotals(event.target.closest('[data-sales-items]'));
+    }
+
+    if (event.target.matches('[data-sales-amount-paid]')) {
+        const modal = event.target.closest('.modal-backdrop');
+        updateSalesTotals(modal?.querySelector('[data-sales-items]'));
     }
 
     const liftingForm = event.target.closest('[data-lifting-schedule-form]');
@@ -202,12 +228,12 @@ const updateLiftingSchedule = (form) => {
             selectedIds.add(option.value);
             if (depotId && currentDepot !== depotId) error ||= 'All purchases must use the same pickup depot.';
             depotId ||= currentDepot;
-            depotLabel ||= `${option.dataset.depot}${option.dataset.address ? ` â€” ${option.dataset.address}` : ''}`;
+            depotLabel ||= `${option.dataset.depot}${option.dataset.address ? ` — ${option.dataset.address}` : ''}`;
             if (quantity > remaining) error ||= 'An amount to lift exceeds its remaining purchase quantity.';
             if (quantityInput) quantityInput.max = String(remaining);
             if (summary) summary.textContent = `${option.dataset.fuel} / ${remaining.toLocaleString()} L remaining`;
         } else if (summary) {
-            summary.textContent = 'â€”';
+            summary.textContent = '—';
         }
     });
 
@@ -275,12 +301,33 @@ const updateSalesTotals = (items) => {
         }
     });
 
-    const totalOutput = items.parentElement?.querySelector('[data-sales-total-preview]');
+    const scope = items.closest('.modal-backdrop') || items.parentElement;
+    const amountPaidInput = scope?.querySelector('[data-sales-amount-paid]');
+    const amountPaid = Number(amountPaidInput?.value || 0);
+    const normalizedAmountPaid = Number.isFinite(amountPaid) ? amountPaid : 0;
+    const remainingBalance = Math.max(0, total - normalizedAmountPaid);
+    const formatMoney = (value) => value.toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    });
+
+    if (amountPaidInput) {
+        amountPaidInput.max = total.toFixed(2);
+        amountPaidInput.setCustomValidity(
+            normalizedAmountPaid > total ? 'Amount paid cannot exceed the sale total.' : ''
+        );
+    }
+
+    const totalOutput = scope?.querySelector('[data-sales-total-preview]');
     if (totalOutput) {
-        totalOutput.textContent = `Total: ${total.toLocaleString(undefined, {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-        })}`;
+        totalOutput.textContent = totalOutput.closest('[data-sales-payment-summary]')
+            ? `PHP ${formatMoney(total)}`
+            : `Total: ${formatMoney(total)}`;
+    }
+
+    const balanceOutput = scope?.querySelector('[data-sales-balance-preview]');
+    if (balanceOutput) {
+        balanceOutput.textContent = `PHP ${formatMoney(remainingBalance)}`;
     }
 };
 

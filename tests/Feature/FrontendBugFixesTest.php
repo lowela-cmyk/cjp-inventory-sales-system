@@ -76,8 +76,30 @@ class FrontendBugFixesTest extends TestCase
             ->assertSee('name="password"', false)
             ->assertDontSee('name="role"', false)
             ->assertSee('cjp-toast-success', false)
+            ->assertSee('cjp-toast-logo', false)
             ->assertSee('data-toast-dismiss', false)
             ->assertSee('You have been signed out of CJP Southern Star.');
+
+        $this->withSession([
+            'status' => 'Your registration is pending Admin approval.',
+            'toast_type' => 'warning',
+            'toast_context' => null,
+        ])->get(route('login'))
+            ->assertOk()
+            ->assertSee('class="login-notice"', false)
+            ->assertSee('Your registration is pending Admin approval.')
+            ->assertDontSee('class="cjp-toast', false);
+    }
+
+    public function test_driver_header_has_no_hardcoded_person_fallback(): void
+    {
+        $header = file_get_contents(resource_path('views/components/driver/header.blade.php')) ?: '';
+        $sidebar = file_get_contents(resource_path('views/components/driver/sidebar.blade.php')) ?: '';
+
+        $this->assertStringNotContainsString('Manuel Ligaya', $header);
+        $this->assertStringNotContainsString('Manuel Ligaya', $sidebar);
+        $this->assertStringContainsString("'driverName' => 'Account'", $header);
+        $this->assertStringContainsString("'driverName' => 'Account'", $sidebar);
     }
 
     public function test_admin_nested_routes_keep_parent_sidebar_active(): void

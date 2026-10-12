@@ -69,6 +69,7 @@
                             <th>Balance</th>
                             <th>Due Date</th>
                             <th>Latest Payment</th>
+                            <th>Delivery Status</th>
                             <th>Status</th>
                             <th>Actions</th>
                         </tr>
@@ -77,16 +78,27 @@
                         @forelse ($sales as $row)
                             <tr class="{{ $row['class'] }}">
                                 @foreach ($row['cells'] as $cell)
-                                    @if ($loop->last)
+                                    @if ($loop->last || $loop->index === count($row['cells']) - 2)
                                         <td><x-admin.status-badge :status="$cell" /></td>
                                     @else
                                         <td>{{ $cell }}</td>
                                     @endif
                                 @endforeach
-                                <td><button class="btn btn-secondary" type="button" data-modal-open="{{ $row['modal_id'] }}">Edit</button></td>
+                                <td>
+                                    <div class="sales-row-actions">
+                                        <button class="btn btn-secondary" type="button" data-modal-open="{{ $row['modal_id'] }}">View</button>
+                                        @if ($row['correction_action'])
+                                            <form method="POST" action="{{ route('sales-officer.sales.cancel', $row['id']) }}" data-confirm-message="{{ $row['correction_action'] === 'delete' ? 'Delete this untouched draft sale? This cannot be undone.' : 'Cancel this sale? Related payments and transaction history will be preserved, while stock and receivable effects will be reversed.' }}">
+                                                @csrf
+                                                @method('PATCH')
+                                                <button class="btn btn-danger" type="submit">{{ $row['correction_action'] === 'delete' ? 'Delete' : 'Cancel' }}</button>
+                                            </form>
+                                        @endif
+                                    </div>
+                                </td>
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="15">No records found.</td></tr>
+                            <tr><td class="empty-cell" colspan="16">No records found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -152,7 +164,6 @@
             <input type="hidden" name="idempotency_key" value="{{ old('idempotency_key', $saleIdempotencyKey) }}">
             <div class="modal-card">
                 <div class="form-grid">
-                    <div class="form-row"><label for="sale_code">Order ID</label><input id="sale_code" name="sale_code" type="text" placeholder="Auto-generated if blank" value="{{ old('sale_code') }}"></div>
                     <div class="form-row"><label for="sales_order_number">Sales Order Number</label><input id="sales_order_number" name="sales_order_number" type="text" maxlength="60" placeholder="Customer receipt/order number" value="{{ old('sales_order_number') }}"></div>
                     <div class="form-row"><label for="sale_date">Transaction Date</label><input id="sale_date" name="sale_date" type="date" value="{{ old('sale_date', now()->toDateString()) }}" required></div>
                     <div class="form-row">
@@ -185,7 +196,11 @@
                     </div>
                     <div class="sales-item-actions">
                         <button class="btn btn-primary" type="button" data-sales-item-add>Add Item</button>
-                        <output class="sales-total-preview" data-sales-total-preview>Total: 0.00</output>
+                    </div>
+                    <div class="sales-payment-summary" data-sales-payment-summary>
+                        <div class="sales-payment-stat"><span>Total</span><output data-sales-total-preview>PHP 0.00</output></div>
+                        <label class="sales-payment-entry" for="sale_amount_paid"><span>Amount Paid by Customer</span><input id="sale_amount_paid" name="amount_paid" type="number" min="0" step="0.01" value="{{ old('amount_paid', '0.00') }}" data-sales-amount-paid></label>
+                        <div class="sales-payment-stat"><span>Remaining Balance</span><output data-sales-balance-preview>PHP 0.00</output></div>
                     </div>
                     <div class="form-row">
                         <label for="sale_payment_method">Payment Method</label>
@@ -212,6 +227,7 @@
                             @endforeach
                         </select>
                     </div>
+                    <div class="form-row"><label>Delivery Status</label><output>Pending — no Stock-Out until Delivered</output></div>
                 </div>
             </div>
             <div class="modal-actions"><button class="btn btn-pill btn-secondary" type="submit">Add</button><button class="btn btn-pill btn-danger" type="button" data-modal-close>Cancel</button></div>
@@ -224,8 +240,14 @@
                 @csrf
                 @method('PATCH')
             </form>
+            @if (! in_array($row['delivery_status'], ['delivered', 'cancelled'], true))
+                <form id="sale-delivery-{{ $row['id'] }}" method="POST" action="{{ route('sales-officer.sales.delivery-status.update', $row['id']) }}" data-confirm-message="Update this delivery status? Selecting Delivered will create Stock-Out and deduct inventory.">
+                    @csrf
+                    @method('PATCH')
+                </form>
+            @endif
             <div class="modal-card">
-                <x-admin.status-badge :status="$row['cells'][13]" />
+                <div class="sales-row-actions"><x-admin.status-badge :status="$row['delivery_status']" /><x-admin.status-badge :status="$row['cells'][14]" /></div>
                 <p class="detail-id">{{ $row['sale_code'] }}</p>
                 <div class="detail-grid">
                     @foreach ($row['details'] as $label => $value)
@@ -242,6 +264,19 @@
                         </tbody>
                     </table>
                 </div>
+                @if (! in_array($row['delivery_status'], ['delivered', 'cancelled'], true))
+                    <div class="form-grid" style="margin-top:18px">
+                        <div class="form-row">
+                            <label for="sale_delivery_status_{{ $row['id'] }}">Delivery Status</label>
+                            <select form="sale-delivery-{{ $row['id'] }}" id="sale_delivery_status_{{ $row['id'] }}" name="delivery_status">
+                                @foreach ($editableDeliveryStatuses as $deliveryStatus)
+                                    <option value="{{ $deliveryStatus }}" @selected($row['delivery_status'] === $deliveryStatus)>{{ ucwords(str_replace('_', ' ', $deliveryStatus)) }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div class="form-row"><label>Inventory</label><button class="btn btn-primary" type="submit" form="sale-delivery-{{ $row['id'] }}">Update Delivery</button></div>
+                    </div>
+                @endif
                 <div class="form-grid" style="margin-top:18px">
                     <div class="form-row"><label for="sales_order_number_{{ $row['id'] }}">Sales Order Number</label><input form="sale-update-{{ $row['id'] }}" id="sales_order_number_{{ $row['id'] }}" name="sales_order_number" type="text" maxlength="60" value="{{ old('sales_order_number', $row['sales_order_number']) }}"></div>
                     <div class="form-row"><label for="sale_date_{{ $row['id'] }}">Transaction Date</label><input form="sale-update-{{ $row['id'] }}" id="sale_date_{{ $row['id'] }}" name="sale_date" type="date" value="{{ old('sale_date', $row['sale_date']) }}" required></div>
@@ -304,12 +339,16 @@
             </div>
             <div class="modal-actions">
                 <button class="btn btn-pill btn-success" type="button" data-modal-open="{{ $row['payment_id'] }}">Payment History</button>
-                <button class="btn btn-pill btn-secondary" type="submit" form="sale-update-{{ $row['id'] }}">Edit</button>
-                <form method="POST" action="{{ route('sales-officer.sales.cancel', $row['id']) }}">
-                    @csrf
-                    @method('PATCH')
-                    <button class="btn btn-pill btn-danger" type="submit" @disabled($row['has_dependencies'])>Delete</button>
-                </form>
+                @if ($row['status'] !== 'cancelled')
+                    <button class="btn btn-pill btn-secondary" type="submit" form="sale-update-{{ $row['id'] }}">Edit</button>
+                @endif
+                @if ($row['correction_action'])
+                    <form method="POST" action="{{ route('sales-officer.sales.cancel', $row['id']) }}" data-confirm-message="{{ $row['correction_action'] === 'delete' ? 'Delete this untouched draft sale? This cannot be undone.' : 'Cancel this sale? Related payments and transaction history will be preserved, while stock and receivable effects will be reversed.' }}">
+                        @csrf
+                        @method('PATCH')
+                        <button class="btn btn-pill btn-danger" type="submit">{{ $row['correction_action'] === 'delete' ? 'Delete' : 'Cancel' }}</button>
+                    </form>
+                @endif
             </div>
         </x-admin.modal>
 
@@ -320,7 +359,7 @@
                     <div class="detail-row"><div class="detail-label">Sale Total</div><div class="detail-value">PHP {{ $row['sale_total'] }}</div></div>
                     <div class="detail-row"><div class="detail-label">Total Paid</div><div class="detail-value">PHP {{ $row['total_paid'] }}</div></div>
                     <div class="detail-row"><div class="detail-label">Remaining Balance</div><div class="detail-value">PHP {{ $row['balance'] }}</div></div>
-                    <div class="detail-row"><div class="detail-label">Payment Status</div><div class="detail-value"><x-admin.status-badge :status="$row['cells'][13]" /></div></div>
+                    <div class="detail-row"><div class="detail-label">Payment Status</div><div class="detail-value"><x-admin.status-badge :status="$row['cells'][14]" /></div></div>
                 </div>
                 <form method="POST" action="{{ route('sales-officer.sales.payments.store', $row['id']) }}" style="margin-top:18px">
                     @csrf

@@ -205,8 +205,8 @@
                 <button class="btn btn-primary" type="submit">Depot</button>
                 <button class="btn btn-secondary" type="button" data-modal-open="io-depot-add">+ Depot</button>
             </form>
-            <div class="table-wrap table-wrap-fit inventory-table-wrap">
-                <table class="admin-table admin-table-fit depot-table inventory-table">
+            <div class="table-wrap inventory-table-wrap">
+                <table class="admin-table depot-table inventory-table">
                     <thead><tr><th>Depot Code</th><th>Name</th><th>Address</th><th>Contact Person</th><th>Phone</th><th class="inventory-status-column">Status</th></tr></thead>
                     <tbody>
                         @forelse ($depotRows as $row)

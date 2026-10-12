@@ -11,7 +11,8 @@ class SaleConfirmationService
     ) {}
 
     /**
-     * Confirms a sale and initiates stock-out release or preparation for its items.
+     * Confirms a sale without changing physical inventory. Stock-Out is owned by
+     * the separate delivery-status transition below.
      *
      * @throws \RuntimeException
      */
@@ -40,34 +41,99 @@ class SaleConfirmationService
                 ]);
         }
 
-        $items = DB::table('sale_items')
-            ->where('sale_id', $saleId)
-            ->lockForUpdate()
-            ->get();
-
-        $stockOutAt = ($sale->sale_date ?: now()->toDateString()).' 12:00:00';
-
-        foreach ($items as $item) {
-            $remaining = round((float) $item->quantity_liters - (float) $item->fulfilled_quantity_liters, 2);
-            if ($remaining <= 0) {
-                continue;
-            }
-
-            $stockOutError = $this->stockOutRelease->releaseSaleItemFromGarage(
-                (int) $item->id,
-                $remaining,
-                $stockOutAt,
-                $userId,
-                null,
-                'Automatic stock-out from sale '.$sale->sale_code
-            );
-
-            if ($stockOutError) {
-                throw new \RuntimeException($stockOutError);
-            }
-        }
-
         $this->reconcile($saleId);
+    }
+
+    /**
+     * @throws \RuntimeException
+     */
+    public function updateDeliveryStatus(int $saleId, string $deliveryStatus, int $userId): void
+    {
+        DB::transaction(function () use ($saleId, $deliveryStatus, $userId): void {
+            $sale = DB::table('sales')
+                ->where('id', $saleId)
+                ->whereNull('deleted_at')
+                ->lockForUpdate()
+                ->first();
+
+            if (! $sale) {
+                throw new \RuntimeException('Sale record not found.');
+            }
+
+            $current = (string) ($sale->delivery_status ?? 'pending');
+
+            if ($sale->status === 'cancelled' || $current === 'cancelled') {
+                throw new \RuntimeException('Cancelled sales are read-only and remain available for audit history.');
+            }
+
+            if ($deliveryStatus === 'cancelled') {
+                throw new \RuntimeException('Use the Cancel action to preserve and reconcile the sale audit history.');
+            }
+
+            if ($current === 'delivered') {
+                if ($deliveryStatus === 'delivered') {
+                    return;
+                }
+
+                throw new \RuntimeException('A delivered sale cannot be moved back because its inventory was already released.');
+            }
+
+            if ($deliveryStatus !== 'pending' && $sale->status === 'draft') {
+                throw new \RuntimeException('Confirm the sale before starting or completing delivery.');
+            }
+
+            if ($deliveryStatus === 'delivered') {
+                // Set inside the same transaction so the shared Stock-Out service
+                // can enforce Delivered for every caller. Any release failure
+                // rolls this update back with the inventory work.
+                DB::table('sales')
+                    ->where('id', $saleId)
+                    ->update([
+                        'delivery_status' => 'delivered',
+                        'updated_at' => now(),
+                    ]);
+
+                $items = DB::table('sale_items')
+                    ->where('sale_id', $saleId)
+                    ->lockForUpdate()
+                    ->get();
+
+                if ($items->isEmpty()) {
+                    throw new \RuntimeException('The sale has no items available for delivery.');
+                }
+
+                foreach ($items as $item) {
+                    $remaining = round((float) $item->quantity_liters - (float) $item->fulfilled_quantity_liters, 2);
+                    if ($remaining <= 0) {
+                        continue;
+                    }
+
+                    $stockOutError = $this->stockOutRelease->releaseSaleItemFromGarage(
+                        (int) $item->id,
+                        $remaining,
+                        now()->toDateTimeString(),
+                        $userId,
+                        null,
+                        'Automatic stock-out on delivery of sale '.$sale->sale_code,
+                        false
+                    );
+
+                    if ($stockOutError) {
+                        throw new \RuntimeException($stockOutError);
+                    }
+                }
+            }
+
+            DB::table('sales')
+                ->where('id', $saleId)
+                ->update([
+                    'delivery_status' => $deliveryStatus,
+                    'delivered_at' => $deliveryStatus === 'delivered' ? now() : null,
+                    'delivery_status_updated_at' => now(),
+                    'delivery_status_updated_by' => $userId,
+                    'updated_at' => now(),
+                ]);
+        });
     }
 
     /**

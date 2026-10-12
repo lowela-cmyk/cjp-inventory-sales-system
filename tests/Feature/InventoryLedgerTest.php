@@ -164,7 +164,7 @@ class InventoryLedgerTest extends TestCase
             ->assertOk()
             ->assertSee('data-pickup-depot', false)
             ->assertSee('lifting-schedule-form', false)
-            ->assertSee('+ Add Lift')
+            ->assertSee('+ Add Purchase')
             ->assertSee('Remove Lift')
             ->assertSee('CJP Depot')
             ->assertDontSee('name="source_location"', false)

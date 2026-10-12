@@ -1,93 +1,82 @@
 {
   "communities": {
     "0": [
-      "app_http_controllers_salesofficercustomercontroller_php_closure",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_blanktonull",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_cancelledhaulallocationexists",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_cancelledstockoutexists",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_cancelsale",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_changesprotectedsalefields",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_construct",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_customeroptions",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_customeroutstandingtotal",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_customeroutstandingtotals",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_customerrows",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_deactivate",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_decimaltoint",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_defaultpaymentterms",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_duplicatepaymentexists",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_formatdate",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_formatdatetime",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_formatliters",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_formatnumber",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_fuelsummary",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_fueltypeoptions",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_hassaledependentactivity",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_isoverdue",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_itempricesummary",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_itemsforsale",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_itemsforsales",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_label",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_latestpaymentdateforsale",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_latestpaymentdatesforsales",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_linetotal",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_nextcode",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_nextcustomercode",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_normalizedsaleitems",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_paidtotalforsale",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_paidtotalforschedule",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_paymentmethodlabel",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_paymentscheduleforupdate",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_paymentschedulesforsale",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_paymentschedulesforsales",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_paymentschedulestatus",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_paymentsforsale",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_paymentsforsales",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_receivablestatus",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_receivablestatusforsale",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_receivablestatuslabel",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_rowclass",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_salecode",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_saledependencymap",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_saleforupdate",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_salepaymentstatus",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_salesredirectroute",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_salesrows",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_saletotalforupdate",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_search",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_statusallowedbypayments",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_store",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_storepayment",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_storesale",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_transactionsummaries",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_transactionsummary",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_update",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_updatepaymentschedulestatuses",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_updatesale",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_validatedcustomerdata",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_validatedpaymentdata",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_validatedsaledata",
-      "app_services_admindashboardservice",
-      "app_services_admindashboardservice_admindashboardservice",
-      "app_services_admindashboardservice_admindashboardservice_construct",
-      "app_services_admindashboardservice_admindashboardservice_data",
-      "app_services_admindashboardservice_admindashboardservice_demandbyday",
-      "app_services_admindashboardservice_admindashboardservice_demandbymonth",
-      "app_services_admindashboardservice_admindashboardservice_formatkiloliters",
-      "app_services_admindashboardservice_admindashboardservice_formatliters",
-      "app_services_admindashboardservice_admindashboardservice_formatmoney",
-      "app_services_admindashboardservice_admindashboardservice_normalizeddemandrows",
-      "app_services_admindashboardservice_admindashboardservice_paymenttotalsquery",
-      "app_services_admindashboardservice_admindashboardservice_revenuebars",
-      "app_services_admindashboardservice_admindashboardservice_salesquantitybydate",
-      "app_services_admindashboardservice_admindashboardservice_saletotalsquery",
-      "app_services_idempotencyservice_idempotencyservice",
-      "app_services_idempotencyservice_idempotencyservice_iscodecollision",
-      "app_services_idempotencyservice_idempotencyservice_retryoncollision",
-      "app_services_idempotencyservice_idempotencyservice_run",
-      "app_services_idempotencyservice_php_closure",
-      "illuminate_support_collection"
+      "database_migrations_0001_01_01_000000_create_users_table",
+      "database_migrations_0001_01_01_000000_create_users_table_down",
+      "database_migrations_0001_01_01_000000_create_users_table_up",
+      "database_migrations_0001_01_01_000001_create_cache_table",
+      "database_migrations_0001_01_01_000001_create_cache_table_down",
+      "database_migrations_0001_01_01_000001_create_cache_table_up",
+      "database_migrations_0001_01_01_000002_create_jobs_table",
+      "database_migrations_0001_01_01_000002_create_jobs_table_down",
+      "database_migrations_0001_01_01_000002_create_jobs_table_up",
+      "database_migrations_2026_08_28_000001_add_access_fields_to_users_table",
+      "database_migrations_2026_08_28_000001_add_access_fields_to_users_table_down",
+      "database_migrations_2026_08_28_000001_add_access_fields_to_users_table_up",
+      "database_migrations_2026_08_28_000002_create_master_data_tables",
+      "database_migrations_2026_08_28_000002_create_master_data_tables_down",
+      "database_migrations_2026_08_28_000002_create_master_data_tables_up",
+      "database_migrations_2026_08_28_000003_create_procurement_tables",
+      "database_migrations_2026_08_28_000003_create_procurement_tables_down",
+      "database_migrations_2026_08_28_000003_create_procurement_tables_up",
+      "database_migrations_2026_08_28_000004_create_sales_payment_tables",
+      "database_migrations_2026_08_28_000004_create_sales_payment_tables_down",
+      "database_migrations_2026_08_28_000004_create_sales_payment_tables_up",
+      "database_migrations_2026_08_28_000005_create_hauling_tables",
+      "database_migrations_2026_08_28_000005_create_hauling_tables_down",
+      "database_migrations_2026_08_28_000005_create_hauling_tables_up",
+      "database_migrations_2026_08_28_000006_create_delivery_inventory_tables",
+      "database_migrations_2026_08_28_000006_create_delivery_inventory_tables_down",
+      "database_migrations_2026_08_28_000006_create_delivery_inventory_tables_up",
+      "database_migrations_2026_08_28_000007_create_alert_report_tables",
+      "database_migrations_2026_08_28_000007_create_alert_report_tables_down",
+      "database_migrations_2026_08_28_000007_create_alert_report_tables_up",
+      "database_migrations_2026_09_04_000001_add_unique_inventory_movement_link_to_stock_outs",
+      "database_migrations_2026_09_04_000001_add_unique_inventory_movement_link_to_stock_outs_down",
+      "database_migrations_2026_09_04_000001_add_unique_inventory_movement_link_to_stock_outs_up",
+      "database_migrations_2026_09_05_000001_add_approval_status_to_users_table",
+      "database_migrations_2026_09_05_000001_add_approval_status_to_users_table_down",
+      "database_migrations_2026_09_05_000001_add_approval_status_to_users_table_up",
+      "database_migrations_2026_09_05_000002_add_sales_order_number_to_sales_table",
+      "database_migrations_2026_09_05_000002_add_sales_order_number_to_sales_table_down",
+      "database_migrations_2026_09_05_000002_add_sales_order_number_to_sales_table_up",
+      "database_migrations_2026_09_05_000004_remove_deliveries_table_from_inventory_workflow",
+      "database_migrations_2026_09_05_000004_remove_deliveries_table_from_inventory_workflow_down",
+      "database_migrations_2026_09_05_000004_remove_deliveries_table_from_inventory_workflow_up",
+      "database_migrations_2026_09_06_000001_add_withdrawal_receipts_and_garage_tanks",
+      "database_migrations_2026_09_06_000001_add_withdrawal_receipts_and_garage_tanks_down",
+      "database_migrations_2026_09_06_000001_add_withdrawal_receipts_and_garage_tanks_nextlocationcode",
+      "database_migrations_2026_09_06_000001_add_withdrawal_receipts_and_garage_tanks_up",
+      "database_migrations_2026_09_16_000002_add_integrity_check_constraints",
+      "database_migrations_2026_09_16_000002_add_integrity_check_constraints_down",
+      "database_migrations_2026_09_16_000002_add_integrity_check_constraints_up",
+      "database_migrations_2026_09_16_000003_create_idempotency_keys_table",
+      "database_migrations_2026_09_16_000003_create_idempotency_keys_table_down",
+      "database_migrations_2026_09_16_000003_create_idempotency_keys_table_up",
+      "database_migrations_2026_09_18_000001_add_connected_lifting_workflow",
+      "database_migrations_2026_09_18_000001_add_connected_lifting_workflow_down",
+      "database_migrations_2026_09_18_000001_add_connected_lifting_workflow_up",
+      "database_migrations_2026_09_21_000002_extend_trucks_for_fleet_management",
+      "database_migrations_2026_09_21_000002_extend_trucks_for_fleet_management_down",
+      "database_migrations_2026_09_21_000002_extend_trucks_for_fleet_management_up",
+      "database_migrations_2026_09_21_000003_add_cost_basis_to_stock_outs",
+      "database_migrations_2026_09_21_000003_add_cost_basis_to_stock_outs_backfilldirectdepotcosts",
+      "database_migrations_2026_09_21_000003_add_cost_basis_to_stock_outs_backfillgaragecosts",
+      "database_migrations_2026_09_21_000003_add_cost_basis_to_stock_outs_down",
+      "database_migrations_2026_09_21_000003_add_cost_basis_to_stock_outs_up",
+      "database_migrations_2026_09_24_000001_add_sale_cancellation_audit_fields",
+      "database_migrations_2026_09_24_000001_add_sale_cancellation_audit_fields_down",
+      "database_migrations_2026_09_24_000001_add_sale_cancellation_audit_fields_up",
+      "database_migrations_2026_09_24_000002_add_delivery_status_to_sales_table",
+      "database_migrations_2026_09_24_000002_add_delivery_status_to_sales_table_down",
+      "database_migrations_2026_09_24_000002_add_delivery_status_to_sales_table_up",
+      "illuminate_database_migrations_migration",
+      "illuminate_database_schema_blueprint",
+      "illuminate_support_facades_schema",
+      "tests_feature_inventoryofficerpurchasemanagementtest",
+      "tests_feature_inventoryofficerstockouttest",
+      "tests_feature_salesofficerpaymentrecordingtest",
+      "tests_feature_salesofficerreceivablestrackingtest"
     ],
     "1": [
       "app_services_aidatapreparationservice_aidatapreparationservice",
@@ -239,81 +228,80 @@
       "symfony_component_httpfoundation_response"
     ],
     "3": [
-      "database_migrations_0001_01_01_000000_create_users_table",
-      "database_migrations_0001_01_01_000000_create_users_table_down",
-      "database_migrations_0001_01_01_000000_create_users_table_up",
-      "database_migrations_0001_01_01_000001_create_cache_table",
-      "database_migrations_0001_01_01_000001_create_cache_table_down",
-      "database_migrations_0001_01_01_000001_create_cache_table_up",
-      "database_migrations_0001_01_01_000002_create_jobs_table",
-      "database_migrations_0001_01_01_000002_create_jobs_table_down",
-      "database_migrations_0001_01_01_000002_create_jobs_table_up",
-      "database_migrations_2026_08_28_000001_add_access_fields_to_users_table",
-      "database_migrations_2026_08_28_000001_add_access_fields_to_users_table_down",
-      "database_migrations_2026_08_28_000001_add_access_fields_to_users_table_up",
-      "database_migrations_2026_08_28_000002_create_master_data_tables",
-      "database_migrations_2026_08_28_000002_create_master_data_tables_down",
-      "database_migrations_2026_08_28_000002_create_master_data_tables_up",
-      "database_migrations_2026_08_28_000003_create_procurement_tables",
-      "database_migrations_2026_08_28_000003_create_procurement_tables_down",
-      "database_migrations_2026_08_28_000003_create_procurement_tables_up",
-      "database_migrations_2026_08_28_000004_create_sales_payment_tables",
-      "database_migrations_2026_08_28_000004_create_sales_payment_tables_down",
-      "database_migrations_2026_08_28_000004_create_sales_payment_tables_up",
-      "database_migrations_2026_08_28_000005_create_hauling_tables",
-      "database_migrations_2026_08_28_000005_create_hauling_tables_down",
-      "database_migrations_2026_08_28_000005_create_hauling_tables_up",
-      "database_migrations_2026_08_28_000006_create_delivery_inventory_tables",
-      "database_migrations_2026_08_28_000006_create_delivery_inventory_tables_down",
-      "database_migrations_2026_08_28_000006_create_delivery_inventory_tables_up",
-      "database_migrations_2026_08_28_000007_create_alert_report_tables",
-      "database_migrations_2026_08_28_000007_create_alert_report_tables_down",
-      "database_migrations_2026_08_28_000007_create_alert_report_tables_up",
-      "database_migrations_2026_09_04_000001_add_unique_inventory_movement_link_to_stock_outs",
-      "database_migrations_2026_09_04_000001_add_unique_inventory_movement_link_to_stock_outs_down",
-      "database_migrations_2026_09_04_000001_add_unique_inventory_movement_link_to_stock_outs_up",
-      "database_migrations_2026_09_05_000001_add_approval_status_to_users_table",
-      "database_migrations_2026_09_05_000001_add_approval_status_to_users_table_down",
-      "database_migrations_2026_09_05_000001_add_approval_status_to_users_table_up",
-      "database_migrations_2026_09_05_000002_add_sales_order_number_to_sales_table",
-      "database_migrations_2026_09_05_000002_add_sales_order_number_to_sales_table_down",
-      "database_migrations_2026_09_05_000002_add_sales_order_number_to_sales_table_up",
-      "database_migrations_2026_09_05_000004_remove_deliveries_table_from_inventory_workflow",
-      "database_migrations_2026_09_05_000004_remove_deliveries_table_from_inventory_workflow_down",
-      "database_migrations_2026_09_05_000004_remove_deliveries_table_from_inventory_workflow_up",
-      "database_migrations_2026_09_06_000001_add_withdrawal_receipts_and_garage_tanks",
-      "database_migrations_2026_09_06_000001_add_withdrawal_receipts_and_garage_tanks_down",
-      "database_migrations_2026_09_06_000001_add_withdrawal_receipts_and_garage_tanks_nextlocationcode",
-      "database_migrations_2026_09_06_000001_add_withdrawal_receipts_and_garage_tanks_up",
-      "database_migrations_2026_09_16_000002_add_integrity_check_constraints",
-      "database_migrations_2026_09_16_000002_add_integrity_check_constraints_down",
-      "database_migrations_2026_09_16_000002_add_integrity_check_constraints_up",
-      "database_migrations_2026_09_16_000003_create_idempotency_keys_table",
-      "database_migrations_2026_09_16_000003_create_idempotency_keys_table_down",
-      "database_migrations_2026_09_16_000003_create_idempotency_keys_table_up",
-      "database_migrations_2026_09_18_000001_add_connected_lifting_workflow",
-      "database_migrations_2026_09_18_000001_add_connected_lifting_workflow_down",
-      "database_migrations_2026_09_18_000001_add_connected_lifting_workflow_up",
-      "database_migrations_2026_09_21_000002_extend_trucks_for_fleet_management",
-      "database_migrations_2026_09_21_000002_extend_trucks_for_fleet_management_down",
-      "database_migrations_2026_09_21_000002_extend_trucks_for_fleet_management_up",
-      "database_migrations_2026_09_21_000003_add_cost_basis_to_stock_outs",
-      "database_migrations_2026_09_21_000003_add_cost_basis_to_stock_outs_backfilldirectdepotcosts",
-      "database_migrations_2026_09_21_000003_add_cost_basis_to_stock_outs_backfillgaragecosts",
-      "database_migrations_2026_09_21_000003_add_cost_basis_to_stock_outs_down",
-      "database_migrations_2026_09_21_000003_add_cost_basis_to_stock_outs_up",
-      "illuminate_database_migrations_migration",
-      "illuminate_database_schema_blueprint",
-      "illuminate_support_facades_schema"
+      "app_http_controllers_salesofficercustomercontroller_php_closure",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_blanktonull",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_cancelledhaulallocationexists",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_cancelledstockoutexists",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_cancelsale",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_changesprotectedsalefields",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_customeroptions",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_customeroutstandingtotal",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_customeroutstandingtotals",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_customerrows",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_deactivate",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_decimaltoint",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_defaultpaymentterms",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_duplicatepaymentexists",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_formatdate",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_formatdatetime",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_formatliters",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_formatnumber",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_fuelsummary",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_fueltypeoptions",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_hassaledependentactivity",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_index",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_isoverdue",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_itempricesummary",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_itemsforsale",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_itemsforsales",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_label",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_latestpaymentdateforsale",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_latestpaymentdatesforsales",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_linetotal",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_nextcode",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_nextcustomercode",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_normalizedsaleitems",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_paidtotalforsale",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_paidtotalforschedule",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_paymentmethodlabel",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_paymentscheduleforupdate",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_paymentschedulesforsale",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_paymentschedulesforsales",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_paymentschedulestatus",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_paymentsforsale",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_paymentsforsales",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_receivablestatus",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_receivablestatusforsale",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_receivablestatuslabel",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_recordpayment",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_rowclass",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_salecode",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_saleforupdate",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_salepaymentstatus",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_salesredirectroute",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_salesrows",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_saletotalforupdate",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_search",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_statusallowedbypayments",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_store",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_storepayment",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_storesale",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_transactionsummaries",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_transactionsummary",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_update",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_updatedeliverystatus",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_updatepaymentschedulestatuses",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_updatesale",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_validatedcustomerdata",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_validatedpaymentdata",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_validatedsaledata"
     ],
     "4": [
-      "app_http_controllers_adminmonitoringcontroller",
       "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller",
       "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_alertactionurl",
       "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_alertrows",
-      "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_alerts",
       "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_construct",
-      "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_dispatchalerts",
       "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_formatdate",
       "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_formatdatetime",
       "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_formatfinancial",
@@ -326,13 +314,11 @@
       "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_haulsforpurchaseitem",
       "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_haultruckoptions",
       "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_inventory",
-      "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_inventoryofficeralerts",
       "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_isoverdue",
       "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_itempricesummary",
       "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_itemsforsale",
       "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_label",
       "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_latestpaymentdateforsale",
-      "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_ledger",
       "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_paymentmethodlabel",
       "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_paymentschedulesforsale",
       "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_paymentsforsale",
@@ -341,135 +327,64 @@
       "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_rowclass",
       "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_salepaymentstatus",
       "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_sales",
-      "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_salesofficeralerts",
       "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_salesrows",
       "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_search",
       "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_stockoutrows",
       "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_stockstatus",
-      "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_validatedsearch",
       "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_withdrawalsforpurchaseitem",
       "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_withdrawalstatus",
       "app_http_controllers_adminmonitoringcontroller_php_purchaseservice",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_construct",
-      "app_services_idempotencyservice",
-      "app_services_inventoryledgerservice",
-      "app_services_purchaseservice",
-      "app_services_stockoutfinancialservice",
-      "app_services_stockoutfinancialservice_stockoutfinancialservice",
-      "app_services_stockoutfinancialservice_stockoutfinancialservice_calculate",
-      "app_services_stockoutfinancialservice_stockoutfinancialservice_query",
-      "app_services_truckavailabilityservice",
-      "illuminate_database_query_builder",
-      "illuminate_validation_validationexception",
+      "app_http_controllers_adminmonitoringcontroller_php_stockoutfinancialservice",
+      "app_services_salecorrectionservice",
+      "app_services_salecorrectionservice_salecorrectionservice",
+      "app_services_salecorrectionservice_salecorrectionservice_correct",
+      "app_services_salecorrectionservice_salecorrectionservice_correctionmode",
+      "app_services_salecorrectionservice_salecorrectionservice_hasdependentactivity",
       "truckavailabilityservice"
     ],
     "5": [
-      "app_models_user",
-      "app_services_dashboardsummaryservice",
-      "app_services_saleconfirmationservice",
-      "app_services_stockinservice",
-      "app_services_stockoutreleaseservice",
-      "app_services_workflowalertservice",
-      "carbon_carbon",
-      "config_cache",
-      "config_database",
-      "config_session",
-      "illuminate_database_queryexception",
-      "illuminate_foundation_testing_refreshdatabase",
-      "illuminate_http_client_response",
-      "illuminate_support_facades_config",
-      "illuminate_support_facades_db",
-      "illuminate_support_facades_http",
-      "illuminate_support_facades_storage",
-      "illuminate_support_str",
-      "pdo_mysql",
-      "tests_feature_adminsalesreportstest",
-      "tests_feature_aifeaturetestingtest",
-      "tests_feature_analyticstestingtest",
-      "tests_feature_businessinsightstest",
-      "tests_feature_completeworkflowintegrationtest",
-      "tests_feature_connectedliftingworkflowtest",
-      "tests_feature_dashboardsummarycardstest",
-      "tests_feature_databaseintegritytest",
-      "tests_feature_dispatchliftingstatusmanagementtest",
-      "tests_feature_formvalidationtest",
-      "tests_feature_frontendbugfixestest",
-      "tests_feature_fuelcatalogregressiontest",
-      "tests_feature_functionaltestingtest",
-      "tests_feature_integrationtestingtest",
-      "tests_feature_inventoryledgertest",
-      "tests_feature_inventoryofficerpurchasemanagementtest",
-      "tests_feature_inventoryofficerstockintest",
-      "tests_feature_inventoryofficerstockouttest",
-      "tests_feature_inventoryvarianceexplanationstest",
-      "tests_feature_masterdataandinventoryaccesstest",
-      "tests_feature_phase2guardrailsandidempotencytest",
-      "tests_feature_phase3operationalacceptancetest",
-      "tests_feature_phase4securityhardeningtest",
-      "tests_feature_phase5performancetest",
-      "tests_feature_purchasereceiptstatustest",
-      "tests_feature_purchasereceiptuploadtest",
-      "tests_feature_revenueinsightstest",
-      "tests_feature_roleaccesstestingtest",
-      "tests_feature_salesofficercustomermanagementtest",
-      "tests_feature_salesofficerpaymentrecordingtest",
-      "tests_feature_salesofficerreceivablestrackingtest",
-      "tests_feature_salesofficersalesmanagementtest",
-      "tests_feature_salestrendsummariestest",
-      "tests_feature_truckmanagementtest",
-      "tests_feature_truckmanagementtest_truckmanagementtest",
-      "tests_testcase"
+      "app_http_controllers_adminbusinessinsightcontroller",
+      "app_http_controllers_admindashboardcontroller",
+      "app_http_controllers_admindashboardcontroller_admindashboardcontroller",
+      "app_http_controllers_admindashboardcontroller_admindashboardcontroller_invoke",
+      "app_http_controllers_admininventoryvarianceexplanationcontroller",
+      "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_alerts",
+      "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_dispatchalerts",
+      "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_inventoryofficeralerts",
+      "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_ledger",
+      "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_salesofficeralerts",
+      "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_validatedsearch",
+      "app_http_controllers_adminrevenueinsightcontroller",
+      "app_http_controllers_adminsalesreportcontroller",
+      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_export",
+      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_filterlabel",
+      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_invoke",
+      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_validatedfilters",
+      "app_http_controllers_adminsalestrendsummarycontroller",
+      "app_http_controllers_adminusermanagementcontroller",
+      "app_http_controllers_authcontroller",
+      "app_http_controllers_dispatchdeliverycontroller",
+      "app_http_controllers_dispatchliftingstatuscontroller",
+      "app_http_controllers_driverdeliverycontroller",
+      "app_http_controllers_driverliftingstatuscontroller",
+      "app_http_controllers_inventoryofficerledgercontroller",
+      "app_http_controllers_inventoryofficerledgercontroller_inventoryofficerledgercontroller",
+      "app_http_controllers_inventoryofficerledgercontroller_inventoryofficerledgercontroller_invoke",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_store",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_validatedpurchasedata",
+      "app_http_controllers_salesofficercustomercontroller",
+      "app_http_controllers_truckcontroller",
+      "app_rules_approvedfueltype",
+      "app_rules_approvedfueltype_approvedfueltype",
+      "carbon_carbonimmutable",
+      "illuminate_http_request",
+      "illuminate_http_response",
+      "illuminate_validation_rule",
+      "illuminate_validation_rules_password",
+      "illuminate_view_view",
+      "routes_web"
     ],
     "6": [
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_activeinventorybalancesbyfuelquery",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_availablegaragestockforupdate",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_cancelledhaulallocationexists",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_cancelledstockoutexists",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_depotrows",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_directdepotreleaseallocationoptions",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_duplicatedirectdepotreleaseexists",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_duplicategaragestockoutexists",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_duplicatestockinexists",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_formatdate",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_formatdatetime",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_formatfinancial",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_formatliters",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_formatnumber",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_garageallocationforupdate",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_garageallocationoptions",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_haulallocationsarewithinquantity",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_increasefulfilledquantity",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_index",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_inventorylinkstatus",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_isstoredwithdrawalreceipt",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_itemstatus",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_label",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_linetotal",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_nextcode",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_preparedstockoutforsaleitem",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_purchaseitemforupdate",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_purchaserows",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_reducepreparedstockout",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_referencekey",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_releasedirectfromdepot",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_releasefromgarage",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_remainingreceivableforallocation",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_rowclass",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_saleitemforstockout",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_samequantity",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_search",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_stockinpurchaserows",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_stockinreferencelabels",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_stockinrows",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_stockoutrows",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_stockoutsaleitemoptions",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_withdrawalreceipt",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_withdrawalstatus",
-      "app_http_controllers_inventoryofficerpurchasecontroller_php_closure",
-      "illuminate_pagination_lengthawarepaginator"
-    ],
-    "7": [
       "app_models_user_user",
       "app_models_user_user_casts",
       "app_models_user_user_getrolelabelattribute",
@@ -508,6 +423,45 @@
       "tests_feature_phase5performancetest_phase5performancetest_test_stock_in_service_validates_garage_destination",
       "tests_feature_truckmanagementtest_truckmanagementtest_test_admin_and_dispatch_can_manage_trucks_with_unique_normalized_plates",
       "tests_feature_truckmanagementtest_truckmanagementtest_test_truck_module_rbac_and_activate_deactivate_workflow"
+    ],
+    "7": [
+      "app_services_aidatapreparationservice",
+      "app_services_dashboardsummaryservice",
+      "carbon_carbon",
+      "illuminate_auth_access_authorizationexception",
+      "illuminate_foundation_testing_refreshdatabase",
+      "illuminate_foundation_testing_testcase",
+      "illuminate_http_client_response",
+      "illuminate_support_facades_config",
+      "illuminate_support_facades_db",
+      "illuminate_support_facades_http",
+      "illuminate_support_facades_validator",
+      "tests_feature_adminmonitoringtest",
+      "tests_feature_adminsalesreportstest",
+      "tests_feature_adminusermanagementtest",
+      "tests_feature_aidatapreparationservicetest",
+      "tests_feature_aifeaturetestingtest",
+      "tests_feature_analyticstestingtest",
+      "tests_feature_businessinsightstest",
+      "tests_feature_completeworkflowintegrationtest",
+      "tests_feature_dashboardsummarycardstest",
+      "tests_feature_deliveryworkflowremovaltest",
+      "tests_feature_deliveryworkflowremovaltest_deliveryworkflowremovaltest",
+      "tests_feature_deliveryworkflowremovaltest_deliveryworkflowremovaltest_test_fuel_lifting_pages_remain_available_after_delivery_workflow_removal",
+      "tests_feature_deliveryworkflowremovaltest_deliveryworkflowremovaltest_test_standalone_delivery_routes_and_pages_are_not_registered",
+      "tests_feature_dispatchliftingstatusmanagementtest",
+      "tests_feature_exampletest",
+      "tests_feature_exampletest_exampletest",
+      "tests_feature_exampletest_exampletest_test_the_application_returns_a_successful_response",
+      "tests_feature_functionaltestingtest",
+      "tests_feature_haultruckassignmenttest",
+      "tests_feature_integrationtestingtest",
+      "tests_feature_inventoryofficerstockintest",
+      "tests_feature_inventoryvarianceexplanationstest",
+      "tests_feature_revenueinsightstest",
+      "tests_feature_roleaccesstestingtest",
+      "tests_feature_salestrendsummariestest",
+      "tests_testcase_testcase"
     ],
     "8": [
       "tests_feature_rolebasedaccesscontroltest_rolebasedaccesscontroltest",
@@ -548,64 +502,132 @@
       "tests_feature_rolebasedaccesscontroltest_rolebasedaccesscontroltest_test_switching_accounts_does_not_retain_previous_role_access"
     ],
     "9": [
-      "app_http_controllers_dispatchdeliverycontroller_dispatchdeliverycontroller_construct",
-      "app_http_controllers_dispatchliftingstatuscontroller",
-      "app_http_controllers_dispatchliftingstatuscontroller_dispatchliftingstatuscontroller",
-      "app_http_controllers_dispatchliftingstatuscontroller_dispatchliftingstatuscontroller_construct",
-      "app_http_controllers_dispatchliftingstatuscontroller_dispatchliftingstatuscontroller_haulforupdate",
-      "app_http_controllers_dispatchliftingstatuscontroller_dispatchliftingstatuscontroller_itemstatus",
-      "app_http_controllers_dispatchliftingstatuscontroller_dispatchliftingstatuscontroller_purchasestatus",
-      "app_http_controllers_dispatchliftingstatuscontroller_dispatchliftingstatuscontroller_redirectroute",
-      "app_http_controllers_dispatchliftingstatuscontroller_dispatchliftingstatuscontroller_remainingpurchaseitemliftquantity",
-      "app_http_controllers_dispatchliftingstatuscontroller_dispatchliftingstatuscontroller_syncpurchaseprogress",
-      "app_http_controllers_dispatchliftingstatuscontroller_dispatchliftingstatuscontroller_updatestatus",
-      "app_http_controllers_dispatchliftingstatuscontroller_dispatchliftingstatuscontroller_validateliftforstatus",
-      "app_http_controllers_driverliftingstatuscontroller",
-      "app_http_controllers_driverliftingstatuscontroller_driverliftingstatuscontroller",
-      "app_http_controllers_driverliftingstatuscontroller_driverliftingstatuscontroller_construct",
-      "app_http_controllers_driverliftingstatuscontroller_driverliftingstatuscontroller_haulfordriverupdate",
-      "app_http_controllers_driverliftingstatuscontroller_driverliftingstatuscontroller_remainingpurchaseitemliftquantity",
-      "app_http_controllers_driverliftingstatuscontroller_driverliftingstatuscontroller_updatestatus",
-      "app_http_controllers_driverliftingstatuscontroller_driverliftingstatuscontroller_validateallocations",
-      "app_http_controllers_driverliftingstatuscontroller_driverliftingstatuscontroller_validateliftforstatus",
-      "app_services_purchaseworkflowservice",
-      "app_services_truckavailabilityservice_truckavailabilityservice",
-      "app_services_truckavailabilityservice_truckavailabilityservice_activehaulsubquery",
-      "app_services_truckavailabilityservice_truckavailabilityservice_assignabletrucks",
-      "app_services_truckavailabilityservice_truckavailabilityservice_effectivestatus",
-      "app_services_truckavailabilityservice_truckavailabilityservice_hasactiveassignment",
-      "app_services_truckavailabilityservice_truckavailabilityservice_lockassignabletruck",
-      "app_services_truckavailabilityservice_truckavailabilityservice_synchronizestatus"
+      "app_services_operationaldatarepairservice",
+      "app_services_stockoutreleaseservice",
+      "app_services_workflowalertservice",
+      "config_cache",
+      "config_database",
+      "config_session",
+      "illuminate_database_queryexception",
+      "illuminate_support_facades_blade",
+      "illuminate_support_str",
+      "pdo_mysql",
+      "tests_feature_connectedliftingworkflowtest",
+      "tests_feature_databaseintegritytest",
+      "tests_feature_frontendbugfixestest",
+      "tests_feature_fuelcatalogregressiontest",
+      "tests_feature_inventoryledgertest",
+      "tests_feature_masterdataandinventoryaccesstest",
+      "tests_feature_phase2guardrailsandidempotencytest",
+      "tests_feature_phase3operationalacceptancetest",
+      "tests_feature_phase3operationalacceptancetest_phase3operationalacceptancetest",
+      "tests_feature_phase3operationalacceptancetest_phase3operationalacceptancetest_setup",
+      "tests_feature_phase3operationalacceptancetest_phase3operationalacceptancetest_test_all_four_approved_fuels_have_reconciled_acceptance_workflows",
+      "tests_feature_phase3operationalacceptancetest_phase3operationalacceptancetest_test_authenticated_http_workflows_cover_garage_and_direct_depot_fulfillment",
+      "tests_feature_phase3operationalacceptancetest_phase3operationalacceptancetest_test_legacy_sale_is_reconciled_with_proper_movement_and_stock_out",
+      "tests_feature_phase3operationalacceptancetest_phase3operationalacceptancetest_test_repair_data_service_and_command_execute_idempotently",
+      "tests_feature_phase5performancetest",
+      "tests_feature_salesofficercustomermanagementtest",
+      "tests_feature_salesofficersalesmanagementtest",
+      "tests_feature_statusbadgetest",
+      "tests_feature_statusbadgetest_statusbadgetest",
+      "tests_feature_statusbadgetest_statusbadgetest_test_workflow_and_inventory_statuses_use_meaningful_tones",
+      "tests_feature_truckmanagementtest",
+      "tests_feature_truckmanagementtest_truckmanagementtest",
+      "tests_testcase"
     ],
     "10": [
-      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller",
-      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_applydatefilter",
-      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_bars",
-      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_customerbreakdown",
-      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_export",
-      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_filterlabel",
-      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_financialstatus",
-      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_formatdate",
-      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_formatliters",
-      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_formatmoney",
-      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_formatnumber",
-      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_fuelbreakdown",
-      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_fuelsummary",
-      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_invoke",
-      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_paymenthistory",
-      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_paymentmethodlabel",
-      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_paymenttotals",
-      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_receivables",
-      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_reportdata",
-      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_salerows",
-      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_salestrend",
-      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_sanitizecsvcell",
-      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_transactions",
-      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_validatedfilters",
-      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_writecsvrow",
-      "illuminate_contracts_database_query_builder"
+      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller",
+      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_accountrequests",
+      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_accountrules",
+      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_backtotab",
+      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_customerrows",
+      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_drivercodefor",
+      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_driverrows",
+      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_export",
+      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_finaladminerror",
+      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_index",
+      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_removesfinalactiveadmin",
+      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_sanitizecsvcell",
+      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_staffcodefor",
+      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_staffrows",
+      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_storedriver",
+      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_storestaff",
+      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_syncdriverprofileforrole",
+      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_updateapproval",
+      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_updatedriver",
+      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_updatestaff",
+      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_updatestatus",
+      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_updateuser",
+      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_writecsvrow",
+      "app_http_controllers_adminusermanagementcontroller_php_user",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_cancel",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_inventoryroutename",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_storedepot",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_storestockin",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_storestockout",
+      "app_rules_approvedfueltype_approvedfueltype_rule",
+      "illuminate_validation_rules_exists"
     ],
     "11": [
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_duplicatedirectdepotreleaseexists",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_duplicategaragestockoutexists",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_duplicatestockinexists",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_formatdate",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_garageallocationforupdate",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_haulallocationsarewithinquantity",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_increasefulfilledquantity",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_inventorylinkstatus",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_isstoredwithdrawalreceipt",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_itemstatus",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_label",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_linetotal",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_nextcode",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_preparedstockoutforsaleitem",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_purchaseitemforupdate",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_reducepreparedstockout",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_referencekey",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_releasedirectfromdepot",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_releasefromgarage",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_remainingreceivableforallocation",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_saleitemforstockout",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_samequantity",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_search",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_stockinreferencelabels",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_update",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_withdrawalreceipt",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_withdrawalstatus"
+    ],
+    "12": [
+      "app_mail_passwordresetcodemail",
+      "app_mail_passwordresetcodemail_passwordresetcodemail",
+      "app_mail_passwordresetcodemail_passwordresetcodemail_build",
+      "app_mail_passwordresetcodemail_passwordresetcodemail_construct",
+      "app_models_user",
+      "database_factories_userfactory",
+      "database_factories_userfactory_userfactory",
+      "database_factories_userfactory_userfactory_definition",
+      "database_factories_userfactory_userfactory_unverified",
+      "illuminate_bus_queueable",
+      "illuminate_database_eloquent_factories_factory",
+      "illuminate_mail_mailable",
+      "illuminate_queue_serializesmodels",
+      "illuminate_support_carbon",
+      "illuminate_support_facades_hash",
+      "illuminate_support_facades_mail",
+      "illuminate_support_facades_storage",
+      "phpunit_framework_attributes_dataprovider",
+      "self",
+      "static",
+      "symfony_component_mailer_exception_transportexception",
+      "tests_feature_formvalidationtest",
+      "tests_feature_phase4securityhardeningtest",
+      "tests_feature_purchasereceiptstatustest",
+      "tests_feature_purchasereceiptuploadtest",
+      "tests_feature_rolebasedaccesscontroltest"
+    ],
+    "13": [
       "app_services_purchaseservice_php_idempotencyservice",
       "app_services_purchaseservice_purchaseservice",
       "app_services_purchaseservice_purchaseservice_applysearch",
@@ -633,60 +655,6 @@
       "purchaseworkflowservice",
       "workflowalertservice"
     ],
-    "12": [
-      "app_http_controllers_adminbusinessinsightcontroller",
-      "app_http_controllers_admindashboardcontroller",
-      "app_http_controllers_admininventoryvarianceexplanationcontroller",
-      "app_http_controllers_adminrevenueinsightcontroller",
-      "app_http_controllers_adminsalesreportcontroller",
-      "app_http_controllers_adminsalestrendsummarycontroller",
-      "app_http_controllers_adminusermanagementcontroller",
-      "app_http_controllers_dispatchdeliverycontroller",
-      "app_http_controllers_driverdeliverycontroller",
-      "app_http_controllers_inventoryofficerledgercontroller",
-      "app_http_controllers_inventoryofficerledgercontroller_inventoryofficerledgercontroller",
-      "app_http_controllers_inventoryofficerledgercontroller_inventoryofficerledgercontroller_invoke",
-      "app_http_controllers_inventoryofficerpurchasecontroller",
-      "app_http_controllers_salesofficercustomercontroller",
-      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_index",
-      "app_http_controllers_truckcontroller",
-      "app_http_controllers_truckcontroller_truckcontroller_index",
-      "app_rules_approvedfueltype",
-      "app_rules_approvedfueltype_approvedfueltype",
-      "carbon_carbonimmutable",
-      "illuminate_http_response",
-      "illuminate_validation_rule",
-      "illuminate_validation_rules_exists",
-      "illuminate_view_view",
-      "routes_web"
-    ],
-    "13": [
-      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller",
-      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_accountrequests",
-      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_accountrules",
-      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_backtotab",
-      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_customerrows",
-      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_drivercodefor",
-      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_driverrows",
-      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_export",
-      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_finaladminerror",
-      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_index",
-      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_removesfinalactiveadmin",
-      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_sanitizecsvcell",
-      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_staffcodefor",
-      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_staffrows",
-      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_storedriver",
-      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_storestaff",
-      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_syncdriverprofileforrole",
-      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_updateapproval",
-      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_updatedriver",
-      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_updatestaff",
-      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_updatestatus",
-      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_updateuser",
-      "app_http_controllers_adminusermanagementcontroller_adminusermanagementcontroller_writecsvrow",
-      "app_http_controllers_adminusermanagementcontroller_php_user",
-      "app_rules_approvedfueltype_approvedfueltype_rule"
-    ],
     "14": [
       "tests_feature_salesofficersalesmanagementtest_salesofficersalesmanagementtest",
       "tests_feature_salesofficersalesmanagementtest_salesofficersalesmanagementtest_baserecords",
@@ -694,64 +662,61 @@
       "tests_feature_salesofficersalesmanagementtest_salesofficersalesmanagementtest_customer",
       "tests_feature_salesofficersalesmanagementtest_salesofficersalesmanagementtest_fueltype",
       "tests_feature_salesofficersalesmanagementtest_salesofficersalesmanagementtest_salepayload",
+      "tests_feature_salesofficersalesmanagementtest_salesofficersalesmanagementtest_test_admin_can_cancel_sale_through_admin_route",
       "tests_feature_salesofficersalesmanagementtest_salesofficersalesmanagementtest_test_admin_can_create_and_update_sales_order_number_and_payment_method",
+      "tests_feature_salesofficersalesmanagementtest_salesofficersalesmanagementtest_test_admin_can_update_delivery_status_but_unrelated_roles_cannot",
       "tests_feature_salesofficersalesmanagementtest_salesofficersalesmanagementtest_test_cancellation_preserves_sale_history_without_deleting_records",
-      "tests_feature_salesofficersalesmanagementtest_salesofficersalesmanagementtest_test_changing_draft_sale_to_confirmed_performs_stock_out_preparation_or_release",
-      "tests_feature_salesofficersalesmanagementtest_salesofficersalesmanagementtest_test_draft_to_confirmed_without_sufficient_inventory_creates_prepared_stock_out_and_no_movement",
+      "tests_feature_salesofficersalesmanagementtest_salesofficersalesmanagementtest_test_cancelled_sale_voids_stock_out_effect_without_deleting_inventory_history",
+      "tests_feature_salesofficersalesmanagementtest_salesofficersalesmanagementtest_test_confirming_draft_does_not_release_stock_until_delivery_is_marked_delivered",
+      "tests_feature_salesofficersalesmanagementtest_salesofficersalesmanagementtest_test_delivery_stays_pending_and_creates_no_stock_out_when_inventory_is_insufficient",
       "tests_feature_salesofficersalesmanagementtest_salesofficersalesmanagementtest_test_duplicate_submission_token_does_not_create_second_sale",
-      "tests_feature_salesofficersalesmanagementtest_salesofficersalesmanagementtest_test_editing_harmless_metadata_on_confirmed_sale_does_not_create_additional_stock_out",
-      "tests_feature_salesofficersalesmanagementtest_salesofficersalesmanagementtest_test_multi_item_sale_confirmation_is_atomic_and_rolls_back_on_failure",
       "tests_feature_salesofficersalesmanagementtest_salesofficersalesmanagementtest_test_multiple_sale_items_are_stored_under_one_sale_and_totaled_server_side",
       "tests_feature_salesofficersalesmanagementtest_salesofficersalesmanagementtest_test_non_sales_roles_cannot_manage_sales",
-      "tests_feature_salesofficersalesmanagementtest_salesofficersalesmanagementtest_test_paid_and_partially_paid_sale_cannot_be_returned_to_draft_or_non_paid_status",
+      "tests_feature_salesofficersalesmanagementtest_salesofficersalesmanagementtest_test_order_id_is_generated_server_side_and_not_exposed_in_create_forms",
       "tests_feature_salesofficersalesmanagementtest_salesofficersalesmanagementtest_test_paid_or_fulfilled_sale_cannot_be_changed_to_cancelled_via_edit_route",
-      "tests_feature_salesofficersalesmanagementtest_salesofficersalesmanagementtest_test_receivable_and_sale_statuses_reconcile_authoritatively_after_zero_partial_and_full_payment",
       "tests_feature_salesofficersalesmanagementtest_salesofficersalesmanagementtest_test_sale_can_be_edited_before_dependent_activity_and_recalculates_total",
       "tests_feature_salesofficersalesmanagementtest_salesofficersalesmanagementtest_test_sale_validation_rejects_invalid_customer_fuel_quantity_price_and_method",
-      "tests_feature_salesofficersalesmanagementtest_salesofficersalesmanagementtest_test_sales_officer_can_create_sale_for_active_customer_and_auto_stock_out_available_inventory",
       "tests_feature_salesofficersalesmanagementtest_salesofficersalesmanagementtest_test_sales_officer_can_view_real_sales_and_admin_can_monitor_them",
-      "tests_feature_salesofficersalesmanagementtest_salesofficersalesmanagementtest_test_sales_officer_sale_creates_prepared_stock_out_when_garage_inventory_is_insufficient",
       "tests_feature_salesofficersalesmanagementtest_salesofficersalesmanagementtest_test_sales_order_number_is_unique_and_payment_method_does_not_record_payment",
-      "tests_feature_salesofficersalesmanagementtest_salesofficersalesmanagementtest_test_unsafe_sale_edit_and_cancel_are_blocked_when_dependent_activity_exists"
+      "tests_feature_salesofficersalesmanagementtest_salesofficersalesmanagementtest_test_stock_out_is_created_only_when_sale_is_delivered_and_repeated_delivery_is_idempotent",
+      "tests_feature_salesofficersalesmanagementtest_salesofficersalesmanagementtest_test_unsafe_sale_edit_is_blocked_and_cancel_preserves_dependent_payment_history",
+      "tests_feature_salesofficersalesmanagementtest_salesofficersalesmanagementtest_test_untouched_draft_sale_is_hard_deleted_with_generated_children"
     ],
     "15": [
-      "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_markalertread",
-      "app_http_controllers_authcontroller_authcontroller",
-      "app_http_controllers_authcontroller_authcontroller_dashboardroutefor",
-      "app_http_controllers_authcontroller_authcontroller_login",
-      "app_http_controllers_authcontroller_authcontroller_logout",
-      "app_http_controllers_authcontroller_authcontroller_redirecttodashboard",
-      "app_http_controllers_authcontroller_authcontroller_register",
-      "app_http_controllers_authcontroller_authcontroller_resetpassword",
-      "app_http_controllers_authcontroller_authcontroller_sendpasswordresetcode",
-      "app_http_controllers_authcontroller_authcontroller_showforgotpassword",
-      "app_http_controllers_authcontroller_authcontroller_showlogin",
-      "app_http_controllers_authcontroller_authcontroller_showregister",
-      "app_http_controllers_authcontroller_authcontroller_showresetpassword",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_cancel",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_inventoryroutename",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_store",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_storedepot",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_storestockin",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_storestockout",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_update",
-      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_validatedpurchasedata",
-      "illuminate_http_redirectresponse",
-      "illuminate_http_request"
+      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller",
+      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_applydatefilter",
+      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_bars",
+      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_customerbreakdown",
+      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_financialstatus",
+      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_formatdate",
+      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_formatliters",
+      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_formatmoney",
+      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_formatnumber",
+      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_fuelbreakdown",
+      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_fuelsummary",
+      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_paymenthistory",
+      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_paymentmethodlabel",
+      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_paymenttotals",
+      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_receivables",
+      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_reportdata",
+      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_salerows",
+      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_salestrend",
+      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_sanitizecsvcell",
+      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_transactions",
+      "app_http_controllers_adminsalesreportcontroller_adminsalesreportcontroller_writecsvrow",
+      "illuminate_contracts_database_query_builder"
     ],
     "16": [
-      "app_services_inventorycostservice",
-      "app_services_inventorycostservice_inventorycostservice",
-      "app_services_inventorycostservice_inventorycostservice_cancelledhaulallocationexists",
-      "app_services_inventorycostservice_inventorycostservice_cancelledstockoutexists",
-      "app_services_inventorycostservice_inventorycostservice_currentunitcostforupdate",
-      "app_services_inventorycostservice_php_closure",
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_construct",
+      "app_services_saleconfirmationservice",
       "app_services_saleconfirmationservice_saleconfirmationservice",
       "app_services_saleconfirmationservice_saleconfirmationservice_confirm",
       "app_services_saleconfirmationservice_saleconfirmationservice_construct",
       "app_services_saleconfirmationservice_saleconfirmationservice_reconcile",
+      "app_services_saleconfirmationservice_saleconfirmationservice_updatedeliverystatus",
       "app_services_stockoutreleaseservice_php_closure",
       "app_services_stockoutreleaseservice_php_idempotencyservice",
+      "app_services_stockoutreleaseservice_php_inventorycostservice",
       "app_services_stockoutreleaseservice_stockoutreleaseservice",
       "app_services_stockoutreleaseservice_stockoutreleaseservice_availablegaragestockforupdate",
       "app_services_stockoutreleaseservice_stockoutreleaseservice_cancelledhaulallocationexists",
@@ -760,9 +725,10 @@
       "app_services_stockoutreleaseservice_stockoutreleaseservice_insertgaragerelease",
       "app_services_stockoutreleaseservice_stockoutreleaseservice_insertpreparedgaragerelease",
       "app_services_stockoutreleaseservice_stockoutreleaseservice_nextcode",
+      "app_services_stockoutreleaseservice_stockoutreleaseservice_preparedstockoutexistsforsaleitem",
+      "app_services_stockoutreleaseservice_stockoutreleaseservice_releasefromdirectdepotallocations",
       "app_services_stockoutreleaseservice_stockoutreleaseservice_releasesaleitemfromgarage",
-      "app_services_stockoutreleaseservice_stockoutreleaseservice_saleitemforstockout",
-      "app_services_stockoutreleaseservice_stockoutreleaseservice_stockoutexistsforsaleitem"
+      "app_services_stockoutreleaseservice_stockoutreleaseservice_saleitemforstockout"
     ],
     "17": [
       "axios",
@@ -789,29 +755,6 @@
       "vite"
     ],
     "18": [
-      "app_http_controllers_authcontroller",
-      "app_mail_passwordresetcodemail",
-      "app_mail_passwordresetcodemail_passwordresetcodemail",
-      "app_mail_passwordresetcodemail_passwordresetcodemail_build",
-      "app_mail_passwordresetcodemail_passwordresetcodemail_construct",
-      "app_services_operationaldatarepairservice",
-      "app_services_workflowsmoketestservice",
-      "illuminate_bus_queueable",
-      "illuminate_mail_mailable",
-      "illuminate_queue_serializesmodels",
-      "illuminate_support_carbon",
-      "illuminate_support_facades_hash",
-      "illuminate_support_facades_mail",
-      "illuminate_validation_rules_password",
-      "phpunit_framework_attributes_dataprovider",
-      "runtimeexception",
-      "self",
-      "symfony_component_mailer_exception_transportexception",
-      "tests_feature_adminusermanagementtest",
-      "tests_feature_rolebasedaccesscontroltest",
-      "throwable"
-    ],
-    "19": [
       "tests_feature_dashboardsummarycardstest_dashboardsummarycardstest",
       "tests_feature_dashboardsummarycardstest_dashboardsummarycardstest_dashboarddata",
       "tests_feature_dashboardsummarycardstest_dashboardsummarycardstest_databasecounts",
@@ -834,7 +777,7 @@
       "tests_feature_dashboardsummarycardstest_dashboardsummarycardstest_test_stock_level_chart_uses_authoritative_inventory_movements_by_fuel_type",
       "tests_feature_dashboardsummarycardstest_dashboardsummarycardstest_test_unlifted_fuel_monitoring_uses_completed_multi_lift_aggregation_and_filters"
     ],
-    "20": [
+    "19": [
       "tests_feature_inventoryofficerstockouttest_inventoryofficerstockouttest",
       "tests_feature_inventoryofficerstockouttest_inventoryofficerstockouttest_baserecords",
       "tests_feature_inventoryofficerstockouttest_inventoryofficerstockouttest_directallocation",
@@ -842,7 +785,7 @@
       "tests_feature_inventoryofficerstockouttest_inventoryofficerstockouttest_garagemovement",
       "tests_feature_inventoryofficerstockouttest_inventoryofficerstockouttest_sale",
       "tests_feature_inventoryofficerstockouttest_inventoryofficerstockouttest_stockoutpayload",
-      "tests_feature_inventoryofficerstockouttest_inventoryofficerstockouttest_test_cancelled_or_draft_sales_are_not_eligible_for_stock_out",
+      "tests_feature_inventoryofficerstockouttest_inventoryofficerstockouttest_test_cancelled_draft_or_undelivered_sales_are_not_eligible_for_stock_out",
       "tests_feature_inventoryofficerstockouttest_inventoryofficerstockouttest_test_cancelled_stock_in_source_is_not_available_for_garage_stock_out",
       "tests_feature_inventoryofficerstockouttest_inventoryofficerstockouttest_test_direct_depot_delivery_fulfills_sale_without_reducing_garage_inventory",
       "tests_feature_inventoryofficerstockouttest_inventoryofficerstockouttest_test_direct_depot_delivery_rejects_invalid_purchase_haul_relationship",
@@ -857,7 +800,7 @@
       "tests_feature_inventoryofficerstockouttest_inventoryofficerstockouttest_test_stock_out_rejects_insufficient_inventory_invalid_quantities_and_wrong_sale_item",
       "tests_feature_inventoryofficerstockouttest_inventoryofficerstockouttest_test_stock_out_uses_inventory_cost_and_actual_payments_for_profit"
     ],
-    "21": [
+    "20": [
       "app_http_controllers_dispatchdeliverycontroller_dispatchdeliverycontroller",
       "app_http_controllers_dispatchdeliverycontroller_dispatchdeliverycontroller_availablepurchaseitemoptions",
       "app_http_controllers_dispatchdeliverycontroller_dispatchdeliverycontroller_driverforassignment",
@@ -879,7 +822,7 @@
       "app_http_controllers_dispatchdeliverycontroller_dispatchdeliverycontroller_store",
       "app_http_controllers_dispatchdeliverycontroller_dispatchdeliverycontroller_truckforassignment"
     ],
-    "22": [
+    "21": [
       "app_services_inventoryledgerservice_inventoryledgerservice",
       "app_services_inventoryledgerservice_inventoryledgerservice_cancelledhaulallocationexists",
       "app_services_inventoryledgerservice_inventoryledgerservice_cancelledstockoutexists",
@@ -901,7 +844,7 @@
       "app_services_inventoryledgerservice_inventoryledgerservice_rows",
       "app_services_inventoryledgerservice_inventoryledgerservice_stockoutreferences"
     ],
-    "23": [
+    "22": [
       "app_services_stockinservice_php_idempotencyservice",
       "app_services_stockinservice_php_purchaseworkflowservice",
       "app_services_stockinservice_php_workflowalertservice",
@@ -923,7 +866,7 @@
       "app_services_stockinservice_stockinservice_stockinreferencelabels",
       "app_services_stockinservice_stockinservice_stockinrows"
     ],
-    "24": [
+    "23": [
       "app_services_workflowsmoketestservice_workflowsmoketestservice",
       "app_services_workflowsmoketestservice_workflowsmoketestservice_assertsame",
       "app_services_workflowsmoketestservice_workflowsmoketestservice_attempt",
@@ -944,7 +887,7 @@
       "app_services_workflowsmoketestservice_workflowsmoketestservice_run",
       "app_services_workflowsmoketestservice_workflowsmoketestservice_saletotal"
     ],
-    "25": [
+    "24": [
       "tests_feature_inventoryofficerstockintest_inventoryofficerstockintest",
       "tests_feature_inventoryofficerstockintest_inventoryofficerstockintest_baserecords",
       "tests_feature_inventoryofficerstockintest_inventoryofficerstockintest_garagebalance",
@@ -965,7 +908,47 @@
       "tests_feature_inventoryofficerstockintest_inventoryofficerstockintest_test_stock_in_rejects_pending_haul_without_inventory_effect",
       "tests_feature_inventoryofficerstockintest_inventoryofficerstockintest_test_stock_in_validation_requires_positive_quantity_and_real_records"
     ],
+    "25": [
+      "app_http_controllers_dispatchliftingstatuscontroller_dispatchliftingstatuscontroller",
+      "app_http_controllers_dispatchliftingstatuscontroller_dispatchliftingstatuscontroller_construct",
+      "app_http_controllers_dispatchliftingstatuscontroller_dispatchliftingstatuscontroller_haulforupdate",
+      "app_http_controllers_dispatchliftingstatuscontroller_dispatchliftingstatuscontroller_itemstatus",
+      "app_http_controllers_dispatchliftingstatuscontroller_dispatchliftingstatuscontroller_purchasestatus",
+      "app_http_controllers_dispatchliftingstatuscontroller_dispatchliftingstatuscontroller_redirectroute",
+      "app_http_controllers_dispatchliftingstatuscontroller_dispatchliftingstatuscontroller_remainingpurchaseitemliftquantity",
+      "app_http_controllers_dispatchliftingstatuscontroller_dispatchliftingstatuscontroller_syncpurchaseprogress",
+      "app_http_controllers_dispatchliftingstatuscontroller_dispatchliftingstatuscontroller_updatestatus",
+      "app_http_controllers_dispatchliftingstatuscontroller_dispatchliftingstatuscontroller_validateliftforstatus",
+      "app_http_controllers_driverliftingstatuscontroller_driverliftingstatuscontroller",
+      "app_http_controllers_driverliftingstatuscontroller_driverliftingstatuscontroller_construct",
+      "app_http_controllers_driverliftingstatuscontroller_driverliftingstatuscontroller_haulfordriverupdate",
+      "app_http_controllers_driverliftingstatuscontroller_driverliftingstatuscontroller_remainingpurchaseitemliftquantity",
+      "app_http_controllers_driverliftingstatuscontroller_driverliftingstatuscontroller_updatestatus",
+      "app_http_controllers_driverliftingstatuscontroller_driverliftingstatuscontroller_validateallocations",
+      "app_http_controllers_driverliftingstatuscontroller_driverliftingstatuscontroller_validateliftforstatus",
+      "app_services_purchaseworkflowservice"
+    ],
     "26": [
+      "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller_saledependencymap",
+      "app_services_admindashboardservice",
+      "app_services_admindashboardservice_admindashboardservice",
+      "app_services_admindashboardservice_admindashboardservice_construct",
+      "app_services_admindashboardservice_admindashboardservice_data",
+      "app_services_admindashboardservice_admindashboardservice_demandbyday",
+      "app_services_admindashboardservice_admindashboardservice_demandbymonth",
+      "app_services_admindashboardservice_admindashboardservice_formatkiloliters",
+      "app_services_admindashboardservice_admindashboardservice_formatliters",
+      "app_services_admindashboardservice_admindashboardservice_formatmoney",
+      "app_services_admindashboardservice_admindashboardservice_normalizeddemandrows",
+      "app_services_admindashboardservice_admindashboardservice_paymenttotalsquery",
+      "app_services_admindashboardservice_admindashboardservice_revenuebars",
+      "app_services_admindashboardservice_admindashboardservice_salesquantitybydate",
+      "app_services_admindashboardservice_admindashboardservice_saletotalsquery",
+      "app_services_truckavailabilityservice_truckavailabilityservice_activehaulsubquery",
+      "app_services_truckavailabilityservice_truckavailabilityservice_assignabletrucks",
+      "illuminate_support_collection"
+    ],
+    "27": [
       "tests_feature_roleaccesstestingtest_roleaccesstestingtest",
       "tests_feature_roleaccesstestingtest_roleaccesstestingtest_baserecords",
       "tests_feature_roleaccesstestingtest_roleaccesstestingtest_garageallocation",
@@ -985,7 +968,7 @@
       "tests_feature_roleaccesstestingtest_roleaccesstestingtest_test_request_and_url_role_tampering_cannot_bypass_backend_authorization",
       "tests_feature_roleaccesstestingtest_roleaccesstestingtest_test_restricted_pages_do_not_expose_other_role_data_in_forbidden_responses"
     ],
-    "27": [
+    "28": [
       "tests_feature_salesofficerpaymentrecordingtest_salesofficerpaymentrecordingtest",
       "tests_feature_salesofficerpaymentrecordingtest_salesofficerpaymentrecordingtest_baserecords",
       "tests_feature_salesofficerpaymentrecordingtest_salesofficerpaymentrecordingtest_paidtotal",
@@ -1005,7 +988,7 @@
       "tests_feature_salesofficerpaymentrecordingtest_salesofficerpaymentrecordingtest_test_sales_officer_records_partial_and_full_payments_from_authoritative_balance",
       "tests_feature_salesofficerpaymentrecordingtest_salesofficerpaymentrecordingtest_test_selected_payment_schedule_tracks_partial_and_final_installments"
     ],
-    "28": [
+    "29": [
       "app_services_garagetankservice",
       "app_services_garagetankservice_garagetankservice",
       "app_services_garagetankservice_garagetankservice_ensureforactivefueltypes",
@@ -1023,7 +1006,7 @@
       "database_migrations_2026_09_21_000001_enforce_official_fuel_and_garage_tank_names_down",
       "database_migrations_2026_09_21_000001_enforce_official_fuel_and_garage_tank_names_up"
     ],
-    "29": [
+    "30": [
       "app_services_operationaldatarepairservice_operationaldatarepairservice",
       "app_services_operationaldatarepairservice_operationaldatarepairservice_construct",
       "app_services_operationaldatarepairservice_operationaldatarepairservice_createreconcileddirectdepotworkflow",
@@ -1041,7 +1024,7 @@
       "illuminate_database_seeder",
       "saleconfirmationservice"
     ],
-    "30": [
+    "31": [
       "tests_feature_databaseintegritytest_databaseintegritytest",
       "tests_feature_databaseintegritytest_databaseintegritytest_assertnobrokenoperationallinks",
       "tests_feature_databaseintegritytest_databaseintegritytest_assertqueryfails",
@@ -1059,7 +1042,7 @@
       "tests_feature_databaseintegritytest_databaseintegritytest_test_stock_out_inventory_movement_link_is_unique_when_present",
       "tests_feature_databaseintegritytest_databaseintegritytest_test_user_foreign_key_delete_rules_match_the_existing_schema"
     ],
-    "31": [
+    "32": [
       "tests_feature_integrationtestingtest_integrationtestingtest",
       "tests_feature_integrationtestingtest_integrationtestingtest_allocation",
       "tests_feature_integrationtestingtest_integrationtestingtest_baserecords",
@@ -1077,24 +1060,41 @@
       "tests_feature_integrationtestingtest_integrationtestingtest_test_cancelled_invalid_and_duplicate_integration_steps_do_not_create_downstream_effects",
       "tests_feature_integrationtestingtest_integrationtestingtest_test_end_to_end_arbitrary_allocation_workflow_feeds_dashboard_analytics_and_ai_reports"
     ],
-    "32": [
-      "app_services_aidatapreparationservice",
-      "illuminate_auth_access_authorizationexception",
-      "illuminate_foundation_testing_testcase",
-      "illuminate_support_facades_validator",
-      "tests_feature_adminmonitoringtest",
-      "tests_feature_aidatapreparationservicetest",
-      "tests_feature_deliveryworkflowremovaltest",
-      "tests_feature_deliveryworkflowremovaltest_deliveryworkflowremovaltest",
-      "tests_feature_deliveryworkflowremovaltest_deliveryworkflowremovaltest_test_fuel_lifting_pages_remain_available_after_delivery_workflow_removal",
-      "tests_feature_deliveryworkflowremovaltest_deliveryworkflowremovaltest_test_standalone_delivery_routes_and_pages_are_not_registered",
-      "tests_feature_exampletest",
-      "tests_feature_exampletest_exampletest",
-      "tests_feature_exampletest_exampletest_test_the_application_returns_a_successful_response",
-      "tests_feature_haultruckassignmenttest",
-      "tests_testcase_testcase"
-    ],
     "33": [
+      "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller_markalertread",
+      "app_http_controllers_authcontroller_authcontroller",
+      "app_http_controllers_authcontroller_authcontroller_dashboardroutefor",
+      "app_http_controllers_authcontroller_authcontroller_login",
+      "app_http_controllers_authcontroller_authcontroller_logout",
+      "app_http_controllers_authcontroller_authcontroller_redirecttodashboard",
+      "app_http_controllers_authcontroller_authcontroller_register",
+      "app_http_controllers_authcontroller_authcontroller_resetpassword",
+      "app_http_controllers_authcontroller_authcontroller_sendpasswordresetcode",
+      "app_http_controllers_authcontroller_authcontroller_showforgotpassword",
+      "app_http_controllers_authcontroller_authcontroller_showlogin",
+      "app_http_controllers_authcontroller_authcontroller_showregister",
+      "app_http_controllers_authcontroller_authcontroller_showresetpassword",
+      "app_http_controllers_driverdeliverycontroller_driverdeliverycontroller_storewithdrawalreceipt",
+      "illuminate_http_redirectresponse"
+    ],
+    "34": [
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_depotrows",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_directdepotreleaseallocationoptions",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_formatdatetime",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_formatfinancial",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_formatliters",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_formatnumber",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_garageallocationoptions",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_index",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_purchaserows",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_rowclass",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_stockinpurchaserows",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_stockinrows",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_stockoutrows",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_stockoutsaleitemoptions",
+      "illuminate_pagination_lengthawarepaginator"
+    ],
+    "35": [
       "tests_feature_aifeaturetestingtest_aifeaturetestingtest",
       "tests_feature_aifeaturetestingtest_aifeaturetestingtest_aidataset",
       "tests_feature_aifeaturetestingtest_aifeaturetestingtest_configureai",
@@ -1111,7 +1111,7 @@
       "tests_feature_aifeaturetestingtest_aifeaturetestingtest_test_ai_output_is_escaped_and_does_not_replace_authoritative_dashboard_values",
       "tests_feature_aifeaturetestingtest_aifeaturetestingtest_test_all_ai_reports_use_sanitized_laravel_analytics_payloads_without_extra_calls"
     ],
-    "34": [
+    "36": [
       "tests_feature_aiserviceconfigurationtest_aiserviceconfigurationtest",
       "tests_feature_aiserviceconfigurationtest_aiserviceconfigurationtest_aiconfig",
       "tests_feature_aiserviceconfigurationtest_aiserviceconfigurationtest_test_ai_credentials_are_not_exposed_in_admin_dashboard_html",
@@ -1128,7 +1128,7 @@
       "tests_feature_aiserviceconfigurationtest_aiserviceconfigurationtest_test_temporary_provider_error_is_retried_once",
       "tests_feature_aiserviceconfigurationtest_aiserviceconfigurationtest_test_unsupported_provider_is_reported_as_configuration_error"
     ],
-    "35": [
+    "37": [
       "tests_feature_completeworkflowintegrationtest_completeworkflowintegrationtest",
       "tests_feature_completeworkflowintegrationtest_completeworkflowintegrationtest_allocation",
       "tests_feature_completeworkflowintegrationtest_completeworkflowintegrationtest_baserecords",
@@ -1145,7 +1145,7 @@
       "tests_feature_completeworkflowintegrationtest_completeworkflowintegrationtest_test_direct_depot_to_client_workflow_bypasses_garage_inventory",
       "tests_feature_completeworkflowintegrationtest_completeworkflowintegrationtest_test_invalid_and_cancelled_workflow_steps_do_not_create_downstream_effects"
     ],
-    "36": [
+    "38": [
       "tests_feature_formvalidationtest_formvalidationtest",
       "tests_feature_formvalidationtest_formvalidationtest_baserecords",
       "tests_feature_formvalidationtest_formvalidationtest_customer",
@@ -1162,7 +1162,7 @@
       "tests_feature_formvalidationtest_formvalidationtest_test_registration_validates_lengths_phone_format_duplicates_and_confirmation",
       "tests_feature_formvalidationtest_formvalidationtest_test_sales_stock_out_payment_and_receivable_forms_reject_invalid_tampered_and_over_limit_values"
     ],
-    "37": [
+    "39": [
       "tests_feature_functionaltestingtest_functionaltestingtest",
       "tests_feature_functionaltestingtest_functionaltestingtest_baserecords",
       "tests_feature_functionaltestingtest_functionaltestingtest_garageallocation",
@@ -1179,7 +1179,7 @@
       "tests_feature_functionaltestingtest_functionaltestingtest_test_major_role_pages_are_accessible_to_their_assigned_users",
       "tests_feature_functionaltestingtest_functionaltestingtest_test_purchase_stock_in_inventory_success_and_failed_over_receipt"
     ],
-    "38": [
+    "40": [
       "app_http_controllers_adminbusinessinsightcontroller_adminbusinessinsightcontroller",
       "app_http_controllers_adminbusinessinsightcontroller_adminbusinessinsightcontroller_aifilters",
       "app_http_controllers_adminbusinessinsightcontroller_adminbusinessinsightcontroller_invoke",
@@ -1195,13 +1195,12 @@
       "app_http_controllers_controller",
       "app_http_controllers_controller_controller"
     ],
-    "39": [
-      "app_http_controllers_admindashboardcontroller_admindashboardcontroller",
-      "app_http_controllers_admindashboardcontroller_admindashboardcontroller_invoke",
+    "41": [
       "app_http_controllers_admininventoryvarianceexplanationcontroller_admininventoryvarianceexplanationcontroller",
       "app_http_controllers_admininventoryvarianceexplanationcontroller_admininventoryvarianceexplanationcontroller_aifilters",
       "app_http_controllers_admininventoryvarianceexplanationcontroller_admininventoryvarianceexplanationcontroller_invoke",
       "app_http_controllers_admininventoryvarianceexplanationcontroller_admininventoryvarianceexplanationcontroller_validatedfilters",
+      "app_http_controllers_dispatchdeliverycontroller_dispatchdeliverycontroller_construct",
       "app_http_controllers_haultruckassignmentcontroller",
       "app_http_controllers_haultruckassignmentcontroller_haultruckassignmentcontroller",
       "app_http_controllers_haultruckassignmentcontroller_haultruckassignmentcontroller_construct",
@@ -1209,9 +1208,42 @@
       "app_http_controllers_haultruckassignmentcontroller_haultruckassignmentcontroller_redirectroute",
       "app_http_controllers_haultruckassignmentcontroller_haultruckassignmentcontroller_update",
       "app_services_inventoryvarianceexplanationservice",
+      "app_services_truckavailabilityservice",
       "controller"
     ],
-    "40": [
+    "42": [
+      "app_http_controllers_adminmonitoringcontroller",
+      "app_http_controllers_inventoryofficerpurchasecontroller",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_construct",
+      "app_services_idempotencyservice",
+      "app_services_inventorycostservice",
+      "app_services_inventoryledgerservice",
+      "app_services_purchaseservice",
+      "app_services_stockinservice",
+      "app_services_stockoutfinancialservice",
+      "app_services_stockoutfinancialservice_stockoutfinancialservice",
+      "app_services_stockoutfinancialservice_stockoutfinancialservice_calculate",
+      "app_services_stockoutfinancialservice_stockoutfinancialservice_query",
+      "illuminate_database_query_builder",
+      "illuminate_validation_validationexception"
+    ],
+    "43": [
+      "app_http_controllers_truckcontroller_truckcontroller",
+      "app_http_controllers_truckcontroller_truckcontroller_construct",
+      "app_http_controllers_truckcontroller_truckcontroller_index",
+      "app_http_controllers_truckcontroller_truckcontroller_normalizeidentifiers",
+      "app_http_controllers_truckcontroller_truckcontroller_routename",
+      "app_http_controllers_truckcontroller_truckcontroller_rules",
+      "app_http_controllers_truckcontroller_truckcontroller_store",
+      "app_http_controllers_truckcontroller_truckcontroller_togglestatus",
+      "app_http_controllers_truckcontroller_truckcontroller_update",
+      "app_services_truckavailabilityservice_truckavailabilityservice",
+      "app_services_truckavailabilityservice_truckavailabilityservice_effectivestatus",
+      "app_services_truckavailabilityservice_truckavailabilityservice_hasactiveassignment",
+      "app_services_truckavailabilityservice_truckavailabilityservice_lockassignabletruck",
+      "app_services_truckavailabilityservice_truckavailabilityservice_synchronizestatus"
+    ],
+    "44": [
       "composer_scripts",
       "composer_scripts_dev",
       "composer_scripts_post_autoload_dump",
@@ -1227,7 +1259,7 @@
       "ref_php_artisan_test",
       "ref_php_artisan_vendor_publish_tag_laravel_assets_ansi_force"
     ],
-    "41": [
+    "45": [
       "tests_feature_aidatapreparationservicetest_aidatapreparationservicetest",
       "tests_feature_aidatapreparationservicetest_aidatapreparationservicetest_businessdata",
       "tests_feature_aidatapreparationservicetest_aidatapreparationservicetest_haul",
@@ -1243,7 +1275,7 @@
       "tests_feature_aidatapreparationservicetest_aidatapreparationservicetest_test_ai_payload_validates_date_filters",
       "tests_feature_aidatapreparationservicetest_aidatapreparationservicetest_test_non_admin_user_cannot_prepare_company_wide_ai_payload"
     ],
-    "42": [
+    "46": [
       "tests_feature_analyticstestingtest_analyticstestingtest",
       "tests_feature_analyticstestingtest_analyticstestingtest_depot",
       "tests_feature_analyticstestingtest_analyticstestingtest_fueltype",
@@ -1259,7 +1291,7 @@
       "tests_feature_analyticstestingtest_analyticstestingtest_test_expected_revenue_unlifted_fuel_filters_and_zero_periods_are_stable",
       "tests_feature_analyticstestingtest_analyticstestingtest_test_inventory_variance_filters_rates_and_quantity_variance_are_correct"
     ],
-    "43": [
+    "47": [
       "tests_feature_businessinsightstest_businessinsightstest",
       "tests_feature_businessinsightstest_businessinsightstest_aiconfig",
       "tests_feature_businessinsightstest_businessinsightstest_businessdata",
@@ -1275,7 +1307,7 @@
       "tests_feature_businessinsightstest_businessinsightstest_test_driver_cannot_generate_business_insights",
       "tests_feature_businessinsightstest_businessinsightstest_test_zero_data_period_skips_ai_call"
     ],
-    "44": [
+    "48": [
       "tests_feature_phase2guardrailsandidempotencytest_phase2guardrailsandidempotencytest",
       "tests_feature_phase2guardrailsandidempotencytest_phase2guardrailsandidempotencytest_baserecords",
       "tests_feature_phase2guardrailsandidempotencytest_phase2guardrailsandidempotencytest_test_code_collision_retry_succeeds_without_exception",
@@ -1291,22 +1323,7 @@
       "tests_feature_phase2guardrailsandidempotencytest_phase2guardrailsandidempotencytest_test_maximum_allowed_totals_fit_the_database_and_one_step_above_is_rejected_by_validation",
       "tests_feature_phase2guardrailsandidempotencytest_phase2guardrailsandidempotencytest_test_non_approved_and_inactive_fuel_ids_are_rejected_on_every_operational_write_path"
     ],
-    "45": [
-      "app_http_controllers_driverdeliverycontroller_driverdeliverycontroller",
-      "app_http_controllers_driverdeliverycontroller_driverdeliverycontroller_driverprofile",
-      "app_http_controllers_driverdeliverycontroller_driverdeliverycontroller_filteroptions",
-      "app_http_controllers_driverdeliverycontroller_driverdeliverycontroller_formatdatetime",
-      "app_http_controllers_driverdeliverycontroller_driverdeliverycontroller_formatliters",
-      "app_http_controllers_driverdeliverycontroller_driverdeliverycontroller_formatnumber",
-      "app_http_controllers_driverdeliverycontroller_driverdeliverycontroller_haulrows",
-      "app_http_controllers_driverdeliverycontroller_driverdeliverycontroller_index",
-      "app_http_controllers_driverdeliverycontroller_driverdeliverycontroller_label",
-      "app_http_controllers_driverdeliverycontroller_driverdeliverycontroller_rows",
-      "app_http_controllers_driverdeliverycontroller_driverdeliverycontroller_search",
-      "app_http_controllers_driverdeliverycontroller_driverdeliverycontroller_storewithdrawalreceipt",
-      "app_http_controllers_driverdeliverycontroller_driverdeliverycontroller_summarycards"
-    ],
-    "46": [
+    "49": [
       "illuminate_http_uploadedfile",
       "tests_feature_purchasereceiptuploadtest_php_uploadedfile",
       "tests_feature_purchasereceiptuploadtest_purchasereceiptuploadtest",
@@ -1321,7 +1338,7 @@
       "tests_feature_purchasereceiptuploadtest_purchasereceiptuploadtest_test_reupload_replaces_existing_withdrawal_without_creating_duplicate_receipt_records",
       "tests_feature_purchasereceiptuploadtest_purchasereceiptuploadtest_tinyimage"
     ],
-    "47": [
+    "50": [
       "tests_feature_dispatchliftingstatusmanagementtest_dispatchliftingstatusmanagementtest",
       "tests_feature_dispatchliftingstatusmanagementtest_dispatchliftingstatusmanagementtest_baserecords",
       "tests_feature_dispatchliftingstatusmanagementtest_dispatchliftingstatusmanagementtest_haul",
@@ -1336,7 +1353,21 @@
       "tests_feature_dispatchliftingstatusmanagementtest_dispatchliftingstatusmanagementtest_test_partial_and_multiple_lifts_cannot_exceed_available_purchase_fuel",
       "tests_feature_dispatchliftingstatusmanagementtest_dispatchliftingstatusmanagementtest_test_stale_concurrent_status_update_is_rejected_after_locked_row_changes"
     ],
-    "48": [
+    "51": [
+      "app_http_controllers_driverdeliverycontroller_driverdeliverycontroller",
+      "app_http_controllers_driverdeliverycontroller_driverdeliverycontroller_driverprofile",
+      "app_http_controllers_driverdeliverycontroller_driverdeliverycontroller_filteroptions",
+      "app_http_controllers_driverdeliverycontroller_driverdeliverycontroller_formatdatetime",
+      "app_http_controllers_driverdeliverycontroller_driverdeliverycontroller_formatliters",
+      "app_http_controllers_driverdeliverycontroller_driverdeliverycontroller_formatnumber",
+      "app_http_controllers_driverdeliverycontroller_driverdeliverycontroller_haulrows",
+      "app_http_controllers_driverdeliverycontroller_driverdeliverycontroller_index",
+      "app_http_controllers_driverdeliverycontroller_driverdeliverycontroller_label",
+      "app_http_controllers_driverdeliverycontroller_driverdeliverycontroller_rows",
+      "app_http_controllers_driverdeliverycontroller_driverdeliverycontroller_search",
+      "app_http_controllers_driverdeliverycontroller_driverdeliverycontroller_summarycards"
+    ],
+    "52": [
       "resources_js_app",
       "resources_js_app_closemodal",
       "resources_js_app_exportvisibletable",
@@ -1350,7 +1381,7 @@
       "resources_js_app_visibletablefor",
       "resources_js_bootstrap"
     ],
-    "49": [
+    "53": [
       "tests_feature_connectedliftingworkflowtest_connectedliftingworkflowtest",
       "tests_feature_connectedliftingworkflowtest_connectedliftingworkflowtest_purchases",
       "tests_feature_connectedliftingworkflowtest_connectedliftingworkflowtest_records",
@@ -1364,7 +1395,21 @@
       "tests_feature_connectedliftingworkflowtest_connectedliftingworkflowtest_test_purchase_creation_is_idempotent_creates_one_alert_and_ignores_manual_status",
       "tests_feature_connectedliftingworkflowtest_connectedliftingworkflowtest_test_purchase_edit_recomputes_workflow_status_from_haul_state"
     ],
-    "50": [
+    "54": [
+      "tests_feature_frontendbugfixestest_frontendbugfixestest",
+      "tests_feature_frontendbugfixestest_frontendbugfixestest_frontendfiles",
+      "tests_feature_frontendbugfixestest_frontendbugfixestest_test_admin_nested_routes_keep_parent_sidebar_active",
+      "tests_feature_frontendbugfixestest_frontendbugfixestest_test_ai_report_output_remains_escaped_in_frontend",
+      "tests_feature_frontendbugfixestest_frontendbugfixestest_test_alert_pages_use_full_width_responsive_shared_layout",
+      "tests_feature_frontendbugfixestest_frontendbugfixestest_test_blade_frontend_avoids_inline_javascript_handlers",
+      "tests_feature_frontendbugfixestest_frontendbugfixestest_test_dashboard_chart_markup_keeps_valid_fallbacks_for_empty_data",
+      "tests_feature_frontendbugfixestest_frontendbugfixestest_test_driver_header_has_no_hardcoded_person_fallback",
+      "tests_feature_frontendbugfixestest_frontendbugfixestest_test_inventory_tables_use_content_fit_responsive_layout_classes",
+      "tests_feature_frontendbugfixestest_frontendbugfixestest_test_login_uses_username_password_form_and_renders_logout_only_toast",
+      "tests_feature_frontendbugfixestest_frontendbugfixestest_test_shared_frontend_assets_guard_charts_and_duplicate_submissions",
+      "tests_feature_frontendbugfixestest_frontendbugfixestest_test_type_button_controls_have_frontend_behavior_hooks"
+    ],
+    "55": [
       "tests_feature_inventoryledgertest_inventoryledgertest",
       "tests_feature_inventoryledgertest_inventoryledgertest_baserecords",
       "tests_feature_inventoryledgertest_inventoryledgertest_haul",
@@ -1378,7 +1423,7 @@
       "tests_feature_inventoryledgertest_inventoryledgertest_test_multiple_lift_transactions_roll_up_to_one_purchase_and_final_trip_can_be_smaller",
       "tests_feature_inventoryledgertest_inventoryledgertest_test_view_transactions_modal_displays_all_lift_blocks_and_contained_details_from_database"
     ],
-    "51": [
+    "56": [
       "tests_feature_inventoryvarianceexplanationstest_inventoryvarianceexplanationstest",
       "tests_feature_inventoryvarianceexplanationstest_inventoryvarianceexplanationstest_aiconfig",
       "tests_feature_inventoryvarianceexplanationstest_inventoryvarianceexplanationstest_paymentforsale",
@@ -1392,7 +1437,7 @@
       "tests_feature_inventoryvarianceexplanationstest_inventoryvarianceexplanationstest_test_variance_filters_are_applied_to_ai_payload_without_customer_details",
       "tests_feature_inventoryvarianceexplanationstest_inventoryvarianceexplanationstest_variancedata"
     ],
-    "52": [
+    "57": [
       "tests_feature_salesofficercustomermanagementtest_salesofficercustomermanagementtest",
       "tests_feature_salesofficercustomermanagementtest_salesofficercustomermanagementtest_baserecords",
       "tests_feature_salesofficercustomermanagementtest_salesofficercustomermanagementtest_customer",
@@ -1406,7 +1451,7 @@
       "tests_feature_salesofficercustomermanagementtest_salesofficercustomermanagementtest_test_sales_officer_can_edit_customer_without_changing_customer_id",
       "tests_feature_salesofficercustomermanagementtest_salesofficercustomermanagementtest_test_sales_officer_can_view_real_customers"
     ],
-    "53": [
+    "58": [
       "composer",
       "composer_description",
       "composer_keywords",
@@ -1419,7 +1464,7 @@
       "ref_framework",
       "ref_laravel"
     ],
-    "54": [
+    "59": [
       "illuminate_foundation_inspiring",
       "illuminate_support_facades_artisan",
       "illuminate_support_facades_route",
@@ -1432,20 +1477,7 @@
       "tests_feature_turnoverreadinesstest_turnoverreadinesstest_test_readiness_audit_fails_on_operationally_empty_database",
       "tests_feature_turnoverreadinesstest_turnoverreadinesstest_test_workflow_smoke_test_runs_with_rollback_without_persisting_staging_data"
     ],
-    "55": [
-      "tests_feature_frontendbugfixestest_frontendbugfixestest",
-      "tests_feature_frontendbugfixestest_frontendbugfixestest_frontendfiles",
-      "tests_feature_frontendbugfixestest_frontendbugfixestest_test_admin_nested_routes_keep_parent_sidebar_active",
-      "tests_feature_frontendbugfixestest_frontendbugfixestest_test_ai_report_output_remains_escaped_in_frontend",
-      "tests_feature_frontendbugfixestest_frontendbugfixestest_test_alert_pages_use_full_width_responsive_shared_layout",
-      "tests_feature_frontendbugfixestest_frontendbugfixestest_test_blade_frontend_avoids_inline_javascript_handlers",
-      "tests_feature_frontendbugfixestest_frontendbugfixestest_test_dashboard_chart_markup_keeps_valid_fallbacks_for_empty_data",
-      "tests_feature_frontendbugfixestest_frontendbugfixestest_test_inventory_tables_use_content_fit_responsive_layout_classes",
-      "tests_feature_frontendbugfixestest_frontendbugfixestest_test_login_uses_username_password_form_and_renders_logout_only_toast",
-      "tests_feature_frontendbugfixestest_frontendbugfixestest_test_shared_frontend_assets_guard_charts_and_duplicate_submissions",
-      "tests_feature_frontendbugfixestest_frontendbugfixestest_test_type_button_controls_have_frontend_behavior_hooks"
-    ],
-    "56": [
+    "60": [
       "tests_feature_haultruckassignmenttest_haultruckassignmenttest",
       "tests_feature_haultruckassignmenttest_haultruckassignmenttest_baserecords",
       "tests_feature_haultruckassignmenttest_haultruckassignmenttest_haul",
@@ -1458,7 +1490,7 @@
       "tests_feature_haultruckassignmenttest_haultruckassignmenttest_test_unauthorized_roles_cannot_assign_haul_trucks",
       "tests_feature_haultruckassignmenttest_haultruckassignmenttest_truck"
     ],
-    "57": [
+    "61": [
       "tests_feature_inventoryofficerpurchasemanagementtest_inventoryofficerpurchasemanagementtest",
       "tests_feature_inventoryofficerpurchasemanagementtest_inventoryofficerpurchasemanagementtest_baserecords",
       "tests_feature_inventoryofficerpurchasemanagementtest_inventoryofficerpurchasemanagementtest_createpurchaserecord",
@@ -1471,7 +1503,7 @@
       "tests_feature_inventoryofficerpurchasemanagementtest_inventoryofficerpurchasemanagementtest_test_purchase_quantity_changes_are_blocked_after_hauling_activity",
       "tests_feature_inventoryofficerpurchasemanagementtest_inventoryofficerpurchasemanagementtest_test_purchase_search_filters_records"
     ],
-    "58": [
+    "62": [
       "tests_feature_phase4securityhardeningtest_phase4securityhardeningtest",
       "tests_feature_phase4securityhardeningtest_phase4securityhardeningtest_test_application_timezone_is_asia_manila",
       "tests_feature_phase4securityhardeningtest_phase4securityhardeningtest_test_csv_export_in_admin_sales_report_neutralizes_formula_triggers",
@@ -1484,7 +1516,7 @@
       "tests_feature_phase4securityhardeningtest_phase4securityhardeningtest_test_strict_transport_security_header_present_when_secure",
       "tests_feature_phase4securityhardeningtest_phase4securityhardeningtest_test_withdrawal_receipt_authorization_enforced"
     ],
-    "59": [
+    "63": [
       "tests_feature_revenueinsightstest_revenueinsightstest",
       "tests_feature_revenueinsightstest_revenueinsightstest_aiconfig",
       "tests_feature_revenueinsightstest_revenueinsightstest_payment",
@@ -1497,7 +1529,7 @@
       "tests_feature_revenueinsightstest_revenueinsightstest_test_malformed_ai_response_shows_friendly_fallback",
       "tests_feature_revenueinsightstest_revenueinsightstest_test_zero_revenue_period_skips_ai_call"
     ],
-    "60": [
+    "64": [
       "tests_feature_salesofficerreceivablestrackingtest_salesofficerreceivablestrackingtest",
       "tests_feature_salesofficerreceivablestrackingtest_salesofficerreceivablestrackingtest_baserecords",
       "tests_feature_salesofficerreceivablestrackingtest_salesofficerreceivablestrackingtest_negativebalancefor",
@@ -1510,7 +1542,7 @@
       "tests_feature_salesofficerreceivablestrackingtest_salesofficerreceivablestrackingtest_test_receivables_page_tracks_unpaid_partial_installment_and_settled_sales",
       "tests_feature_salesofficerreceivablestrackingtest_salesofficerreceivablestrackingtest_test_receivables_search_uses_sale_customer_status_and_payment_method"
     ],
-    "61": [
+    "65": [
       "tests_feature_adminsalesreportstest_adminsalesreportstest",
       "tests_feature_adminsalesreportstest_adminsalesreportstest_baserecords",
       "tests_feature_adminsalesreportstest_adminsalesreportstest_payment",
@@ -1522,7 +1554,7 @@
       "tests_feature_adminsalesreportstest_adminsalesreportstest_test_report_filters_by_today_specific_date_range_month_and_year",
       "tests_feature_adminsalesreportstest_adminsalesreportstest_test_report_shows_payment_installment_and_receivable_status_totals"
     ],
-    "62": [
+    "66": [
       "tests_feature_purchasereceiptstatustest_php_uploadedfile",
       "tests_feature_purchasereceiptstatustest_purchasereceiptstatustest",
       "tests_feature_purchasereceiptstatustest_purchasereceiptstatustest_baserecords",
@@ -1533,7 +1565,7 @@
       "tests_feature_purchasereceiptstatustest_purchasereceiptstatustest_test_purchase_without_driver_withdrawal_shows_no_withdrawal_state",
       "tests_feature_purchasereceiptstatustest_purchasereceiptstatustest_tinyimage"
     ],
-    "63": [
+    "67": [
       "tests_feature_salestrendsummariestest_salestrendsummariestest",
       "tests_feature_salestrendsummariestest_salestrendsummariestest_aiconfig",
       "tests_feature_salestrendsummariestest_salestrendsummariestest_records",
@@ -1544,17 +1576,7 @@
       "tests_feature_salestrendsummariestest_salestrendsummariestest_test_no_sales_and_limited_history_skip_ai_call",
       "tests_feature_salestrendsummariestest_salestrendsummariestest_test_stable_and_decreasing_trends_are_calculated_before_ai"
     ],
-    "64": [
-      "app_http_controllers_truckcontroller_truckcontroller",
-      "app_http_controllers_truckcontroller_truckcontroller_construct",
-      "app_http_controllers_truckcontroller_truckcontroller_normalizeidentifiers",
-      "app_http_controllers_truckcontroller_truckcontroller_routename",
-      "app_http_controllers_truckcontroller_truckcontroller_rules",
-      "app_http_controllers_truckcontroller_truckcontroller_store",
-      "app_http_controllers_truckcontroller_truckcontroller_togglestatus",
-      "app_http_controllers_truckcontroller_truckcontroller_update"
-    ],
-    "65": [
+    "68": [
       "app_providers_appserviceprovider",
       "app_providers_appserviceprovider_appserviceprovider",
       "app_providers_appserviceprovider_appserviceprovider_boot",
@@ -1564,7 +1586,17 @@
       "illuminate_support_facades_ratelimiter",
       "illuminate_support_serviceprovider"
     ],
-    "66": [
+    "69": [
+      "app_services_aiservice",
+      "app_services_workflowsmoketestservice",
+      "illuminate_http_client_connectionexception",
+      "illuminate_support_facades_cache",
+      "illuminate_support_facades_log",
+      "runtimeexception",
+      "tests_feature_aiserviceconfigurationtest",
+      "throwable"
+    ],
+    "70": [
       "composer_require_dev",
       "composer_require_dev_fakerphp_faker",
       "composer_require_dev_laravel_pail",
@@ -1574,7 +1606,7 @@
       "composer_require_dev_nunomaduro_collision",
       "composer_require_dev_phpunit_phpunit"
     ],
-    "67": [
+    "71": [
       "composer_scripts_post_root_package_install",
       "composer_scripts_setup",
       "ref_composer_install",
@@ -1584,7 +1616,7 @@
       "ref_php_artisan_migrate_force",
       "ref_php_r_file_exists_env_copy_env_example_env"
     ],
-    "68": [
+    "72": [
       "app_services_purchaseworkflowservice_purchaseworkflowservice",
       "app_services_purchaseworkflowservice_purchaseworkflowservice_construct",
       "app_services_purchaseworkflowservice_purchaseworkflowservice_synchronize",
@@ -1593,7 +1625,7 @@
       "app_services_workflowalertservice_workflowalertservice_nextcode",
       "app_services_workflowalertservice_workflowalertservice_purchase"
     ],
-    "69": [
+    "73": [
       "composer_allow_plugins_pestphp_pest_plugin",
       "composer_allow_plugins_php_http_discovery",
       "composer_config",
@@ -1602,15 +1634,16 @@
       "composer_config_preferred_install",
       "composer_config_sort_packages"
     ],
-    "70": [
-      "database_factories_userfactory",
-      "database_factories_userfactory_userfactory",
-      "database_factories_userfactory_userfactory_definition",
-      "database_factories_userfactory_userfactory_unverified",
-      "illuminate_database_eloquent_factories_factory",
-      "static"
+    "74": [
+      "tests_feature_salesinitialpaymenttest",
+      "tests_feature_salesinitialpaymenttest_salesinitialpaymenttest",
+      "tests_feature_salesinitialpaymenttest_salesinitialpaymenttest_baserecords",
+      "tests_feature_salesinitialpaymenttest_salesinitialpaymenttest_salepayload",
+      "tests_feature_salesinitialpaymenttest_salesinitialpaymenttest_test_create_form_records_unpaid_partial_and_full_sales_through_existing_payments",
+      "tests_feature_salesinitialpaymenttest_salesinitialpaymenttest_test_create_form_rejects_negative_payment_and_server_calculated_overpayment",
+      "tests_feature_salesinitialpaymenttest_salesinitialpaymenttest_test_sales_and_admin_create_forms_show_payment_summary_without_restoring_order_id_input"
     ],
-    "71": [
+    "75": [
       "tests_feature_adminmonitoringtest_adminmonitoringtest",
       "tests_feature_adminmonitoringtest_adminmonitoringtest_createmonitoringrecords",
       "tests_feature_adminmonitoringtest_adminmonitoringtest_test_admin_monitoring_pages_display_real_database_records",
@@ -1618,7 +1651,7 @@
       "tests_feature_adminmonitoringtest_adminmonitoringtest_test_monitoring_pages_have_empty_states_and_do_not_create_records",
       "tests_feature_adminmonitoringtest_adminmonitoringtest_test_non_admin_users_are_blocked_from_monitoring_pages"
     ],
-    "72": [
+    "76": [
       "tests_feature_fuelcatalogregressiontest_fuelcatalogregressiontest",
       "tests_feature_fuelcatalogregressiontest_fuelcatalogregressiontest_test_dashboard_and_ai_filters_reject_inactive_or_unapproved_fuel_type",
       "tests_feature_fuelcatalogregressiontest_fuelcatalogregressiontest_test_lifting_filters_reject_inactive_or_unapproved_fuel_type",
@@ -1626,390 +1659,393 @@
       "tests_feature_fuelcatalogregressiontest_fuelcatalogregressiontest_test_purchase_validation_rejects_inactive_or_unapproved_fuel_type",
       "tests_feature_fuelcatalogregressiontest_fuelcatalogregressiontest_test_sale_validation_rejects_inactive_or_unapproved_fuel_type"
     ],
-    "73": [
-      "tests_feature_phase3operationalacceptancetest_phase3operationalacceptancetest",
-      "tests_feature_phase3operationalacceptancetest_phase3operationalacceptancetest_setup",
-      "tests_feature_phase3operationalacceptancetest_phase3operationalacceptancetest_test_all_four_approved_fuels_have_reconciled_acceptance_workflows",
-      "tests_feature_phase3operationalacceptancetest_phase3operationalacceptancetest_test_authenticated_http_workflows_cover_garage_and_direct_depot_fulfillment",
-      "tests_feature_phase3operationalacceptancetest_phase3operationalacceptancetest_test_legacy_sale_is_reconciled_with_proper_movement_and_stock_out",
-      "tests_feature_phase3operationalacceptancetest_phase3operationalacceptancetest_test_repair_data_service_and_command_execute_idempotently"
+    "77": [
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_activeinventorybalancesbyfuelquery",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_availablegaragestockforupdate",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_cancelledhaulallocationexists",
+      "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller_cancelledstockoutexists",
+      "app_http_controllers_inventoryofficerpurchasecontroller_php_closure"
     ],
-    "74": [
-      "app_services_aiservice",
-      "illuminate_http_client_connectionexception",
-      "illuminate_support_facades_cache",
-      "illuminate_support_facades_log",
-      "tests_feature_aiserviceconfigurationtest"
+    "78": [
+      "app_services_idempotencyservice_idempotencyservice",
+      "app_services_idempotencyservice_idempotencyservice_iscodecollision",
+      "app_services_idempotencyservice_idempotencyservice_retryoncollision",
+      "app_services_idempotencyservice_idempotencyservice_run",
+      "app_services_idempotencyservice_php_closure"
     ],
-    "75": [
+    "79": [
+      "app_services_inventorycostservice_inventorycostservice",
+      "app_services_inventorycostservice_inventorycostservice_cancelledhaulallocationexists",
+      "app_services_inventorycostservice_inventorycostservice_cancelledstockoutexists",
+      "app_services_inventorycostservice_inventorycostservice_currentunitcostforupdate",
+      "app_services_inventorycostservice_php_closure"
+    ],
+    "80": [
       "composer_autoload",
       "composer_autoload_psr_4",
       "composer_psr_4_app",
       "composer_psr_4_database_factories",
       "composer_psr_4_database_seeders"
     ],
-    "76": [
+    "81": [
       "config_logging",
       "monolog_handler_nullhandler",
       "monolog_handler_streamhandler",
       "monolog_handler_syslogudphandler",
       "monolog_processor_psrlogmessageprocessor"
     ],
-    "77": [
+    "82": [
       "docs_system_audit_report_live_operational_data_gap",
       "docs_system_audit_report_not_ready_verdict",
       "docs_system_audit_report_system_audit_report",
       "docs_turnover_readiness_final_gate",
       "docs_turnover_readiness_turnover_readiness_checklist"
     ],
-    "78": [
+    "83": [
       "tests_feature_masterdataandinventoryaccesstest_masterdataandinventoryaccesstest",
       "tests_feature_masterdataandinventoryaccesstest_masterdataandinventoryaccesstest_test_admin_can_manage_inventory_and_create_purchase_records",
       "tests_feature_masterdataandinventoryaccesstest_masterdataandinventoryaccesstest_test_dispatch_ledger_uses_real_ledger_data_and_empty_state",
       "tests_feature_masterdataandinventoryaccesstest_masterdataandinventoryaccesstest_test_fuel_types_catalog_is_fixed_and_creation_routes_are_not_available",
       "tests_feature_masterdataandinventoryaccesstest_masterdataandinventoryaccesstest_test_required_master_data_and_garage_tanks_exist_on_empty_install"
     ],
-    "79": [
+    "84": [
       "composer_require",
       "composer_require_laravel_framework",
       "composer_require_laravel_tinker",
       "composer_require_php"
     ],
-    "80": [
+    "85": [
       "composer_scripts_post_create_project_cmd",
       "ref_php_artisan_key_generate_ansi",
       "ref_php_artisan_migrate_graceful_ansi",
       "ref_php_r_file_exists_database_database_sqlite_touch_database_database_sqlite"
     ],
-    "81": [
-      "illuminate_support_facades_blade",
-      "tests_feature_statusbadgetest",
-      "tests_feature_statusbadgetest_statusbadgetest",
-      "tests_feature_statusbadgetest_statusbadgetest_test_workflow_and_inventory_statuses_use_meaningful_tones"
-    ],
-    "82": [
+    "86": [
       "phpunit_framework_testcase",
       "tests_unit_exampletest",
       "tests_unit_exampletest_exampletest",
       "tests_unit_exampletest_exampletest_test_that_true_is_true"
     ],
-    "83": [
-      "composer_extra",
-      "composer_extra_laravel",
-      "composer_laravel_dont_discover"
-    ],
-    "84": [
+    "87": [
       "composer_autoload_dev",
       "composer_autoload_dev_psr_4",
       "composer_psr_4_tests"
     ],
-    "85": [
+    "88": [
+      "composer_extra",
+      "composer_extra_laravel",
+      "composer_laravel_dont_discover"
+    ],
+    "89": [
       "public_images_cjp_logo_brand_mark",
       "public_images_cjp_logo_cjp_monogram",
       "public_images_cjp_logo_green_star"
     ],
-    "86": [
+    "90": [
       "admin_partials_lift_table",
       "resources_views_admin_fuel_lifting_blade"
     ],
-    "87": [
+    "91": [
       "docs_database_erd_current_fulfillment_model",
       "docs_database_erd_database_erd"
     ],
-    "88": [
+    "92": [
       "resources_views_trucks_index_blade",
       "trucks_partials_form"
     ],
-    "89": [
+    "93": [
       "app_http_controllers_dispatchdeliverycontroller_php_carbonimmutable"
     ],
-    "90": [
+    "94": [
       "app_http_controllers_haultruckassignmentcontroller_php_carbonimmutable"
     ],
-    "91": [
+    "95": [
       "app_services_dashboardsummaryservice_php_carbonimmutable"
     ],
-    "92": [
+    "96": [
       "app_services_inventoryledgerservice_php_closure"
     ],
-    "93": [
+    "97": [
       "app_services_operationaldatarepairservice_php_garagetankservice"
     ],
-    "94": [
+    "98": [
       "app_services_purchaseservice_php_purchaseworkflowservice"
     ],
-    "95": [
+    "99": [
       "app_services_purchaseservice_php_workflowalertservice"
     ],
-    "96": [
+    "100": [
       "app_services_stockinservice_php_closure"
     ],
-    "97": [
+    "101": [
       "artisan"
     ],
-    "98": [
+    "102": [
       "config_app"
     ],
-    "99": [
+    "103": [
       "config_filesystems"
     ],
-    "100": [
+    "104": [
       "config_fuels"
     ],
-    "101": [
+    "105": [
       "config_mail"
     ],
-    "102": [
+    "106": [
       "config_queue"
     ],
-    "103": [
+    "107": [
       "config_services"
     ],
-    "104": [
+    "108": [
       "public_robots_robots_policy"
     ],
-    "105": [
+    "109": [
       "purchaseservice"
     ],
-    "106": [
+    "110": [
       "readme_laravel_framework"
     ],
-    "107": [
+    "111": [
       "resources_views_admin_account_requests_blade"
     ],
-    "108": [
+    "112": [
       "resources_views_admin_alerts_blade"
     ],
-    "109": [
+    "113": [
       "resources_views_admin_dashboard_blade"
     ],
-    "110": [
+    "114": [
       "resources_views_admin_inventory_blade"
     ],
-    "111": [
+    "115": [
       "resources_views_admin_ledger_blade"
     ],
-    "112": [
+    "116": [
       "resources_views_admin_partials_entity_detail_blade"
     ],
-    "113": [
+    "117": [
       "resources_views_admin_partials_entity_form_blade"
     ],
-    "114": [
+    "118": [
       "resources_views_admin_partials_lift_table_blade"
     ],
-    "115": [
+    "119": [
       "resources_views_admin_reports_blade"
     ],
-    "116": [
+    "120": [
       "resources_views_admin_sales_blade"
     ],
-    "117": [
+    "121": [
       "resources_views_admin_user_management_blade"
     ],
-    "118": [
+    "122": [
       "resources_views_auth_forgot_password_blade"
     ],
-    "119": [
+    "123": [
       "resources_views_auth_login_blade"
     ],
-    "120": [
+    "124": [
       "resources_views_auth_register_blade"
     ],
-    "121": [
+    "125": [
       "resources_views_auth_reset_password_blade"
     ],
-    "122": [
+    "126": [
       "resources_views_components_admin_alert_list_blade"
     ],
-    "123": [
+    "127": [
       "resources_views_components_admin_header_blade"
     ],
-    "124": [
+    "128": [
       "resources_views_components_admin_modal_blade"
     ],
-    "125": [
+    "129": [
       "resources_views_components_admin_sidebar_blade"
     ],
-    "126": [
+    "130": [
       "resources_views_components_admin_status_badge_blade"
     ],
-    "127": [
+    "131": [
       "resources_views_components_dispatch_header_blade"
     ],
-    "128": [
+    "132": [
       "resources_views_components_dispatch_sidebar_blade"
     ],
-    "129": [
+    "133": [
       "resources_views_components_driver_header_blade"
     ],
-    "130": [
+    "134": [
       "resources_views_components_driver_sidebar_blade"
     ],
-    "131": [
+    "135": [
       "resources_views_components_inventoryofficer_header_blade"
     ],
-    "132": [
+    "136": [
       "resources_views_components_inventoryofficer_sidebar_blade"
     ],
-    "133": [
+    "137": [
       "resources_views_components_salesofficer_header_blade"
     ],
-    "134": [
+    "138": [
       "resources_views_components_salesofficer_sidebar_blade"
     ],
-    "135": [
+    "139": [
       "resources_views_components_toast_stack_blade"
     ],
-    "136": [
+    "140": [
       "resources_views_dispatch_alerts_blade"
     ],
-    "137": [
+    "141": [
       "resources_views_dispatch_fuel_lifting_blade"
     ],
-    "138": [
+    "142": [
       "resources_views_dispatch_ledger_blade"
     ],
-    "139": [
+    "143": [
       "resources_views_driver_fuel_lifting_blade"
     ],
-    "140": [
+    "144": [
       "resources_views_emails_password_reset_code_blade"
     ],
-    "141": [
+    "145": [
       "resources_views_inventory_officer_alerts_blade"
     ],
-    "142": [
+    "146": [
       "resources_views_inventory_officer_inventory_blade"
     ],
-    "143": [
+    "147": [
       "resources_views_inventory_officer_ledger_blade"
     ],
-    "144": [
+    "148": [
       "resources_views_layouts_admin_blade"
     ],
-    "145": [
+    "149": [
       "resources_views_layouts_dispatch_blade"
     ],
-    "146": [
+    "150": [
       "resources_views_layouts_driver_blade"
     ],
-    "147": [
+    "151": [
       "resources_views_layouts_inventory_officer_blade"
     ],
-    "148": [
+    "152": [
       "resources_views_layouts_sales_officer_blade"
     ],
-    "149": [
+    "153": [
       "resources_views_sales_officer_alerts_blade"
     ],
-    "150": [
+    "154": [
       "resources_views_sales_officer_sales_blade"
     ],
-    "151": [
+    "155": [
       "resources_views_trucks_partials_form_blade"
     ],
-    "152": [
+    "156": [
       "resources_views_welcome_blade"
     ],
-    "153": [
+    "157": [
+      "stockoutfinancialservice"
+    ],
+    "158": [
       "uploadedfile"
     ],
-    "154": [
+    "159": [
       "vite_config"
     ]
   },
   "cohesion": {
-    "0": 0.05078855920876771,
+    "0": 0.041403508771929824,
     "1": 0.0554954954954955,
     "2": 0.07577639751552795,
-    "3": 0.048484848484848485,
-    "4": 0.09562289562289562,
-    "5": 0.13131313131313133,
-    "6": 0.08233117483811286,
-    "7": 0.08819345661450925,
+    "3": 0.06804214223002635,
+    "4": 0.11738648947951273,
+    "5": 0.1358974358974359,
+    "6": 0.08819345661450925,
+    "7": 0.13363363363363365,
     "8": 0.05555555555555555,
-    "9": 0.1349206349206349,
-    "10": 0.2,
-    "11": 0.15384615384615385,
-    "12": 0.18,
-    "13": 0.23,
-    "14": 0.25333333333333335,
-    "15": 0.22529644268774704,
-    "16": 0.1541501976284585,
+    "9": 0.08143939393939394,
+    "10": 0.16559139784946236,
+    "11": 0.12169312169312169,
+    "12": 0.11692307692307692,
+    "13": 0.15384615384615385,
+    "14": 0.24333333333333335,
+    "15": 0.23376623376623376,
+    "16": 0.16017316017316016,
     "17": 0.09090909090909091,
-    "18": 0.12857142857142856,
-    "19": 0.24285714285714285,
-    "20": 0.42857142857142855,
-    "21": 0.21052631578947367,
-    "22": 0.23157894736842105,
-    "23": 0.19473684210526315,
-    "24": 0.2046783625730994,
-    "25": 0.23391812865497075,
-    "26": 0.3202614379084967,
-    "27": 0.40522875816993464,
-    "28": 0.13333333333333333,
-    "29": 0.23333333333333334,
-    "30": 0.30833333333333335,
-    "31": 0.3,
-    "32": 0.1523809523809524,
-    "33": 0.3238095238095238,
-    "34": 0.24761904761904763,
-    "35": 0.41904761904761906,
-    "36": 0.22857142857142856,
-    "37": 0.23809523809523808,
-    "38": 0.2087912087912088,
-    "39": 0.18681318681318682,
-    "40": 0.14285714285714285,
-    "41": 0.24175824175824176,
-    "42": 0.3956043956043956,
-    "43": 0.31868131868131866,
-    "44": 0.26373626373626374,
-    "45": 0.3076923076923077,
-    "46": 0.358974358974359,
-    "47": 0.48717948717948717,
-    "48": 0.21212121212121213,
-    "49": 0.3939393939393939,
-    "50": 0.4696969696969697,
-    "51": 0.4090909090909091,
-    "52": 0.3939393939393939,
-    "53": 0.18181818181818182,
-    "54": 0.2,
-    "55": 0.21818181818181817,
-    "56": 0.5818181818181818,
-    "57": 0.34545454545454546,
+    "18": 0.24285714285714285,
+    "19": 0.42857142857142855,
+    "20": 0.21052631578947367,
+    "21": 0.23157894736842105,
+    "22": 0.19473684210526315,
+    "23": 0.2046783625730994,
+    "24": 0.23391812865497075,
+    "25": 0.19607843137254902,
+    "26": 0.1830065359477124,
+    "27": 0.3202614379084967,
+    "28": 0.40522875816993464,
+    "29": 0.13333333333333333,
+    "30": 0.23333333333333334,
+    "31": 0.30833333333333335,
+    "32": 0.3,
+    "33": 0.2761904761904762,
+    "34": 0.20952380952380953,
+    "35": 0.3238095238095238,
+    "36": 0.24761904761904763,
+    "37": 0.4095238095238095,
+    "38": 0.22857142857142856,
+    "39": 0.23809523809523808,
+    "40": 0.2087912087912088,
+    "41": 0.2087912087912088,
+    "42": 0.2967032967032967,
+    "43": 0.2857142857142857,
+    "44": 0.14285714285714285,
+    "45": 0.24175824175824176,
+    "46": 0.3956043956043956,
+    "47": 0.31868131868131866,
+    "48": 0.26373626373626374,
+    "49": 0.358974358974359,
+    "50": 0.48717948717948717,
+    "51": 0.3484848484848485,
+    "52": 0.21212121212121213,
+    "53": 0.3939393939393939,
+    "54": 0.19696969696969696,
+    "55": 0.4696969696969697,
+    "56": 0.4090909090909091,
+    "57": 0.3939393939393939,
     "58": 0.18181818181818182,
-    "59": 0.4909090909090909,
-    "60": 0.45454545454545453,
-    "61": 0.5333333333333333,
-    "62": 0.4166666666666667,
-    "63": 0.5277777777777778,
-    "64": 0.5357142857142857,
-    "65": 0.2857142857142857,
-    "66": 0.25,
-    "67": 0.25,
-    "68": 0.42857142857142855,
+    "59": 0.2,
+    "60": 0.5818181818181818,
+    "61": 0.34545454545454546,
+    "62": 0.18181818181818182,
+    "63": 0.4909090909090909,
+    "64": 0.45454545454545453,
+    "65": 0.5333333333333333,
+    "66": 0.4166666666666667,
+    "67": 0.5277777777777778,
+    "68": 0.2857142857142857,
     "69": 0.2857142857142857,
-    "70": 0.4666666666666667,
-    "71": 0.4666666666666667,
-    "72": 0.3333333333333333,
-    "73": 0.3333333333333333,
-    "74": 0.5,
-    "75": 0.4,
-    "76": 0.4,
-    "77": 0.4,
-    "78": 0.4,
-    "79": 0.5,
-    "80": 0.5,
-    "81": 0.5,
-    "82": 0.6666666666666666,
-    "83": 0.6666666666666666,
-    "84": 0.6666666666666666,
-    "85": 0.6666666666666666,
-    "86": 1.0,
-    "87": 1.0,
-    "88": 1.0,
-    "89": 1.0,
+    "70": 0.25,
+    "71": 0.25,
+    "72": 0.42857142857142855,
+    "73": 0.2857142857142857,
+    "74": 0.5238095238095238,
+    "75": 0.4666666666666667,
+    "76": 0.3333333333333333,
+    "77": 0.6,
+    "78": 0.6,
+    "79": 0.7,
+    "80": 0.4,
+    "81": 0.4,
+    "82": 0.4,
+    "83": 0.4,
+    "84": 0.5,
+    "85": 0.5,
+    "86": 0.6666666666666666,
+    "87": 0.6666666666666666,
+    "88": 0.6666666666666666,
+    "89": 0.6666666666666666,
     "90": 1.0,
     "91": 1.0,
     "92": 1.0,
@@ -2074,33 +2110,38 @@
     "151": 1.0,
     "152": 1.0,
     "153": 1.0,
-    "154": 1.0
+    "154": 1.0,
+    "155": 1.0,
+    "156": 1.0,
+    "157": 1.0,
+    "158": 1.0,
+    "159": 1.0
   },
   "gods": [
     {
       "id": "app_models_user_user",
       "label": "User",
-      "degree": 134
-    },
-    {
-      "id": "app_services_dashboardsummaryservice_dashboardsummaryservice",
-      "label": "DashboardSummaryService",
-      "degree": 71
+      "degree": 148
     },
     {
       "id": "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller",
       "label": "SalesOfficerCustomerController",
-      "degree": 70
+      "degree": 74
+    },
+    {
+      "id": "app_services_dashboardsummaryservice_dashboardsummaryservice",
+      "label": "DashboardSummaryService",
+      "degree": 68
     },
     {
       "id": "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller",
       "label": "InventoryOfficerPurchaseController",
-      "degree": 60
+      "degree": 61
     },
     {
       "id": "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller",
       "label": "AdminMonitoringController",
-      "degree": 47
+      "degree": 48
     },
     {
       "id": "app_services_aidatapreparationservice_aidatapreparationservice",
@@ -2130,6 +2171,17 @@
   ],
   "surprises": [
     {
+      "source": "AIDataPreparationService",
+      "target": "DashboardSummaryService",
+      "source_files": [
+        "app/Services/AIDataPreparationService.php",
+        "app/Services/DashboardSummaryService.php"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "references",
+      "why": "bridges separate communities"
+    },
+    {
       "source": "SalesOfficerCustomerController",
       "target": "SaleConfirmationService",
       "source_files": [
@@ -2152,33 +2204,22 @@
       "why": "bridges separate communities"
     },
     {
-      "source": "AIDataPreparationService",
-      "target": "DashboardSummaryService",
+      "source": "DispatchLiftingStatusController",
+      "target": "TruckAvailabilityService",
       "source_files": [
-        "app/Services/AIDataPreparationService.php",
-        "app/Services/DashboardSummaryService.php"
+        "app/Http/Controllers/DispatchLiftingStatusController.php",
+        "app/Services/TruckAvailabilityService.php"
       ],
       "confidence": "EXTRACTED",
       "relation": "references",
       "why": "bridges separate communities"
     },
     {
-      "source": "InventoryOfficerLedgerController",
-      "target": "Controller",
+      "source": "DriverLiftingStatusController",
+      "target": "TruckAvailabilityService",
       "source_files": [
-        "app/Http/Controllers/InventoryOfficerLedgerController.php",
-        "app/Http/Controllers/Controller.php"
-      ],
-      "confidence": "EXTRACTED",
-      "relation": "inherits",
-      "why": "bridges separate communities"
-    },
-    {
-      "source": "InventoryOfficerPurchaseController",
-      "target": "InventoryCostService",
-      "source_files": [
-        "app/Http/Controllers/InventoryOfficerPurchaseController.php",
-        "app/Services/InventoryCostService.php"
+        "app/Http/Controllers/DriverLiftingStatusController.php",
+        "app/Services/TruckAvailabilityService.php"
       ],
       "confidence": "EXTRACTED",
       "relation": "references",
@@ -2188,23 +2229,23 @@
   "questions": [
     {
       "type": "bridge_node",
-      "question": "Why does `User` connect `User` to `AIDataPreparationService`, `Illuminate\\Foundation\\Testing\\RefreshDatabase`, `RoleBasedAccessControlTest`, `SalesOfficerSalesManagementTest`, `AuthController.php`, `InventoryOfficerStockOutTest`, `InventoryOfficerStockInTest`, `IntegrationTestingTest`, `TestCase`, `Controller`, `AIDataPreparationServiceTest`, `AnalyticsTestingTest`, `BusinessInsightsTest`, `PurchaseReceiptUploadTest`, `DispatchLiftingStatusManagementTest`, `ConnectedLiftingWorkflowTest`, `InventoryLedgerTest`, `InventoryVarianceExplanationsTest`, `FrontendBugFixesTest`, `HaulTruckAssignmentTest`, `RevenueInsightsTest`, `PurchaseReceiptStatusTest`, `SalesTrendSummariesTest`, `UserFactory.php`, `AdminMonitoringTest`, `FuelCatalogRegressionTest`, `MasterDataAndInventoryAccessTest`?",
-      "why": "High betweenness centrality (0.121) - this node is a cross-community bridge."
+      "question": "Why does `User` connect `User` to `AIDataPreparationService`, `Illuminate\\Foundation\\Testing\\RefreshDatabase`, `RoleBasedAccessControlTest`, `TestCase.php`, `User.php`, `SalesOfficerSalesManagementTest`, `InventoryOfficerStockOutTest`, `InventoryOfficerStockInTest`, `DatabaseIntegrityTest`, `IntegrationTestingTest`, `CompleteWorkflowIntegrationTest`, `FormValidationTest`, `FunctionalTestingTest`, `Controller`, `AIDataPreparationServiceTest`, `AnalyticsTestingTest`, `BusinessInsightsTest`, `Phase2GuardrailsAndIdempotencyTest`, `PurchaseReceiptUploadTest`, `DispatchLiftingStatusManagementTest`, `ConnectedLiftingWorkflowTest`, `FrontendBugFixesTest`, `InventoryLedgerTest`, `InventoryVarianceExplanationsTest`, `HaulTruckAssignmentTest`, `RevenueInsightsTest`, `PurchaseReceiptStatusTest`, `SalesTrendSummariesTest`, `SalesInitialPaymentTest`, `AdminMonitoringTest`, `FuelCatalogRegressionTest`, `MasterDataAndInventoryAccessTest`?",
+      "why": "High betweenness centrality (0.097) - this node is a cross-community bridge."
     },
     {
       "type": "bridge_node",
-      "question": "Why does `DashboardSummaryService` connect `DashboardSummaryService` to `SalesOfficerCustomerController`, `AIDataPreparationService`, `TestCase`, `Illuminate\\Foundation\\Testing\\RefreshDatabase`, `Illuminate\\View\\View`?",
-      "why": "High betweenness centrality (0.090) - this node is a cross-community bridge."
+      "question": "Why does `DashboardSummaryService` connect `DashboardSummaryService` to `AIDataPreparationService`, `Illuminate\\Support\\Collection`, `Illuminate\\Http\\Request`, `Illuminate\\Foundation\\Testing\\RefreshDatabase`?",
+      "why": "High betweenness centrality (0.072) - this node is a cross-community bridge."
     },
     {
       "type": "bridge_node",
-      "question": "Why does `AIDataPreparationService` connect `AIDataPreparationService` to `TestCase`, `DashboardSummaryService`, `Illuminate\\Foundation\\Testing\\RefreshDatabase`?",
-      "why": "High betweenness centrality (0.046) - this node is a cross-community bridge."
+      "question": "Why does `AIDataPreparationService` connect `AIDataPreparationService` to `DashboardSummaryService`, `Illuminate\\Foundation\\Testing\\RefreshDatabase`?",
+      "why": "High betweenness centrality (0.045) - this node is a cross-community bridge."
     },
     {
       "type": "verify_inferred",
-      "question": "Are the 71 inferred relationships involving `User` (e.g. with `.records()` and `.records()`) actually correct?",
-      "why": "`User` has 71 INFERRED edges - model-reasoned connections that need verification."
+      "question": "Are the 85 inferred relationships involving `User` (e.g. with `.records()` and `.baseRecords()`) actually correct?",
+      "why": "`User` has 85 INFERRED edges - model-reasoned connections that need verification."
     },
     {
       "type": "isolated_nodes",
@@ -2213,8 +2254,8 @@
     },
     {
       "type": "low_cohesion",
-      "question": "Should `SalesOfficerCustomerController` be split into smaller, more focused modules?",
-      "why": "Cohesion score 0.05078855920876771 - nodes in this community are weakly interconnected."
+      "question": "Should `Illuminate\\Support\\Facades\\Schema` be split into smaller, more focused modules?",
+      "why": "Cohesion score 0.041403508771929824 - nodes in this community are weakly interconnected."
     },
     {
       "type": "low_cohesion",

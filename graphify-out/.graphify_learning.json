@@ -1,11 +1,16 @@
 {
-  "generated_at": "2026-09-21T13:54:37.952993+00:00",
+  "generated_at": "2026-09-24T02:51:33.364673+00:00",
   "nodes": {
     "app_http_controllers_adminmonitoringcontroller_adminmonitoringcontroller": {
-      "code_fingerprint": "8cd52208cf06a267dce90ca4668e6cb4ec470742f10c6a8ed3acc01fb26c7199",
+      "code_fingerprint": "f8dd9c994c50b3b394b2050658df1f03b923ae63e07d1a06814255ced920c4dc",
       "label": "AdminMonitoringController",
-      "last": "2026-09-21T13:43:25.165060+00:00",
+      "last": "2026-09-24T01:23:49.468910+00:00",
       "provenance": [
+        {
+          "date": "2026-09-24T01:23:49.468910+00:00",
+          "outcome": "useful",
+          "q": "Update the CJP Sales workflow to add a Delivery Status and control when Stock-Out is recorded. A sale should only be recorded to Stock-Out once the delivery is marked Delivered."
+        },
         {
           "date": "2026-09-21T13:43:25.165060+00:00",
           "outcome": "useful",
@@ -17,16 +22,42 @@
           "q": "Inspect and update the CJP Southern Star OPC Inventory Management Module based on client requirements for content-fit tables and view-only withdrawal receipts."
         }
       ],
-      "score": 1.999371762,
+      "score": 2.884026146,
       "source_file": "app/Http/Controllers/AdminMonitoringController.php",
       "status": "preferred",
-      "uses": 2
+      "uses": 3
+    },
+    "app_http_controllers_authcontroller_authcontroller": {
+      "code_fingerprint": "a0168469f7f9c6e3ea29448d3931a7bea1aafc453d67bd0dcf8e56432e1b3dbe",
+      "label": "AuthController",
+      "last": "2026-09-24T02:46:01.417005+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-24T02:46:01.417005+00:00",
+          "outcome": "useful",
+          "q": "Perform a complete READ-ONLY audit of the current CJP Southern Star OPC system against every requirement in the attached System Analysis document."
+        }
+      ],
+      "score": 0.999911235,
+      "source_file": "app/Http/Controllers/AuthController.php",
+      "status": "tentative",
+      "uses": 1
     },
     "app_http_controllers_dispatchdeliverycontroller_dispatchdeliverycontroller": {
       "code_fingerprint": "6625b7fe766dfd8a8687a1490bfd0c33b1627602f25269a66bd736f581a2b4d9",
       "label": "DispatchDeliveryController",
-      "last": "2026-09-21T12:46:26.292390+00:00",
+      "last": "2026-09-24T02:46:01.417005+00:00",
       "provenance": [
+        {
+          "date": "2026-09-24T02:46:01.417005+00:00",
+          "outcome": "useful",
+          "q": "Perform a complete READ-ONLY audit of the current CJP Southern Star OPC system against every requirement in the attached System Analysis document."
+        },
+        {
+          "date": "2026-09-24T00:56:45.994859+00:00",
+          "outcome": "useful",
+          "q": "Which code and fixtures cause the remaining Dispatch depot and Sales approved-fuel test failures?"
+        },
         {
           "date": "2026-09-21T12:46:26.292390+00:00",
           "outcome": "useful",
@@ -41,17 +72,12 @@
           "date": "2026-09-18T00:55:57.452654+00:00",
           "outcome": "useful",
           "q": "does the system allows many lifts"
-        },
-        {
-          "date": "2026-09-18T00:32:30.732814+00:00",
-          "outcome": "useful",
-          "q": "Inspect and fix the connected Inventory, Fuel Lifting, Ledger, Alerts, Dispatch Officer, and Driver workflow"
         }
       ],
-      "score": 3.839984314,
+      "score": 5.619224816,
       "source_file": "app/Http/Controllers/DispatchDeliveryController.php",
       "status": "preferred",
-      "uses": 4
+      "uses": 6
     },
     "app_http_controllers_dispatchliftingstatuscontroller_dispatchliftingstatuscontroller": {
       "code_fingerprint": "b24fefc396ae5562d140e4cdf8db0d27d0ffa55a178790d2842b083ef4fdfd88",
@@ -64,7 +90,7 @@
           "q": "Inspect and fix the connected Inventory, Fuel Lifting, Ledger, Alerts, Dispatch Officer, and Driver workflow"
         }
       ],
-      "score": 0.921101725,
+      "score": 0.868610557,
       "source_file": "app/Http/Controllers/DispatchLiftingStatusController.php",
       "status": "tentative",
       "uses": 1
@@ -72,8 +98,18 @@
     "app_http_controllers_driverdeliverycontroller_driverdeliverycontroller": {
       "code_fingerprint": "bbef8ffe8896f4f5de21cb4d2a516b5eac558b2c76ab750095c1e8d33eb954d5",
       "label": "DriverDeliveryController",
-      "last": "2026-09-21T13:26:41.031788+00:00",
+      "last": "2026-09-24T02:46:01.417005+00:00",
       "provenance": [
+        {
+          "date": "2026-09-24T02:46:01.417005+00:00",
+          "outcome": "useful",
+          "q": "Perform a complete READ-ONLY audit of the current CJP Southern Star OPC system against every requirement in the attached System Analysis document."
+        },
+        {
+          "date": "2026-09-24T01:33:40.318218+00:00",
+          "outcome": "useful",
+          "q": "Audit latest 13 CJP client changes end-to-end"
+        },
         {
           "date": "2026-09-21T13:26:41.031788+00:00",
           "outcome": "useful",
@@ -90,10 +126,10 @@
           "q": "Inspect and fix the connected Inventory, Fuel Lifting, Ledger, Alerts, Dispatch Officer, and Driver workflow"
         }
       ],
-      "score": 2.919181268,
+      "score": 4.751487153,
       "source_file": "app/Http/Controllers/DriverDeliveryController.php",
       "status": "preferred",
-      "uses": 3
+      "uses": 5
     },
     "app_http_controllers_haultruckassignmentcontroller_haultruckassignmentcontroller": {
       "code_fingerprint": "f1f1b15c53c448251ae57c47ea52720e840f87ff90e306915fc94e080a01faa6",
@@ -106,16 +142,26 @@
           "q": "Inspect and improve Truck management and Schedule Lift workflow with availability, capacity validation, RBAC, and responsive UI"
         }
       ],
-      "score": 0.998906415,
+      "score": 0.941981362,
       "source_file": "app/Http/Controllers/HaulTruckAssignmentController.php",
       "status": "tentative",
       "uses": 1
     },
     "app_http_controllers_inventoryofficerpurchasecontroller_inventoryofficerpurchasecontroller": {
-      "code_fingerprint": "4f7725bba53ca78a39ed98ecd46afbc84d2834f017b9646895413a23abff4390",
+      "code_fingerprint": "cd4c80862cb4e6742abd9800695f83d7d6435cb6f5acc66655b3798428a774fe",
       "label": "InventoryOfficerPurchaseController",
-      "last": "2026-09-21T13:43:25.165060+00:00",
+      "last": "2026-09-24T01:33:40.318218+00:00",
       "provenance": [
+        {
+          "date": "2026-09-24T01:33:40.318218+00:00",
+          "outcome": "useful",
+          "q": "Audit latest 13 CJP client changes end-to-end"
+        },
+        {
+          "date": "2026-09-24T01:23:49.468910+00:00",
+          "outcome": "useful",
+          "q": "Update the CJP Sales workflow to add a Delivery Status and control when Stock-Out is recorded. A sale should only be recorded to Stock-Out once the delivery is marked Delivered."
+        },
         {
           "date": "2026-09-21T13:43:25.165060+00:00",
           "outcome": "useful",
@@ -130,44 +176,107 @@
           "date": "2026-09-18T00:32:30.732814+00:00",
           "outcome": "useful",
           "q": "Inspect and fix the connected Inventory, Fuel Lifting, Ledger, Alerts, Dispatch Officer, and Driver workflow"
-        },
-        {
-          "date": "2026-09-16T11:09:33.286797+00:00",
-          "outcome": "useful",
-          "q": "also can you update the phased fix plan, this is the fuel types, F1, UNLEADED, DIESEL, PREMIUM"
-        },
-        {
-          "date": "2026-09-16T10:35:29.737894+00:00",
-          "outcome": "useful",
-          "q": "Create a phased fix plan to tackle those problems, always opt for a simpler solution, write your plan in md"
         }
       ],
-      "score": 4.697072309,
+      "score": 6.426742948,
       "source_file": "app/Http/Controllers/InventoryOfficerPurchaseController.php",
       "status": "preferred",
-      "uses": 5
+      "uses": 7
     },
     "app_http_controllers_salesofficercustomercontroller_salesofficercustomercontroller": {
-      "code_fingerprint": "b126414ffc0280545136a44ae785f763449709af4238816b89336260467731fd",
+      "code_fingerprint": "01c33acf29724883bcd28d54c4f3396220c5f1a328171fefc25459df99b2f655",
       "label": "SalesOfficerCustomerController",
-      "last": "2026-09-16T10:35:29.737894+00:00",
+      "last": "2026-09-24T02:46:01.417005+00:00",
       "provenance": [
         {
-          "date": "2026-09-16T10:35:29.737894+00:00",
+          "date": "2026-09-24T02:46:01.417005+00:00",
           "outcome": "useful",
-          "q": "Create a phased fix plan to tackle those problems, always opt for a simpler solution, write your plan in md"
+          "q": "Perform a complete READ-ONLY audit of the current CJP Southern Star OPC system against every requirement in the attached System Analysis document."
+        },
+        {
+          "date": "2026-09-24T02:17:47.444443+00:00",
+          "outcome": "useful",
+          "q": "Perform a complete READ-ONLY audit of the current CJP Southern Star OPC system using the attached manuscript as the primary requirements/reference document."
+        },
+        {
+          "date": "2026-09-24T01:33:40.318218+00:00",
+          "outcome": "useful",
+          "q": "Audit latest 13 CJP client changes end-to-end"
+        },
+        {
+          "date": "2026-09-24T01:23:49.468910+00:00",
+          "outcome": "useful",
+          "q": "Update the CJP Sales workflow to add a Delivery Status and control when Stock-Out is recorded. A sale should only be recorded to Stock-Out once the delivery is marked Delivered."
+        },
+        {
+          "date": "2026-09-24T01:07:47.579230+00:00",
+          "outcome": "useful",
+          "q": "Update the CJP Sales/Receivables module to allow safe record correction when an order was entered incorrectly."
         }
       ],
-      "score": 0.888056691,
+      "score": 7.828401161,
       "source_file": "app/Http/Controllers/SalesOfficerCustomerController.php",
+      "status": "preferred",
+      "uses": 8
+    },
+    "app_http_controllers_truckcontroller_truckcontroller": {
+      "code_fingerprint": "ee624c68885325881305e7dcae24e0319338b84d8bf9e08b69da75bfea51b7d2",
+      "label": "TruckController",
+      "last": "2026-09-24T01:33:40.318218+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-24T01:33:40.318218+00:00",
+          "outcome": "useful",
+          "q": "Audit latest 13 CJP client changes end-to-end"
+        }
+      ],
+      "score": 0.998751124,
+      "source_file": "app/Http/Controllers/TruckController.php",
+      "status": "tentative",
+      "uses": 1
+    },
+    "app_http_middleware_ensureuserhasrole_ensureuserhasrole": {
+      "code_fingerprint": "96d8459851f5a3fa3bbb7d1cdbcd6cfe56f11be1eacaf1ced9c8fb66d8b1de5c",
+      "label": "EnsureUserHasRole",
+      "last": "2026-09-24T01:07:47.579230+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-24T01:07:47.579230+00:00",
+          "outcome": "useful",
+          "q": "Update the CJP Sales/Receivables module to allow safe record correction when an order was entered incorrectly."
+        }
+      ],
+      "score": 0.998336499,
+      "source_file": "app/Http/Middleware/EnsureUserHasRole.php",
+      "status": "tentative",
+      "uses": 1
+    },
+    "app_services_aidatapreparationservice_aidatapreparationservice": {
+      "code_fingerprint": "7e3776960fee6af40c5fa58ef5ce76d2f99d9fb3752731e8ae35bfadd2696947",
+      "label": "AIDataPreparationService",
+      "last": "2026-09-24T02:17:47.444443+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-24T02:17:47.444443+00:00",
+          "outcome": "useful",
+          "q": "Perform a complete READ-ONLY audit of the current CJP Southern Star OPC system using the attached manuscript as the primary requirements/reference document."
+        }
+      ],
+      "score": 0.999458379,
+      "source_file": "app/Services/AIDataPreparationService.php",
       "status": "tentative",
       "uses": 1
     },
     "app_services_dashboardsummaryservice_dashboardsummaryservice": {
       "code_fingerprint": "4ceb382f63f33682a5a435c56e442f4561d3301843d5c439062a8ebb17a1280a",
       "label": "DashboardSummaryService",
-      "last": "2026-09-21T13:43:25.165060+00:00",
+      "last": "2026-09-24T02:17:47.444443+00:00",
       "provenance": [
+        {
+          "date": "2026-09-24T02:17:47.444443+00:00",
+          "outcome": "useful",
+          "q": "Perform a complete READ-ONLY audit of the current CJP Southern Star OPC system using the attached manuscript as the primary requirements/reference document."
+        },
         {
           "date": "2026-09-21T13:43:25.165060+00:00",
           "outcome": "useful",
@@ -179,16 +288,26 @@
           "q": "Create a phased fix plan to tackle those problems, always opt for a simpler solution, write your plan in md"
         }
       ],
-      "score": 1.887876792,
+      "score": 2.77975003,
       "source_file": "app/Services/DashboardSummaryService.php",
       "status": "preferred",
-      "uses": 2
+      "uses": 3
     },
     "app_services_inventoryledgerservice_inventoryledgerservice": {
       "code_fingerprint": "9a9142f600ae278f33c99fb71c2e69d4cfb1e18d33884d0ebb271bd13db737e7",
       "label": "InventoryLedgerService",
-      "last": "2026-09-18T00:55:57.452654+00:00",
+      "last": "2026-09-24T02:46:01.417005+00:00",
       "provenance": [
+        {
+          "date": "2026-09-24T02:46:01.417005+00:00",
+          "outcome": "useful",
+          "q": "Perform a complete READ-ONLY audit of the current CJP Southern Star OPC system against every requirement in the attached System Analysis document."
+        },
+        {
+          "date": "2026-09-24T01:33:40.318218+00:00",
+          "outcome": "useful",
+          "q": "Audit latest 13 CJP client changes end-to-end"
+        },
         {
           "date": "2026-09-18T00:55:57.452654+00:00",
           "outcome": "useful",
@@ -205,8 +324,34 @@
           "q": "Inspect and fix the connected Inventory, Fuel Lifting, Ledger, Alerts, Dispatch Officer, and Driver workflow"
         }
       ],
-      "score": 2.763959992,
+      "score": 4.60511153,
       "source_file": "app/Services/InventoryLedgerService.php",
+      "status": "preferred",
+      "uses": 5
+    },
+    "app_services_salecorrectionservice_salecorrectionservice": {
+      "code_fingerprint": "ef47fe7bdc6e97e0955cfde1baeff8534b95c7230db41f58a4d6dd1b037ad4df",
+      "label": "SaleCorrectionService",
+      "last": "2026-09-24T02:17:47.444443+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-24T02:17:47.444443+00:00",
+          "outcome": "useful",
+          "q": "Perform a complete READ-ONLY audit of the current CJP Southern Star OPC system using the attached manuscript as the primary requirements/reference document."
+        },
+        {
+          "date": "2026-09-24T01:33:40.318218+00:00",
+          "outcome": "useful",
+          "q": "Audit latest 13 CJP client changes end-to-end"
+        },
+        {
+          "date": "2026-09-24T01:23:49.468910+00:00",
+          "outcome": "useful",
+          "q": "Update the CJP Sales workflow to add a Delivery Status and control when Stock-Out is recorded. A sale should only be recorded to Stock-Out once the delivery is marked Delivered."
+        }
+      ],
+      "score": 2.996802834,
+      "source_file": "app/Services/SaleCorrectionService.php",
       "status": "preferred",
       "uses": 3
     },
@@ -221,34 +366,49 @@
           "q": "Inspect and fix the connected Inventory, Fuel Lifting, Ledger, Alerts, Dispatch Officer, and Driver workflow"
         }
       ],
-      "score": 0.921101725,
+      "score": 0.868610557,
       "source_file": "app/Services/StockInService.php",
       "status": "tentative",
       "uses": 1
     },
     "app_services_stockoutreleaseservice_stockoutreleaseservice": {
-      "code_fingerprint": "fff8e8381f491062722a282645631b76e8e12e30c7360b209e183d8a44438a93",
+      "code_fingerprint": "975e5dd8b9b6eb4b20cefc7397d6e1a4023d64f65138ba5a13aeb91dddb51b30",
       "label": "StockOutReleaseService",
-      "last": "2026-09-21T13:43:25.165060+00:00",
+      "last": "2026-09-24T02:46:01.417005+00:00",
       "provenance": [
         {
-          "date": "2026-09-21T13:43:25.165060+00:00",
+          "date": "2026-09-24T02:46:01.417005+00:00",
           "outcome": "useful",
-          "q": "Inspect and fix Inventory Management Stock-Out Cost/Unit, Total Cost, and paid-basis Profit calculations."
+          "q": "Perform a complete READ-ONLY audit of the current CJP Southern Star OPC system against every requirement in the attached System Analysis document."
         },
         {
-          "date": "2026-09-16T10:35:29.737894+00:00",
+          "date": "2026-09-24T02:17:47.444443+00:00",
           "outcome": "useful",
-          "q": "Create a phased fix plan to tackle those problems, always opt for a simpler solution, write your plan in md"
+          "q": "Perform a complete READ-ONLY audit of the current CJP Southern Star OPC system using the attached manuscript as the primary requirements/reference document."
+        },
+        {
+          "date": "2026-09-24T01:33:40.318218+00:00",
+          "outcome": "useful",
+          "q": "Audit latest 13 CJP client changes end-to-end"
+        },
+        {
+          "date": "2026-09-24T01:23:49.468910+00:00",
+          "outcome": "useful",
+          "q": "Update the CJP Sales workflow to add a Delivery Status and control when Stock-Out is recorded. A sale should only be recorded to Stock-Out once the delivery is marked Delivered."
+        },
+        {
+          "date": "2026-09-24T01:07:47.579230+00:00",
+          "outcome": "useful",
+          "q": "Update the CJP Sales/Receivables module to allow safe record correction when an order was entered incorrectly."
         }
       ],
-      "score": 1.887876792,
+      "score": 6.775342219,
       "source_file": "app/Services/StockOutReleaseService.php",
       "status": "preferred",
-      "uses": 2
+      "uses": 7
     },
     "app_services_workflowsmoketestservice_workflowsmoketestservice": {
-      "code_fingerprint": "23e428590361b2f04c44b98fb61bfdf6bbfd2805fc7ac7bd3f4a6f508525bee8",
+      "code_fingerprint": "681e48a72a1d79a13441ced918b3545aaace94e69748bc0dcdd82e14f168b58f",
       "label": "WorkflowSmokeTestService",
       "last": "2026-09-16T11:09:33.286797+00:00",
       "provenance": [
@@ -263,7 +423,7 @@
           "q": "Create a phased fix plan to tackle those problems, always opt for a simpler solution, write your plan in md"
         }
       ],
-      "score": 1.776598822,
+      "score": 1.67535512,
       "source_file": "app/Services/WorkflowSmokeTestService.php",
       "status": "preferred",
       "uses": 2
@@ -279,7 +439,7 @@
           "q": "Fix the Alert Module cards so they fill the available main content width and remain responsive."
         }
       ],
-      "score": 0.999999931,
+      "score": 0.943012561,
       "source_file": "resources/views/admin/alerts.blade.php",
       "status": "tentative",
       "uses": 1
@@ -295,7 +455,7 @@
           "q": "fix this, it must be on this format, but make sure it is inside of the box"
         }
       ],
-      "score": 0.921409974,
+      "score": 0.86890124,
       "source_file": "resources/views/admin/ledger.blade.php",
       "status": "tentative",
       "uses": 1
@@ -311,7 +471,7 @@
           "q": "Fix the Alert Module cards so they fill the available main content width and remain responsive."
         }
       ],
-      "score": 0.999999931,
+      "score": 0.943012561,
       "source_file": "resources/views/components/admin/alert-list.blade.php",
       "status": "tentative",
       "uses": 1
@@ -319,8 +479,23 @@
     "resources_views_components_admin_modal_blade": {
       "code_fingerprint": "56ce78b02149953cce5c3e52e78ae382617fa64a099d63100ace4d75f8fd7106",
       "label": "modal.blade.php",
-      "last": "2026-09-18T01:02:42.369196+00:00",
+      "last": "2026-09-24T01:53:15.171223+00:00",
       "provenance": [
+        {
+          "date": "2026-09-24T01:53:15.171223+00:00",
+          "outcome": "useful",
+          "q": "Perform final visual verification for CJP Fuel Lifting Schedule Lift modal at desktop tablet and mobile widths"
+        },
+        {
+          "date": "2026-09-24T00:51:11.441884+00:00",
+          "outcome": "useful",
+          "q": "Add Amount Paid by Customer to the Sales Receivables creation form while reusing payments and receivable reconciliation."
+        },
+        {
+          "date": "2026-09-24T00:36:14.885996+00:00",
+          "outcome": "useful",
+          "q": "Remove the Order ID field from Record Sales Receivables while keeping automatic unique backend generation and Sales Order Number."
+        },
         {
           "date": "2026-09-18T01:02:42.369196+00:00",
           "outcome": "useful",
@@ -332,10 +507,10 @@
           "q": "fix this, it must be on this format, but make sure it is inside of the box"
         }
       ],
-      "score": 1.842958048,
+      "score": 4.732899588,
       "source_file": "resources/views/components/admin/modal.blade.php",
       "status": "preferred",
-      "uses": 2
+      "uses": 5
     },
     "resources_views_dispatch_alerts_blade": {
       "code_fingerprint": "83883528c16dfd286659c772011a2361540d38c980a17dc68233f93ae41d85fb",
@@ -348,8 +523,24 @@
           "q": "Fix the Alert Module cards so they fill the available main content width and remain responsive."
         }
       ],
-      "score": 0.999999931,
+      "score": 0.943012561,
       "source_file": "resources/views/dispatch/alerts.blade.php",
+      "status": "tentative",
+      "uses": 1
+    },
+    "resources_views_dispatch_fuel_lifting_blade": {
+      "code_fingerprint": "69be610bc1f6b6b9ae2935c78e76be7236d6658fec5f2a1b4fd497adfc1c37d6",
+      "label": "dispatch/fuel-lifting.blade.php",
+      "last": "2026-09-24T01:53:15.171223+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-24T01:53:15.171223+00:00",
+          "outcome": "useful",
+          "q": "Perform final visual verification for CJP Fuel Lifting Schedule Lift modal at desktop tablet and mobile widths"
+        }
+      ],
+      "score": 0.999064958,
+      "source_file": "resources/views/dispatch/fuel-lifting.blade.php",
       "status": "tentative",
       "uses": 1
     },
@@ -364,8 +555,40 @@
           "q": "fix this, it must be on this format, but make sure it is inside of the box"
         }
       ],
-      "score": 0.921409974,
+      "score": 0.86890124,
       "source_file": "resources/views/inventory-officer/ledger.blade.php",
+      "status": "tentative",
+      "uses": 1
+    },
+    "tests_feature_connectedliftingworkflowtest_connectedliftingworkflowtest": {
+      "code_fingerprint": "42188c326f44c7a60df7be404d70bc28ccb7c317e84d6b1fbacb324b8ddd5bb2",
+      "label": "ConnectedLiftingWorkflowTest",
+      "last": "2026-09-24T00:56:45.994859+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-24T00:56:45.994859+00:00",
+          "outcome": "useful",
+          "q": "Which code and fixtures cause the remaining Dispatch depot and Sales approved-fuel test failures?"
+        }
+      ],
+      "score": 0.998159889,
+      "source_file": "tests/Feature/ConnectedLiftingWorkflowTest.php",
+      "status": "tentative",
+      "uses": 1
+    },
+    "tests_feature_databaseintegritytest_databaseintegritytest": {
+      "code_fingerprint": "db9ab8cf3a040c4764a6c298877ad180f65475057a8b874194d33d7707223308",
+      "label": "DatabaseIntegrityTest",
+      "last": "2026-09-24T02:17:47.444443+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-24T02:17:47.444443+00:00",
+          "outcome": "useful",
+          "q": "Perform a complete READ-ONLY audit of the current CJP Southern Star OPC system using the attached manuscript as the primary requirements/reference document."
+        }
+      ],
+      "score": 0.999458379,
+      "source_file": "tests/Feature/DatabaseIntegrityTest.php",
       "status": "tentative",
       "uses": 1
     },
@@ -380,13 +603,13 @@
           "q": "does the system allows many lifts"
         }
       ],
-      "score": 0.921448292,
+      "score": 0.868937374,
       "source_file": "tests/Feature/DispatchLiftingStatusManagementTest.php",
       "status": "tentative",
       "uses": 1
     },
     "tests_feature_formvalidationtest_formvalidationtest": {
-      "code_fingerprint": "48420fd3d3f9166a8cd11df93903eb379a9d6b746e3cd946b5fcb880746a387e",
+      "code_fingerprint": "016a633976ef5849dc1dcb25e412bb4ff4c058273a82b91d4073feb75b628ead",
       "label": "FormValidationTest",
       "last": "2026-09-16T11:09:33.286797+00:00",
       "provenance": [
@@ -396,7 +619,7 @@
           "q": "also can you update the phased fix plan, this is the fuel types, F1, UNLEADED, DIESEL, PREMIUM"
         }
       ],
-      "score": 0.88854213,
+      "score": 0.837906448,
       "source_file": "tests/Feature/FormValidationTest.php",
       "status": "tentative",
       "uses": 1
@@ -404,37 +627,57 @@
     "tests_feature_frontendbugfixestest_frontendbugfixestest": {
       "code_fingerprint": "1ce4774dc288580dc0b518e3c5a781ea2bb4610b286fee2695304cd597c4e044",
       "label": "FrontendBugFixesTest",
-      "last": "2026-09-21T13:54:37.694874+00:00",
+      "last": "2026-09-24T02:46:01.417005+00:00",
       "provenance": [
+        {
+          "date": "2026-09-24T02:46:01.417005+00:00",
+          "outcome": "useful",
+          "q": "Perform a complete READ-ONLY audit of the current CJP Southern Star OPC system against every requirement in the attached System Analysis document."
+        },
+        {
+          "date": "2026-09-24T01:53:15.171223+00:00",
+          "outcome": "useful",
+          "q": "Perform final visual verification for CJP Fuel Lifting Schedule Lift modal at desktop tablet and mobile widths"
+        },
         {
           "date": "2026-09-21T13:54:37.694874+00:00",
           "outcome": "useful",
           "q": "Fix the Alert Module cards so they fill the available main content width and remain responsive."
         }
       ],
-      "score": 0.999999931,
+      "score": 2.941988754,
       "source_file": "tests/Feature/FrontendBugFixesTest.php",
-      "status": "tentative",
-      "uses": 1
+      "status": "preferred",
+      "uses": 3
     },
     "tests_feature_inventoryledgertest_inventoryledgertest": {
-      "code_fingerprint": "2b5651c8d3e2cc7884f16071dfa5af2a6effe9a9348134e7c25b235668f20d54",
+      "code_fingerprint": "77e6b0f2b05fa4967a2a0e1ba5464590dfefa7bb8ab3e5e9d5a70b405cacdd28",
       "label": "InventoryLedgerTest",
-      "last": "2026-09-18T01:02:42.369196+00:00",
+      "last": "2026-09-24T01:53:15.171223+00:00",
       "provenance": [
+        {
+          "date": "2026-09-24T01:53:15.171223+00:00",
+          "outcome": "useful",
+          "q": "Perform final visual verification for CJP Fuel Lifting Schedule Lift modal at desktop tablet and mobile widths"
+        },
+        {
+          "date": "2026-09-24T00:56:45.994859+00:00",
+          "outcome": "useful",
+          "q": "Which code and fixtures cause the remaining Dispatch depot and Sales approved-fuel test failures?"
+        },
         {
           "date": "2026-09-18T01:02:42.369196+00:00",
           "outcome": "useful",
           "q": "but on this, make the text centered"
         }
       ],
-      "score": 0.921548074,
+      "score": 2.866256316,
       "source_file": "tests/Feature/InventoryLedgerTest.php",
-      "status": "tentative",
-      "uses": 1
+      "status": "preferred",
+      "uses": 3
     },
     "tests_feature_inventoryofficerstockouttest_inventoryofficerstockouttest": {
-      "code_fingerprint": "2aa5b6cd54493fc0de3c689d12e82ed8ef64d1c2be13f50768d07070101370db",
+      "code_fingerprint": "81d958f47fe1c03eaeb99c394205119f2f7ff8a3cb06c5c32a37df1c847dfab4",
       "label": "InventoryOfficerStockOutTest",
       "last": "2026-09-21T13:43:25.165060+00:00",
       "provenance": [
@@ -444,8 +687,24 @@
           "q": "Inspect and fix Inventory Management Stock-Out Cost/Unit, Total Cost, and paid-basis Profit calculations."
         }
       ],
-      "score": 0.999820101,
+      "score": 0.942842979,
       "source_file": "tests/Feature/InventoryOfficerStockOutTest.php",
+      "status": "tentative",
+      "uses": 1
+    },
+    "tests_feature_phase2guardrailsandidempotencytest_phase2guardrailsandidempotencytest": {
+      "code_fingerprint": "3e889b134a3563eb7109e7e707f413479f9c371248895fd4d78fa65cf90c691e",
+      "label": "Phase2GuardrailsAndIdempotencyTest",
+      "last": "2026-09-24T00:56:45.994859+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-24T00:56:45.994859+00:00",
+          "outcome": "useful",
+          "q": "Which code and fixtures cause the remaining Dispatch depot and Sales approved-fuel test failures?"
+        }
+      ],
+      "score": 0.998159889,
+      "source_file": "tests/Feature/Phase2GuardrailsAndIdempotencyTest.php",
       "status": "tentative",
       "uses": 1
     },
@@ -460,7 +719,7 @@
           "q": "Inspect and update the CJP Southern Star OPC Inventory Management Module based on client requirements for content-fit tables and view-only withdrawal receipts."
         }
       ],
-      "score": 0.999551662,
+      "score": 0.942589837,
       "source_file": "tests/Feature/PurchaseReceiptStatusTest.php",
       "status": "tentative",
       "uses": 1
@@ -476,10 +735,73 @@
           "q": "Inspect and implement the requested CJP Fuel Lifting driver, dispatch, withdrawal receipt, and eight garage tank fixes."
         }
       ],
-      "score": 0.998527881,
+      "score": 0.941624399,
       "source_file": "tests/Feature/PurchaseReceiptUploadTest.php",
       "status": "tentative",
       "uses": 1
+    },
+    "tests_feature_rolebasedaccesscontroltest_rolebasedaccesscontroltest": {
+      "code_fingerprint": "65934185296d5c83c77fd28ff333fb927967fbab019481ee7869ad797d4d0b3c",
+      "label": "RoleBasedAccessControlTest",
+      "last": "2026-09-24T02:46:01.417005+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-24T02:46:01.417005+00:00",
+          "outcome": "useful",
+          "q": "Perform a complete READ-ONLY audit of the current CJP Southern Star OPC system against every requirement in the attached System Analysis document."
+        },
+        {
+          "date": "2026-09-24T02:17:47.444443+00:00",
+          "outcome": "useful",
+          "q": "Perform a complete READ-ONLY audit of the current CJP Southern Star OPC system using the attached manuscript as the primary requirements/reference document."
+        }
+      ],
+      "score": 1.999369615,
+      "source_file": "tests/Feature/RoleBasedAccessControlTest.php",
+      "status": "preferred",
+      "uses": 2
+    },
+    "tests_feature_salesofficerpaymentrecordingtest_salesofficerpaymentrecordingtest": {
+      "code_fingerprint": "d82a09bae4a61247c4097c2e3c7590a09c9baaccfcd13b5f4ef752e8ef8224b4",
+      "label": "SalesOfficerPaymentRecordingTest",
+      "last": "2026-09-24T00:51:11.441884+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-24T00:51:11.441884+00:00",
+          "outcome": "useful",
+          "q": "Add Amount Paid by Customer to the Sales Receivables creation form while reusing payments and receivable reconciliation."
+        }
+      ],
+      "score": 0.998070592,
+      "source_file": "tests/Feature/SalesOfficerPaymentRecordingTest.php",
+      "status": "tentative",
+      "uses": 1
+    },
+    "tests_feature_salesofficersalesmanagementtest_salesofficersalesmanagementtest": {
+      "code_fingerprint": "4d66fe863faa094caa9fc574eb764756108e3714a6de3ab6ef53d036a7297554",
+      "label": "SalesOfficerSalesManagementTest",
+      "last": "2026-09-24T01:07:47.579230+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-24T01:07:47.579230+00:00",
+          "outcome": "useful",
+          "q": "Update the CJP Sales/Receivables module to allow safe record correction when an order was entered incorrectly."
+        },
+        {
+          "date": "2026-09-24T00:56:45.994859+00:00",
+          "outcome": "useful",
+          "q": "Which code and fixtures cause the remaining Dispatch depot and Sales approved-fuel test failures?"
+        },
+        {
+          "date": "2026-09-24T00:36:14.885996+00:00",
+          "outcome": "useful",
+          "q": "Remove the Order ID field from Record Sales Receivables while keeping automatic unique backend generation and Sales Order Number."
+        }
+      ],
+      "score": 2.994327716,
+      "source_file": "tests/Feature/SalesOfficerSalesManagementTest.php",
+      "status": "preferred",
+      "uses": 3
     }
   },
   "version": 1

@@ -128,6 +128,7 @@ class Phase2GuardrailsAndIdempotencyTest extends TestCase
             'payment_method' => 'cash_on_delivery',
             'payment_terms' => 'cod',
             'status' => 'confirmed',
+            'delivery_status' => 'delivered',
             'created_by' => $records['salesOfficer']->id,
             'created_at' => now(),
             'updated_at' => now(),
@@ -242,6 +243,7 @@ class Phase2GuardrailsAndIdempotencyTest extends TestCase
             'payment_method' => 'cash_on_delivery',
             'payment_terms' => 'cod',
             'status' => 'confirmed',
+            'delivery_status' => 'delivered',
             'created_by' => $records['salesOfficer']->id,
             'created_at' => now(),
             'updated_at' => now(),
@@ -512,11 +514,35 @@ class Phase2GuardrailsAndIdempotencyTest extends TestCase
             ])
             ->assertSessionHasErrors(['items.0.unit_price']);
 
-        // 5. Haul quantity exceeds 1,000,000
+        // 5. Haul quantity exceeds 1,000,000. Use a real purchase/depot
+        // relationship so the assertion exercises quantity validation only.
+        $purchaseId = DB::table('purchases')->insertGetId([
+            'purchase_code' => 'PUR-MAX-HAUL',
+            'depot_id' => $records['depotId'],
+            'purchase_date' => '2026-09-11',
+            'payment_status' => 'paid',
+            'status' => 'ordered',
+            'workflow_status' => 'pending',
+            'created_by' => $records['inventoryOfficer']->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $purchaseItemId = DB::table('purchase_items')->insertGetId([
+            'purchase_id' => $purchaseId,
+            'fuel_type_id' => $records['dieselFuelId'],
+            'quantity_ordered_liters' => 1000000,
+            'unit_cost' => 50,
+            'line_total' => 50000000,
+            'quantity_hauled_liters' => 0,
+            'status' => 'unlifted',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
         $this->actingAs($records['dispatchOfficer'])
             ->post(route('dispatch.fuel-lifting.hauls.store'), [
                 'idempotency_key' => (string) Str::uuid(),
-                'purchase_item_id' => 1,
+                'purchase_item_id' => $purchaseItemId,
                 'driver_user_id' => $records['driver']->id,
                 'truck_id' => $records['truckId'],
                 'scheduled_at' => '2026-09-15 10:00:00',

@@ -454,6 +454,7 @@ class InventoryOfficerPurchaseController extends Controller
             ->where('sale_items.id', $saleItemId)
             ->whereNull('sales.deleted_at')
             ->whereIn('sales.status', self::ELIGIBLE_SALE_STATUSES)
+            ->where('sales.delivery_status', 'delivered')
             ->lockForUpdate()
             ->first([
                 'sale_items.id',
@@ -1022,6 +1023,7 @@ class InventoryOfficerPurchaseController extends Controller
             ->leftJoinSub($garageStock, 'garage_stock', 'garage_stock.fuel_type_id', '=', 'sale_items.fuel_type_id')
             ->whereNull('sales.deleted_at')
             ->whereIn('sales.status', self::ELIGIBLE_SALE_STATUSES)
+            ->where('sales.delivery_status', 'delivered')
             ->selectRaw('sale_items.id, sale_items.sale_id, sale_items.fuel_type_id, sales.sale_code, customers.name as customer_name, customers.company_name, fuel_types.name as fuel_name, sale_items.quantity_liters, sale_items.fulfilled_quantity_liters, COALESCE(garage_stock.available_liters, 0) as available_liters')
             ->orderByDesc('sales.sale_date')
             ->orderByDesc('sales.id')

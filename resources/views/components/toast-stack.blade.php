@@ -1,7 +1,10 @@
+@props(['context' => null])
+
 @php
     $messages = [];
+    $contextMatches = $context === null || session('toast_context') === $context;
 
-    if (session('status')) {
+    if (session('status') && $contextMatches) {
         $type = session('toast_type', 'success');
         $status = (string) session('status');
         $statusLower = strtolower($status);
@@ -24,7 +27,7 @@
         ];
     }
 
-    if ($errors->any()) {
+    if ($errors->any() && $context === null) {
         $error = (string) $errors->first();
         $errorLower = strtolower($error);
 

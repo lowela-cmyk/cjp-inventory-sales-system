@@ -373,6 +373,7 @@ class WorkflowSmokeTestService
             'payment_method' => 'bank_transfer',
             'payment_terms' => 'cod',
             'status' => 'confirmed',
+            'delivery_status' => 'pending',
             'created_by' => $records['sales_officer_id'],
             'created_at' => now(),
             'updated_at' => now(),
@@ -397,18 +398,11 @@ class WorkflowSmokeTestService
             'updated_at' => now(),
         ]);
 
-        $error = app(StockOutReleaseService::class)->releaseSaleItemFromGarage(
-            $saleItemId,
-            $quantity,
-            now()->toDateTimeString(),
-            $records['sales_officer_id'],
-            $records['garage_id'],
-            'Rollback smoke automatic stock-out'
+        app(SaleConfirmationService::class)->updateDeliveryStatus(
+            $saleId,
+            'delivered',
+            $records['sales_officer_id']
         );
-
-        if ($error) {
-            throw new RuntimeException($error);
-        }
 
         return ['id' => $saleId, 'item_id' => $saleItemId, 'code' => $saleCode];
     }

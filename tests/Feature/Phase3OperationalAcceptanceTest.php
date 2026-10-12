@@ -271,7 +271,7 @@ class Phase3OperationalAcceptanceTest extends TestCase
             'status' => 'received',
         ]);
 
-        // 4. HTTP Sale Creation with Auto Garage Stock-Out
+        // 4. HTTP sale creation remains pending until delivery is completed.
         $this->actingAs($salesOfficer)
             ->post(route('sales-officer.sales.store'), [
                 'idempotency_key' => (string) Str::uuid(),
@@ -292,8 +292,14 @@ class Phase3OperationalAcceptanceTest extends TestCase
 
         $sale = DB::table('sales')->where('created_by', $salesOfficer->id)->orderByDesc('id')->first();
         $this->assertNotNull($sale);
+        $this->assertSame('pending', $sale->delivery_status);
+        $this->assertSame(0, DB::table('stock_outs')->where('sale_id', $sale->id)->count());
 
-        // Released garage stock-out and inventory movement created automatically
+        $this->actingAs($salesOfficer)
+            ->patch(route('sales-officer.sales.delivery-status.update', $sale->id), ['delivery_status' => 'delivered'])
+            ->assertRedirect(route('sales-officer.sales'));
+
+        // Delivered creates the released garage stock-out and inventory movement.
         $this->assertDatabaseHas('stock_outs', [
             'sale_id' => $sale->id,
             'source_type' => 'garage',

@@ -13,7 +13,7 @@ class StockOutReleaseService
         private readonly InventoryCostService $inventoryCost
     ) {}
 
-    public function releaseSaleItemFromGarage(int $saleItemId, float $quantity, string $stockOutAt, int $createdBy, ?int $preferredGarageId = null, ?string $remarks = null): ?string
+    public function releaseSaleItemFromGarage(int $saleItemId, float $quantity, string $stockOutAt, int $createdBy, ?int $preferredGarageId = null, ?string $remarks = null, bool $allowPreparation = true): ?string
     {
         $saleItem = $this->saleItemForStockOut($saleItemId);
 
@@ -21,15 +21,34 @@ class StockOutReleaseService
             return 'The selected sale is not eligible for stock-out.';
         }
 
-        if ($this->stockOutExistsForSaleItem((int) $saleItem->id)) {
+        $releasedQuantity = round((float) DB::table('stock_outs')
+            ->where('sale_item_id', $saleItem->id)
+            ->where('status', 'released')
+            ->lockForUpdate()
+            ->sum('quantity_liters'), 2);
+        $fulfilledQuantity = max((float) $saleItem->fulfilled_quantity_liters, $releasedQuantity);
+
+        if ($fulfilledQuantity > (float) $saleItem->fulfilled_quantity_liters) {
+            DB::table('sale_items')->where('id', $saleItem->id)->update([
+                'fulfilled_quantity_liters' => $fulfilledQuantity,
+                'updated_at' => now(),
+            ]);
+        }
+
+        $remaining = round((float) $saleItem->quantity_liters - $fulfilledQuantity, 2);
+        if ($remaining <= 0) {
             return null;
         }
 
-        $remaining = round((float) $saleItem->quantity_liters - (float) $saleItem->fulfilled_quantity_liters, 2);
         $quantity = round($quantity, 2);
 
         if ($quantity > $remaining) {
             return 'Quantity released cannot exceed the remaining sale quantity.';
+        }
+
+        $directResult = $this->releaseFromDirectDepotAllocations($saleItem, $quantity, $stockOutAt, $createdBy);
+        if ($directResult['handled']) {
+            return $directResult['error'];
         }
 
         $garages = DB::table('storage_locations')
@@ -55,10 +74,21 @@ class StockOutReleaseService
         }
 
         if ($totalAvailable < $quantity) {
-            $this->insertPreparedGarageRelease($saleItem, $quantity, $stockOutAt, $createdBy);
+            if (! $allowPreparation) {
+                return 'Insufficient available garage inventory to complete delivery.';
+            }
+
+            if (! $this->preparedStockOutExistsForSaleItem((int) $saleItem->id)) {
+                $this->insertPreparedGarageRelease($saleItem, $quantity, $stockOutAt, $createdBy);
+            }
 
             return null;
         }
+
+        DB::table('stock_outs')
+            ->where('sale_item_id', $saleItem->id)
+            ->where('status', 'prepared')
+            ->update(['status' => 'cancelled', 'updated_at' => now()]);
 
         $toRelease = $quantity;
 
@@ -88,6 +118,7 @@ class StockOutReleaseService
             ->where('sale_items.id', $saleItemId)
             ->whereNull('sales.deleted_at')
             ->whereIn('sales.status', ['confirmed', 'partially_paid', 'paid', 'unpaid'])
+            ->where('sales.delivery_status', 'delivered')
             ->lockForUpdate()
             ->first([
                 'sale_items.id',
@@ -99,11 +130,11 @@ class StockOutReleaseService
             ]);
     }
 
-    private function stockOutExistsForSaleItem(int $saleItemId): bool
+    private function preparedStockOutExistsForSaleItem(int $saleItemId): bool
     {
         return DB::table('stock_outs')
             ->where('sale_item_id', $saleItemId)
-            ->where('status', '!=', 'cancelled')
+            ->where('status', 'prepared')
             ->lockForUpdate()
             ->exists();
     }
@@ -188,6 +219,126 @@ class StockOutReleaseService
                 'updated_at' => now(),
             ]);
         });
+    }
+
+    /**
+     * @return array{handled: bool, error: ?string}
+     */
+    private function releaseFromDirectDepotAllocations(object $saleItem, float $quantity, string $stockOutAt, int $createdBy): array
+    {
+        $allocations = DB::table('haul_allocations')
+            ->join('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')
+            ->join('purchase_items', 'purchase_items.id', '=', 'hauls.purchase_item_id')
+            ->join('purchases', 'purchases.id', '=', 'hauls.purchase_id')
+            ->where('haul_allocations.destination_type', 'customer')
+            ->where('haul_allocations.sale_id', $saleItem->sale_id)
+            ->where('haul_allocations.customer_id', $saleItem->customer_id)
+            ->where('haul_allocations.fuel_type_id', $saleItem->fuel_type_id)
+            ->where('haul_allocations.status', '!=', 'cancelled')
+            ->whereNull('purchases.deleted_at')
+            ->whereColumn('hauls.purchase_id', 'purchase_items.purchase_id')
+            ->whereColumn('hauls.depot_id', 'purchases.depot_id')
+            ->whereColumn('hauls.fuel_type_id', 'purchase_items.fuel_type_id')
+            ->whereColumn('haul_allocations.fuel_type_id', 'hauls.fuel_type_id')
+            ->orderBy('haul_allocations.id')
+            ->lockForUpdate()
+            ->get([
+                'haul_allocations.id',
+                'haul_allocations.haul_id',
+                'haul_allocations.quantity_liters',
+                'hauls.quantity_liters as haul_quantity_liters',
+                'hauls.status as haul_status',
+                'hauls.depot_id',
+                'purchase_items.unit_cost',
+            ]);
+
+        if ($allocations->isEmpty()) {
+            return ['handled' => false, 'error' => null];
+        }
+
+        if ($allocations->contains(fn (object $allocation): bool => $allocation->haul_status !== 'completed')) {
+            return ['handled' => true, 'error' => 'Complete the linked direct depot lifting before marking this sale delivered.'];
+        }
+
+        foreach ($allocations->groupBy('haul_id') as $haulAllocations) {
+            if (round((float) $haulAllocations->sum('quantity_liters'), 2) > round((float) $haulAllocations->first()->haul_quantity_liters, 2)) {
+                return ['handled' => true, 'error' => 'The linked direct depot lifting has invalid allocation quantities.'];
+            }
+        }
+
+        $available = 0.0;
+        $committedByAllocation = [];
+        foreach ($allocations as $allocation) {
+            $committed = round((float) DB::table('stock_outs')
+                ->where('haul_allocation_id', $allocation->id)
+                ->where('source_type', 'depot')
+                ->where('status', '!=', 'cancelled')
+                ->lockForUpdate()
+                ->sum('quantity_liters'), 2);
+            $committedByAllocation[(int) $allocation->id] = $committed;
+            $available = round($available + max(0, (float) $allocation->quantity_liters - $committed), 2);
+        }
+
+        if ($available < $quantity) {
+            return ['handled' => true, 'error' => 'The linked direct depot allocation is insufficient to complete delivery.'];
+        }
+
+        DB::table('stock_outs')
+            ->where('sale_item_id', $saleItem->id)
+            ->where('status', 'prepared')
+            ->update(['status' => 'cancelled', 'updated_at' => now()]);
+
+        $toRelease = $quantity;
+        foreach ($allocations as $allocation) {
+            $allocationRemaining = round((float) $allocation->quantity_liters - ($committedByAllocation[(int) $allocation->id] ?? 0), 2);
+            if ($allocationRemaining <= 0) {
+                continue;
+            }
+
+            $releaseQuantity = round(min($allocationRemaining, $toRelease), 2);
+
+            DB::table('sale_items')
+                ->where('id', $saleItem->id)
+                ->update([
+                    'fulfilled_quantity_liters' => DB::raw('fulfilled_quantity_liters + '.$releaseQuantity),
+                    'updated_at' => now(),
+                ]);
+
+            $this->idempotencyService->retryOnCollision('stock_out_code', function () use ($saleItem, $allocation, $releaseQuantity, $stockOutAt, $createdBy): void {
+                DB::table('stock_outs')->insert([
+                    'stock_out_code' => $this->nextCode('stock_outs', 'stock_out_code', 'STO'),
+                    'sale_id' => $saleItem->sale_id,
+                    'sale_item_id' => $saleItem->id,
+                    'customer_id' => $saleItem->customer_id,
+                    'fuel_type_id' => $saleItem->fuel_type_id,
+                    'source_type' => 'depot',
+                    'storage_location_id' => null,
+                    'depot_id' => $allocation->depot_id,
+                    'haul_allocation_id' => $allocation->id,
+                    'quantity_liters' => $releaseQuantity,
+                    'unit_cost' => $allocation->unit_cost,
+                    'stock_out_at' => $stockOutAt,
+                    'status' => 'released',
+                    'created_by' => $createdBy,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            });
+
+            if (round($allocationRemaining - $releaseQuantity, 2) <= 0) {
+                DB::table('haul_allocations')->where('id', $allocation->id)->update([
+                    'status' => 'delivered',
+                    'updated_at' => now(),
+                ]);
+            }
+
+            $toRelease = round($toRelease - $releaseQuantity, 2);
+            if ($toRelease <= 0) {
+                break;
+            }
+        }
+
+        return ['handled' => true, 'error' => null];
     }
 
     private function availableGarageStockForUpdate(int $garageId, int $fuelTypeId): float

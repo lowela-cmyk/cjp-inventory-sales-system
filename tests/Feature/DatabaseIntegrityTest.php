@@ -141,6 +141,13 @@ class DatabaseIntegrityTest extends TestCase
             'unit_price' => 6.25,
         ]);
 
+        $this->assertDatabaseHas('sales', ['id' => $sale['saleId'], 'delivery_status' => 'pending']);
+        $this->assertSame(0, DB::table('stock_outs')->where('sale_id', $sale['saleId'])->count());
+
+        $this->actingAs($records['salesOfficer'])
+            ->patch(route('sales-officer.sales.delivery-status.update', $sale['saleId']), ['delivery_status' => 'delivered'])
+            ->assertRedirect(route('sales-officer.sales'));
+
         $stockOut = DB::table('stock_outs')->where('sale_id', $sale['saleId'])->first();
 
         $this->assertNotNull($stockOut->inventory_movement_id);
@@ -279,6 +286,8 @@ class DatabaseIntegrityTest extends TestCase
             'unit_price' => 4,
         ]);
 
+        $firstGeneratedCode = DB::table('sales')->where('id', $sale['saleId'])->value('sale_code');
+
         $this->actingAs($records['salesOfficer'])
             ->from(route('sales-officer.sales'))
             ->post(route('sales-officer.sales.store'), $this->salePayload($records, [
@@ -287,9 +296,13 @@ class DatabaseIntegrityTest extends TestCase
                 'unit_price' => 7,
             ]))
             ->assertRedirect(route('sales-officer.sales'))
-            ->assertSessionHasErrors('sale_code');
+            ->assertSessionDoesntHaveErrors('sale_code');
 
-        $this->assertSame(1, DB::table('sales')->where('sale_code', 'SLS-DB-DUPLICATE')->count());
+        $generatedCodes = DB::table('sales')->orderBy('id')->pluck('sale_code');
+        $this->assertCount(2, $generatedCodes);
+        $this->assertSame(2, $generatedCodes->unique()->count());
+        $this->assertNotContains('SLS-DB-DUPLICATE', $generatedCodes->all());
+        $this->assertSame($firstGeneratedCode, $generatedCodes->first());
         $this->assertSame(1, DB::table('sale_items')->where('sale_id', $sale['saleId'])->count());
         $this->assertSame(1, DB::table('receivables')->where('sale_id', $sale['saleId'])->count());
 
@@ -462,7 +475,7 @@ class DatabaseIntegrityTest extends TestCase
             ->post(route('sales-officer.sales.store'), $payload)
             ->assertRedirect(route('sales-officer.sales'));
 
-        $sale = DB::table('sales')->where('sale_code', $payload['sale_code'])->first();
+        $sale = DB::table('sales')->latest('id')->first();
         $saleItem = DB::table('sale_items')->where('sale_id', $sale->id)->first();
 
         return [

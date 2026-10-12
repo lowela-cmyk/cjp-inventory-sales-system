@@ -201,14 +201,15 @@ class InventoryOfficerStockOutTest extends TestCase
         $this->assertSame(1, DB::table('inventory_movements')->count());
     }
 
-    public function test_cancelled_or_draft_sales_are_not_eligible_for_stock_out(): void
+    public function test_cancelled_draft_or_undelivered_sales_are_not_eligible_for_stock_out(): void
     {
         $records = $this->baseRecords();
         $this->garageMovement($records, ['quantity_liters' => 20000]);
         $cancelledSale = $this->sale($records, ['status' => 'cancelled']);
         $draftSale = $this->sale($records, ['sale_code' => 'SLS-DRAFT', 'status' => 'draft']);
+        $pendingSale = $this->sale($records, ['sale_code' => 'SLS-PENDING', 'delivery_status' => 'pending']);
 
-        foreach ([$cancelledSale, $draftSale] as $sale) {
+        foreach ([$cancelledSale, $draftSale, $pendingSale] as $sale) {
             $this->actingAs($records['inventoryOfficer'])
                 ->from(route('inventory-officer.inventory.stock-out'))
                 ->post(route('inventory-officer.inventory.stock-out.store'), $this->stockOutPayload($records, $sale))
@@ -568,10 +569,11 @@ class InventoryOfficerStockOutTest extends TestCase
             'payment_method' => 'cash_on_delivery',
             'payment_terms' => 'cod',
             'status' => 'confirmed',
+            'delivery_status' => 'delivered',
             'created_by' => $records['salesOfficer']->id,
             'created_at' => now(),
             'updated_at' => now(),
-        ], collect($overrides)->only(['sale_code', 'status'])->all()));
+        ], collect($overrides)->only(['sale_code', 'status', 'delivery_status'])->all()));
 
         $unitPrice = $overrides['unit_price'] ?? 62.50;
         $saleItemId = DB::table('sale_items')->insertGetId([

@@ -187,6 +187,7 @@ class FunctionalTestingTest extends TestCase
             ->post(route('sales-officer.sales.store'), [
                 'idempotency_key' => (string) Str::uuid(),
                 'sale_code' => 'SLS-FUNC-001',
+                'sales_order_number' => 'SO-FUNC-001',
                 'customer_id' => $customerId,
                 'sale_date' => '2026-09-04',
                 'fuel_type_id' => $records['fuelTypeId'],
@@ -198,7 +199,14 @@ class FunctionalTestingTest extends TestCase
             ])
             ->assertRedirect(route('sales-officer.sales'));
 
-        $sale = DB::table('sales')->where('sale_code', 'SLS-FUNC-001')->first();
+        $sale = DB::table('sales')->where('sales_order_number', 'SO-FUNC-001')->first();
+
+        $this->assertDatabaseHas('sales', ['id' => $sale->id, 'delivery_status' => 'pending']);
+        $this->assertSame(0, DB::table('stock_outs')->where('sale_id', $sale->id)->count());
+
+        $this->actingAs($records['salesOfficer'])
+            ->patch(route('sales-officer.sales.delivery-status.update', $sale->id), ['delivery_status' => 'delivered'])
+            ->assertRedirect(route('sales-officer.sales'));
 
         $this->assertDatabaseHas('stock_outs', [
             'sale_id' => $sale->id,

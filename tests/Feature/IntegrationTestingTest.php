@@ -80,6 +80,15 @@ class IntegrationTestingTest extends TestCase
         $this->assertSame(65000.0, $this->garageBalance($records));
         $this->assertDatabaseHas('haul_allocations', ['id' => $garageAllocationId, 'status' => 'received']);
 
+        DB::table('sales')
+            ->whereIn('id', [$garageSale['saleId'], $directSale['saleId']])
+            ->update([
+                'delivery_status' => 'delivered',
+                'delivery_status_updated_at' => now(),
+                'delivery_status_updated_by' => $records['salesOfficer']->id,
+                'updated_at' => now(),
+            ]);
+
         $firstStockOut = $this->stockOut($records, $garageSale, [
             'quantity_liters' => 15000,
             'stock_out_at' => '2026-09-04 13:00:00',
@@ -365,7 +374,7 @@ class IntegrationTestingTest extends TestCase
             ->post(route('sales-officer.sales.store'), $payload)
             ->assertRedirect(route('sales-officer.sales'));
 
-        $sale = DB::table('sales')->where('sale_code', $payload['sale_code'])->first();
+        $sale = DB::table('sales')->latest('id')->first();
         $saleItem = DB::table('sale_items')->where('sale_id', $sale->id)->first();
 
         return ['saleId' => (int) $sale->id, 'saleItemId' => (int) $saleItem->id];

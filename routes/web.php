@@ -63,6 +63,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/sales', [AdminMonitoringController::class, 'sales'])->name('sales');
         Route::post('/sales', [SalesOfficerCustomerController::class, 'storeSale'])->name('sales.store');
         Route::patch('/sales/{sale}', [SalesOfficerCustomerController::class, 'updateSale'])->name('sales.update');
+        Route::patch('/sales/{sale}/delivery-status', [SalesOfficerCustomerController::class, 'updateDeliveryStatus'])->name('sales.delivery-status.update');
         Route::patch('/sales/{sale}/cancel', [SalesOfficerCustomerController::class, 'cancelSale'])->name('sales.cancel');
         Route::get('/reports', AdminSalesReportController::class)->name('reports');
         Route::post('/reports/business-insight', AdminBusinessInsightController::class)->name('reports.business-insight');
@@ -123,6 +124,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/sales', [SalesOfficerCustomerController::class, 'storeSale'])->name('sales.store');
         Route::post('/sales/{sale}/payments', [SalesOfficerCustomerController::class, 'storePayment'])->name('sales.payments.store');
         Route::patch('/sales/{sale}', [SalesOfficerCustomerController::class, 'updateSale'])->name('sales.update');
+        Route::patch('/sales/{sale}/delivery-status', [SalesOfficerCustomerController::class, 'updateDeliveryStatus'])->name('sales.delivery-status.update');
         Route::patch('/sales/{sale}/cancel', [SalesOfficerCustomerController::class, 'cancelSale'])->name('sales.cancel');
         Route::get('/sales/customers', [SalesOfficerCustomerController::class, 'index'])->defaults('state', 'customers')->name('sales.customers');
         Route::post('/sales/customers', [SalesOfficerCustomerController::class, 'store'])->name('sales.customers.store');

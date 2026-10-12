@@ -217,7 +217,6 @@ class FormValidationTest extends TestCase
             ->assertRedirect(route('sales-officer.sales'))
             ->assertSessionHasErrors([
                 'idempotency_key',
-                'sale_code',
                 'customer_id',
                 'fuel_type_id',
                 'quantity_liters',
@@ -228,7 +227,6 @@ class FormValidationTest extends TestCase
                 'due_date',
                 'line_total',
             ])
-            ->assertSessionHasInput('sale_code', str_repeat('S', 31))
             ->assertSessionHasInput('payment_method', 'crypto');
 
         $this->actingAs($records['inventoryOfficer'])
@@ -502,6 +500,7 @@ class FormValidationTest extends TestCase
             'payment_method' => 'bank_transfer',
             'payment_terms' => 'installment',
             'status' => 'confirmed',
+            'delivery_status' => 'delivered',
             'created_by' => $records['salesOfficer']->id,
             'created_at' => now(),
             'updated_at' => now(),

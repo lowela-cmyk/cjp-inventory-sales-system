@@ -57,10 +57,8 @@
                                     @if ($loop->index === 10)
                                         {{-- Withdrawal receipts the driver uploaded for this purchase's lifts. --}}
                                         <td class="inventory-receipt-cell">
-                                            @if (count($row['withdrawals']) === 1)
-                                                <a class="receipt-link" href="{{ $row['withdrawals'][0]['url'] }}" target="_blank" rel="noopener" title="Uploaded {{ $row['withdrawals'][0]['uploaded_at'] }}">{{ $row['withdrawals'][0]['haul_code'] }}</a>
-                                            @elseif (count($row['withdrawals']) > 1)
-                                                <button class="receipt-link" type="button" data-modal-open="{{ $row['modal_id'] }}-receipts">{{ count($row['withdrawals']) }} receipts</button>
+                                            @if (count($row['withdrawals']) > 0)
+                                                <button class="btn btn-secondary btn-small receipt-view-button" type="button" data-modal-open="{{ $row['modal_id'] }}-receipts">{{ count($row['withdrawals']) === 1 ? 'View Receipt' : 'View Receipts ('.count($row['withdrawals']).')' }}</button>
                                             @else
                                                 <span class="receipt-none" aria-label="No receipt uploaded">-</span>
                                             @endif
@@ -219,26 +217,8 @@
     </x-admin.modal>
 
     @foreach ($purchases as $row)
-        @if (count($row['withdrawals']) > 1)
-            <x-admin.modal id="{{ $row['modal_id'] }}-receipts" title="Withdrawal Receipts">
-                <div class="modal-card">
-                    <p class="detail-id">{{ $row['purchase_code'] }}</p>
-                    <ul class="receipt-list">
-                        @foreach ($row['withdrawals'] as $withdrawal)
-                            <li>
-                                <a class="receipt-link" href="{{ $withdrawal['url'] }}" target="_blank" rel="noopener">{{ $withdrawal['haul_code'] }}</a>
-                                <span>{{ $withdrawal['uploaded_at'] }}</span>
-                                @if ($withdrawal['notes'])
-                                    <span>{{ $withdrawal['notes'] }}</span>
-                                @endif
-                            </li>
-                        @endforeach
-                    </ul>
-                </div>
-                <x-slot:footer>
-                    <button class="btn btn-pill btn-secondary" type="button" data-modal-close>Close</button>
-                </x-slot:footer>
-            </x-admin.modal>
+        @if (count($row['withdrawals']) > 0)
+            @include('inventory-officer.partials.receipt-lightbox', ['lightboxId' => $row['modal_id'].'-receipts', 'purchaseCode' => $row['purchase_code'], 'receipts' => $row['withdrawals']])
         @endif
         <x-admin.modal id="{{ $row['modal_id'] }}" title="Edit Purchase Record">
             <form id="purchase-update-{{ $row['id'] }}" method="POST" action="{{ route($inventoryRoutePrefix.'.purchases.update', $row['id']) }}">

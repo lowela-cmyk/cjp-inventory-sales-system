@@ -47,7 +47,9 @@ class Part6RevisionsTest extends TestCase
         $this->assertStringNotContainsString('Withdrawals</th>', $purchases);
         $this->assertStringContainsString('<th>Receipt</th>', $purchases);
         $this->assertStringContainsString('aria-label="No receipt uploaded">-</span>', $purchases);
-        $this->assertStringContainsString('href="'.route('withdrawal-receipts.show', $haulId).'"', $purchases);
+        // Part 7: one receipt shows a "View Receipt" button that opens the image-only lightbox.
+        $this->assertStringContainsString('-receipts">View Receipt</button>', $purchases);
+        $page->assertSee('data-src="'.route('withdrawal-receipts.show', $haulId).'"', false);
         // Allocation data is kept: it is still shown in the purchase details.
         $page->assertSee('Direct Client Allocation');
         $this->assertDatabaseHas('purchase_items', ['id' => $withoutReceipt]);
@@ -67,10 +69,11 @@ class Part6RevisionsTest extends TestCase
 
         $this->actingAs($records['admin'])->get(route('admin.inventory'))
             ->assertOk()
-            ->assertSee('data-modal-open="io-purchase-edit-'.$item.'-receipts">2 receipts</button>', false)
+            ->assertSee('data-modal-open="io-purchase-edit-'.$item.'-receipts">View Receipts (2)</button>', false)
             ->assertSee('id="io-purchase-edit-'.$item.'-receipts"', false)
-            ->assertSee(route('withdrawal-receipts.show', $first), false)
-            ->assertSee(route('withdrawal-receipts.show', $second), false);
+            ->assertSee('data-src="'.route('withdrawal-receipts.show', $first).'"', false)
+            ->assertSee('data-src="'.route('withdrawal-receipts.show', $second).'"', false)
+            ->assertSee('data-receipt-step="1"', false);
     }
 
     public function test_filtering_keeps_the_active_tab_and_hides_the_others(): void

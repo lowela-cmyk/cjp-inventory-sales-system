@@ -241,20 +241,14 @@ class Phase3OperationalAcceptanceTest extends TestCase
                 ->assertRedirect(route('dispatch.fuel-lifting'));
         }
 
-        // Allocate to Garage
-        $allocationId = DB::table('haul_allocations')->insertGetId([
-            'haul_id' => $haul->id,
-            'fuel_type_id' => $diesel->id,
-            'destination_type' => 'garage',
-            'storage_location_id' => $tank->id,
-            'customer_id' => null,
-            'sale_id' => null,
-            'quantity_liters' => 20000.00,
-            'allocated_at' => now(),
-            'status' => 'delivered',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        // Scheduling created the garage allocation (audit C01): the whole lift on the fuel's default tank,
+        // waiting for the Inventory Officer to confirm it under Pending Garage Receipts.
+        $allocation = DB::table('haul_allocations')->where('haul_id', $haul->id)->first();
+        $this->assertNotNull($allocation);
+        $this->assertSame('garage', $allocation->destination_type);
+        $this->assertSame(20000.0, (float) $allocation->quantity_liters);
+        $allocationId = (int) $allocation->id;
+        $tank = DB::table('storage_locations')->where('id', $allocation->storage_location_id)->first();
 
         // 3. HTTP Stock-In
         $this->actingAs($inventoryOfficer)

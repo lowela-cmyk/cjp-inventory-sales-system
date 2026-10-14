@@ -508,7 +508,7 @@ class InventoryOfficerPurchaseController extends Controller
             ->leftJoinSub($received, 'received', 'received.reference_id', '=', 'haul_allocations.id')
             ->where('haul_allocations.destination_type', 'garage')
             ->where('haul_allocations.status', '!=', 'cancelled')
-            ->where('hauls.status', 'completed')
+            ->whereIn('hauls.status', ['lifted', 'completed'])
             ->whereNull('purchases.deleted_at')
             ->selectRaw('haul_allocations.id, haul_allocations.storage_location_id, hauls.purchase_item_id, hauls.haul_code, hauls.scheduled_at, purchases.purchase_code, fuel_types.id as fuel_type_id, fuel_types.name as fuel_name, depots.name as depot_name, storage_locations.name as garage_name, haul_allocations.quantity_liters, COALESCE(received.received_liters, 0) as received_liters')
             ->orderByDesc('hauls.scheduled_at')

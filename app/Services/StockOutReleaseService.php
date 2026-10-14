@@ -256,7 +256,7 @@ class StockOutReleaseService
             return ['handled' => false, 'error' => null];
         }
 
-        if ($allocations->contains(fn (object $allocation): bool => $allocation->haul_status !== 'completed')) {
+        if ($allocations->contains(fn (object $allocation): bool => ! in_array($allocation->haul_status, ['lifted', 'completed'], true))) {
             return ['handled' => true, 'error' => 'Complete the linked direct depot lifting before marking this sale delivered.'];
         }
 

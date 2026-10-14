@@ -319,7 +319,7 @@ class DriverDeliveryController extends Controller
             ->selectRaw("
                 COUNT(*) as total,
                 SUM(CASE WHEN status = 'scheduled' THEN 1 ELSE 0 END) as scheduled,
-                SUM(CASE WHEN status IN ('in_transit', 'lifted') THEN 1 ELSE 0 END) as active,
+                SUM(CASE WHEN status = 'in_transit' THEN 1 ELSE 0 END) as active,
                 SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed
             ")
             ->first();

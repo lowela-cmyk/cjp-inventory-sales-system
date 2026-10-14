@@ -125,7 +125,7 @@ class PurchaseReceiptUploadTest extends TestCase
         $inventoryPage = $this->actingAs($records['inventoryOfficer'])->get(route('inventory-officer.inventory'));
         $inventoryPage->assertOk()
             ->assertSee('Uploaded')
-            ->assertSee('2 receipts')
+            ->assertSee('View Receipts (2)')
             ->assertSee('LFT-WITHDRAWAL')
             ->assertSee('LFT-WITHDRAWAL-02')
             ->assertSee(route('withdrawal-receipts.show', $records['haulId']), false)
@@ -133,7 +133,7 @@ class PurchaseReceiptUploadTest extends TestCase
 
         $admin = User::factory()->create(['role' => 'admin', 'status' => 'active']);
         $this->actingAs($admin)->get(route('admin.inventory'))
-            ->assertOk()->assertSee('2 receipts')->assertSee('Second withdrawal');
+            ->assertOk()->assertSee('View Receipts (2)')->assertSee('Second withdrawal');
 
         $this->actingAs($records['inventoryOfficer'])->post(route('driver.fuel-lifting.hauls.withdrawal-receipt.store', $records['haulId']), [
             'withdrawal_receipt' => $this->tinyImage('forbidden.png'),

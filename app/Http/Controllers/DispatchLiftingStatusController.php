@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\LiftAllocationService;
 use App\Services\PurchaseWorkflowService;
 use App\Services\TruckAvailabilityService;
 use Illuminate\Http\RedirectResponse;
@@ -13,7 +14,8 @@ class DispatchLiftingStatusController extends Controller
 {
     public function __construct(
         private readonly PurchaseWorkflowService $purchaseWorkflow,
-        private readonly TruckAvailabilityService $truckAvailability
+        private readonly TruckAvailabilityService $truckAvailability,
+        private readonly LiftAllocationService $liftAllocations
     ) {}
 
     public const LIFTING_STATUSES = ['scheduled', 'in_transit', 'lifted', 'completed', 'cancelled'];
@@ -40,7 +42,8 @@ class DispatchLiftingStatusController extends Controller
                 ->with('status', 'Lifting status update was already submitted.');
         }
 
-        $result = DB::transaction(function () use ($haul, $data, $request): ?string {
+        $notes = [];
+        $result = DB::transaction(function () use ($haul, $data, $request, &$notes): ?string {
             $row = $this->haulForUpdate($haul);
 
             if (! $row) {
@@ -76,6 +79,7 @@ class DispatchLiftingStatusController extends Controller
                 ->update($updates);
 
             $purchaseIds = collect([(int) $row->purchase_id]);
+            $haulIds = collect([(int) $row->id]);
             if ($row->lifting_schedule_id) {
                 $siblings = DB::table('hauls')
                     ->where('lifting_schedule_id', $row->lifting_schedule_id)
@@ -92,6 +96,7 @@ class DispatchLiftingStatusController extends Controller
                     'updated_at' => now(),
                 ]);
                 $purchaseIds = $purchaseIds->merge($siblings->pluck('purchase_id')->map(fn ($id): int => (int) $id));
+                $haulIds = $haulIds->merge($siblings->pluck('id')->map(fn ($id): int => (int) $id));
 
                 if ($nextStatus === 'completed') {
                     foreach ($siblings as $sibling) {
@@ -102,6 +107,15 @@ class DispatchLiftingStatusController extends Controller
 
             if ($nextStatus === 'completed') {
                 $this->syncPurchaseProgress((int) $row->purchase_id, (int) $row->purchase_item_id);
+            }
+
+            // Finishing a lift posts its allocations (idempotent); cancelling frees the tank/sale reservation.
+            if (in_array($nextStatus, ['lifted', 'completed'], true)) {
+                foreach ($haulIds as $haulId) {
+                    $notes = array_merge($notes, $this->liftAllocations->settle($haulId, (int) $request->user()->id));
+                }
+            } elseif ($nextStatus === 'cancelled') {
+                $this->liftAllocations->cancelForHauls($haulIds->all());
             }
 
             foreach ($purchaseIds->unique() as $purchaseId) {
@@ -121,7 +135,7 @@ class DispatchLiftingStatusController extends Controller
 
         return redirect()
             ->route($this->redirectRoute($request))
-            ->with('status', 'Lifting status updated successfully.');
+            ->with('status', trim('Lifting status updated successfully. '.implode(' ', $notes)));
     }
 
     private function redirectRoute(Request $request): string

@@ -26,8 +26,9 @@ class DispatchLiftingStatusManagementTest extends TestCase
                 ->patch(route('dispatch.fuel-lifting.hauls.status', $haulId), $this->statusPayload($status))
                 ->assertRedirect(route('dispatch.fuel-lifting'));
 
+            // "lifted" is the driver's final step: the truck is free for the next pickup from then on.
             $this->assertSame(
-                $status === 'completed' ? 'available' : 'in_use',
+                $status === 'in_transit' ? 'in_use' : 'available',
                 DB::table('trucks')->where('id', $records['truckId'])->value('status')
             );
         }

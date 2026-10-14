@@ -53,15 +53,25 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/inventory/depots', [InventoryOfficerPurchaseController::class, 'storeDepot'])->name('inventory.depots.store');
         Route::get('/inventory/depots', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'depots')->name('inventory.depots');
         Route::get('/ledger', [AdminMonitoringController::class, 'ledger'])->name('ledger');
-        Route::get('/fuel-lifting', [AdminMonitoringController::class, 'fuelLifting'])->name('fuel-lifting');
+        // Admin works the full Dispatch page (schedule, edit truck, status, on-behalf driver receipts).
+        Route::get('/fuel-lifting', [DispatchDeliveryController::class, 'index'])->name('fuel-lifting');
+        Route::get('/fuel-lifting/hauled', [DispatchDeliveryController::class, 'index'])->defaults('state', 'hauled')->name('fuel-lifting.hauled');
+        Route::post('/fuel-lifting/hauls', [DispatchDeliveryController::class, 'store'])->name('fuel-lifting.hauls.store');
+        Route::post('/fuel-lifting/hauls/{haul}/withdrawal-receipt', [DriverDeliveryController::class, 'storeWithdrawalReceipt'])->name('fuel-lifting.hauls.withdrawal-receipt.store');
         Route::get('/trucks', [TruckController::class, 'index'])->name('trucks');
         Route::post('/trucks', [TruckController::class, 'store'])->name('trucks.store');
         Route::patch('/trucks/{truck}', [TruckController::class, 'update'])->name('trucks.update');
         Route::patch('/trucks/{truck}/status', [TruckController::class, 'toggleStatus'])->name('trucks.status');
         Route::patch('/fuel-lifting/hauls/{haul}/truck', [HaulTruckAssignmentController::class, 'update'])->name('fuel-lifting.hauls.truck');
         Route::patch('/fuel-lifting/hauls/{haul}/status', [DispatchLiftingStatusController::class, 'updateStatus'])->name('fuel-lifting.hauls.status');
-        Route::get('/sales', [AdminMonitoringController::class, 'sales'])->name('sales');
+        // Admin works the full Sales Officer page (sales, payments, customers).
+        Route::get('/sales', [SalesOfficerCustomerController::class, 'index'])->name('sales');
+        Route::get('/sales/customers', [SalesOfficerCustomerController::class, 'index'])->defaults('state', 'customers')->name('sales.customers');
+        Route::post('/sales/customers', [SalesOfficerCustomerController::class, 'store'])->name('sales.customers.store');
+        Route::patch('/sales/customers/{customer}', [SalesOfficerCustomerController::class, 'update'])->name('sales.customers.update');
+        Route::patch('/sales/customers/{customer}/deactivate', [SalesOfficerCustomerController::class, 'deactivate'])->name('sales.customers.deactivate');
         Route::post('/sales', [SalesOfficerCustomerController::class, 'storeSale'])->name('sales.store');
+        Route::post('/sales/{sale}/payments', [SalesOfficerCustomerController::class, 'storePayment'])->name('sales.payments.store');
         Route::patch('/sales/{sale}', [SalesOfficerCustomerController::class, 'updateSale'])->name('sales.update');
         Route::patch('/sales/{sale}/delivery-status', [SalesOfficerCustomerController::class, 'updateDeliveryStatus'])->name('sales.delivery-status.update');
         Route::patch('/sales/{sale}/cancel', [SalesOfficerCustomerController::class, 'cancelSale'])->name('sales.cancel');

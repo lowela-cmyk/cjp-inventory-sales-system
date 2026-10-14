@@ -51,7 +51,8 @@ class RoleAccessTestingTest extends TestCase
 
         foreach ($this->protectedWriteActions($records, $sale, $purchase, $stockOutId, $allocationId, $haulId) as $action) {
             foreach ($roles as $role => $user) {
-                if (in_array($role, $action['allowed_roles'], true)) {
+                // Admin may perform every role's actions (central rule); covered by AdminFullAccessTest.
+                if ($role === 'admin' || in_array($role, $action['allowed_roles'], true)) {
                     continue;
                 }
 
@@ -64,7 +65,7 @@ class RoleAccessTestingTest extends TestCase
         $this->assertSame($before, $this->tableCounts());
     }
 
-    public function test_admin_permissions_are_explicitly_limited_to_admin_and_admin_dispatch_routes(): void
+    public function test_admin_can_use_admin_routes_and_act_through_every_role_route(): void
     {
         Http::fake();
         $records = $this->baseRecords();
@@ -88,20 +89,28 @@ class RoleAccessTestingTest extends TestCase
             ->post(route('admin.reports.business-insight'), ['period' => 'all'])
             ->assertRedirect();
 
-        $this->actingAs($records['admin'])
-            ->post(route('inventory-officer.inventory.purchases.store'), $this->purchasePayload($records))
-            ->assertForbidden();
+        $approvedFuelId = (int) DB::table('fuel_types')->where('code', 'DSL')->value('id');
 
         $this->actingAs($records['admin'])
-            ->post(route('sales-officer.sales.store'), $this->salePayload($records))
-            ->assertForbidden();
+            ->post(route('inventory-officer.inventory.purchases.store'), array_merge($this->purchasePayload($records), ['fuel_type_id' => $approvedFuelId]))
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('purchases', ['created_by' => $records['admin']->id]);
 
+        $this->actingAs($records['admin'])
+            ->post(route('sales-officer.sales.store'), array_merge($this->salePayload($records), ['fuel_type_id' => $approvedFuelId]))
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('sales', ['created_by' => $records['admin']->id]);
+
+        // On behalf of the driver: the lift moves and the change is attributed to the admin.
         $this->actingAs($records['admin'])
             ->patch(route('driver.fuel-lifting.hauls.status', $haulId), [
                 'idempotency_key' => (string) Str::uuid(),
                 'lifting_status' => 'in_transit',
             ])
-            ->assertForbidden();
+            ->assertRedirect(route('admin.fuel-lifting'));
+        $this->assertDatabaseHas('hauls', ['id' => $haulId, 'status' => 'in_transit', 'status_updated_by' => $records['admin']->id]);
     }
 
     public function test_request_and_url_role_tampering_cannot_bypass_backend_authorization(): void

@@ -202,7 +202,10 @@ class StockInService
         return round($allocated, 2) <= round($haulQuantity, 2);
     }
 
-    public function stockInRows(?string $search, int $perPage = 25, string $pageName = 'stock_in_page'): LengthAwarePaginator
+    /**
+     * @param  array{date?: ?string, depot_id?: mixed, fuel_type_id?: mixed}  $filters
+     */
+    public function stockInRows(?string $search, int $perPage = 25, string $pageName = 'stock_in_page', array $filters = []): LengthAwarePaginator
     {
         $query = DB::table('inventory_movements')
             ->join('storage_locations', 'storage_locations.id', '=', 'inventory_movements.storage_location_id')
@@ -219,6 +222,16 @@ class StockInService
                 'inventory_movements.remarks',
                 'users.name',
             ]))
+            ->when($filters['date'] ?? null, fn (Builder $q, string $date): Builder => $q->whereDate('inventory_movements.movement_date', $date))
+            ->when($filters['fuel_type_id'] ?? null, fn (Builder $q, mixed $fuelTypeId): Builder => $q->where('inventory_movements.fuel_type_id', (int) $fuelTypeId))
+            ->when($filters['depot_id'] ?? null, fn (Builder $q, mixed $depotId): Builder => $q->whereExists(function ($exists) use ($depotId): void {
+                $exists->selectRaw('1')
+                    ->from('haul_allocations')
+                    ->join('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')
+                    ->whereColumn('haul_allocations.id', 'inventory_movements.reference_id')
+                    ->where('inventory_movements.reference_type', self::STOCK_IN_REFERENCE_TYPE)
+                    ->where('hauls.depot_id', (int) $depotId);
+            }))
             ->orderByDesc('inventory_movements.movement_date')
             ->select([
                 'inventory_movements.id',

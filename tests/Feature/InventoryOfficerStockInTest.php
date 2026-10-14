@@ -392,7 +392,6 @@ class InventoryOfficerStockInTest extends TestCase
     public function test_non_inventory_roles_cannot_create_stock_in(): void
     {
         $records = $this->stockInRecords();
-        $admin = User::factory()->create(['role' => 'admin', 'status' => 'active']);
         $salesOfficer = User::factory()->create(['role' => 'sales_officer', 'status' => 'active']);
         $payload = [
             'haul_allocation_id' => $records['garageAllocationId'],
@@ -400,10 +399,6 @@ class InventoryOfficerStockInTest extends TestCase
             'quantity_liters' => 1000,
             'movement_date' => '2026-08-30 09:15:00',
         ];
-
-        $this->actingAs($admin)
-            ->post(route('inventory-officer.inventory.stock-in.store'), $payload)
-            ->assertForbidden();
 
         $this->actingAs($salesOfficer)
             ->post(route('inventory-officer.inventory.stock-in.store'), $payload)

@@ -1,7 +1,8 @@
-@props(['id', 'title', 'wide' => false, 'showBrand' => true])
+@props(['id', 'title', 'wide' => false, 'size' => null, 'showBrand' => true, 'footer' => null])
 
+{{-- Header and optional footer stay fixed; only the body scrolls (see .admin-modal in app.css). --}}
 <div class="modal-backdrop" id="{{ $id }}" aria-hidden="true">
-    <div class="admin-modal {{ $wide ? 'admin-modal-wide' : '' }}" role="dialog" aria-modal="true" aria-labelledby="{{ $id }}-title">
+    <div @class(['admin-modal', 'admin-modal-wide' => $wide, 'admin-modal-'.$size => $size]) role="dialog" aria-modal="true" aria-labelledby="{{ $id }}-title">
         <div class="modal-titlebar {{ $showBrand ? '' : 'modal-titlebar-without-brand' }}">
             @if ($showBrand)
                 <span class="modal-brand-logo" aria-hidden="true">
@@ -14,5 +15,10 @@
         <div class="modal-body">
             {{ $slot }}
         </div>
+        @if ($footer)
+            <div class="modal-footer">
+                {{ $footer }}
+            </div>
+        @endif
     </div>
 </div>

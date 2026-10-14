@@ -62,6 +62,8 @@ class DispatchLiftingStatusController extends Controller
 
             $updates = [
                 'status' => $nextStatus,
+                'status_updated_by' => (int) $request->user()->id,
+                'status_updated_at' => now(),
                 'updated_at' => now(),
             ];
 

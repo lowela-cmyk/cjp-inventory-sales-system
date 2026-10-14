@@ -30,21 +30,26 @@ class DriverLiftingStatusController extends Controller
             'idempotency_key' => ['required', 'uuid'],
             'lifting_status' => ['required', Rule::in(DispatchLiftingStatusController::LIFTING_STATUSES)],
         ]);
-        $driverId = (int) $request->user()->id;
-        $sessionKey = 'driver.hauls.status.'.$driverId.'.'.$haul.'.'.((string) $data['idempotency_key']);
+        $actorId = (int) $request->user()->id;
+        // Admin may move a driver's lift on the driver's behalf; the change is attributed to the admin.
+        $actingForDriver = $request->user()->role === 'admin';
+        $redirectRoute = $actingForDriver ? 'admin.fuel-lifting' : 'driver.fuel-lifting';
+        $sessionKey = 'driver.hauls.status.'.$actorId.'.'.$haul.'.'.((string) $data['idempotency_key']);
 
         if ($request->session()->has($sessionKey)) {
             return redirect()
-                ->route('driver.fuel-lifting')
+                ->route($redirectRoute)
                 ->with('status', 'Lifting status update was already submitted.');
         }
 
-        $result = DB::transaction(function () use ($haul, $driverId, $data): ?string {
-            $row = $this->haulForDriverUpdate($haul, $driverId);
+        $result = DB::transaction(function () use ($haul, $actorId, $actingForDriver, $data): ?string {
+            $row = $this->haulForDriverUpdate($haul, $actingForDriver ? null : $actorId);
 
             if (! $row) {
                 return 'The selected lifting task is not assigned to your driver account.';
             }
+
+            $driverId = (int) $row->driver_user_id;
 
             $nextStatus = (string) $data['lifting_status'];
             $allowed = self::STATUS_TRANSITIONS[$row->status] ?? [];
@@ -61,6 +66,8 @@ class DriverLiftingStatusController extends Controller
 
             $updates = [
                 'status' => $nextStatus,
+                'status_updated_by' => $actorId,
+                'status_updated_at' => now(),
                 'updated_at' => now(),
             ];
 
@@ -92,7 +99,7 @@ class DriverLiftingStatusController extends Controller
             }
 
             foreach ($purchaseIds->unique() as $purchaseId) {
-                $this->purchaseWorkflow->synchronize((int) $purchaseId, $driverId, (int) $row->id);
+                $this->purchaseWorkflow->synchronize((int) $purchaseId, $actorId, (int) $row->id);
             }
 
             $this->truckAvailability->synchronizeStatus((int) $row->truck_id);
@@ -107,11 +114,11 @@ class DriverLiftingStatusController extends Controller
         $request->session()->put($sessionKey, true);
 
         return redirect()
-            ->route('driver.fuel-lifting')
+            ->route($redirectRoute)
             ->with('status', 'Lifting status updated successfully.');
     }
 
-    private function haulForDriverUpdate(int $haul, int $driverId): ?object
+    private function haulForDriverUpdate(int $haul, ?int $driverId): ?object
     {
         return DB::table('hauls')
             ->join('purchases', 'purchases.id', '=', 'hauls.purchase_id')
@@ -122,7 +129,7 @@ class DriverLiftingStatusController extends Controller
             ->join('users as drivers', 'drivers.id', '=', 'hauls.driver_user_id')
             ->leftJoin('driver_profiles', 'driver_profiles.user_id', '=', 'drivers.id')
             ->where('hauls.id', $haul)
-            ->where('hauls.driver_user_id', $driverId)
+            ->when($driverId !== null, fn ($query) => $query->where('hauls.driver_user_id', $driverId))
             ->whereNull('purchases.deleted_at')
             ->whereColumn('hauls.purchase_id', 'purchase_items.purchase_id')
             ->whereColumn('hauls.depot_id', 'purchases.depot_id')

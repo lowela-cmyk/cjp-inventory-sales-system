@@ -156,7 +156,9 @@ class AuthController extends Controller
 
         return redirect()
             ->route($this->dashboardRouteFor($request->user()->role))
-            ->with('status', 'Welcome back to CJP Southern Star. Your dashboard is ready.')
+            // Toast-only flash: the LOGIN SUCCESS toast shows it, inline page alerts (session('status')) do not.
+            ->with('toast_message', 'Welcome back to CJP Southern Star. Your dashboard is ready.')
+            ->with('toast_title', 'Login success')
             ->with('toast_type', 'success');
     }
 

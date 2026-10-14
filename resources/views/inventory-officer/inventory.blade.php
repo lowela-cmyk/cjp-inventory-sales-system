@@ -3,6 +3,10 @@
     $inventoryRoutePrefix = request()->routeIs('admin.inventory*') ? 'admin.inventory' : 'inventory-officer.inventory';
     $inventoryLayout = request()->routeIs('admin.inventory*') ? 'layouts.admin' : 'layouts.inventory-officer';
     $headings = ['purchases' => 'Purchases', 'stock-in' => 'Stock-In', 'stock-out' => 'Stock-Out', 'depots' => 'Depots'];
+    $filters = $filters ?? [];
+    $filterOptions = $filterOptions ?? ['statuses' => [], 'depots' => collect(), 'fuelTypes' => collect()];
+    $pendingReceiptsByItem = $garageAllocations->groupBy('purchase_item_id');
+    $purchaseModalIds = collect($purchases->items())->mapWithKeys(fn (array $row): array => [(int) $row['id'] => $row['modal_id']]);
 @endphp
 
 @component($inventoryLayout, ['title' => 'Inventory Management', 'active' => 'inventory'])
@@ -37,15 +41,11 @@
             </div>
         @endif
 
-        <section data-tab-panel="purchases" @hidden($activeTab !== 'purchases')>
-            <form class="toolbar toolbar-inventory" method="GET" action="{{ route($inventoryRoutePrefix) }}">
+        <section data-tab-panel="purchases" @if ($activeTab !== 'purchases') hidden @endif>
+            <form class="toolbar toolbar-inventory" method="GET" action="{{ route($inventoryRoutePrefix) }}" data-auto-filter>
                 <input type="search" name="search" placeholder="Search..." aria-label="Search purchases" value="{{ $search }}">
-                <button class="btn btn-primary" type="submit">Status</button>
-                <button class="btn btn-primary" type="submit">Date</button>
-                <button class="btn btn-primary" type="submit">Depot</button>
-                <button class="btn btn-primary" type="submit">Fuel Type (All)</button>
+                @include('inventory-officer.partials.filter-controls', ['tab' => 'purchases'])
                 <button class="btn btn-primary" type="button" data-modal-open="io-purchase-add">+ Record Purchases</button>
-                <button class="btn btn-secondary" type="button" data-modal-open="io-depot-add">+ Depot</button>
             </form>
             <div class="table-wrap inventory-table-wrap">
                 <table class="admin-table inventory-table inventory-table-actions">
@@ -69,7 +69,14 @@
                                         <td>{{ $cell }}</td>
                                     @endif
                                 @endforeach
-                                <td><button class="btn btn-secondary" type="button" data-modal-open="{{ $row['modal_id'] }}">Edit</button></td>
+                                <td>
+                                    <div class="inventory-row-actions">
+                                        <button class="btn btn-secondary" type="button" data-modal-open="{{ $row['modal_id'] }}">Edit</button>
+                                        @if ($pendingReceiptsByItem->has($row['id']))
+                                            <button class="btn btn-primary btn-small" type="button" data-modal-open="{{ $row['modal_id'] }}" title="Completed lift waiting for a destination tank">Assign Tank</button>
+                                        @endif
+                                    </div>
+                                </td>
                             </tr>
                         @empty
                             <tr><td class="empty-cell" colspan="16">No records found.</td></tr>
@@ -84,56 +91,11 @@
             @endif
         </section>
 
-        <section data-tab-panel="stock-in" @hidden($activeTab !== 'stock-in')>
-            <form class="toolbar toolbar-inventory" method="GET" action="{{ route($inventoryRoutePrefix.'.stock-in') }}">
+        <section data-tab-panel="stock-in" @if ($activeTab !== 'stock-in') hidden @endif>
+            <form class="toolbar toolbar-inventory" method="GET" action="{{ route($inventoryRoutePrefix.'.stock-in') }}" data-auto-filter>
                 <input type="search" name="search" placeholder="Search..." aria-label="Search stock-in" value="{{ $search }}">
-                <span></span>
-                <button class="btn btn-primary" type="submit">Status</button>
-                <button class="btn btn-primary" type="submit">Date</button>
-                <button class="btn btn-primary" type="submit">Depot</button>
-                <button class="btn btn-primary" type="submit">Fuel Type (All)</button>
-                <span class="status-badge status-tone-pending">Pending receipts require tank assignment</span>
+                @include('inventory-officer.partials.filter-controls', ['tab' => 'stock-in', 'fields' => ['date', 'depot', 'fuel']])
             </form>
-            <h3 class="section-title">Purchase Stock-In Pipeline</h3>
-            <div class="table-wrap inventory-table-wrap" style="margin-bottom:16px">
-                <table class="admin-table inventory-table">
-                    <thead><tr><th>Purchase ID</th><th>Date</th><th>Fuel</th><th>Pickup Depot</th><th>Purchased (L)</th><th>Scheduled (L)</th><th>Garage Received (L)</th><th class="inventory-status-column">Purchase Status</th></tr></thead>
-                    <tbody>
-                        @forelse ($stockInPurchases as $purchase)
-                            <tr>
-                                <td>{{ $purchase->purchase_code }}</td>
-                                <td>{{ $purchase->purchase_date }}</td>
-                                <td>{{ $purchase->fuel_name }}</td>
-                                <td>{{ $purchase->depot_name }}</td>
-                                <td>{{ number_format((float) $purchase->quantity_ordered_liters, 2) }}</td>
-                                <td>{{ number_format((float) $purchase->scheduled_liters, 2) }}</td>
-                                <td>{{ number_format((float) $purchase->received_liters, 2) }}</td>
-                                <td><x-admin.status-badge :status="ucwords(str_replace('_', ' ', $purchase->workflow_status))" /></td>
-                            </tr>
-                        @empty
-                            <tr><td class="empty-cell" colspan="8">No purchases found.</td></tr>
-                        @endforelse
-                    </tbody>
-                </table>
-            </div>
-            <div class="pagination-wrap" style="margin-bottom:16px">{{ $stockInPurchases->links() }}</div>
-            <div class="table-wrap inventory-table-wrap" style="margin-bottom:16px">
-                <table class="admin-table inventory-table inventory-table-actions">
-                    <thead><tr><th>Purchase ID</th><th>Lift ID</th><th>Fuel</th><th>Pickup Depot</th><th>Received / Pending</th><th>Receiving Date</th><th>Tank</th><th class="inventory-status-column">Status</th><th>Action</th></tr></thead>
-                    <tbody>
-                        @forelse ($garageAllocations as $allocation)
-                            <tr>
-                                <td>{{ $allocation->purchase_code }}</td><td>{{ $allocation->haul_code }}</td><td>{{ $allocation->fuel_name }}</td><td>{{ $allocation->depot_name }}</td>
-                                <td>{{ number_format((float) $allocation->received_liters, 2) }} / {{ number_format((float) $allocation->remaining_liters, 2) }} L</td>
-                                <td>{{ $allocation->scheduled_at }}</td><td>{{ $allocation->garage_name ?: 'Not assigned' }}</td><td><x-admin.status-badge :status="$allocation->receipt_status" /></td>
-                                <td><button class="btn btn-primary" type="button" data-modal-open="io-receipt-assign-{{ $allocation->id }}">Assign Tank</button></td>
-                            </tr>
-                        @empty
-                            <tr><td class="empty-cell" colspan="9">No pending fuel receipts require tank assignment.</td></tr>
-                        @endforelse
-                    </tbody>
-                </table>
-            </div>
             <div class="table-wrap inventory-table-wrap">
                 <table class="admin-table inventory-table inventory-table-actions">
                     <thead><tr><th>Purchase / Haul</th><th>Received Date</th><th>Fuel</th><th>Garage</th><th>QTY Received (L)</th><th>Cost / Liter</th><th>Total Cost</th><th>Stock In</th><th>Stock Out</th><th class="inventory-status-column">Status</th><th>Actions</th></tr></thead>
@@ -162,31 +124,32 @@
             @endif
         </section>
 
-        <section data-tab-panel="stock-out" @hidden($activeTab !== 'stock-out')>
-            <form class="toolbar toolbar-inventory" method="GET" action="{{ route($inventoryRoutePrefix.'.stock-out') }}">
+        <section data-tab-panel="stock-out" @if ($activeTab !== 'stock-out') hidden @endif>
+            <form class="toolbar toolbar-inventory" method="GET" action="{{ route($inventoryRoutePrefix.'.stock-out') }}" data-auto-filter>
                 <input type="search" name="search" placeholder="Search..." aria-label="Search stock-out" value="{{ $search }}">
-                <button class="btn btn-primary" type="submit">Status</button>
-                <button class="btn btn-primary" type="submit">Date</button>
-                <button class="btn btn-primary" type="submit">Depot</button>
-                <button class="btn btn-primary" type="submit">Fuel Type (All)</button>
+                @include('inventory-officer.partials.filter-controls', ['tab' => 'stock-out'])
                 <button class="btn btn-primary" type="button" data-modal-open="io-stockout-add">+ Record Stock-Out</button>
             </form>
             <div class="table-wrap inventory-table-wrap">
                 <table class="admin-table inventory-table">
-                    <thead><tr><th>Order-ID</th><th>Transaction Date</th><th>Customer Name</th><th>Company Name</th><th>Fuel</th><th>QTY Released</th><th>Cost / Unit</th><th>Total Cost</th><th>Price / Unit</th><th>Total Price</th><th>Total Paid</th><th>Source</th><th>Profit</th></tr></thead>
+                    <thead><tr><th>Order-ID</th><th>Transaction Date</th><th>Customer Name</th><th>Company Name</th><th>Fuel</th><th>QTY Released</th><th>Cost / Unit</th><th>Total Cost</th><th>Price / Unit</th><th>Total Price</th><th>Total Paid</th><th>Source</th><th class="inventory-status-column">Status</th><th>Profit</th></tr></thead>
                     <tbody>
                         @forelse ($stockOut as $row)
                             <tr class="{{ $row['class'] }}">
                                 @foreach ($row['cells'] as $cell)
-                                    <td @class([
-                                        'inventory-number' => in_array($loop->index, [5, 6, 7, 8, 9, 10, 12], true),
-                                        'inventory-profit' => $loop->last,
-                                        'is-negative' => $loop->last && is_numeric($row['profit']) && $row['profit'] < 0,
-                                    ])>{{ $cell }}</td>
+                                    @if ($loop->index === 12)
+                                        <td><x-admin.status-badge :status="$cell" /></td>
+                                    @else
+                                        <td @class([
+                                            'inventory-number' => in_array($loop->index, [5, 6, 7, 8, 9, 10, 13], true),
+                                            'inventory-profit' => $loop->last,
+                                            'is-negative' => $loop->last && is_numeric($row['profit']) && $row['profit'] < 0,
+                                        ])>{{ $cell }}</td>
+                                    @endif
                                 @endforeach
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="13">No records found.</td></tr>
+                            <tr><td class="empty-cell" colspan="14">No records found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -198,11 +161,10 @@
             @endif
         </section>
 
-        <section data-tab-panel="depots" @hidden($activeTab !== 'depots')>
-            <form class="toolbar toolbar-inventory" method="GET" action="{{ route($inventoryRoutePrefix.'.depots') }}">
+        <section data-tab-panel="depots" @if ($activeTab !== 'depots') hidden @endif>
+            <form class="toolbar toolbar-inventory" method="GET" action="{{ route($inventoryRoutePrefix.'.depots') }}" data-auto-filter>
                 <input type="search" name="search" placeholder="Search..." aria-label="Search depots" value="{{ $search }}">
-                <button class="btn btn-primary" type="submit">Status</button>
-                <button class="btn btn-primary" type="submit">Depot</button>
+                @include('inventory-officer.partials.filter-controls', ['tab' => 'depots', 'fields' => ['status']])
                 <button class="btn btn-secondary" type="button" data-modal-open="io-depot-add">+ Depot</button>
             </form>
             <div class="table-wrap inventory-table-wrap">
@@ -234,7 +196,7 @@
     </div>
 
     <x-admin.modal id="io-purchase-add" title="Add Purchase Record" wide>
-        <form method="POST" action="{{ route($inventoryRoutePrefix.'.purchases.store') }}">
+        <form id="purchase-add-form" method="POST" action="{{ route($inventoryRoutePrefix.'.purchases.store') }}">
             @csrf
             <input type="hidden" name="idempotency_key" value="{{ old('idempotency_key', $purchaseIdempotencyKey) }}">
             <div class="modal-card">
@@ -248,8 +210,11 @@
                     <div class="form-row"><label>Purchase Status</label><x-admin.status-badge status="Pending" /></div>
                 </div>
             </div>
-            <div class="modal-actions"><button class="btn btn-pill btn-secondary" type="submit">Add</button><button class="btn btn-pill btn-danger" type="button" data-modal-close>Cancel</button></div>
         </form>
+        <x-slot:footer>
+            <button class="btn btn-pill btn-secondary" type="submit" form="purchase-add-form">Add</button>
+            <button class="btn btn-pill btn-danger" type="button" data-modal-close>Cancel</button>
+        </x-slot:footer>
     </x-admin.modal>
 
     @foreach ($purchases as $row)
@@ -287,6 +252,28 @@
                         </div>
                     @endif
                 </div>
+                @if ($pendingReceiptsByItem->has($row['id']))
+                    <div class="pending-receipts" style="margin-top: 18px">
+                        <h4 class="pending-receipts-title">Pending Garage Receipts</h4>
+                        <p class="pending-receipts-note">Completed lifts for this purchase are waiting for a destination tank before they can be posted as Stock-In.</p>
+                        <div class="table-wrap" style="min-height:auto">
+                            <table class="admin-table inventory-table">
+                                <thead><tr><th>Lift ID</th><th>Received / Pending</th><th>Tank</th><th class="inventory-status-column">Status</th><th>Action</th></tr></thead>
+                                <tbody>
+                                    @foreach ($pendingReceiptsByItem->get($row['id']) as $allocation)
+                                        <tr>
+                                            <td>{{ $allocation->haul_code }}</td>
+                                            <td>{{ number_format((float) $allocation->received_liters, 2) }} / {{ number_format((float) $allocation->remaining_liters, 2) }} L</td>
+                                            <td>{{ $allocation->garage_name ?: 'Not assigned' }}</td>
+                                            <td><x-admin.status-badge :status="$allocation->receipt_status" /></td>
+                                            <td><button class="btn btn-primary btn-small" type="button" data-modal-swap="io-receipt-assign-{{ $allocation->id }}">Assign Tank &amp; Post Stock-In</button></td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                @endif
                 <div class="form-grid" style="margin-top: 18px">
                     <div class="form-row"><label for="purchase_date_{{ $row['id'] }}">Date</label><input form="purchase-update-{{ $row['id'] }}" id="purchase_date_{{ $row['id'] }}" name="purchase_date" type="date" value="{{ old('purchase_date', $row['purchase_date']) }}" required></div>
                     <div class="form-row"><label for="fuel_type_id_{{ $row['id'] }}">Fuel Type</label><select form="purchase-update-{{ $row['id'] }}" id="fuel_type_id_{{ $row['id'] }}" name="fuel_type_id" required>@foreach ($fuelTypes as $fuelType)<option value="{{ $fuelType->id }}" @selected((string) old('fuel_type_id', $row['fuel_type_id']) === (string) $fuelType->id)>{{ $fuelType->name }}</option>@endforeach</select></div>
@@ -297,20 +284,20 @@
                     <div class="form-row"><label>Purchase Status</label><x-admin.status-badge :status="ucwords(str_replace('_', ' ', $row['purchase_status']))" /></div>
                 </div>
             </div>
-            <div class="modal-actions">
+            <x-slot:footer>
                 <button class="btn btn-pill btn-secondary" type="submit" form="purchase-update-{{ $row['id'] }}">Edit</button>
-                <form method="POST" action="{{ route($inventoryRoutePrefix.'.purchases.cancel', $row['id']) }}">
+                <form method="POST" action="{{ route($inventoryRoutePrefix.'.purchases.cancel', $row['id']) }}" data-confirm-message="Cancel this purchase? It can no longer be lifted.">
                     @csrf
                     @method('PATCH')
                     <button class="btn btn-pill btn-danger" type="submit">Cancel</button>
                 </form>
-            </div>
+            </x-slot:footer>
         </x-admin.modal>
     @endforeach
 
     @foreach ($garageAllocations as $allocation)
         <x-admin.modal id="io-receipt-assign-{{ $allocation->id }}" title="Assign Tank and Post Receipt" wide>
-            <form method="POST" action="{{ route($inventoryRoutePrefix.'.stock-in.store') }}" data-prevent-double-submit>
+            <form id="receipt-assign-form-{{ $allocation->id }}" method="POST" action="{{ route($inventoryRoutePrefix.'.stock-in.store') }}" data-prevent-double-submit>
                 @csrf
                 <input type="hidden" name="idempotency_key" value="{{ (string) \Illuminate\Support\Str::uuid() }}">
                 <input type="hidden" name="haul_allocation_id" value="{{ $allocation->id }}">
@@ -328,8 +315,14 @@
                         <div class="form-row"><label for="receipt_notes_{{ $allocation->id }}">Remarks</label><input id="receipt_notes_{{ $allocation->id }}" name="remarks" type="text" maxlength="1000"></div>
                     </div>
                 </div>
-                <div class="modal-actions"><button class="btn btn-pill btn-primary" type="submit">Post Stock-In</button><button class="btn btn-pill btn-secondary" type="button" data-modal-close>Cancel</button></div>
             </form>
+            <x-slot:footer>
+                <button class="btn btn-pill btn-primary" type="submit" form="receipt-assign-form-{{ $allocation->id }}">Post Stock-In</button>
+                @if ($purchaseModalIds->has((int) $allocation->purchase_item_id))
+                    <button class="btn btn-pill btn-secondary" type="button" data-modal-swap="{{ $purchaseModalIds->get((int) $allocation->purchase_item_id) }}">Back</button>
+                @endif
+                <button class="btn btn-pill btn-secondary" type="button" data-modal-close>Cancel</button>
+            </x-slot:footer>
         </x-admin.modal>
     @endforeach
 
@@ -343,12 +336,14 @@
                     @endforeach
                 </div>
             </div>
-            <div class="modal-actions"><button class="btn btn-pill btn-secondary" type="button" data-modal-close>Close</button></div>
+            <x-slot:footer>
+                <button class="btn btn-pill btn-secondary" type="button" data-modal-close>Close</button>
+            </x-slot:footer>
         </x-admin.modal>
     @endforeach
 
     <x-admin.modal id="io-stockout-add" title="Record Stock-Out" wide>
-        <form method="POST" action="{{ route($inventoryRoutePrefix.'.stock-out.store') }}">
+        <form id="stockout-add-form" method="POST" action="{{ route($inventoryRoutePrefix.'.stock-out.store') }}">
             @csrf
             <input type="hidden" name="idempotency_key" value="{{ old('idempotency_key', $stockOutIdempotencyKey) }}">
             <div class="modal-card">
@@ -362,12 +357,15 @@
                     <div class="form-row"><label for="stock_out_remarks">Remarks</label><input id="stock_out_remarks" name="remarks" type="text" placeholder="Enter Remarks" value="{{ old('remarks') }}"></div>
                 </div>
             </div>
-            <div class="modal-actions"><button class="btn btn-pill btn-secondary" type="submit">Add</button><button class="btn btn-pill btn-danger" type="button" data-modal-close>Cancel</button></div>
         </form>
+        <x-slot:footer>
+            <button class="btn btn-pill btn-secondary" type="submit" form="stockout-add-form">Add</button>
+            <button class="btn btn-pill btn-danger" type="button" data-modal-close>Cancel</button>
+        </x-slot:footer>
     </x-admin.modal>
 
     <x-admin.modal id="io-depot-add" title="Add Depot">
-        <form method="POST" action="{{ route($inventoryRoutePrefix.'.depots.store') }}">
+        <form id="depot-add-form" method="POST" action="{{ route($inventoryRoutePrefix.'.depots.store') }}">
             @csrf
             <div class="modal-card">
                 <div class="form-grid">
@@ -379,7 +377,10 @@
                     <div class="form-row"><label for="depot_address_master">Address</label><input id="depot_address_master" name="address" type="text" maxlength="255" value="{{ old('address') }}"></div>
                 </div>
             </div>
-            <div class="modal-actions"><button class="btn btn-pill btn-secondary" type="submit">Add</button><button class="btn btn-pill btn-danger" type="button" data-modal-close>Cancel</button></div>
         </form>
+        <x-slot:footer>
+            <button class="btn btn-pill btn-secondary" type="submit" form="depot-add-form">Add</button>
+            <button class="btn btn-pill btn-danger" type="button" data-modal-close>Cancel</button>
+        </x-slot:footer>
     </x-admin.modal>
 @endcomponent

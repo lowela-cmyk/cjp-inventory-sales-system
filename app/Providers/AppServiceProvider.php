@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Services\ModuleActivityService;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -15,7 +16,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // One instance per request so every sidebar link shares the same red-dot lookup.
+        $this->app->scoped(ModuleActivityService::class);
     }
 
     /**

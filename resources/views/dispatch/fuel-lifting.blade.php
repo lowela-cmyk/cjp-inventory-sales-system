@@ -1,5 +1,5 @@
 @php
-    $activeTab = $activeTab ?? (($state ?? 'schedule') === 'hauled' ? 'hauled' : 'schedule');
+    $activeTab = in_array($activeTab ?? 'schedule', ['schedule', 'hauled', 'trucks'], true) ? $activeTab : 'schedule';
     $filters = $filters ?? [];
     $filterOptions = $filterOptions ?? ['statuses' => [], 'fuelTypes' => collect(), 'drivers' => collect(), 'trucks' => collect()];
     $summaryCards = $summaryCards ?? [];
@@ -9,13 +9,16 @@
     $isAdminLifting = request()->routeIs('admin.*');
     $liftRoutePrefix = $isAdminLifting ? 'admin.fuel-lifting' : 'dispatch.fuel-lifting';
     $liftLayout = $isAdminLifting ? 'layouts.admin' : 'layouts.dispatch';
+    $truckRoutePrefix = $isAdminLifting ? 'admin.trucks' : 'dispatch.trucks';
+    $headings = ['schedule' => 'Schedule', 'hauled' => 'Hauled', 'trucks' => 'Trucks'];
     $scheduleFormFailed = old('form_context') === 'schedule-lift' && $errors->any();
     $liftLines = array_values(old('items', [[]])) ?: [[]];
+    $truckFilterOptions = $filterOptions['trucks']->mapWithKeys(fn (object $truck): array => [$truck->id => $truck->truck_code.($truck->plate_number ? ' / '.$truck->plate_number : '')]);
 @endphp
 
 @component($liftLayout, ['title' => 'Fuel Lifting Operations', 'active' => 'fuel-lifting'])
     <div data-tabs>
-        <h2 class="section-title" data-tab-heading>{{ $activeTab === 'hauled' ? 'Hauled' : 'Schedule' }}</h2>
+        <h2 class="section-title" data-tab-heading>{{ $headings[$activeTab] }}</h2>
 
         @if (session('status'))
             <div class="admin-flash admin-flash-success" role="status">{{ session('status') }}</div>
@@ -26,8 +29,9 @@
         @endif
 
         <div class="tabs">
-            <button class="tab-button {{ $activeTab === 'schedule' ? 'is-active' : '' }}" type="button" data-tab-target="schedule" data-heading="Schedule">Schedule</button>
-            <button class="tab-button {{ $activeTab === 'hauled' ? 'is-active' : '' }}" type="button" data-tab-target="hauled" data-heading="Hauled">Hauled</button>
+            <button class="tab-button {{ $activeTab === 'schedule' ? 'is-active' : '' }}" type="button" data-tab-target="schedule" data-tab-url="{{ route($liftRoutePrefix) }}" data-heading="Schedule">Schedule</button>
+            <button class="tab-button {{ $activeTab === 'hauled' ? 'is-active' : '' }}" type="button" data-tab-target="hauled" data-tab-url="{{ route($liftRoutePrefix.'.hauled') }}" data-heading="Hauled">Hauled</button>
+            <button class="tab-button {{ $activeTab === 'trucks' ? 'is-active' : '' }}" type="button" data-tab-target="trucks" data-tab-url="{{ route($liftRoutePrefix.'.trucks') }}" data-heading="Trucks">Trucks</button>
         </div>
         <div class="actions-right">
             <button class="btn btn-secondary" type="button" data-export-table>Export</button>
@@ -45,29 +49,14 @@
         @endif
 
         <section data-tab-panel="schedule" {{ $activeTab !== 'schedule' ? 'hidden' : '' }}>
-            <form class="dispatch-filter-row dispatch-fuel-filter" method="GET" action="{{ route($liftRoutePrefix) }}" data-auto-filter>
-                <input type="search" name="search" placeholder="Search..." aria-label="Search scheduled lifts" value="{{ $search }}">
-                <input type="date" name="lift_date" aria-label="Filter by lift date" title="Lift date" value="{{ $filters['lift_date'] ?? '' }}">
-                <select name="fuel_type_id" aria-label="Filter by fuel type">
-                    <option value="">Fuel Type (All)</option>
-                    @foreach ($filterOptions['fuelTypes'] as $fuelType)
-                        <option value="{{ $fuelType->id }}" @selected((string) ($filters['fuel_type_id'] ?? '') === (string) $fuelType->id)>{{ $fuelType->name }}</option>
-                    @endforeach
-                </select>
-                <select name="driver_user_id" aria-label="Filter by driver">
-                    <option value="">Driver (All)</option>
-                    @foreach ($filterOptions['drivers'] as $driver)
-                        <option value="{{ $driver->id }}" @selected((string) ($filters['driver_user_id'] ?? '') === (string) $driver->id)>{{ $driver->name }}</option>
-                    @endforeach
-                </select>
-                <select name="truck_id" aria-label="Filter by truck">
-                    <option value="">Truck (All)</option>
-                    @foreach ($filterOptions['trucks'] as $truck)
-                        <option value="{{ $truck->id }}" @selected((string) ($filters['truck_id'] ?? '') === (string) $truck->id)>{{ $truck->truck_code }}{{ $truck->plate_number ? ' / '.$truck->plate_number : '' }}</option>
-                    @endforeach
-                </select>
-                <button class="btn btn-primary" type="button" data-modal-open="dispatch-lift-add">+ Schedule Lift</button>
-            </form>
+            <x-filter.bar class="dispatch-fuel-filter" :action="route($liftRoutePrefix)">
+                <x-filter.search label="Search scheduled lifts" :value="$search" />
+                <x-filter.date name="lift_date" label="Lift date" :value="$filters['lift_date'] ?? null" />
+                <x-filter.select name="fuel_type_id" label="Fuel Type" :options="$filterOptions['fuelTypes']->pluck('name', 'id')" :selected="$filters['fuel_type_id'] ?? null" />
+                <x-filter.select name="driver_user_id" label="Driver" :options="$filterOptions['drivers']->pluck('name', 'id')" :selected="$filters['driver_user_id'] ?? null" />
+                <x-filter.select name="truck_id" label="Truck" :options="$truckFilterOptions" :selected="$filters['truck_id'] ?? null" />
+                <button class="btn btn-secondary btn-wide" type="button" data-modal-open="dispatch-lift-add">+ Schedule Lift</button>
+            </x-filter.bar>
 
             <div class="table-wrap dispatch-table-wrap">
                 <table class="admin-table dispatch-table">
@@ -105,34 +94,15 @@
         </section>
 
         <section data-tab-panel="hauled" {{ $activeTab !== 'hauled' ? 'hidden' : '' }}>
-            <form class="dispatch-filter-row dispatch-fuel-filter dispatch-hauled-filter" method="GET" action="{{ route($liftRoutePrefix.'.hauled') }}" data-auto-filter>
-                <input type="search" name="search" placeholder="Search..." aria-label="Search hauled lifts" value="{{ $search }}">
-                <select name="status" aria-label="Filter by lift status">
-                    <option value="">Status (All)</option>
-                    @foreach ($filterOptions['statuses'] as $status)
-                        <option value="{{ $status }}" @selected(($filters['status'] ?? '') === $status)>{{ ucwords(str_replace('_', ' ', $status)) }}</option>
-                    @endforeach
-                </select>
-                <input type="date" name="lift_date" aria-label="Filter by lift date" title="Lift date" value="{{ $filters['lift_date'] ?? '' }}">
-                <select name="fuel_type_id" aria-label="Filter by fuel type">
-                    <option value="">Fuel Type (All)</option>
-                    @foreach ($filterOptions['fuelTypes'] as $fuelType)
-                        <option value="{{ $fuelType->id }}" @selected((string) ($filters['fuel_type_id'] ?? '') === (string) $fuelType->id)>{{ $fuelType->name }}</option>
-                    @endforeach
-                </select>
-                <select name="driver_user_id" aria-label="Filter by driver">
-                    <option value="">Driver (All)</option>
-                    @foreach ($filterOptions['drivers'] as $driver)
-                        <option value="{{ $driver->id }}" @selected((string) ($filters['driver_user_id'] ?? '') === (string) $driver->id)>{{ $driver->name }}</option>
-                    @endforeach
-                </select>
-                <select name="truck_id" aria-label="Filter by truck">
-                    <option value="">Truck (All)</option>
-                    @foreach ($filterOptions['trucks'] as $truck)
-                        <option value="{{ $truck->id }}" @selected((string) ($filters['truck_id'] ?? '') === (string) $truck->id)>{{ $truck->truck_code }}{{ $truck->plate_number ? ' / '.$truck->plate_number : '' }}</option>
-                    @endforeach
-                </select>
-            </form>
+            <x-filter.bar class="dispatch-fuel-filter" :action="route($liftRoutePrefix.'.hauled')">
+                <x-filter.search label="Search hauled lifts" :value="$search" />
+                <x-filter.select name="status" label="Status" :selected="$filters['status'] ?? null"
+                    :options="collect($filterOptions['statuses'])->mapWithKeys(fn (string $status): array => [$status => ucwords(str_replace('_', ' ', $status))])" />
+                <x-filter.date name="lift_date" label="Lift date" :value="$filters['lift_date'] ?? null" />
+                <x-filter.select name="fuel_type_id" label="Fuel Type" :options="$filterOptions['fuelTypes']->pluck('name', 'id')" :selected="$filters['fuel_type_id'] ?? null" />
+                <x-filter.select name="driver_user_id" label="Driver" :options="$filterOptions['drivers']->pluck('name', 'id')" :selected="$filters['driver_user_id'] ?? null" />
+                <x-filter.select name="truck_id" label="Truck" :options="$truckFilterOptions" :selected="$filters['truck_id'] ?? null" />
+            </x-filter.bar>
 
             <div class="table-wrap dispatch-table-wrap">
                 <table class="admin-table dispatch-table">
@@ -168,7 +138,13 @@
                 </table>
             </div>
         </section>
+
+        <section data-tab-panel="trucks" {{ $activeTab !== 'trucks' ? 'hidden' : '' }}>
+            @include('trucks.partials.tab')
+        </section>
     </div>
+
+    @include('trucks.partials.modals')
 
     <x-admin.modal id="dispatch-lift-add" title="Schedule Lift" size="xl">
         @if ($scheduleFormFailed)

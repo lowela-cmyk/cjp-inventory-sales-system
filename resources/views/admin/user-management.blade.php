@@ -2,6 +2,9 @@
     $activeTab = in_array($activeTab, ['office', 'drivers', 'customers'], true) ? $activeTab : 'office';
     $staffId = fn ($user) => 'EMP-'.str_pad((string) $user->id, 6, '0', STR_PAD_LEFT);
     $driverId = fn ($driver) => $driver->driver_code ?: 'DRV-'.str_pad((string) $driver->id, 6, '0', STR_PAD_LEFT);
+    $filters = $filters ?? [];
+    $filterOptions = $filterOptions ?? ['statuses' => [], 'approvalStatuses' => [], 'locations' => collect(), 'companies' => collect()];
+    $tabFilters = fn (string $tab): array => $tab === $activeTab ? $filters : [];
 @endphp
 
 @component('layouts.admin', ['title' => 'User Management', 'active' => 'user-management'])
@@ -17,9 +20,9 @@
         @endif
 
         <div class="tabs">
-            <button class="tab-button {{ $activeTab === 'office' ? 'is-active' : '' }}" type="button" data-tab-target="office">Office Staff</button>
-            <button class="tab-button {{ $activeTab === 'drivers' ? 'is-active' : '' }}" type="button" data-tab-target="drivers">Drivers</button>
-            <button class="tab-button {{ $activeTab === 'customers' ? 'is-active' : '' }}" type="button" data-tab-target="customers">Customers</button>
+            <button class="tab-button {{ $activeTab === 'office' ? 'is-active' : '' }}" type="button" data-tab-target="office" data-tab-url="{{ route('admin.user-management', ['tab' => 'office']) }}">Office Staff</button>
+            <button class="tab-button {{ $activeTab === 'drivers' ? 'is-active' : '' }}" type="button" data-tab-target="drivers" data-tab-url="{{ route('admin.user-management', ['tab' => 'drivers']) }}">Drivers</button>
+            <button class="tab-button {{ $activeTab === 'customers' ? 'is-active' : '' }}" type="button" data-tab-target="customers" data-tab-url="{{ route('admin.user-management', ['tab' => 'customers']) }}">Customers</button>
         </div>
         <div class="actions-right">
             <a
@@ -30,12 +33,14 @@
         </div>
 
         <section data-tab-panel="office" {{ $activeTab !== 'office' ? 'hidden' : '' }}>
-            <div class="toolbar toolbar-narrow">
-                <input type="search" placeholder="Search..." aria-label="Search office staff">
-                <button class="btn btn-primary" type="button" data-sort-table="2">Position</button>
-                <button class="btn btn-primary" type="button" data-sort-table="6">Contact</button>
-                <button class="btn btn-primary" type="button" data-modal-open="staff-add">+ Add Office Staff</button>
-            </div>
+            <x-filter.bar class="toolbar-narrow" :action="route('admin.user-management')">
+                <input type="hidden" name="tab" value="office">
+                <x-filter.search label="Search office staff" :value="$tabFilters('office')['search'] ?? null" />
+                <x-filter.select name="role" label="Position" :options="$officeRoles" :selected="$tabFilters('office')['role'] ?? null" />
+                <x-filter.select name="status" label="Account Status" :options="$filterOptions['statuses']" :selected="$tabFilters('office')['status'] ?? null" />
+                <x-filter.select name="approval_status" label="Approval Status" :options="$filterOptions['approvalStatuses']" :selected="$tabFilters('office')['approval_status'] ?? null" />
+                <button class="btn btn-secondary btn-wide" type="button" data-modal-open="staff-add">+ Add Office Staff</button>
+            </x-filter.bar>
             <div class="table-wrap">
                 <table class="admin-table">
                     <thead><tr><th>Staff ID</th><th>Name</th><th>Position</th><th>Account Status</th><th>Approval Status</th><th>Email</th><th>Contact Number</th><th>Actions</th></tr></thead>
@@ -65,12 +70,13 @@
         </section>
 
         <section data-tab-panel="drivers" {{ $activeTab !== 'drivers' ? 'hidden' : '' }}>
-            <div class="toolbar toolbar-narrow">
-                <input type="search" placeholder="Search..." aria-label="Search drivers">
-                <button class="btn btn-primary" type="button" data-sort-table="2">License</button>
-                <button class="btn btn-primary" type="button" data-sort-table="6">Contact</button>
-                <button class="btn btn-primary" type="button" data-modal-open="driver-add">+ Add Driver</button>
-            </div>
+            <x-filter.bar class="toolbar-narrow" :action="route('admin.user-management')">
+                <input type="hidden" name="tab" value="drivers">
+                <x-filter.search label="Search drivers" :value="$tabFilters('drivers')['search'] ?? null" />
+                <x-filter.select name="status" label="Account Status" :options="$filterOptions['statuses']" :selected="$tabFilters('drivers')['status'] ?? null" />
+                <x-filter.select name="approval_status" label="Approval Status" :options="$filterOptions['approvalStatuses']" :selected="$tabFilters('drivers')['approval_status'] ?? null" />
+                <button class="btn btn-secondary btn-wide" type="button" data-modal-open="driver-add">+ Add Driver</button>
+            </x-filter.bar>
             <div class="table-wrap">
                 <table class="admin-table">
                     <thead><tr><th>Driver ID</th><th>Name</th><th>License No.</th><th>Account Status</th><th>Approval Status</th><th>Email</th><th>Contact Number</th><th>Actions</th></tr></thead>
@@ -100,12 +106,13 @@
         </section>
 
         <section data-tab-panel="customers" {{ $activeTab !== 'customers' ? 'hidden' : '' }}>
-            <div class="toolbar toolbar-narrow">
-                <input type="search" placeholder="Search..." aria-label="Search customers">
-                <button class="btn btn-primary" type="button" data-sort-table="3">Location</button>
-                <button class="btn btn-primary" type="button" data-sort-table="2">Company</button>
-                <button class="btn btn-primary" type="button" data-modal-open="customer-add">+ Add Customer</button>
-            </div>
+            <x-filter.bar class="toolbar-narrow" :action="route('admin.user-management')">
+                <input type="hidden" name="tab" value="customers">
+                <x-filter.search label="Search customers" :value="$tabFilters('customers')['search'] ?? null" />
+                <x-filter.select name="location" label="Location" :options="$filterOptions['locations']" :selected="$tabFilters('customers')['location'] ?? null" />
+                <x-filter.select name="company" label="Company" :options="$filterOptions['companies']" :selected="$tabFilters('customers')['company'] ?? null" />
+                <button class="btn btn-secondary btn-wide" type="button" data-modal-open="customer-add">+ Add Customer</button>
+            </x-filter.bar>
             <div class="table-wrap">
                 <table class="admin-table">
                     <thead><tr><th>Customer ID</th><th>Customer Name</th><th>Company Name</th><th>Location</th><th>Email</th><th>Contact Number</th><th>Actions</th></tr></thead>

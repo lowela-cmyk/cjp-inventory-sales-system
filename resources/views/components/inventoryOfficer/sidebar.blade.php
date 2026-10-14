@@ -3,9 +3,9 @@
 @php
     $user = auth()->user();
     $links = [
-        ['route' => 'inventory-officer.inventory', 'label' => 'Inventory'],
-        ['route' => 'inventory-officer.ledger', 'label' => 'Ledger'],
-        ['route' => 'inventory-officer.alerts', 'label' => 'Alerts'],
+        ['route' => 'inventory-officer.inventory', 'module' => 'inventory', 'label' => 'Inventory'],
+        ['route' => 'inventory-officer.ledger', 'module' => 'ledger', 'label' => 'Ledger'],
+        ['route' => 'inventory-officer.alerts', 'module' => 'alerts', 'label' => 'Alerts'],
     ];
 @endphp
 
@@ -20,9 +20,7 @@
 
     <nav class="side-nav inventory-officer-nav" aria-label="Inventory officer navigation">
         @foreach ($links as $link)
-            <a class="side-link {{ request()->routeIs($link['route']) || request()->routeIs($link['route'] . '.*') ? 'is-active' : '' }}" href="{{ route($link['route']) }}">
-                {{ $link['label'] }}
-            </a>
+            <x-sidebar-link :route="$link['route']" :label="$link['label']" :module="$link['module'] ?? null" />
         @endforeach
     </nav>
 

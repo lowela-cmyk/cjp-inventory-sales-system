@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Services\StockOutReleaseService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -115,20 +116,13 @@ class StockOutVisibilityTest extends TestCase
             ->assertViewHas('transactions', fn ($rows): bool => $rows->contains(fn (array $row): bool => $row['purchase_code'] === 'PUR-LFT-DIRECT' && $row['lifted_liters'] === '5,000 L'));
     }
 
-    public function test_manual_garage_stock_out_appears_in_stock_out_and_reduces_inventory(): void
+    public function test_automatic_garage_stock_out_appears_in_stock_out_and_reduces_inventory(): void
     {
         $records = $this->records();
         $this->receiveIntoGarage($records, 20000);
         [$saleId, $saleItemId] = $this->deliveredUnfulfilledSale($records, 'SO-MANUAL-GARAGE', 3000);
 
-        $this->actingAs($records['inventory'])->post(route('inventory-officer.inventory.stock-out.store'), [
-            'idempotency_key' => (string) Str::uuid(),
-            'source_type' => 'garage',
-            'sale_item_id' => $saleItemId,
-            'storage_location_id' => $records['garage'],
-            'quantity_liters' => 3000,
-            'stock_out_at' => '2026-10-12 08:30:00',
-        ])->assertRedirect(route('inventory-officer.inventory.stock-out'))->assertSessionHasNoErrors();
+        $this->assertNull($this->release($records, $saleItemId, 3000, '2026-10-12 08:30:00'));
 
         $row = $this->stockOutRow($records['admin'], 'admin.inventory.stock-out', [], 'SLS-SO-MANUAL-GARAGE');
         $this->assertSame('10/12/2026 08:30 AM', $row[1]);
@@ -141,20 +135,13 @@ class StockOutVisibilityTest extends TestCase
         $this->assertSame('3,000 L', $cards['Stock-Out Today']);
     }
 
-    public function test_manual_direct_depot_release_appears_in_stock_out(): void
+    public function test_automatic_direct_depot_release_appears_in_stock_out(): void
     {
         $records = $this->records();
         [$saleId, $saleItemId] = $this->deliveredUnfulfilledSale($records, 'SO-MANUAL-DEPOT', 4000);
         $allocationId = $this->completedHaul($records, 'LFT-MANUAL', 4000, ['destination_type' => 'customer', 'sale_id' => $saleId, 'customer_id' => $records['customer']]);
 
-        $this->actingAs($records['inventory'])->post(route('inventory-officer.inventory.stock-out.store'), [
-            'idempotency_key' => (string) Str::uuid(),
-            'source_type' => 'depot',
-            'sale_item_id' => $saleItemId,
-            'haul_allocation_id' => $allocationId,
-            'quantity_liters' => 4000,
-            'stock_out_at' => '2026-10-12 08:45:00',
-        ])->assertRedirect(route('inventory-officer.inventory.stock-out'))->assertSessionHasNoErrors();
+        $this->assertNull($this->release($records, $saleItemId, 4000, '2026-10-12 08:45:00'));
 
         $row = $this->stockOutRow($records['inventory'], 'inventory-officer.inventory.stock-out', ['depot_id' => $records['depot']], 'SLS-SO-MANUAL-DEPOT');
         $this->assertSame('4,000.00', $row[5]);
@@ -335,5 +322,17 @@ class StockOutVisibilityTest extends TestCase
             });
 
         return $cards;
+    }
+
+    /**
+     * Stock-out is automatic on delivery: release through the same service the sale flow uses.
+     *
+     * @param  array<string, mixed>  $records
+     */
+    private function release(array $records, int $saleItemId, float $quantity, string $stockOutAt): ?string
+    {
+        return DB::transaction(fn (): ?string => app(StockOutReleaseService::class)->releaseSaleItemFromGarage(
+            $saleItemId, $quantity, $stockOutAt, (int) $records['inventory']->id, allowPreparation: false,
+        ));
     }
 }

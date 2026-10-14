@@ -103,6 +103,11 @@ document.addEventListener('click', (event) => {
         if (exportLink) {
             exportLink.href = exportLink.dataset.tabExportUrl.replace('__TAB__', encodeURIComponent(target));
         }
+
+        // Keep the address bar on the active tab so a reload, filter or form redirect returns to it.
+        if (tabButton.dataset.tabUrl) {
+            window.history.replaceState(null, '', tabButton.dataset.tabUrl);
+        }
     }
 
     if (event.target.closest('[data-sidebar-toggle]')) {

@@ -294,8 +294,7 @@ class PurchaseService
                     $row->depot_name,
                     $this->formatNumber($row->quantity_ordered_liters),
                     $this->formatNumber($row->hauled_liters),
-                    $this->formatNumber($row->garage_allocated_liters),
-                    $this->formatNumber($row->direct_allocated_liters),
+                    // Garage / direct allocation stay in the details and the lifting logic; the table hides them.
                     $this->formatNumber($row->received_liters),
                     $this->label($inventoryStatus),
                     $this->formatNumber($row->unit_cost),

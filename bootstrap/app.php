@@ -3,6 +3,7 @@
 use App\Http\Middleware\EnsureUserHasRole;
 use App\Http\Middleware\RecordActivity;
 use App\Http\Middleware\SecurityHeaders;
+use App\Http\Middleware\TrackModuleView;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -16,7 +17,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->trustProxies(at: '*');
         $middleware->append(SecurityHeaders::class);
-        $middleware->web(append: [RecordActivity::class]);
+        $middleware->web(append: [RecordActivity::class, TrackModuleView::class]);
         $middleware->alias([
             'role' => EnsureUserHasRole::class,
         ]);

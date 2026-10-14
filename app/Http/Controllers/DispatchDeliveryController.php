@@ -28,7 +28,15 @@ class DispatchDeliveryController extends Controller
 
     public function index(Request $request, string $state = 'schedule'): View
     {
-        $data = $request->validate([
+        $activeTab = in_array($state, ['hauled', 'trucks'], true) ? $state : 'schedule';
+        // The Trucks tab filters the fleet (truck availability), the other tabs filter lifts.
+        $truckFilters = $activeTab === 'trucks'
+            ? $request->validate([
+                'search' => ['nullable', 'string', 'max:100'],
+                'status' => ['nullable', Rule::in(TruckAvailabilityService::DISPLAY_STATUSES)],
+            ])
+            : [];
+        $data = $activeTab === 'trucks' ? [] : $request->validate([
             'search' => ['nullable', 'string', 'max:100'],
             'status' => ['nullable', Rule::in(['scheduled', 'in_transit', 'lifted', 'completed', 'cancelled'])],
             'fuel_type_id' => [
@@ -50,9 +58,17 @@ class DispatchDeliveryController extends Controller
         ];
         $rows = $this->haulRows($search === '' ? null : $search, $filters);
 
+        $truckSearch = trim((string) ($truckFilters['search'] ?? ''));
+
         return view('dispatch.fuel-lifting', [
-            'activeTab' => $state === 'hauled' ? 'hauled' : 'schedule',
+            'activeTab' => $activeTab,
             'search' => $search === '' ? null : $search,
+            'truckDirectory' => $this->truckAvailability->directory($truckSearch, $truckFilters['status'] ?? null),
+            'truckSearch' => $truckSearch === '' ? null : $truckSearch,
+            'truckStatusFilter' => $truckFilters['status'] ?? null,
+            'truckTypes' => TruckAvailabilityService::TRUCK_TYPES,
+            'truckStatuses' => TruckAvailabilityService::DISPLAY_STATUSES,
+            'managedStatuses' => TruckAvailabilityService::MANAGED_STATUSES,
             'scheduledRows' => $rows->whereIn('raw_status', self::ACTIVE_HAUL_STATUSES)->values(),
             'deliveredRows' => $rows->whereIn('raw_status', ['completed', 'cancelled'])->values(),
             'filters' => $filters,

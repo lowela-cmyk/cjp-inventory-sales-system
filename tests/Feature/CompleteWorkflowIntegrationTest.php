@@ -90,12 +90,11 @@ class CompleteWorkflowIntegrationTest extends TestCase
         ]);
 
         $this->actingAs($records['inventoryOfficer'])
-            ->from(route('inventory-officer.inventory.stock-out'))
-            ->post(route('inventory-officer.inventory.stock-out.store'), $this->stockOutPayload($records, $sale, [
+            // Stock-out is automatic on delivery; the manual entry no longer exists.
+            ->post('/inventory-officer/inventory/stock-out', $this->stockOutPayload($records, $sale, [
                 'quantity_liters' => 10000,
             ]))
-            ->assertRedirect(route('inventory-officer.inventory.stock-out'))
-            ->assertSessionHasErrors('stock_out');
+            ->assertStatus(405);
 
         $this->assertSame(15000.0, $this->garageBalance($records));
         $this->assertSame(1, DB::table('stock_outs')->where('sale_id', $sale['saleId'])->count());
@@ -227,10 +226,9 @@ class CompleteWorkflowIntegrationTest extends TestCase
             ->assertSessionHasErrors('stock_in');
 
         $this->actingAs($records['inventoryOfficer'])
-            ->from(route('inventory-officer.inventory.stock-out'))
-            ->post(route('inventory-officer.inventory.stock-out.store'), $this->stockOutPayload($records, $cancelledSale))
-            ->assertRedirect(route('inventory-officer.inventory.stock-out'))
-            ->assertSessionHasErrors('stock_out');
+            // Stock-out is automatic on delivery; the manual entry no longer exists.
+            ->post('/inventory-officer/inventory/stock-out', $this->stockOutPayload($records, $cancelledSale))
+            ->assertStatus(405);
 
         $this->actingAs($records['salesOfficer'])
             ->from(route('sales-officer.sales'))

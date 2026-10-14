@@ -34,14 +34,35 @@ class AdminUserManagementController extends Controller
 
     public function index(Request $request): View
     {
+        $activeTab = $request->query('tab', session('user_management_tab', 'office'));
+        $activeTab = in_array($activeTab, ['office', 'drivers', 'customers'], true) ? $activeTab : 'office';
+        $data = $request->validate([
+            'search' => ['nullable', 'string', 'max:100'],
+            'role' => ['nullable', Rule::in(array_keys(self::OFFICE_ROLES))],
+            'status' => ['nullable', Rule::in(self::STATUSES)],
+            'approval_status' => ['nullable', Rule::in(self::APPROVAL_STATUSES)],
+            'location' => ['nullable', 'string', 'max:255'],
+            'company' => ['nullable', 'string', 'max:255'],
+        ]);
+        // Filters belong to the tab whose toolbar submitted them; the other tabs stay unfiltered.
+        $filters = array_filter($data, fn (mixed $value): bool => $value !== null && $value !== '');
+        $filtersFor = fn (string $tab): array => $tab === $activeTab ? $filters : [];
+
         return view('admin.user-management', [
-            'staff' => $this->staffRows(25),
-            'drivers' => $this->driverRows(25),
-            'customers' => $this->customerRows(25),
+            'staff' => $this->staffRows(25, $filtersFor('office')),
+            'drivers' => $this->driverRows(25, $filtersFor('drivers')),
+            'customers' => $this->customerRows(25, $filtersFor('customers')),
             'officeRoles' => self::OFFICE_ROLES,
             'roles' => self::ROLES,
             'statuses' => self::STATUSES,
-            'activeTab' => $request->query('tab', session('user_management_tab', 'office')),
+            'activeTab' => $activeTab,
+            'filters' => $filters,
+            'filterOptions' => [
+                'statuses' => array_combine(self::STATUSES, array_map('ucfirst', self::STATUSES)),
+                'approvalStatuses' => array_combine(self::APPROVAL_STATUSES, array_map('ucfirst', self::APPROVAL_STATUSES)),
+                'locations' => DB::table('customers')->whereNotNull('location')->where('location', '!=', '')->distinct()->orderBy('location')->pluck('location', 'location'),
+                'companies' => DB::table('customers')->whereNotNull('company_name')->where('company_name', '!=', '')->distinct()->orderBy('company_name')->pluck('company_name', 'company_name'),
+            ],
         ]);
     }
 
@@ -415,10 +436,19 @@ class AdminUserManagementController extends Controller
             ->with('toast_type', 'success');
     }
 
-    private function staffRows(?int $perPage = null)
+    /**
+     * @param  array<string, string>  $filters
+     */
+    private function staffRows(?int $perPage = null, array $filters = [])
     {
         $query = User::query()
             ->whereIn('role', array_keys(self::OFFICE_ROLES))
+            ->when($filters['search'] ?? null, fn ($query, string $term) => $query->where(fn ($query) => $query
+                ->where('name', 'like', '%'.$term.'%')->orWhere('email', 'like', '%'.$term.'%')
+                ->orWhere('phone', 'like', '%'.$term.'%')))
+            ->when($filters['role'] ?? null, fn ($query, string $role) => $query->where('role', $role))
+            ->when($filters['status'] ?? null, fn ($query, string $status) => $query->where('status', $status))
+            ->when($filters['approval_status'] ?? null, fn ($query, string $status) => $query->where('approval_status', $status))
             ->orderBy('id');
 
         return $perPage !== null
@@ -426,11 +456,20 @@ class AdminUserManagementController extends Controller
             : $query->get();
     }
 
-    private function driverRows(?int $perPage = null)
+    /**
+     * @param  array<string, string>  $filters
+     */
+    private function driverRows(?int $perPage = null, array $filters = [])
     {
         $query = User::query()
             ->leftJoin('driver_profiles', 'driver_profiles.user_id', '=', 'users.id')
             ->where('users.role', 'driver')
+            ->when($filters['search'] ?? null, fn ($query, string $term) => $query->where(fn ($query) => $query
+                ->where('users.name', 'like', '%'.$term.'%')->orWhere('users.email', 'like', '%'.$term.'%')
+                ->orWhere('users.phone', 'like', '%'.$term.'%')->orWhere('driver_profiles.driver_code', 'like', '%'.$term.'%')
+                ->orWhere('driver_profiles.license_number', 'like', '%'.$term.'%')))
+            ->when($filters['status'] ?? null, fn ($query, string $status) => $query->where('users.status', $status))
+            ->when($filters['approval_status'] ?? null, fn ($query, string $status) => $query->where('users.approval_status', $status))
             ->orderBy('users.id');
 
         $columns = [
@@ -444,9 +483,18 @@ class AdminUserManagementController extends Controller
             : $query->get($columns);
     }
 
-    private function customerRows(?int $perPage = null)
+    /**
+     * @param  array<string, string>  $filters
+     */
+    private function customerRows(?int $perPage = null, array $filters = [])
     {
         $query = DB::table('customers')
+            ->when($filters['search'] ?? null, fn ($query, string $term) => $query->where(fn ($query) => $query
+                ->where('name', 'like', '%'.$term.'%')->orWhere('company_name', 'like', '%'.$term.'%')
+                ->orWhere('email', 'like', '%'.$term.'%')->orWhere('phone', 'like', '%'.$term.'%')
+                ->orWhere('location', 'like', '%'.$term.'%')))
+            ->when($filters['location'] ?? null, fn ($query, string $location) => $query->where('location', $location))
+            ->when($filters['company'] ?? null, fn ($query, string $company) => $query->where('company_name', $company))
             ->orderBy('id');
 
         return $perPage !== null

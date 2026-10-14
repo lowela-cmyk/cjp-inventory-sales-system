@@ -2,60 +2,36 @@
 
 namespace App\Http\Controllers;
 
-use App\Services\InventoryLedgerService;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 class AdminMonitoringController extends Controller
 {
-    public function ledger(Request $request, InventoryLedgerService $ledgerService): View
-    {
-        $search = $this->validatedSearch($request);
-        $rows = $ledgerService->rows($search);
-
-        return view('admin.ledger', [
-            'search' => $search,
-            'ledger' => $rows['ledger'],
-            'transactions' => $rows['transactions'],
-            'latestBalances' => $rows['latestBalances'],
-        ]);
-    }
+    private const ALERT_TYPES = ['inventory', 'purchase', 'haul', 'delivery', 'payment', 'receivable', 'discrepancy'];
 
     public function alerts(Request $request): View
     {
-        $search = $this->validatedSearch($request);
-        $alerts = $this->alertRows($search, null, (int) $request->user()->id, (string) $request->user()->role);
-
-        return view('admin.alerts', compact('search', 'alerts'));
+        return $this->alertsPage($request, 'admin.alerts', null);
     }
 
     public function inventoryOfficerAlerts(Request $request): View
     {
-        $search = $this->validatedSearch($request);
-        $alerts = $this->alertRows($search, ['inventory', 'purchase', 'haul', 'discrepancy'], (int) $request->user()->id, (string) $request->user()->role);
-
-        return view('inventory-officer.alerts', compact('search', 'alerts'));
+        return $this->alertsPage($request, 'inventory-officer.alerts', ['inventory', 'purchase', 'haul', 'discrepancy']);
     }
 
     public function salesOfficerAlerts(Request $request): View
     {
-        $search = $this->validatedSearch($request);
-        $alerts = $this->alertRows($search, ['payment', 'receivable'], (int) $request->user()->id, (string) $request->user()->role);
-
-        return view('sales-officer.alerts', compact('search', 'alerts'));
+        return $this->alertsPage($request, 'sales-officer.alerts', ['payment', 'receivable']);
     }
 
     public function dispatchAlerts(Request $request): View
     {
-        $search = $this->validatedSearch($request);
-        $alerts = $this->alertRows($search, ['haul', 'delivery'], (int) $request->user()->id, (string) $request->user()->role);
-
-        return view('dispatch.alerts', compact('search', 'alerts'));
+        return $this->alertsPage($request, 'dispatch.alerts', ['haul', 'delivery']);
     }
-
 
     public function markAlertRead(Request $request, int $alert): RedirectResponse
     {
@@ -83,8 +59,9 @@ class AdminMonitoringController extends Controller
 
     /**
      * @param  array<int, string>|null  $types
+     * @param  array{read?: ?string, severity?: ?string, type?: ?string}  $filters
      */
-    private function alertRows(?string $search, ?array $types = null, ?int $userId = null, ?string $role = null)
+    private function alertRows(?string $search, ?array $types = null, ?int $userId = null, ?string $role = null, array $filters = [])
     {
         return DB::table('alerts')
             ->leftJoin('alert_reads', function ($join) use ($userId): void {
@@ -92,6 +69,10 @@ class AdminMonitoringController extends Controller
                     ->where('alert_reads.user_id', '=', $userId ?? 0);
             })
             ->when($types, fn (Builder $query, array $types): Builder => $query->whereIn('type', $types))
+            ->when($filters['type'] ?? null, fn (Builder $query, string $type): Builder => $query->where('alerts.type', $type))
+            ->when($filters['severity'] ?? null, fn (Builder $query, string $severity): Builder => $query->where('alerts.severity', $severity))
+            ->when(($filters['read'] ?? null) === 'read', fn (Builder $query): Builder => $query->whereNotNull('alert_reads.read_at'))
+            ->when(($filters['read'] ?? null) === 'unread', fn (Builder $query): Builder => $query->whereNull('alert_reads.read_at'))
             ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
                 'alerts.alert_code',
                 'alerts.type',
@@ -130,12 +111,42 @@ class AdminMonitoringController extends Controller
         };
     }
 
+    /**
+     * @param  array<int, string>|null  $types  alert types the role sees (null = all)
+     */
+    private function alertsPage(Request $request, string $view, ?array $types): View
+    {
+        $search = $this->validatedSearch($request);
+        $filters = $this->alertFilters($request, $types);
 
+        return view($view, [
+            'search' => $search,
+            'alerts' => $this->alertRows($search, $types, (int) $request->user()->id, (string) $request->user()->role, $filters),
+            'filters' => $filters,
+            'typeOptions' => collect($types ?? self::ALERT_TYPES)->mapWithKeys(fn (string $type): array => [$type => $this->label($type)])->all(),
+        ]);
+    }
 
+    /**
+     * Status (read/unread), severity and type filters for an alerts page.
+     *
+     * @param  array<int, string>|null  $types
+     * @return array{read: ?string, severity: ?string, type: ?string}
+     */
+    private function alertFilters(Request $request, ?array $types): array
+    {
+        $data = $request->validate([
+            'read' => ['nullable', Rule::in(['read', 'unread'])],
+            'severity' => ['nullable', Rule::in(['info', 'warning', 'critical'])],
+            'type' => ['nullable', Rule::in($types ?? self::ALERT_TYPES)],
+        ]);
 
-
-
-
+        return [
+            'read' => $data['read'] ?? null,
+            'severity' => $data['severity'] ?? null,
+            'type' => $data['type'] ?? null,
+        ];
+    }
 
     private function validatedSearch(Request $request): ?string
     {
@@ -165,25 +176,8 @@ class AdminMonitoringController extends Controller
         return ucwords(str_replace('_', ' ', (string) $value));
     }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     private function formatDateTime(mixed $date): string
     {
         return $date ? date('n/j/Y h:i A', strtotime((string) $date)) : 'N/A';
     }
-
-
-
 }

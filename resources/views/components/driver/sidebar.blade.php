@@ -15,9 +15,7 @@
     </a>
 
     <nav class="side-nav driver-nav" aria-label="Driver navigation">
-        <a class="side-link {{ request()->routeIs('driver.fuel-lifting*') ? 'is-active' : '' }}" href="{{ route('driver.fuel-lifting') }}">
-            Fuel Lifting
-        </a>
+        <x-sidebar-link route="driver.fuel-lifting" label="Fuel Lifting" module="fuel-lifting" />
     </nav>
 
     <div class="sidebar-account">

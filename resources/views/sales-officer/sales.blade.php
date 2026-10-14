@@ -11,6 +11,9 @@
         'quantity_liters' => old('quantity_liters'),
         'unit_price' => old('unit_price'),
     ]]);
+    $filters = $filters ?? [];
+    $receivableFilters = $activeTab === 'receivables' ? $filters : [];
+    $customerFilters = $activeTab === 'customers' ? $filters : [];
     $paymentMethodLabels = [
         'cash_on_delivery' => 'COD',
         'cheque' => 'Cheque',
@@ -31,8 +34,8 @@
         @endif
 
         <div class="tabs">
-            <button class="tab-button {{ $activeTab === 'receivables' ? 'is-active' : '' }}" type="button" data-tab-target="receivables" data-heading="Receivables">Receivables</button>
-            <button class="tab-button {{ $activeTab === 'customers' ? 'is-active' : '' }}" type="button" data-tab-target="customers" data-heading="Customers">Customers</button>
+            <button class="tab-button {{ $activeTab === 'receivables' ? 'is-active' : '' }}" type="button" data-tab-target="receivables" data-tab-url="{{ route($salesRoutePrefix.'.sales') }}" data-heading="Receivables">Receivables</button>
+            <button class="tab-button {{ $activeTab === 'customers' ? 'is-active' : '' }}" type="button" data-tab-target="customers" data-tab-url="{{ route($salesRoutePrefix.'.sales.customers') }}" data-heading="Customers">Customers</button>
         </div>
         <div class="actions-right">
             <button class="btn btn-secondary" type="button" data-export-table>Export</button>
@@ -51,13 +54,14 @@
         @endif
 
         <section data-tab-panel="receivables" @if ($activeTab !== 'receivables') hidden @endif>
-            <form class="toolbar toolbar-narrow" method="GET" action="{{ route($salesRoutePrefix.'.sales') }}">
-                <input type="search" name="search" placeholder="Search..." aria-label="Search receivables" value="{{ $search }}">
-                <button class="btn btn-primary" type="submit">Date</button>
-                <button class="btn btn-primary" type="submit">Depot</button>
-                <button class="btn btn-primary" type="submit">Fuel Type (All)</button>
-                <button class="btn btn-primary" type="button" data-modal-open="so-sales-add">+ Record Sales</button>
-            </form>
+            <x-filter.bar class="toolbar-narrow" :action="route($salesRoutePrefix.'.sales')">
+                <x-filter.search label="Search receivables" :value="$search" />
+                <x-filter.select name="status" label="Status" :options="$filterOptions['receivableStatuses']" :selected="$receivableFilters['status'] ?? null" />
+                <x-filter.select name="delivery_status" label="Delivery Status" :options="$filterOptions['deliveryStatuses']" :selected="$receivableFilters['delivery_status'] ?? null" />
+                <x-filter.date name="date" label="Transaction date" :value="$receivableFilters['date'] ?? null" />
+                <x-filter.select name="fuel_type_id" label="Fuel Type" :options="$fuelTypes->pluck('name', 'id')" :selected="$receivableFilters['fuel_type_id'] ?? null" />
+                <button class="btn btn-secondary btn-wide" type="button" data-modal-open="so-sales-add">+ Record Sales</button>
+            </x-filter.bar>
             <div class="table-wrap">
                 <table class="admin-table">
                     <thead>
@@ -117,13 +121,12 @@
         </section>
 
         <section data-tab-panel="customers" @if ($activeTab !== 'customers') hidden @endif>
-            <form class="toolbar toolbar-narrow" method="GET" action="{{ route($salesRoutePrefix.'.sales.customers') }}">
-                <input type="search" name="search" placeholder="Search..." aria-label="Search customers" value="{{ $search }}">
-                <button class="btn btn-primary" type="submit">Date</button>
-                <button class="btn btn-primary" type="submit">Depot</button>
-                <button class="btn btn-primary" type="submit">Fuel Type (All)</button>
-                <button class="btn btn-primary" type="button" data-modal-open="so-customer-add">+ Add Customers</button>
-            </form>
+            <x-filter.bar class="toolbar-narrow" :action="route($salesRoutePrefix.'.sales.customers')">
+                <x-filter.search label="Search customers" :value="$search" />
+                <x-filter.select name="status" label="Status" :options="$filterOptions['accountStatuses']" :selected="$customerFilters['status'] ?? null" />
+                <x-filter.select name="location" label="Location" :options="$filterOptions['locations']" :selected="$customerFilters['location'] ?? null" />
+                <button class="btn btn-secondary btn-wide" type="button" data-modal-open="so-customer-add">+ Add Customers</button>
+            </x-filter.bar>
             <div class="table-wrap">
                 <table class="admin-table">
                     <thead>

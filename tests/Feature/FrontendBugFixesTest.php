@@ -156,7 +156,7 @@ class FrontendBugFixesTest extends TestCase
         $this->assertStringContainsString('.inventory-table {', $styles);
         $this->assertStringContainsString('width: max-content;', $styles);
         $this->assertStringContainsString('inventory-table inventory-table-actions', $inventory);
-        $this->assertStringContainsString('View Receipt', $inventory);
+        $this->assertStringContainsString('inventory-receipt-cell', $inventory);
     }
 
     public function test_alert_pages_use_full_width_responsive_shared_layout(): void

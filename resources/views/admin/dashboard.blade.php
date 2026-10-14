@@ -57,7 +57,7 @@
 
         <section class="chart-panel">
             <div class="chart-header"><h2>Unlifted Fuel Monitoring</h2></div>
-            <form class="dashboard-filter-row" method="GET" action="{{ route('admin.dashboard') }}">
+            <form class="dashboard-filter-row" method="GET" action="{{ route('admin.dashboard') }}" data-auto-filter>
                 <input type="date" name="unlifted_date_from" value="{{ $unliftedFuelFilters['date_from'] ?? '' }}" aria-label="Purchase date from">
                 <input type="date" name="unlifted_date_to" value="{{ $unliftedFuelFilters['date_to'] ?? '' }}" aria-label="Purchase date to">
                 <select name="unlifted_depot_id" aria-label="Filter by depot">
@@ -78,7 +78,6 @@
                         <option value="{{ $status }}" @selected(($unliftedFuelFilters['lifting_status'] ?? '') === $status)>{{ $status === 'partial' ? 'Partially Lifted' : ($status === 'lifted' ? 'Fully Lifted' : 'Unlifted') }}</option>
                     @endforeach
                 </select>
-                <button class="btn btn-primary" type="submit">Apply</button>
             </form>
             <div class="unlifted-fuel-chart">
                 <canvas data-unlifted-fuel-chart data-chart='@json($unliftedFuelChart)' aria-label="Purchased lifted and unlifted fuel" role="img"></canvas>
@@ -146,7 +145,7 @@
 
         <section class="chart-panel">
             <div class="chart-header"><h2>Inventory Variance</h2></div>
-            <form class="dashboard-filter-row dashboard-filter-row-variance" method="GET" action="{{ route('admin.dashboard') }}">
+            <form class="dashboard-filter-row dashboard-filter-row-variance" method="GET" action="{{ route('admin.dashboard') }}" data-auto-filter>
                 <input type="date" name="variance_date_from" value="{{ $inventoryVarianceFilters['date_from'] ?? '' }}" aria-label="Sale date from">
                 <input type="date" name="variance_date_to" value="{{ $inventoryVarianceFilters['date_to'] ?? '' }}" aria-label="Sale date to">
                 <select name="variance_fuel_type_id" aria-label="Filter variance by fuel type">
@@ -167,7 +166,6 @@
                         <option value="{{ $status }}" @selected(($inventoryVarianceFilters['variance_status'] ?? '') === $status)>{{ $status === 'matched' ? 'Matched' : 'Requires Verification' }}</option>
                     @endforeach
                 </select>
-                <button class="btn btn-primary" type="submit">Apply</button>
             </form>
             <div class="inventory-variance-chart">
                 <canvas data-inventory-variance-chart data-chart='@json($inventoryVarianceChart)' aria-label="Matched stock-out and receivable transactions versus variances" role="img"></canvas>

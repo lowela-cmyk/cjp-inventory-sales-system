@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\User;
 use App\Services\AIDataPreparationService;
 use App\Services\DashboardSummaryService;
+use App\Services\StockOutReleaseService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
@@ -94,12 +95,11 @@ class IntegrationTestingTest extends TestCase
             'stock_out_at' => '2026-09-04 13:00:00',
         ]);
         $this->actingAs($records['inventoryOfficer'])
-            ->from(route('inventory-officer.inventory.stock-out'))
-            ->post(route('inventory-officer.inventory.stock-out.store'), array_merge($firstStockOut, [
+            // Stock-out is automatic on delivery; the manual entry no longer exists.
+            ->post('/inventory-officer/inventory/stock-out', array_merge($firstStockOut, [
                 'idempotency_key' => (string) Str::uuid(),
             ]))
-            ->assertRedirect(route('inventory-officer.inventory.stock-out'))
-            ->assertSessionHasErrors('stock_out');
+            ->assertStatus(405);
         $this->stockOut($records, $garageSale, [
             'quantity_liters' => 25000,
             'stock_out_at' => '2026-09-04 14:00:00',
@@ -251,12 +251,11 @@ class IntegrationTestingTest extends TestCase
             ->assertSessionHasErrors('stock_in');
 
         $this->actingAs($records['inventoryOfficer'])
-            ->from(route('inventory-officer.inventory.stock-out'))
-            ->post(route('inventory-officer.inventory.stock-out.store'), $this->stockOutPayload($records, $cancelledSale, [
+            // Stock-out is automatic on delivery; the manual entry no longer exists.
+            ->post('/inventory-officer/inventory/stock-out', $this->stockOutPayload($records, $cancelledSale, [
                 'quantity_liters' => 1000,
             ]))
-            ->assertRedirect(route('inventory-officer.inventory.stock-out'))
-            ->assertSessionHasErrors('stock_out');
+            ->assertStatus(405);
 
         $this->actingAs($records['salesOfficer'])
             ->from(route('sales-officer.sales'))
@@ -464,9 +463,17 @@ class IntegrationTestingTest extends TestCase
     {
         $payload = $this->stockOutPayload($records, $sale, $overrides);
 
-        $this->actingAs($records['inventoryOfficer'])
-            ->post(route('inventory-officer.inventory.stock-out.store'), $payload)
-            ->assertRedirect(route('inventory-officer.inventory.stock-out'));
+        // Stock-out is automatic on delivery: drive the same release service the sale flow uses.
+        $error = DB::transaction(fn (): ?string => app(StockOutReleaseService::class)->releaseSaleItemFromGarage(
+            (int) $payload['sale_item_id'],
+            (float) $payload['quantity_liters'],
+            (string) $payload['stock_out_at'],
+            (int) $records['inventoryOfficer']->id,
+            isset($payload['storage_location_id']) ? (int) $payload['storage_location_id'] : null,
+            $payload['remarks'] ?? null,
+            allowPreparation: false,
+        ));
+        $this->assertNull($error);
 
         return $payload;
     }

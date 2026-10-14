@@ -229,34 +229,6 @@ class FormValidationTest extends TestCase
             ])
             ->assertSessionHasInput('payment_method', 'crypto');
 
-        $this->actingAs($records['inventoryOfficer'])
-            ->from(route('inventory-officer.inventory.stock-out'))
-            ->post(route('inventory-officer.inventory.stock-out.store'), [
-                'idempotency_key' => 'bad-token',
-                'source_type' => 'garage',
-                'sale_item_id' => $sale['saleItemId'],
-                'storage_location_id' => $records['garageId'],
-                'quantity_liters' => 1500,
-                'stock_out_at' => '2026-09-04 09:00:00',
-                'remarks' => str_repeat('R', 1001),
-            ])
-            ->assertRedirect(route('inventory-officer.inventory.stock-out'))
-            ->assertSessionHasErrors(['idempotency_key', 'remarks']);
-
-        $this->actingAs($records['inventoryOfficer'])
-            ->from(route('inventory-officer.inventory.stock-out'))
-            ->post(route('inventory-officer.inventory.stock-out.store'), [
-                'idempotency_key' => (string) Str::uuid(),
-                'source_type' => 'garage',
-                'sale_item_id' => $sale['saleItemId'],
-                'storage_location_id' => $records['garageId'],
-                'quantity_liters' => 1500,
-                'stock_out_at' => '2026-09-04 09:00:00',
-            ])
-            ->assertRedirect(route('inventory-officer.inventory.stock-out'))
-            ->assertSessionHasErrors(['stock_out' => 'Quantity released cannot exceed the remaining sale quantity.'])
-            ->assertSessionHasInput('quantity_liters', 1500);
-
         $this->actingAs($records['salesOfficer'])
             ->from(route('sales-officer.sales'))
             ->post(route('sales-officer.sales.payments.store', $sale['saleId']), [

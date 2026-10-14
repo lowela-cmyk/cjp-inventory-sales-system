@@ -126,6 +126,17 @@ select {
     background: var(--admin-ink);
 }
 
+/* Red dot: the module has records the user has not seen yet. */
+.nav-dot {
+    flex: none;
+    width: 9px;
+    height: 9px;
+    margin-left: 10px;
+    border-radius: 50%;
+    background: var(--danger);
+    box-shadow: 0 0 0 2px #fff;
+}
+
 .sidebar-account {
     margin-top: auto;
     border-top: 1px solid var(--admin-line);
@@ -241,15 +252,33 @@ select {
     max-width: none;
 }
 
+/* Only the active tab's panel may render: no other display rule can resurrect a hidden panel. */
+[data-tab-panel][hidden] {
+    display: none !important;
+}
+
+/* Shared filter bar (x-filter.bar): white outlined "+" action buttons, a wider primary action. */
+.filter-bar .btn-secondary {
+    background: #fff;
+    color: var(--admin-ink);
+}
+
+.toolbar .btn-wide,
+.filter-bar .btn-wide {
+    flex: 1 1 200px;
+    min-width: 190px;
+}
+
 .toolbar-ledger {
     max-width: none;
 }
 
-/* Admin ledger: full-width table with header and cell content centered beneath each other.
-   Only headers and depot names wrap, so IDs, quantities and status pills stay on one line. */
+/* Ledger and Transaction tabs (every role): full-width table, equal-width columns, header and
+   cell content centered beneath each other. Only headers and depot names wrap. */
 .admin-table.ledger-table {
     width: 100%;
-    table-layout: auto;
+    min-width: 960px;
+    table-layout: fixed;
 }
 
 .admin-table.ledger-table th,
@@ -755,14 +784,45 @@ table td:has(.status-badge) {
     color: var(--danger);
 }
 
-.inventory-withdrawal-cell {
-    min-width: max-content;
+/* Receipt column: the withdrawal receipt(s) uploaded by the driver, or "-" when none. */
+.inventory-receipt-cell {
+    text-align: center !important;
     white-space: nowrap;
 }
 
-.inventory-withdrawal-cell .status-badge { margin-right: 8px; }
-.inventory-withdrawal-cell .btn {
-    min-width: auto;
+.receipt-link {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: #1d4ed8;
+    font: inherit;
+    font-weight: 700;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.receipt-link:hover,
+.receipt-link:focus-visible {
+    color: var(--admin-red);
+}
+
+.receipt-none {
+    color: var(--admin-muted);
+}
+
+.receipt-list {
+    display: grid;
+    gap: 8px;
+    margin: 12px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.receipt-list li {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: baseline;
 }
 
 @media (max-width: 760px) {
@@ -2401,14 +2461,17 @@ table td:has(.status-badge) {
     flex: 1 1 132px;
 }
 
-/* Auto-applied dispatch fuel filters: keep search, date, selects and the action on one row at laptop widths. */
-.dispatch-fuel-filter input[type="search"] {
+/* Auto-applied dispatch and driver fuel filters: keep search, dates and selects on one row at laptop widths. */
+.dispatch-fuel-filter input[type="search"],
+.driver-filter-row input[type="search"] {
     flex: 999 1 180px;
     min-width: 160px;
 }
 
 .dispatch-fuel-filter select,
-.dispatch-fuel-filter input[type="date"] {
+.dispatch-fuel-filter input[type="date"],
+.driver-filter-row select,
+.driver-filter-row input[type="date"] {
     flex: 1 1 136px;
     min-width: 128px;
     padding: 0 10px;

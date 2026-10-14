@@ -4,15 +4,14 @@
     $user = auth()->user();
     $links = [
         ['route' => 'admin.dashboard', 'label' => 'Dashboard'],
-        ['route' => 'admin.inventory', 'label' => 'Inventory'],
-        ['route' => 'admin.ledger', 'label' => 'Ledger'],
-        ['route' => 'admin.fuel-lifting', 'label' => 'Fuel Lifting'],
-        ['route' => 'admin.trucks', 'label' => 'Trucks'],
-        ['route' => 'admin.sales', 'label' => 'Sales'],
+        ['route' => 'admin.inventory', 'module' => 'inventory', 'label' => 'Inventory'],
+        ['route' => 'admin.ledger', 'module' => 'ledger', 'label' => 'Ledger'],
+        ['route' => 'admin.fuel-lifting', 'module' => 'fuel-lifting', 'label' => 'Fuel Lifting'],
+        ['route' => 'admin.sales', 'module' => 'sales', 'label' => 'Sales'],
         ['route' => 'admin.reports', 'label' => 'Reports'],
-        ['route' => 'admin.alerts', 'label' => 'Alerts'],
-        ['route' => 'admin.account-requests', 'label' => 'Account Requests'],
-        ['route' => 'admin.user-management', 'label' => 'User Management'],
+        ['route' => 'admin.alerts', 'module' => 'alerts', 'label' => 'Alerts'],
+        ['route' => 'admin.account-requests', 'module' => 'account-requests', 'label' => 'Account Requests'],
+        ['route' => 'admin.user-management', 'module' => 'user-management', 'label' => 'User Management'],
     ];
 @endphp
 
@@ -27,9 +26,7 @@
 
     <nav class="side-nav" aria-label="Admin navigation">
         @foreach ($links as $link)
-            <a class="side-link {{ request()->routeIs($link['route']) || request()->routeIs($link['route'] . '.*') ? 'is-active' : '' }}" href="{{ route($link['route']) }}">
-                {{ $link['label'] }}
-            </a>
+            <x-sidebar-link :route="$link['route']" :label="$link['label']" :module="$link['module'] ?? null" />
         @endforeach
     </nav>
 

@@ -41,13 +41,9 @@ class AdminFullAccessTest extends TestCase
         ])->assertSessionHasNoErrors()->assertRedirect(route('admin.inventory.stock-in'));
         $this->assertDatabaseHas('inventory_movements', ['reference_id' => $allocationId, 'direction' => 'in', 'created_by' => $r['admin']->id]);
 
-        // Stock-out from the garage for a delivered sale.
-        $saleItemId = $this->deliveredUnfulfilledSale($r, 500);
-        $this->actingAs($r['admin'])->post(route('admin.inventory.stock-out.store'), [
-            'idempotency_key' => (string) Str::uuid(), 'source_type' => 'garage', 'sale_item_id' => $saleItemId,
-            'storage_location_id' => $r['garage'], 'quantity_liters' => 500, 'stock_out_at' => '2026-10-12 09:00:00',
-        ])->assertSessionHasNoErrors()->assertRedirect(route('admin.inventory.stock-out'));
-        $this->assertDatabaseHas('stock_outs', ['sale_item_id' => $saleItemId, 'status' => 'released', 'created_by' => $r['admin']->id]);
+        // Stock-out is recorded automatically by the sale; there is no manual stock-out entry.
+        $this->actingAs($r['admin'])->get(route('admin.inventory.stock-out'))->assertOk()->assertDontSee('+ Record Stock-Out');
+        $this->actingAs($r['admin'])->post('/admin/inventory/stock-out', ['quantity_liters' => 500])->assertStatus(405);
     }
 
     public function test_admin_performs_sales_officer_functions_including_customers_from_the_admin_sales_page(): void
@@ -148,9 +144,9 @@ class AdminFullAccessTest extends TestCase
     {
         $r = $this->records();
 
-        foreach (['admin.dashboard', 'admin.inventory', 'admin.ledger', 'admin.fuel-lifting', 'admin.trucks', 'admin.sales', 'admin.sales.customers',
+        foreach (['admin.dashboard', 'admin.inventory', 'admin.ledger', 'admin.fuel-lifting', 'admin.fuel-lifting.trucks', 'admin.sales', 'admin.sales.customers',
             'admin.reports', 'admin.alerts', 'admin.account-requests', 'admin.user-management',
-            'inventory-officer.inventory', 'sales-officer.sales', 'dispatch.fuel-lifting', 'dispatch.trucks', 'driver.fuel-lifting'] as $route) {
+            'inventory-officer.inventory', 'sales-officer.sales', 'dispatch.fuel-lifting', 'dispatch.fuel-lifting.trucks', 'driver.fuel-lifting'] as $route) {
             $this->actingAs($r['admin'])->get(route($route))->assertOk();
         }
 
@@ -257,20 +253,6 @@ class AdminFullAccessTest extends TestCase
         return DB::table('haul_allocations')->insertGetId([
             'haul_id' => $haulId, 'fuel_type_id' => $r['fuel'], 'destination_type' => 'garage', 'storage_location_id' => $r['garage'],
             'quantity_liters' => $quantity, 'allocated_at' => '2026-10-11 10:00:00', 'status' => 'planned', 'created_at' => now(), 'updated_at' => now(),
-        ]);
-    }
-
-    private function deliveredUnfulfilledSale(array $r, float $quantity): int
-    {
-        $saleId = DB::table('sales')->insertGetId([
-            'sale_code' => 'SLS-ADM-OUT', 'customer_id' => $r['customer'], 'sale_date' => '2026-10-12', 'payment_method' => 'cash_on_delivery',
-            'payment_terms' => 'cod', 'status' => 'confirmed', 'delivery_status' => 'delivered', 'created_at' => now(), 'updated_at' => now(),
-        ]);
-        DB::table('receivables')->insert(['sale_id' => $saleId, 'status' => 'pending', 'created_at' => now(), 'updated_at' => now()]);
-
-        return DB::table('sale_items')->insertGetId([
-            'sale_id' => $saleId, 'fuel_type_id' => $r['fuel'], 'quantity_liters' => $quantity, 'unit_price' => 60,
-            'line_total' => $quantity * 60, 'fulfilled_quantity_liters' => 0, 'created_at' => now(), 'updated_at' => now(),
         ]);
     }
 }

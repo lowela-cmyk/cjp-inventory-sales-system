@@ -38,21 +38,45 @@ class SalesOfficerCustomerController extends Controller
 
     private const PAYMENT_TERMS = ['cod', 'installment', 'advance'];
 
+    /** Receivable statuses shown in the Status column (filter value => label). */
+    private const RECEIVABLE_FILTER_STATUSES = ['unpaid' => 'Unpaid', 'partial' => 'Partially Paid', 'overdue' => 'Overdue', 'clear' => 'Settled', 'cancelled' => 'Cancelled'];
+
     public function index(Request $request, DashboardSummaryService $dashboardSummary, string $state = 'receivables'): View
     {
+        $activeTab = $state === 'customers' ? 'customers' : 'receivables';
         $data = $request->validate([
             'search' => ['nullable', 'string', 'max:100'],
+            'status' => ['nullable', Rule::in($activeTab === 'customers' ? self::ACCOUNT_STATUSES : array_keys(self::RECEIVABLE_FILTER_STATUSES))],
+            'delivery_status' => ['nullable', Rule::in(self::DELIVERY_STATUSES)],
+            'date' => ['nullable', 'date'],
+            'fuel_type_id' => ['nullable', 'integer', Rule::exists('fuel_types', 'id')],
+            'location' => ['nullable', 'string', 'max:255'],
         ]);
 
         $search = trim((string) ($data['search'] ?? ''));
         $normalizedSearch = $search === '' ? null : $search;
+        // Filters belong to the tab whose toolbar submitted them; the other tab stays unfiltered.
+        $filters = array_filter([
+            'status' => $data['status'] ?? null,
+            'delivery_status' => $data['delivery_status'] ?? null,
+            'date' => $data['date'] ?? null,
+            'fuel_type_id' => $data['fuel_type_id'] ?? null,
+            'location' => $data['location'] ?? null,
+        ], fn (mixed $value): bool => $value !== null && $value !== '');
 
         return view('sales-officer.sales', [
-            'activeTab' => $state === 'customers' ? 'customers' : 'receivables',
+            'activeTab' => $activeTab,
             'search' => $normalizedSearch,
+            'filters' => $filters,
+            'filterOptions' => [
+                'receivableStatuses' => self::RECEIVABLE_FILTER_STATUSES,
+                'deliveryStatuses' => collect(self::DELIVERY_STATUSES)->mapWithKeys(fn (string $status): array => [$status => $this->label($status)])->all(),
+                'accountStatuses' => collect(self::ACCOUNT_STATUSES)->mapWithKeys(fn (string $status): array => [$status => $this->label($status)])->all(),
+                'locations' => DB::table('customers')->whereNotNull('location')->where('location', '!=', '')->distinct()->orderBy('location')->pluck('location', 'location'),
+            ],
             'summaryCards' => $dashboardSummary->salesCards(),
-            'sales' => $this->salesRows($normalizedSearch),
-            'customers' => $this->customerRows($normalizedSearch),
+            'sales' => $this->salesRows($normalizedSearch, filters: $activeTab === 'receivables' ? $filters : []),
+            'customers' => $this->customerRows($normalizedSearch, filters: $activeTab === 'customers' ? $filters : []),
             'customerOptions' => $this->customerOptions($state === 'customers' ? $normalizedSearch : null),
             'fuelTypes' => $this->fuelTypeOptions(),
             'paymentStatuses' => self::PAYMENT_STATUSES,
@@ -596,9 +620,14 @@ class SalesOfficerCustomerController extends Controller
         ]);
     }
 
-    private function customerRows(?string $search, ?int $perPage = 25)
+    /**
+     * @param  array{status?: string, location?: string}  $filters
+     */
+    private function customerRows(?string $search, ?int $perPage = 25, array $filters = [])
     {
         $query = DB::table('customers')
+            ->when($filters['status'] ?? null, fn (Builder $query, string $status): Builder => $query->where('status', $status))
+            ->when($filters['location'] ?? null, fn (Builder $query, string $location): Builder => $query->where('location', $location))
             ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
                 'customer_code',
                 'name',
@@ -743,7 +772,10 @@ class SalesOfficerCustomerController extends Controller
             ->get(['id', 'name', 'company_name']);
     }
 
-    private function salesRows(?string $search, ?int $perPage = 25)
+    /**
+     * @param  array{status?: string, delivery_status?: string, date?: string, fuel_type_id?: int|string}  $filters
+     */
+    private function salesRows(?string $search, ?int $perPage = 25, array $filters = [])
     {
         $payments = DB::table('payments')
             ->selectRaw('sale_id, COALESCE(SUM(amount), 0) as total_paid')
@@ -771,6 +803,14 @@ class SalesOfficerCustomerController extends Controller
                 'sales.payment_method',
                 'receivables.status',
             ]))
+            ->when($filters['date'] ?? null, fn (Builder $query, string $date): Builder => $query->whereDate('sales.sale_date', $date))
+            ->when($filters['delivery_status'] ?? null, fn (Builder $query, string $status): Builder => $query->where('sales.delivery_status', $status))
+            ->when($filters['fuel_type_id'] ?? null, fn (Builder $query, mixed $fuelTypeId): Builder => $query->whereExists(
+                fn (Builder $exists): Builder => $exists->selectRaw('1')->from('sale_items as filter_items')
+                    ->whereColumn('filter_items.sale_id', 'sales.id')
+                    ->where('filter_items.fuel_type_id', (int) $fuelTypeId)
+            ))
+            ->when($filters['status'] ?? null, fn (Builder $query, string $status): Builder => $this->whereReceivableStatus($query, $status))
             ->orderByDesc('sales.sale_date')
             ->orderByDesc('sales.id');
 
@@ -1284,6 +1324,30 @@ class SalesOfficerCustomerController extends Controller
         }
 
         return $this->isOverdue($saleTotal, $totalPaid, $dueDate) ? 'overdue' : 'partial';
+    }
+
+    /**
+     * SQL mirror of receivableStatusForSale() so the Status filter matches the Status column.
+     */
+    private function whereReceivableStatus(Builder $query, string $status): Builder
+    {
+        if ($status === 'cancelled') {
+            return $query->where('sales.status', 'cancelled');
+        }
+
+        $paid = 'ROUND(COALESCE(payments_total.total_paid, 0), 2)';
+        $total = 'ROUND(items_total.sale_total, 2)';
+        $overdue = "(receivables.due_date IS NOT NULL AND receivables.due_date < ? AND {$paid} < {$total})";
+        $today = now()->toDateString();
+
+        $query->where('sales.status', '!=', 'cancelled');
+
+        return match ($status) {
+            'clear' => $query->whereRaw("{$paid} >= {$total}"),
+            'overdue' => $query->whereRaw($overdue, [$today]),
+            'unpaid' => $query->whereRaw("{$paid} <= 0")->whereRaw("NOT {$overdue}", [$today]),
+            default => $query->whereRaw("{$paid} > 0 AND {$paid} < {$total}")->whereRaw("NOT {$overdue}", [$today]),
+        };
     }
 
     private function isOverdue(float $saleTotal, float $totalPaid, mixed $dueDate): bool

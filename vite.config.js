@@ -10,6 +10,11 @@ export default defineConfig({
         }),
         tailwindcss(),
     ],
+    // Emit ASCII-only JS/CSS (non-ASCII as \u / \ escapes) so text never turns into
+    // mojibake like "\u00e2\u20ac\u201d" when a browser or server mis-detects the file charset.
+    esbuild: {
+        charset: 'ascii',
+    },
     server: {
         watch: {
             ignored: ['**/storage/framework/views/**'],

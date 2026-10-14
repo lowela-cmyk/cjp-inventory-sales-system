@@ -117,7 +117,7 @@ class SalesOfficerPaymentRecordingTest extends TestCase
             ->from(route('sales-officer.sales'))
             ->post(route('sales-officer.sales.payments.store', $saleId), $this->paymentPayload(['amount' => 50001]))
             ->assertRedirect(route('sales-officer.sales'))
-            ->assertSessionHasErrors('payment');
+            ->assertSessionHasErrors('amount');
 
         $this->actingAs($records['salesOfficer'])
             ->from(route('sales-officer.sales'))
@@ -330,7 +330,7 @@ class SalesOfficerPaymentRecordingTest extends TestCase
                 'amount' => 16000,
             ]))
             ->assertRedirect(route('sales-officer.sales'))
-            ->assertSessionHasErrors('payment');
+            ->assertSessionHasErrors('amount');
 
         $this->assertSame(0, DB::table('payments')->count());
         $this->assertDatabaseHas('payment_schedules', ['id' => $scheduleId, 'status' => 'pending']);
@@ -378,12 +378,12 @@ class SalesOfficerPaymentRecordingTest extends TestCase
         $this->assertDatabaseHas('receivables', ['sale_id' => $saleId, 'status' => 'pending']);
     }
 
-    public function test_only_sales_officer_role_can_record_payments_in_existing_sales_workflow(): void
+    public function test_only_sales_officer_and_admin_can_record_payments_in_existing_sales_workflow(): void
     {
         $records = $this->baseRecords();
         $saleId = $this->sale($records);
 
-        foreach (['admin', 'inventory_officer', 'dispatch_officer', 'driver'] as $role) {
+        foreach (['inventory_officer', 'dispatch_officer', 'driver'] as $role) {
             $user = User::factory()->create(['role' => $role, 'status' => 'active']);
 
             $this->actingAs($user)

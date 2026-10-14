@@ -23,7 +23,8 @@ class RoleBasedAccessControlTest extends TestCase
     public static function roleAccessProvider(): array
     {
         return [
-            'admin' => ['admin', '/admin/dashboard', ['/inventory-officer/inventory', '/sales-officer/sales', '/dispatch/fuel-lifting', '/driver/fuel-lifting']],
+            // Admin may open every role's pages; no role page is blocked for Admin.
+            'admin' => ['admin', '/admin/dashboard', []],
             'inventory officer' => ['inventory_officer', '/inventory-officer/inventory', ['/admin/dashboard', '/sales-officer/sales', '/dispatch/fuel-lifting', '/driver/fuel-lifting']],
             'sales officer' => ['sales_officer', '/sales-officer/sales', ['/admin/dashboard', '/inventory-officer/inventory', '/dispatch/fuel-lifting', '/driver/fuel-lifting']],
             'dispatch officer' => ['dispatch_officer', '/dispatch/fuel-lifting', ['/admin/dashboard', '/inventory-officer/inventory', '/sales-officer/sales', '/driver/fuel-lifting']],
@@ -71,6 +72,11 @@ class RoleBasedAccessControlTest extends TestCase
 
         return collect($roleUrlMap)
             ->mapWithKeys(function (array $allowedUrls, string $role) use ($roleUrlMap): array {
+                if ($role === 'admin') {
+                    // Admin can reach every role's routes (central rule in EnsureUserHasRole).
+                    return [$role => [$role, collect($roleUrlMap)->flatten()->unique()->values()->all(), []]];
+                }
+
                 $blockedUrls = collect($roleUrlMap)
                     ->except($role)
                     ->flatten()
@@ -235,9 +241,11 @@ class RoleBasedAccessControlTest extends TestCase
             'Allowed route should remain allowed regardless of query parameters.'
         );
 
-        $this->actingAs($user)
-            ->get($blockedUrls[0].'?role='.$role.'&redirect='.$allowedUrls[0])
-            ->assertForbidden();
+        if ($blockedUrls !== []) {
+            $this->actingAs($user)
+                ->get($blockedUrls[0].'?role='.$role.'&redirect='.$allowedUrls[0])
+                ->assertForbidden();
+        }
     }
 
     public function test_login_uses_database_role_and_ignores_frontend_role_input(): void

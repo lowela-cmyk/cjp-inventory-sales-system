@@ -15,6 +15,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class SalesOfficerCustomerController extends Controller
@@ -122,7 +123,9 @@ class SalesOfficerCustomerController extends Controller
                     }
 
                     if ($amount > $remaining) {
-                        throw new \RuntimeException('Payment amount cannot exceed the remaining balance.');
+                        throw ValidationException::withMessages([
+                            'amount' => 'Amount paid cannot exceed the remaining balance of PHP '.number_format($remaining, 2).'.',
+                        ]);
                     }
 
                     $paymentSchedule = null;
@@ -142,7 +145,9 @@ class SalesOfficerCustomerController extends Controller
                         }
 
                         if ($amount > $scheduleRemaining) {
-                            throw new \RuntimeException('Payment amount cannot exceed the selected installment balance.');
+                            throw ValidationException::withMessages([
+                                'amount' => 'Amount paid cannot exceed the selected installment balance of PHP '.number_format($scheduleRemaining, 2).'.',
+                            ]);
                         }
                     }
 
@@ -178,6 +183,7 @@ class SalesOfficerCustomerController extends Controller
 
         return redirect()
             ->route($this->salesRedirectRoute($request))
+            ->with('payment_sale_id', $sale)
             ->with('status', 'Payment record '.$idempotency['response_reference'].' recorded successfully.');
     }
 
@@ -219,13 +225,20 @@ class SalesOfficerCustomerController extends Controller
                 ->withInput();
         }
 
+        $initialReference = $this->blankToNull($data['payment_reference_number'] ?? null);
+        if ($initialAmountPaid > 0 && $initialReference === null && in_array($data['payment_method'], ['cheque', 'bank_transfer'], true)) {
+            return back()
+                ->withErrors(['payment_reference_number' => 'Enter the cheque or bank reference number for this payment.'])
+                ->withInput();
+        }
+
         try {
             $idempotency = $this->idempotencyService->run(
                 $token,
                 'sales.store',
                 (int) $request->user()->id,
-                function () use ($request, $data, $items, $requestedStatus, $initialAmountPaid): array {
-                    return $this->idempotencyService->retryOnCollision('sale_code', function () use ($request, $data, $items, $requestedStatus, $initialAmountPaid): array {
+                function () use ($request, $data, $items, $requestedStatus, $initialAmountPaid, $initialReference): array {
+                    return $this->idempotencyService->retryOnCollision('sale_code', function () use ($request, $data, $items, $requestedStatus, $initialAmountPaid, $initialReference): array {
                         $saleCode = $this->saleCode();
 
                         $saleId = DB::table('sales')->insertGetId([
@@ -272,11 +285,11 @@ class SalesOfficerCustomerController extends Controller
                             $this->recordPayment(
                                 (int) $saleId,
                                 null,
-                                (string) $data['sale_date'],
+                                (string) ($data['payment_date'] ?? $data['sale_date']),
                                 $initialAmountPaid,
                                 (string) $data['payment_method'],
-                                null,
-                                'Initial payment recorded with sale',
+                                $initialReference,
+                                $this->blankToNull($data['payment_remarks'] ?? null) ?? 'Initial payment recorded with sale',
                                 (int) $request->user()->id
                             );
                         }
@@ -316,14 +329,18 @@ class SalesOfficerCustomerController extends Controller
         $data = $this->validatedSaleData($request, $sale);
         $row = $this->saleForUpdate($sale);
 
-        abort_unless($row, 404);
+        abort_unless($row !== null, 404);
 
         if ($row->status === 'cancelled') {
             return back()->withErrors(['sale' => 'Cancelled sales are read-only and remain available for audit history.']);
         }
 
         $hasDependencies = $this->hasSaleDependentActivity($sale);
-        $requestedStatus = $data['status'] ?? $row->status;
+        // Once payments exist the status is derived from them (Unpaid / Partially Paid / Paid), so the
+        // edit form cannot change it; this keeps fully paid sales editable (order no., due date, etc.).
+        $requestedStatus = $this->paidTotalForSale($sale) > 0
+            ? $row->status
+            : ($data['status'] ?? $row->status);
 
         if ($requestedStatus === 'cancelled') {
             return back()
@@ -488,6 +505,7 @@ class SalesOfficerCustomerController extends Controller
                 'location' => $data['location'] ?? null,
                 'email' => $data['email'] ?? null,
                 'phone' => $data['phone'] ?? null,
+                'bank_name' => $this->blankToNull($data['bank_name'] ?? null),
                 'payment_status' => $data['payment_status'],
                 'status' => $data['status'],
                 'created_at' => now(),
@@ -500,7 +518,7 @@ class SalesOfficerCustomerController extends Controller
         }
 
         return redirect()
-            ->route('sales-officer.sales.customers')
+            ->route($this->customersRedirectRoute(request()))
             ->with('status', 'Customer record created successfully.');
     }
 
@@ -519,6 +537,7 @@ class SalesOfficerCustomerController extends Controller
                     'location' => $data['location'] ?? null,
                     'email' => $data['email'] ?? null,
                     'phone' => $data['phone'] ?? null,
+                    'bank_name' => $this->blankToNull($data['bank_name'] ?? null),
                     'payment_status' => $data['payment_status'],
                     'status' => $data['status'],
                     'updated_at' => now(),
@@ -530,7 +549,7 @@ class SalesOfficerCustomerController extends Controller
         }
 
         return redirect()
-            ->route('sales-officer.sales.customers')
+            ->route($this->customersRedirectRoute(request()))
             ->with('status', 'Customer record updated successfully.');
     }
 
@@ -551,7 +570,7 @@ class SalesOfficerCustomerController extends Controller
         }
 
         return redirect()
-            ->route('sales-officer.sales.customers')
+            ->route($this->customersRedirectRoute(request()))
             ->with('status', 'Customer record deactivated successfully.');
     }
 
@@ -571,6 +590,7 @@ class SalesOfficerCustomerController extends Controller
             'location' => ['nullable', 'string', 'max:255'],
             'email' => ['nullable', 'email', 'max:255'],
             'phone' => ['nullable', 'string', 'max:30', 'regex:/^[0-9+()\\-\\s]+$/'],
+            'bank_name' => ['nullable', 'string', 'max:255'],
             'payment_status' => ['required', Rule::in(self::PAYMENT_STATUSES)],
             'status' => ['required', Rule::in(self::ACCOUNT_STATUSES)],
         ]);
@@ -586,6 +606,7 @@ class SalesOfficerCustomerController extends Controller
                 'location',
                 'email',
                 'phone',
+                'bank_name',
                 'payment_status',
                 'status',
             ]))
@@ -600,6 +621,7 @@ class SalesOfficerCustomerController extends Controller
             'location',
             'email',
             'phone',
+            'bank_name',
             'payment_status',
             'status',
             'created_at',
@@ -668,6 +690,7 @@ class SalesOfficerCustomerController extends Controller
                     'location' => $row->location,
                     'email' => $row->email,
                     'phone' => $row->phone,
+                    'bank_name' => $row->bank_name,
                     'payment_status' => $derivedPaymentStatus,
                     'status' => $row->status,
                     'created_at' => $row->created_at,
@@ -680,6 +703,7 @@ class SalesOfficerCustomerController extends Controller
                         $row->location ?: 'N/A',
                         $row->email ?: 'N/A',
                         $row->phone ?: 'N/A',
+                        $row->bank_name ?: 'N/A',
                         $this->label($derivedPaymentStatus),
                     ],
                     'details' => [
@@ -688,6 +712,7 @@ class SalesOfficerCustomerController extends Controller
                         'Location' => $row->location ?: 'N/A',
                         'Email' => $row->email ?: 'N/A',
                         'Contact Number' => $row->phone ?: 'N/A',
+                        'Bank Name' => $row->bank_name ?: 'N/A',
                         'Payment Status' => $this->label($derivedPaymentStatus),
                         'Account Status' => $this->label($row->status),
                         'Date Added' => $this->formatDateTime($row->created_at),
@@ -897,6 +922,9 @@ class SalesOfficerCustomerController extends Controller
             'items.*.quantity_liters' => ['required_with:items', 'numeric', 'gt:0', 'max:1000000'],
             'items.*.unit_price' => ['required_with:items', 'numeric', 'gt:0', 'max:10000'],
             'amount_paid' => [$saleId ? 'prohibited' : 'nullable', 'numeric', 'gte:0', 'max:999999999999.99'],
+            'payment_reference_number' => [$saleId ? 'prohibited' : 'nullable', 'string', 'max:100'],
+            'payment_date' => [$saleId ? 'prohibited' : 'nullable', 'date', 'after_or_equal:sale_date'],
+            'payment_remarks' => [$saleId ? 'prohibited' : 'nullable', 'string', 'max:1000'],
             'payment_method' => ['required', Rule::in(self::PAYMENT_METHODS)],
             'payment_terms' => ['nullable', Rule::in(self::PAYMENT_TERMS)],
             'status' => ['nullable', Rule::in(array_diff(self::SALE_STATUSES, ['paid']))],
@@ -1622,6 +1650,13 @@ class SalesOfficerCustomerController extends Controller
         return str_starts_with((string) $request->route()?->getName(), 'admin.')
             ? 'admin.sales'
             : 'sales-officer.sales';
+    }
+
+    private function customersRedirectRoute(Request $request): string
+    {
+        return str_starts_with((string) $request->route()?->getName(), 'admin.')
+            ? 'admin.sales.customers'
+            : 'sales-officer.sales.customers';
     }
 
     private function customerOutstandingTotal(int $customerId): float

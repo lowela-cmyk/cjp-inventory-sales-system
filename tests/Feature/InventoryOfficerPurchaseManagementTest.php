@@ -205,11 +205,13 @@ class InventoryOfficerPurchaseManagementTest extends TestCase
             ->post(route('inventory-officer.inventory.purchases.store'), $payload)
             ->assertForbidden();
 
+        $this->assertSame(0, DB::table('purchases')->count());
+
+        // Admin may perform Inventory Officer actions; the purchase records the admin as creator.
         $this->actingAs($admin)
             ->post(route('inventory-officer.inventory.purchases.store'), $payload)
-            ->assertForbidden();
-
-        $this->assertSame(0, DB::table('purchases')->count());
+            ->assertRedirect();
+        $this->assertDatabaseHas('purchases', ['created_by' => $admin->id]);
     }
 
     public function test_admin_monitoring_reflects_inventory_officer_purchase_records(): void

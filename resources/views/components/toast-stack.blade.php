@@ -27,6 +27,15 @@
         ];
     }
 
+    // Messages flashed for the toast only (e.g. the login welcome), never rendered as inline page alerts.
+    if (session('toast_message') && $context === null) {
+        $messages[] = [
+            'type' => session('toast_type', 'success'),
+            'title' => session('toast_title', 'Success'),
+            'message' => (string) session('toast_message'),
+        ];
+    }
+
     if ($errors->any() && $context === null) {
         $error = (string) $errors->first();
         $errorLower = strtolower($error);

@@ -35,10 +35,12 @@ class ConnectedLiftingWorkflowTest extends TestCase
         $this->assertDatabaseCount('purchase_status_histories', 1);
         $this->assertDatabaseHas('purchases', ['status' => 'ordered', 'workflow_status' => 'pending']);
         $this->assertDatabaseCount('inventory_movements', 0);
+        $this->actingAs($records['inventory'])->get(route('inventory-officer.inventory'))
+            ->assertOk()
+            ->assertSee((string) DB::table('purchases')->value('purchase_code'));
         $this->actingAs($records['inventory'])->get(route('inventory-officer.inventory.stock-in'))
             ->assertOk()
-            ->assertSee('Purchase Stock-In Pipeline')
-            ->assertSee((string) DB::table('purchases')->value('purchase_code'));
+            ->assertDontSee('Purchase Stock-In Pipeline');
 
         $alertId = (int) DB::table('alerts')->value('id');
         $this->actingAs($records['inventory'])->get(route('inventory-officer.alerts'))->assertOk()->assertSee('Unread');
@@ -178,7 +180,9 @@ class ConnectedLiftingWorkflowTest extends TestCase
 
         $this->assertDatabaseHas('purchases', ['id' => $purchaseId, 'status' => 'cancelled', 'workflow_status' => 'cancelled']);
         $this->actingAs($records['inventory'])->get(route('inventory-officer.inventory.stock-in'))
-            ->assertOk()->assertViewHas('stockInPurchases', fn ($rows): bool => $rows->count() === 0);
+            ->assertOk()->assertDontSee('Purchase Stock-In Pipeline');
+        $this->actingAs($records['inventory'])->get(route('inventory-officer.inventory', ['status' => 'cancelled']))
+            ->assertOk()->assertViewHas('purchases', fn ($rows): bool => $rows->count() === 1);
     }
 
     public function test_dispatch_can_schedule_partial_then_exact_remaining_quantity(): void

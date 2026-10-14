@@ -24,7 +24,8 @@ class EnsureUserHasRole
             abort(403);
         }
 
-        if (! in_array($currentUser->role, $roles, true)) {
+        // Admin may perform every role's functions; all other roles stay limited to their own routes.
+        if ($currentUser->role !== 'admin' && ! in_array($currentUser->role, $roles, true)) {
             abort(403);
         }
 

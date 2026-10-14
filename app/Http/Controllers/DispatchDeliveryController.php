@@ -6,6 +6,7 @@ use App\Rules\ApprovedFuelType;
 use App\Services\IdempotencyService;
 use App\Services\PurchaseWorkflowService;
 use App\Services\TruckAvailabilityService;
+use App\Support\DepotLabel;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -37,8 +38,7 @@ class DispatchDeliveryController extends Controller
             ],
             'driver_user_id' => ['nullable', 'integer', Rule::exists('users', 'id')->where(fn (Builder $query): Builder => $query->where('role', 'driver'))],
             'truck_id' => ['nullable', 'integer', Rule::exists('trucks', 'id')],
-            'date_from' => ['nullable', 'date'],
-            'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
+            'lift_date' => ['nullable', 'date'],
         ]);
         $search = trim((string) ($data['search'] ?? ''));
         $filters = [
@@ -46,8 +46,7 @@ class DispatchDeliveryController extends Controller
             'fuel_type_id' => $data['fuel_type_id'] ?? null,
             'driver_user_id' => $data['driver_user_id'] ?? null,
             'truck_id' => $data['truck_id'] ?? null,
-            'date_from' => $data['date_from'] ?? null,
-            'date_to' => $data['date_to'] ?? null,
+            'lift_date' => $data['lift_date'] ?? null,
         ];
         $rows = $this->haulRows($search === '' ? null : $search, $filters);
 
@@ -64,6 +63,7 @@ class DispatchDeliveryController extends Controller
             'purchaseItems' => $this->availablePurchaseItemOptions(),
             'createIdempotencyKey' => (string) Str::uuid(),
             'statusIdempotencyKey' => (string) Str::uuid(),
+            'truckAssignmentIdempotencyKey' => (string) Str::uuid(),
         ]);
     }
 
@@ -80,6 +80,13 @@ class DispatchDeliveryController extends Controller
             'dr_number' => ['nullable', 'string', 'max:100'],
             'scheduled_at' => ['required', 'date'],
             'quantity_liters' => ['required_without:items', 'numeric', 'gt:0', 'max:1000000'],
+        ], [], [
+            'driver_user_id' => 'driver',
+            'truck_id' => 'truck',
+            'scheduled_at' => 'lift date',
+            'dr_number' => 'DR number',
+            'items.*.purchase_item_id' => 'purchase',
+            'items.*.quantity_liters' => 'amount to lift',
         ]);
         $items = collect($data['items'] ?? [[
             'purchase_item_id' => $data['purchase_item_id'],
@@ -92,7 +99,7 @@ class DispatchDeliveryController extends Controller
 
         if ($request->session()->has($sessionKey)) {
             return redirect()
-                ->route('dispatch.fuel-lifting')
+                ->route($this->liftingRedirectRoute($request))
                 ->with('status', 'Lift assignment was already submitted.');
         }
 
@@ -188,14 +195,14 @@ class DispatchDeliveryController extends Controller
 
         if ($idempotency['duplicate']) {
             return redirect()
-                ->route('dispatch.fuel-lifting')
+                ->route($this->liftingRedirectRoute($request))
                 ->with('status', 'Lift assignment was already submitted.');
         }
 
         $request->session()->put($sessionKey, true);
 
         return redirect()
-            ->route('dispatch.fuel-lifting')
+            ->route($this->liftingRedirectRoute($request))
             ->with('status', 'Lift assignment scheduled successfully.');
     }
 
@@ -220,6 +227,8 @@ class DispatchDeliveryController extends Controller
             ->leftJoin('driver_profiles', 'driver_profiles.user_id', '=', 'drivers.id')
             ->leftJoin('lifting_schedules', 'lifting_schedules.id', '=', 'hauls.lifting_schedule_id')
             ->leftJoinSub($scheduleItems, 'schedule_items', 'schedule_items.lifting_schedule_id', '=', 'hauls.lifting_schedule_id')
+            ->leftJoin('users as status_updater', 'status_updater.id', '=', 'hauls.status_updated_by')
+            ->leftJoin('users as receipt_uploader', 'receipt_uploader.id', '=', 'hauls.withdrawal_receipt_uploaded_by')
             ->whereNull('purchases.deleted_at')
             ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
                 'hauls.haul_code',
@@ -238,8 +247,10 @@ class DispatchDeliveryController extends Controller
             ->when($filters['fuel_type_id'] ?? null, fn (Builder $query, mixed $fuelTypeId): Builder => $query->where('hauls.fuel_type_id', (int) $fuelTypeId))
             ->when($filters['driver_user_id'] ?? null, fn (Builder $query, mixed $driverUserId): Builder => $query->where('hauls.driver_user_id', (int) $driverUserId))
             ->when($filters['truck_id'] ?? null, fn (Builder $query, mixed $truckId): Builder => $query->where('hauls.truck_id', (int) $truckId))
-            ->when($filters['date_from'] ?? null, fn (Builder $query, string $date): Builder => $query->where('hauls.scheduled_at', '>=', CarbonImmutable::parse($date)->startOfDay()->toDateTimeString()))
-            ->when($filters['date_to'] ?? null, fn (Builder $query, string $date): Builder => $query->where('hauls.scheduled_at', '<=', CarbonImmutable::parse($date)->endOfDay()->toDateTimeString()))
+            ->when($filters['lift_date'] ?? null, fn (Builder $query, string $date): Builder => $query->whereBetween('hauls.scheduled_at', [
+                CarbonImmutable::parse($date)->startOfDay()->toDateTimeString(),
+                CarbonImmutable::parse($date)->endOfDay()->toDateTimeString(),
+            ]))
             ->orderByDesc('hauls.scheduled_at')
             ->orderByDesc('hauls.id')
             ->get([
@@ -252,6 +263,13 @@ class DispatchDeliveryController extends Controller
                 'hauls.source_location',
                 'hauls.quantity_liters',
                 'hauls.status',
+                'hauls.truck_id',
+                'hauls.status_updated_at',
+                'hauls.withdrawal_receipt_path',
+                'hauls.withdrawal_receipt_uploaded_at',
+                'status_updater.name as status_updated_by_name',
+                'status_updater.role as status_updated_by_role',
+                'receipt_uploader.name as receipt_uploaded_by_name',
                 'purchases.purchase_code',
                 'depots.name as depot_name',
                 'depots.address as depot_address',
@@ -280,7 +298,7 @@ class DispatchDeliveryController extends Controller
                         $row->purchase_codes ?: $row->purchase_code,
                         $row->dr_number ?: 'N/A',
                         $this->formatDateTime($row->hauled_at ?: $row->scheduled_at),
-                        trim($row->depot_name.($row->depot_address ? ' — '.$row->depot_address : '')),
+                        DepotLabel::make($row->depot_name, $row->depot_address),
                         $row->driver_name,
                         $row->driver_phone ?: 'N/A',
                         $truck,
@@ -304,12 +322,41 @@ class DispatchDeliveryController extends Controller
                         'Scheduled Date' => $this->formatDateTime($row->scheduled_at),
                         'Hauled Date' => $row->hauled_at ? $this->formatDateTime($row->hauled_at) : 'N/A',
                         'Status' => $this->label($row->status),
+                        'Last Status Update' => $row->status_updated_by_name
+                            ? $row->status_updated_by_name.' ('.$this->label($row->status_updated_by_role).'), '.$this->formatDateTime($row->status_updated_at)
+                            : 'N/A',
                     ],
                     'allowed_statuses' => DispatchLiftingStatusController::STATUS_TRANSITIONS[$row->status] ?? [],
+                    'truck_id' => (int) $row->truck_id,
+                    'can_assign_truck' => $row->status === 'scheduled',
+                    'haul' => [
+                        'id' => (int) $row->id,
+                        'code' => $row->haul_code,
+                        'purchase_code' => $row->purchase_code,
+                        'can_upload_withdrawal' => in_array($row->status, ['lifted', 'completed'], true),
+                        'withdrawal_uploaded' => (bool) $row->withdrawal_receipt_path,
+                        'withdrawal_uploaded_label' => $row->withdrawal_receipt_path
+                            ? 'Uploaded '.$this->formatDateTime($row->withdrawal_receipt_uploaded_at).($row->receipt_uploaded_by_name ? ' by '.$row->receipt_uploaded_by_name : '')
+                            : 'Not uploaded',
+                    ],
                 ];
             })
-            ->unique('schedule_group')
+            // One table row per lifting schedule; keep every haul of the schedule for per-lift actions.
+            ->groupBy('schedule_group')
+            ->map(function ($group): array {
+                $row = $group->first();
+                $row['hauls'] = $group->pluck('haul')->values()->all();
+
+                return $row;
+            })
             ->values();
+    }
+
+    private function liftingRedirectRoute(Request $request): string
+    {
+        return str_starts_with((string) $request->route()?->getName(), 'admin.')
+            ? 'admin.fuel-lifting'
+            : 'dispatch.fuel-lifting';
     }
 
     private function haulFilterOptions(): array
@@ -370,6 +417,9 @@ class DispatchDeliveryController extends Controller
             ->leftJoinSub($assignedLifts, 'assigned_lifts', 'assigned_lifts.purchase_item_id', '=', 'purchase_items.id')
             ->whereNull('purchases.deleted_at')
             ->where('purchases.status', '!=', 'cancelled')
+            // Keep the dropdown in step with purchaseItemForAssignment() so every listed purchase can be saved.
+            ->where('depots.status', 'active')
+            ->where('fuel_types.status', 'active')
             ->whereRaw('purchase_items.quantity_ordered_liters > COALESCE(assigned_lifts.assigned_liters, 0)')
             ->orderBy('purchases.purchase_code')
             ->get([
@@ -384,7 +434,8 @@ class DispatchDeliveryController extends Controller
             ])
             ->map(function (object $row): object {
                 $row->remaining_liters = round((float) $row->quantity_ordered_liters - (float) $row->assigned_liters, 2);
-                $row->label = $row->purchase_code.' / '.$row->fuel_name.' / '.$row->depot_name.' / '.$this->formatLiters($row->remaining_liters).' remaining';
+                $row->label = $row->purchase_code.' | '.$this->formatLiters($row->remaining_liters).' remaining | '.$row->fuel_name.' | '.$row->depot_name;
+                $row->pickup_label = DepotLabel::make($row->depot_name, $row->depot_address);
 
                 return $row;
             });

@@ -135,11 +135,15 @@ class PurchaseReceiptUploadTest extends TestCase
         $this->actingAs($admin)->get(route('admin.inventory'))
             ->assertOk()->assertSee('View Receipts')->assertSee('Second withdrawal');
 
-        foreach ([$records['inventoryOfficer'], $admin] as $viewer) {
-            $this->actingAs($viewer)->post(route('driver.fuel-lifting.hauls.withdrawal-receipt.store', $records['haulId']), [
-                'withdrawal_receipt' => $this->tinyImage('forbidden.png'),
-            ])->assertForbidden();
-        }
+        $this->actingAs($records['inventoryOfficer'])->post(route('driver.fuel-lifting.hauls.withdrawal-receipt.store', $records['haulId']), [
+            'withdrawal_receipt' => $this->tinyImage('forbidden.png'),
+        ])->assertForbidden();
+
+        // Admin acts on behalf of the driver, and the upload is attributed to the admin.
+        $this->actingAs($admin)->post(route('admin.fuel-lifting.hauls.withdrawal-receipt.store', $records['haulId']), [
+            'withdrawal_receipt' => $this->tinyImage('admin-replacement.png'),
+        ])->assertRedirect(route('admin.fuel-lifting.hauled'));
+        $this->assertDatabaseHas('hauls', ['id' => $records['haulId'], 'withdrawal_receipt_uploaded_by' => $admin->id]);
     }
 
     public function test_reupload_replaces_existing_withdrawal_without_creating_duplicate_receipt_records(): void

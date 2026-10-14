@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Rules\ApprovedFuelType;
+use App\Support\DepotLabel;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -22,7 +23,7 @@ class DriverDeliveryController extends Controller
         $data = $request->validate([
             'search' => ['nullable', 'string', 'max:100'],
             'task_status' => ['nullable', Rule::in(self::TASK_STATUSES)],
-            'source_type' => ['nullable', Rule::in(['depot', 'garage'])],
+            'depot_id' => ['nullable', 'integer', Rule::exists('depots', 'id')],
             'destination_type' => ['nullable', Rule::in(['garage', 'customer'])],
             'fuel_type_id' => [
                 'nullable',
@@ -35,7 +36,7 @@ class DriverDeliveryController extends Controller
         $search = trim((string) ($data['search'] ?? ''));
         $filters = [
             'task_status' => $data['task_status'] ?? null,
-            'source_type' => $data['source_type'] ?? null,
+            'depot_id' => $data['depot_id'] ?? null,
             'destination_type' => $data['destination_type'] ?? null,
             'fuel_type_id' => $data['fuel_type_id'] ?? null,
             'date_from' => $data['date_from'] ?? null,
@@ -52,7 +53,6 @@ class DriverDeliveryController extends Controller
             'filterOptions' => $this->filterOptions($driverId),
             'driverProfile' => $this->driverProfile($driverId),
             'summaryCards' => $this->summaryCards($driverId),
-            'currentAssignment' => $rows->where('group', 'schedule')->sortBy('sort_at')->first(),
             'scheduleRows' => $rows->where('group', 'schedule')->values(),
             'hauledRows' => $rows->where('group', 'hauled')->values(),
             'liftingStatusIdempotencyKey' => (string) Str::uuid(),
@@ -66,11 +66,13 @@ class DriverDeliveryController extends Controller
             'withdrawal_notes' => ['nullable', 'string', 'max:1000'],
         ]);
 
-        $driverId = (int) $request->user()->id;
+        $actorId = (int) $request->user()->id;
+        // Admin uploads on behalf of the assigned driver; a driver may only upload for their own lift.
+        $actingForDriver = $request->user()->role === 'admin';
         $row = DB::table('hauls')
             ->join('purchases', 'purchases.id', '=', 'hauls.purchase_id')
             ->where('hauls.id', $haul)
-            ->where('hauls.driver_user_id', $driverId)
+            ->when(! $actingForDriver, fn (Builder $query): Builder => $query->where('hauls.driver_user_id', $actorId))
             ->whereNull('purchases.deleted_at')
             ->whereIn('hauls.status', ['lifted', 'completed'])
             ->first(['hauls.id', 'hauls.haul_code', 'hauls.withdrawal_receipt_path']);
@@ -87,11 +89,11 @@ class DriverDeliveryController extends Controller
 
         DB::table('hauls')
             ->where('id', $row->id)
-            ->where('driver_user_id', $driverId)
             ->update([
                 'withdrawal_receipt_path' => $path,
                 'withdrawal_receipt_notes' => $data['withdrawal_notes'] ?? null,
                 'withdrawal_receipt_uploaded_at' => now(),
+                'withdrawal_receipt_uploaded_by' => $actorId,
                 'updated_at' => now(),
             ]);
 
@@ -100,7 +102,7 @@ class DriverDeliveryController extends Controller
         }
 
         return redirect()
-            ->route('driver.fuel-lifting.hauled')
+            ->route($actingForDriver ? 'admin.fuel-lifting.hauled' : 'driver.fuel-lifting.hauled')
             ->with('status', 'Withdrawal receipt uploaded successfully.');
     }
 
@@ -154,11 +156,7 @@ class DriverDeliveryController extends Controller
                 'allocations.sale_codes',
             ]))
             ->when($filters['task_status'] ?? null, fn (Builder $query, string $status): Builder => $query->where('hauls.status', $status))
-            ->when($filters['source_type'] ?? null, function (Builder $query, string $sourceType): Builder {
-                return $sourceType === 'depot'
-                    ? $query
-                    : $query->whereRaw('1 = 0');
-            })
+            ->when($filters['depot_id'] ?? null, fn (Builder $query, mixed $depotId): Builder => $query->where('hauls.depot_id', (int) $depotId))
             ->when($filters['destination_type'] ?? null, fn (Builder $query, string $destinationType): Builder => $query->whereExists(function ($subQuery) use ($destinationType): void {
                 $subQuery->selectRaw('1')
                     ->from('haul_allocations')
@@ -214,7 +212,7 @@ class DriverDeliveryController extends Controller
                         $row->purchase_code,
                         $row->depot_name,
                         $this->formatDateTime($row->hauled_at ?: $row->scheduled_at),
-                        trim($row->depot_name.($row->depot_address ? ' — '.$row->depot_address : '')),
+                        DepotLabel::make($row->depot_name, $row->depot_address),
                         $truck,
                         $this->formatNumber($row->capacity_liters),
                         $this->formatNumber($row->quantity_liters),
@@ -260,6 +258,11 @@ class DriverDeliveryController extends Controller
             ->pluck('fuel_type_id')
             ->unique()
             ->values();
+        $depotIds = DB::table('hauls')
+            ->where('driver_user_id', $driverId)
+            ->pluck('depot_id')
+            ->unique()
+            ->values();
 
         return [
             'statuses' => self::TASK_STATUSES,
@@ -269,6 +272,12 @@ class DriverDeliveryController extends Controller
                     fn (Builder $query): Builder => $query->whereIn('id', $fuelIds),
                     fn (Builder $query): Builder => $query->whereRaw('1 = 0')
                 )
+                ->orderBy('name')
+                ->get(['id', 'name']),
+            'depots' => DB::table('depots')
+                ->where(fn (Builder $query): Builder => $query
+                    ->where('status', 'active')
+                    ->when($depotIds->isNotEmpty(), fn (Builder $query): Builder => $query->orWhereIn('id', $depotIds)))
                 ->orderBy('name')
                 ->get(['id', 'name']),
         ];

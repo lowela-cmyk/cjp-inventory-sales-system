@@ -62,6 +62,28 @@ document.addEventListener('click', (event) => {
         openModal(modal);
     }
 
+    // "+ Add Payment" in the Edit Sale modal: jump to Payment History with the form already open.
+    const openPaymentForm = event.target.closest('[data-open-payment-form]');
+    if (openPaymentForm) {
+        const paymentModal = document.getElementById(openPaymentForm.dataset.openPaymentForm);
+        openModal(paymentModal);
+        const toggle = paymentModal?.querySelector('[data-payment-form-toggle]');
+        if (toggle && ! toggle.disabled) toggle.click();
+    }
+
+    const paymentFormToggle = event.target.closest('[data-payment-form-toggle], [data-payment-form-cancel]');
+    if (paymentFormToggle) {
+        const modal = paymentFormToggle.closest('.modal-backdrop');
+        const showForm = paymentFormToggle.matches('[data-payment-form-toggle]');
+        const form = modal?.querySelector('[data-payment-form]');
+        const toggleRow = modal?.querySelector('[data-payment-form-toggle-row]');
+
+        if (form) form.hidden = ! showForm;
+        if (toggleRow) toggleRow.hidden = showForm;
+        if (showForm) form?.querySelector('input[name="amount"]')?.focus();
+        if (! showForm) form?.reset();
+    }
+
     const tabButton = event.target.closest('[data-tab-target]');
     if (tabButton) {
         const scope = tabButton.closest('[data-tabs]');
@@ -162,8 +184,9 @@ document.addEventListener('click', (event) => {
             const clone = source.cloneNode(true);
             clone.querySelectorAll('select').forEach((select) => { select.selectedIndex = 0; });
             clone.querySelectorAll('input').forEach((input) => { input.value = ''; });
+            clone.querySelectorAll('.field-error').forEach((message) => message.remove());
             const summary = clone.querySelector('[data-purchase-summary]');
-            if (summary) summary.textContent = '—';
+            if (summary) summary.textContent = 'Select a purchase';
             items.appendChild(clone);
             updateLiftingSchedule(form);
         }
@@ -199,6 +222,12 @@ document.addEventListener('change', (event) => {
     if (liftingForm) updateLiftingSchedule(liftingForm);
 });
 
+// Submit buttons of a form, including ones placed in a modal footer via the form="..." attribute.
+const submitButtonsFor = (form) => [
+    ...form.querySelectorAll('button[type="submit"]'),
+    ...(form.id ? document.querySelectorAll(`button[type="submit"][form="${form.id}"]`) : []),
+];
+
 const updateLiftingSchedule = (form) => {
     if (!form) return;
     const rows = [...form.querySelectorAll('[data-lifting-item]')];
@@ -214,6 +243,11 @@ const updateLiftingSchedule = (form) => {
         row.querySelectorAll('[name]').forEach((field) => {
             field.name = field.name.replace(/items\[\d+\]/, `items[${index}]`);
         });
+        row.querySelectorAll('[id]').forEach((field) => {
+            const label = row.querySelector(`label[for="${field.id}"]`);
+            field.id = field.id.replace(/_\d+$/, `_${index}`);
+            label?.setAttribute('for', field.id);
+        });
         const select = row.querySelector('[data-lifting-purchase]');
         const option = select?.selectedOptions?.[0];
         const quantityInput = row.querySelector('[data-lifting-quantity]');
@@ -228,12 +262,13 @@ const updateLiftingSchedule = (form) => {
             selectedIds.add(option.value);
             if (depotId && currentDepot !== depotId) error ||= 'All purchases must use the same pickup depot.';
             depotId ||= currentDepot;
-            depotLabel ||= `${option.dataset.depot}${option.dataset.address ? ` — ${option.dataset.address}` : ''}`;
+            // The depot label is built server-side, so no separator character is ever encoded in JS.
+            depotLabel ||= option.dataset.pickup || '';
             if (quantity > remaining) error ||= 'An amount to lift exceeds its remaining purchase quantity.';
             if (quantityInput) quantityInput.max = String(remaining);
-            if (summary) summary.textContent = `${option.dataset.fuel} / ${remaining.toLocaleString()} L remaining`;
+            if (summary) summary.textContent = `${option.dataset.fuel} \u00b7 ${remaining.toLocaleString()} L remaining`;
         } else if (summary) {
-            summary.textContent = '—';
+            summary.textContent = 'Select a purchase';
         }
     });
 
@@ -246,11 +281,15 @@ const updateLiftingSchedule = (form) => {
     setText('[data-pickup-depot]', depotLabel || 'Select a purchase to derive the official depot and address.');
     setText('[data-lifting-warning]', error);
     rows.forEach((row) => { const button = row.querySelector('[data-lifting-item-remove]'); if (button) button.disabled = rows.length === 1; });
-    const submit = form.querySelector('button[type="submit"]');
+    const submit = submitButtonsFor(form)[0];
     if (submit) submit.disabled = Boolean(error) || rows.some((row) => !row.querySelector('[data-lifting-purchase]')?.value) || capacity <= 0 || total <= 0;
 };
 
 document.querySelectorAll('[data-lifting-schedule-form]').forEach(updateLiftingSchedule);
+
+// Reopen a modal after a redirect (e.g. Payment History after recording a payment).
+const modalToReopen = document.querySelector('[data-open-modal-on-load]')?.dataset.openModalOnLoad;
+if (modalToReopen) openModal(document.getElementById(modalToReopen));
 
 const reindexSaleItems = (items) => {
     const rows = items.querySelectorAll('[data-sales-item]');
@@ -329,6 +368,15 @@ const updateSalesTotals = (items) => {
     if (balanceOutput) {
         balanceOutput.textContent = `PHP ${formatMoney(remainingBalance)}`;
     }
+
+    const paymentStatusOutput = scope?.querySelector('[data-sales-payment-status-preview]');
+    if (paymentStatusOutput) {
+        let paymentStatus = 'Unpaid';
+        if (normalizedAmountPaid > 0) {
+            paymentStatus = total > 0 && normalizedAmountPaid >= total ? 'Paid' : 'Partially Paid';
+        }
+        paymentStatusOutput.textContent = paymentStatus;
+    }
 };
 
 document.querySelectorAll('[data-sales-items]').forEach(updateSalesTotals);
@@ -372,7 +420,9 @@ const exportVisibleTable = (trigger) => {
         return;
     }
 
+    // Export exactly what the table shows: rows hidden by the live search are left out.
     const rows = [...table.querySelectorAll('tr')]
+        .filter((row) => ! row.hidden)
         .map((row) => [...row.querySelectorAll('th, td')]
             .map((cell) => `"${cell.textContent.trim().replace(/\s+/g, ' ').replace(/"/g, '""')}"`)
             .join(','))
@@ -426,6 +476,64 @@ document.addEventListener('input', (event) => {
     });
 });
 
+// Filter forms marked [data-auto-filter] apply on change (selects/dates) and after a pause in typing (search).
+const AUTO_FILTER_FOCUS_KEY = 'cjp:auto-filter-focus';
+let autoFilterTimer = null;
+
+const submitAutoFilter = (form, field) => {
+    window.clearTimeout(autoFilterTimer);
+
+    try {
+        sessionStorage.setItem(AUTO_FILTER_FOCUS_KEY, JSON.stringify({ action: form.action, name: field?.name || '' }));
+    } catch (error) {
+        // Storage unavailable: the filter still applies, focus just isn't restored.
+    }
+
+    form.requestSubmit();
+};
+
+document.addEventListener('change', (event) => {
+    const form = event.target.closest('form[data-auto-filter]');
+    if (form && event.target.matches('select, input[type="date"]')) {
+        submitAutoFilter(form, event.target);
+    }
+});
+
+document.addEventListener('input', (event) => {
+    const form = event.target.closest('form[data-auto-filter]');
+    if (form && event.target.matches('input[type="search"]')) {
+        window.clearTimeout(autoFilterTimer);
+        autoFilterTimer = window.setTimeout(() => submitAutoFilter(form, event.target), 500);
+    }
+});
+
+(() => {
+    let pending = null;
+
+    try {
+        pending = JSON.parse(sessionStorage.getItem(AUTO_FILTER_FOCUS_KEY) || 'null');
+        sessionStorage.removeItem(AUTO_FILTER_FOCUS_KEY);
+    } catch (error) {
+        pending = null;
+    }
+
+    if (! pending?.name) {
+        return;
+    }
+
+    const form = [...document.querySelectorAll('form[data-auto-filter]')]
+        .find((candidate) => candidate.action === pending.action && ! candidate.closest('[hidden]'));
+    const field = form?.elements.namedItem(pending.name);
+
+    if (field instanceof HTMLElement) {
+        field.focus();
+        if (field instanceof HTMLInputElement && field.type === 'search') {
+            const length = field.value.length;
+            field.setSelectionRange(length, length);
+        }
+    }
+})();
+
 document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
         document.querySelectorAll('.modal-backdrop.is-open').forEach(closeModal);
@@ -460,7 +568,8 @@ document.addEventListener('submit', (event) => {
     delete form.dataset.confirmed;
 
     const shouldPreventDoubleSubmit = form.matches('[data-ai-generate-form], [data-prevent-double-submit]')
-        || form.method.toLowerCase() !== 'get';
+        // getAttribute: a field named "method" (e.g. the payment form) shadows form.method.
+        || (form.getAttribute('method') || 'get').toLowerCase() !== 'get';
 
     if (! shouldPreventDoubleSubmit) {
         return;
@@ -474,7 +583,7 @@ document.addEventListener('submit', (event) => {
 
     form.dataset.submitted = 'true';
     form.setAttribute('aria-busy', 'true');
-    form.querySelectorAll('button[type="submit"]').forEach((button) => {
+    submitButtonsFor(form).forEach((button) => {
         button.disabled = true;
         button.setAttribute('aria-disabled', 'true');
     });
@@ -641,12 +750,12 @@ document.querySelectorAll('[data-expected-revenue-chart]').forEach((canvas) => {
     );
 });
 
-// â”€â”€ Responsive table scroll helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- Responsive table scroll helpers ----------------------------------------
 
 /**
  * Toggle the `.is-scrollable` class on every `.table-wrap` whose inner table
  * is wider than the visible container width.  The class activates the CSS
- * scroll-hint ("â† Scroll sideways to view more columns â†’").
+ * scroll-hint ("<- Scroll sideways to view more columns ->").
  */
 const syncScrollHints = () => {
     document.querySelectorAll('.table-wrap').forEach((wrap) => {

@@ -3,9 +3,8 @@
     $driverName = $driverName ?? auth()->user()?->name;
     $summaryCards = $summaryCards ?? [];
     $driverProfile = $driverProfile ?? [];
-    $currentAssignment = $currentAssignment ?? null;
     $filters = $filters ?? [];
-    $filterOptions = $filterOptions ?? ['statuses' => [], 'fuelTypes' => collect()];
+    $filterOptions = $filterOptions ?? ['statuses' => [], 'fuelTypes' => collect(), 'depots' => collect()];
     $liftingStatusIdempotencyKey = $liftingStatusIdempotencyKey ?? (string) \Illuminate\Support\Str::uuid();
 @endphp
 
@@ -14,11 +13,11 @@
         <h2 class="section-title" data-driver-heading>{{ $activeTab === 'hauled' ? 'Hauled' : 'Schedule' }}</h2>
 
         @if (session('status'))
-            <div class="alert-bar alert-success">{{ session('status') }}</div>
+            <div class="alert-bar alert-success driver-notice" role="status">{{ session('status') }}</div>
         @endif
 
         @if ($errors->any())
-            <div class="alert-bar alert-warning">{{ $errors->first() }}</div>
+            <div class="alert-bar alert-warning driver-notice" role="alert">{{ $errors->first() }}</div>
         @endif
 
         <div class="tabs">
@@ -43,21 +42,21 @@
 
         <div class="driver-overview-card">
             <div class="driver-overview-identity">
-                <span class="driver-overview-kicker">Driver</span>
-                <strong>{{ $driverProfile['Name'] ?? $driverName ?? 'Driver' }}</strong>
-                <span>{{ $driverProfile['Driver ID'] ?? 'ID unavailable' }}</span>
+                <div>
+                    <span class="driver-overview-kicker">Driver</span>
+                    <strong>{{ $driverProfile['Name'] ?? $driverName ?? 'Driver' }}</strong>
+                    <span>{{ $driverProfile['Driver ID'] ?? 'ID unavailable' }}</span>
+                </div>
                 <x-admin.status-badge :status="$driverProfile['Profile Status'] ?? 'N/A'" />
             </div>
-            <div class="driver-current-lift">
-                <span class="driver-overview-kicker">Next assigned lift</span>
-                <strong>{{ $currentAssignment['cells'][0] ?? 'No active assignment' }}</strong>
-                @if ($currentAssignment)
-                    <span>{{ $currentAssignment['details']['Pickup Depot'] }} · {{ $currentAssignment['details']['Scheduled Date'] }}</span>
-                    <span>{{ $currentAssignment['details']['Fuel Type'] }} · {{ $currentAssignment['details']['Scheduled Quantity'] }}</span>
-                @else
-                    <span>Your schedule is currently clear.</span>
-                @endif
-            </div>
+            <dl class="driver-profile-grid">
+                @foreach (collect($driverProfile)->except(['Name', 'Driver ID', 'Profile Status']) as $label => $value)
+                    <div class="driver-profile-field">
+                        <dt>{{ $label }}</dt>
+                        <dd>{{ $value }}</dd>
+                    </div>
+                @endforeach
+            </dl>
         </div>
 
         <section data-tab-panel="schedule" {{ $activeTab !== 'schedule' ? 'hidden' : '' }}>
@@ -71,10 +70,11 @@
                 </select>
                 <input type="date" name="date_from" aria-label="Filter from date" value="{{ $filters['date_from'] ?? '' }}">
                 <input type="date" name="date_to" aria-label="Filter to date" value="{{ $filters['date_to'] ?? '' }}">
-                <select name="source_type" aria-label="Filter by source">
-                    <option value="">Source</option>
-                    <option value="depot" @selected(($filters['source_type'] ?? '') === 'depot')>Depot</option>
-                    <option value="garage" @selected(($filters['source_type'] ?? '') === 'garage')>Garage</option>
+                <select name="depot_id" aria-label="Filter by depot">
+                    <option value="">Depot (All)</option>
+                    @foreach ($filterOptions['depots'] as $depot)
+                        <option value="{{ $depot->id }}" @selected((string) ($filters['depot_id'] ?? '') === (string) $depot->id)>{{ $depot->name }}</option>
+                    @endforeach
                 </select>
                 <select name="destination_type" aria-label="Filter by destination">
                     <option value="">Destination</option>
@@ -140,10 +140,11 @@
                 </select>
                 <input type="date" name="date_from" aria-label="Filter from date" value="{{ $filters['date_from'] ?? '' }}">
                 <input type="date" name="date_to" aria-label="Filter to date" value="{{ $filters['date_to'] ?? '' }}">
-                <select name="source_type" aria-label="Filter by source">
-                    <option value="">Source</option>
-                    <option value="depot" @selected(($filters['source_type'] ?? '') === 'depot')>Depot</option>
-                    <option value="garage" @selected(($filters['source_type'] ?? '') === 'garage')>Garage</option>
+                <select name="depot_id" aria-label="Filter by depot">
+                    <option value="">Depot (All)</option>
+                    @foreach ($filterOptions['depots'] as $depot)
+                        <option value="{{ $depot->id }}" @selected((string) ($filters['depot_id'] ?? '') === (string) $depot->id)>{{ $depot->name }}</option>
+                    @endforeach
                 </select>
                 <select name="destination_type" aria-label="Filter by destination">
                     <option value="">Destination</option>

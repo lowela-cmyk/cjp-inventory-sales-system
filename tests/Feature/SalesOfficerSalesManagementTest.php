@@ -571,7 +571,8 @@ class SalesOfficerSalesManagementTest extends TestCase
         $records = $this->baseRecords();
         $saleId = $this->createSale($records);
 
-        foreach (['admin', 'inventory_officer', 'dispatch_officer', 'driver'] as $role) {
+        // Admin may manage sales and customers too (see AdminFullAccessTest); the other roles may not.
+        foreach (['inventory_officer', 'dispatch_officer', 'driver'] as $role) {
             $user = User::factory()->create(['role' => $role, 'status' => 'active']);
 
             $this->actingAs($user)

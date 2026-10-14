@@ -167,7 +167,10 @@ class PurchaseService
             ]);
     }
 
-    public function purchaseRows(?string $search, int $perPage = 25, string $pageName = 'purchases_page'): LengthAwarePaginator
+    /**
+     * @param  array{status?: ?string, date?: ?string, depot_id?: mixed, fuel_type_id?: mixed}  $filters
+     */
+    public function purchaseRows(?string $search, int $perPage = 25, string $pageName = 'purchases_page', array $filters = []): LengthAwarePaginator
     {
         $haulTotals = DB::table('hauls')
             ->where('status', '!=', 'cancelled')
@@ -221,6 +224,10 @@ class PurchaseService
                 'purchases.status',
                 'users.name',
             ]))
+            ->when($filters['status'] ?? null, fn (Builder $q, string $status): Builder => $q->where('purchases.workflow_status', $status))
+            ->when($filters['date'] ?? null, fn (Builder $q, string $date): Builder => $q->whereDate('purchases.purchase_date', $date))
+            ->when($filters['depot_id'] ?? null, fn (Builder $q, mixed $depotId): Builder => $q->where('purchases.depot_id', (int) $depotId))
+            ->when($filters['fuel_type_id'] ?? null, fn (Builder $q, mixed $fuelTypeId): Builder => $q->where('purchase_items.fuel_type_id', (int) $fuelTypeId))
             ->orderByDesc('purchases.purchase_date')
             ->orderByDesc('purchase_items.id')
             ->select([

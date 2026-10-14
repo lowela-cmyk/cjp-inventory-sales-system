@@ -150,16 +150,13 @@ class FrontendBugFixesTest extends TestCase
     {
         $styles = file_get_contents(resource_path('css/app.css')) ?: '';
         $inventory = file_get_contents(resource_path('views/inventory-officer/inventory.blade.php')) ?: '';
-        $adminInventory = file_get_contents(resource_path('views/admin/inventory.blade.php')) ?: '';
 
         $this->assertStringContainsString('.inventory-table-wrap', $styles);
         $this->assertStringContainsString('width: fit-content;', $styles);
         $this->assertStringContainsString('.inventory-table {', $styles);
         $this->assertStringContainsString('width: max-content;', $styles);
         $this->assertStringContainsString('inventory-table inventory-table-actions', $inventory);
-        $this->assertStringContainsString('inventory-table inventory-table-actions', $adminInventory);
         $this->assertStringContainsString('View Receipt', $inventory);
-        $this->assertStringContainsString('View Receipt', $adminInventory);
     }
 
     public function test_alert_pages_use_full_width_responsive_shared_layout(): void

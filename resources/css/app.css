@@ -245,6 +245,26 @@ select {
     max-width: none;
 }
 
+/* Admin ledger: full-width table with header and cell content centered beneath each other.
+   Only headers and depot names wrap, so IDs, quantities and status pills stay on one line. */
+.admin-table.ledger-table {
+    width: 100%;
+    table-layout: auto;
+}
+
+.admin-table.ledger-table th,
+.admin-table.ledger-table td {
+    text-align: center;
+    vertical-align: middle;
+    overflow-wrap: normal;
+    word-break: normal;
+}
+
+.admin-table.ledger-table th,
+.admin-table.ledger-table td:nth-child(3) {
+    white-space: normal;
+}
+
 .toolbar-transaction {
     max-width: none;
 }
@@ -277,6 +297,12 @@ select {
 
 .toolbar-inventory button {
     flex-basis: 152px;
+}
+
+.toolbar input[type="date"] {
+    flex: 1 1 150px;
+    min-width: 140px;
+    color-scheme: dark;
 }
 
 .toolbar input::placeholder {
@@ -388,7 +414,7 @@ form[aria-busy="true"] {
     margin-top: 22px;
 }
 
-/* ── Responsive table scroll container ─────────────────────────────────── */
+/* -- Responsive table scroll container ----------------------------------- */
 .table-wrap {
     /* Horizontal scroll only; keep vertical visible so modals/dropdowns
        positioned with JS (fixed/absolute) are never clipped. */
@@ -401,7 +427,7 @@ form[aria-busy="true"] {
     background: #fff;
     min-height: 260px;
 
-    /* Visible, styled scrollbar — wide enough to grab, not oversized */
+    /* Visible, styled scrollbar - wide enough to grab, not oversized */
     scrollbar-width: thin;
     scrollbar-color: var(--admin-line) transparent;
 }
@@ -421,10 +447,10 @@ form[aria-busy="true"] {
     background: var(--admin-muted);
 }
 
-/* Scroll hint — only shown when the container is actually scrollable
+/* Scroll hint - only shown when the container is actually scrollable
    (managed by JS that adds/removes the .is-scrollable class) */
 .table-wrap.is-scrollable::after {
-    content: "← Scroll sideways to view more columns →";
+    content: "\2190  Scroll sideways to view more columns  \2192";
     display: block;
     padding: 5px 10px 4px;
     background: #f5f5f5;
@@ -441,7 +467,7 @@ form[aria-busy="true"] {
     right: 0;
 }
 
-/* ── Fit-content table scroll container (centered on the page) ────────── */
+/* -- Fit-content table scroll container (centered on the page) ---------- */
 .table-wrap-fit {
     width: fit-content;
     max-width: 100%;
@@ -449,7 +475,7 @@ form[aria-busy="true"] {
     margin-right: auto;
 }
 
-/* ── Admin table ────────────────────────────────────────────────────────── */
+/* -- Admin table ---------------------------------------------------------- */
 .admin-table {
     /* Expand to accommodate all columns; never shrink below natural width */
     width: max-content;
@@ -492,7 +518,7 @@ form[aria-busy="true"] {
     line-height: 1.3;
     vertical-align: middle;
     text-align: left;
-    /* Keep all cell text on one line — overrides the global 'anywhere' rule */
+    /* Keep all cell text on one line - overrides the global 'anywhere' rule */
     white-space: nowrap;
     overflow-wrap: normal;
     word-break: normal;
@@ -520,10 +546,10 @@ form[aria-busy="true"] {
     font-size: 13px;
 }
 
-/* ── Sticky Actions column (last th/td) ─────────────────────────────────
+/* -- Sticky Actions column (last th/td) ---------------------------------
    When the table scrolls horizontally, the Actions column sticks to the
    right so users can always reach View/Edit/Delete without scrolling back.
-   Note: overflow-y: visible on .table-wrap is intentional — sticky children
+   Note: overflow-y: visible on .table-wrap is intentional - sticky children
    require the scroll parent NOT to have overflow:hidden on the cross axis. */
 .admin-table th:last-child,
 .admin-table td:last-child {
@@ -587,7 +613,7 @@ table td:has(.status-badge) {
 }
 
 .depot-table th {
-    text-align: center;
+    text-align: left;
 }
 
 .depot-table td {
@@ -604,7 +630,8 @@ table td:has(.status-badge) {
 }
 
 .depot-table th:first-child {
-    text-align: center;
+    padding-left: 14px;
+    text-align: left;
 }
 
 .depot-table td:first-child {
@@ -677,10 +704,41 @@ table td:has(.status-badge) {
     white-space: nowrap;
 }
 
-.inventory-table .status-badge {
-    min-height: 28px;
-    padding-inline: 11px;
+/* Uniform inventory status pills: one fixed size; long labels wrap onto two centered lines. */
+.inventory-table:not(.depot-table) .status-badge {
+    width: 172px;
+    min-width: 172px;
+    max-width: 172px;
+    height: 36px;
+    min-height: 36px;
+    padding: 0 10px;
+    overflow: hidden;
     font-size: 11px;
+    line-height: 1.2;
+    white-space: normal;
+    overflow-wrap: normal;
+    word-break: normal;
+    text-align: center;
+}
+
+.inventory-row-actions {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 8px;
+    align-items: center;
+    justify-content: center;
+}
+
+.pending-receipts-title {
+    margin: 0 0 4px;
+    font-size: 16px;
+    font-weight: 800;
+}
+
+.pending-receipts-note {
+    margin: 0 0 10px;
+    color: var(--admin-muted);
+    font-size: 13px;
 }
 
 .inventory-table .inventory-number {
@@ -802,19 +860,8 @@ table td:has(.status-badge) {
 .workflow-alert-content { min-width: 0; }
 .workflow-alert-meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; font-size: 12px; }
 .workflow-alert-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.lifting-purchase-list { display: grid; gap: 12px; margin-top: 18px; }
-.lifting-purchase-row { display: grid; grid-template-columns: minmax(260px, 2fr) minmax(180px, 1fr) minmax(170px, .8fr) minmax(120px, auto); gap: 14px; align-items: end; padding: 16px; border: 1px solid #d8dee9; border-radius: 10px; background: #f8fafc; }
-.lifting-purchase-row .form-row { min-width: 0; grid-template-columns: 1fr; gap: 7px; align-content: end; }
-.lifting-purchase-row .form-row label { font-size: 14px; }
-.lifting-purchase-row .form-row output { display: flex; min-height: 42px; align-items: center; padding: 8px 12px; border-radius: 8px; background: #e7e9ed; line-height: 1.3; overflow-wrap: anywhere; }
-.lifting-purchase-row .lifting-remove-button { min-height: 42px; white-space: nowrap; }
-.lifting-totals { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 20px; margin-top: 16px; }
-.lifting-totals [role="alert"] { flex-basis: 100%; color: #b91c1c; font-weight: 700; }
-#dispatch-lift-add .admin-modal-wide { width: min(1120px, 100%); }
-#dispatch-lift-add .lifting-schedule-form > .modal-card > .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 20px; }
-#dispatch-lift-add .modal-actions { position: sticky; bottom: -26px; margin-inline: -26px; margin-bottom: -26px; padding: 14px 26px; border-top: 1px solid var(--admin-line); background: #fff; }
-@media (max-width: 1040px) { .lifting-purchase-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 800px) { .lifting-purchase-row { grid-template-columns: 1fr; } #dispatch-lift-add .lifting-schedule-form > .modal-card > .form-grid { grid-template-columns: 1fr; } .workflow-alert-stack .alert-bar { grid-template-columns: auto 1fr; } .workflow-alert-actions { grid-column: 1 / -1; } }
+.lifting-empty-note { margin: 16px 0 0; padding: 10px 14px; border: 1px solid var(--warning-soft); border-left: 4px solid var(--warning); border-radius: 6px; background: #fff7ec; font-size: 14px; font-weight: 600; }
+@media (max-width: 800px) { .workflow-alert-stack .alert-bar { grid-template-columns: auto 1fr; } .workflow-alert-actions { grid-column: 1 / -1; } }
 
 .fleet-page { display: grid; gap: 14px; }
 .section-heading-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; flex-wrap: wrap; }
@@ -1202,16 +1249,44 @@ table td:has(.status-badge) {
 }
 
 .admin-modal {
-    width: min(835px, 100%);
-    max-height: calc(100vh - 40px);
-    overflow: auto;
+    /* Fixed header + optional fixed footer; only .modal-body scrolls. */
+    display: flex;
+    flex-direction: column;
+    width: min(835px, 95vw);
+    max-height: 90vh;
+    overflow: hidden;
     background: #fff;
     border-radius: 0 0 6px 6px;
     box-shadow: 0 20px 70px rgba(0, 0, 0, .28);
 }
 
 .admin-modal-wide {
-    width: min(920px, 100%);
+    width: min(920px, 95vw);
+}
+
+.admin-modal-xl {
+    width: min(1100px, 95vw);
+}
+
+.admin-modal > .modal-titlebar,
+.admin-modal > .modal-footer {
+    flex: none;
+}
+
+.modal-footer {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 26px;
+    border-top: 1px solid var(--admin-soft-line);
+    background: #fff;
+}
+
+.modal-footer form {
+    display: inline-flex;
+    margin: 0;
 }
 
 .modal-titlebar {
@@ -1283,6 +1358,10 @@ table td:has(.status-badge) {
 }
 
 .modal-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
     padding: 26px;
 }
 
@@ -1932,8 +2011,41 @@ table td:has(.status-badge) {
     font-weight: 900;
 }
 
-.sales-payment-stat:last-child output {
+.sales-payment-stat [data-sales-balance-preview] {
     color: var(--admin-red);
+}
+
+.form-row .form-row-message {
+    grid-column: -2 / -1;
+}
+
+.form-row [aria-invalid="true"] {
+    outline: 2px solid var(--danger);
+    outline-offset: 0;
+}
+
+.form-row .form-hint {
+    grid-column: -2 / -1;
+    margin-top: -6px;
+    color: var(--admin-muted);
+    font-size: 12px;
+}
+
+.payment-form-toggle-row {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 18px;
+}
+
+.payment-form-toggle-row[hidden],
+.payment-entry-form[hidden] {
+    display: none;
+}
+
+.payment-entry-form {
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px solid var(--admin-soft-line);
 }
 
 @media (max-width: 720px) {
@@ -2190,12 +2302,27 @@ table td:has(.status-badge) {
     width: 100%;
 }
 
+/* Alert cards always span the full content width, with actions pinned to the right edge. */
+.workflow-alert-stack {
+    width: 100%;
+    max-width: none;
+    justify-items: stretch;
+    gap: 10px;
+}
+
 .workflow-alert-stack .alert-bar {
     width: 100%;
+    max-width: none;
     min-width: 0;
+    min-height: 0;
     box-sizing: border-box;
     grid-template-columns: 42px minmax(0, 1fr) auto;
-    gap: 14px;
+    gap: 12px;
+    padding: 11px 16px;
+}
+
+.workflow-alert-meta {
+    margin-top: 6px;
 }
 
 .workflow-alert-content,
@@ -2272,6 +2399,24 @@ table td:has(.status-badge) {
 .dispatch-filter-row .btn,
 .driver-filter-row .btn {
     flex: 1 1 132px;
+}
+
+/* Auto-applied dispatch fuel filters: keep search, date, selects and the action on one row at laptop widths. */
+.dispatch-fuel-filter input[type="search"] {
+    flex: 999 1 180px;
+    min-width: 160px;
+}
+
+.dispatch-fuel-filter select,
+.dispatch-fuel-filter input[type="date"] {
+    flex: 1 1 136px;
+    min-width: 128px;
+    padding: 0 10px;
+}
+
+.dispatch-filter-row input[type="date"],
+.driver-filter-row input[type="date"] {
+    color-scheme: dark;
 }
 
 .dispatch-filter-row input::placeholder,
@@ -2378,40 +2523,47 @@ table td:has(.status-badge) {
     font-size: 22px;
 }
 
+.driver-notice {
+    display: block;
+    min-height: 0;
+    margin-bottom: 14px;
+    padding: 8px 14px;
+    border-left-width: 4px;
+    border-radius: 6px;
+    font-size: 14px;
+    line-height: 1.4;
+}
+
+.driver-notice.alert-success {
+    background: var(--success-soft);
+    border-left-color: var(--success);
+}
+
 .driver-overview-card {
     display: grid;
-    grid-template-columns: minmax(210px, .75fr) minmax(280px, 1.6fr);
+    grid-template-columns: minmax(200px, 260px) minmax(0, 1fr);
     gap: 0;
     margin-bottom: 14px;
-    overflow: hidden;
     border: 1px solid var(--admin-line);
     border-left: 6px solid var(--admin-red);
     border-radius: 8px;
     background: #fff;
 }
 
-.driver-overview-identity,
-.driver-current-lift {
-    display: grid;
-    min-width: 0;
-    gap: 4px;
-    align-content: center;
-    padding: 14px 18px;
-}
-
 .driver-overview-identity {
+    display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
+    min-width: 0;
+    gap: 10px;
+    align-items: center;
+    padding: 14px 18px;
     border-right: 1px solid var(--admin-line);
 }
 
-.driver-overview-identity > :not(.status-badge) {
-    grid-column: 1;
-}
-
-.driver-overview-identity .status-badge {
-    grid-column: 2;
-    grid-row: 1 / span 3;
-    align-self: center;
+.driver-overview-identity > div {
+    display: grid;
+    min-width: 0;
+    gap: 4px;
 }
 
 .driver-overview-kicker {
@@ -2428,6 +2580,35 @@ table td:has(.status-badge) {
 }
 
 .driver-overview-card span:not(.status-badge) {
+    overflow-wrap: anywhere;
+}
+
+.driver-profile-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 12px 20px;
+    min-width: 0;
+    margin: 0;
+    padding: 14px 18px;
+}
+
+.driver-profile-field {
+    min-width: 0;
+}
+
+.driver-profile-field dt {
+    color: var(--admin-muted);
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+}
+
+.driver-profile-field dd {
+    margin: 2px 0 0;
+    color: var(--admin-ink);
+    font-size: 14px;
+    font-weight: 600;
     overflow-wrap: anywhere;
 }
 
@@ -3222,6 +3403,261 @@ body.login-page {
     .workflow-alert-actions > *,
     .workflow-alert-actions .btn {
         flex: 1 1 132px;
+        width: 100%;
+    }
+}
+
+
+/* ===== Schedule Lift form: label-above-input grid, purchase lines as cards (no absolute
+   positioning, fixed widths or negative margins; every grid child may shrink). ===== */
+.lift-form {
+    display: grid;
+    gap: 18px;
+    min-width: 0;
+}
+
+.lift-form-section {
+    display: grid;
+    gap: 14px;
+    min-width: 0;
+    padding: 16px;
+    border: 1px solid var(--admin-soft-line);
+    border-radius: 8px;
+}
+
+.lift-section-title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 800;
+}
+
+.lift-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px 20px;
+}
+
+.lift-field {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+    align-content: start;
+}
+
+.lift-field label,
+.lift-field-label {
+    font-size: 14px;
+    font-weight: 800;
+}
+
+.lift-field select,
+.lift-field input {
+    width: 100%;
+    min-width: 0;
+    height: 42px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 0 12px;
+    background: #d8d8d8;
+    color: #333;
+    font: inherit;
+}
+
+.lift-field [aria-invalid="true"] {
+    border-color: var(--danger);
+}
+
+.lift-info {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+}
+
+.lift-info-row {
+    display: grid;
+    grid-template-columns: 150px minmax(0, 1fr);
+    gap: 12px;
+}
+
+.lift-info dt {
+    font-weight: 800;
+}
+
+.lift-info dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.lift-lines {
+    display: grid;
+    gap: 12px;
+}
+
+.lift-line {
+    display: grid;
+    grid-template-columns: minmax(220px, 2fr) minmax(160px, 1.5fr) minmax(160px, 1.5fr) auto;
+    gap: 14px;
+    align-items: start;
+    padding: 14px;
+    border: 1px solid #d8dee9;
+    border-radius: 10px;
+    background: #f8fafc;
+}
+
+.lift-line > * {
+    min-width: 0;
+}
+
+.lift-line-summary-text {
+    display: flex;
+    align-items: center;
+    min-height: 42px;
+    margin: 0;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: #e7e9ed;
+    line-height: 1.3;
+    overflow-wrap: normal;
+    word-break: normal;
+}
+
+.input-suffix {
+    display: flex;
+    min-width: 140px;
+}
+
+.input-suffix input {
+    flex: 1 1 auto;
+    border-radius: 8px 0 0 8px;
+}
+
+.input-suffix span {
+    display: flex;
+    flex: none;
+    align-items: center;
+    padding: 0 12px;
+    border-radius: 0 8px 8px 0;
+    background: #c4c4c4;
+    font-weight: 800;
+}
+
+/* Align the Remove button with the inputs (labels sit above them). */
+.lift-line-remove {
+    padding-top: 26px;
+}
+
+.lift-line-remove .btn {
+    width: 100%;
+    min-height: 42px;
+    white-space: nowrap;
+}
+
+.lift-totals {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 20px;
+}
+
+.lift-totals-figures {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 20px;
+    font-weight: 800;
+}
+
+.lift-totals-warning {
+    flex-basis: 100%;
+}
+
+.lift-totals-warning:empty {
+    display: none;
+}
+
+.field-error {
+    margin: 0;
+    color: #b91c1c;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.form-alert {
+    margin: 0;
+    padding: 10px 14px;
+    border: 1px solid var(--danger-soft);
+    border-left: 4px solid var(--danger);
+    border-radius: 6px;
+    background: #fff1f2;
+    color: #9f1239;
+    font-weight: 700;
+}
+
+.modal-form-card {
+    margin-top: 14px;
+}
+
+.receipt-line {
+    display: grid;
+    gap: 8px;
+    padding: 10px 0;
+    border-top: 1px solid var(--admin-soft-line);
+}
+
+.receipt-line-title,
+.receipt-line-note {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.receipt-line-note {
+    color: var(--admin-muted);
+    font-size: 13px;
+}
+
+/* Tablet: two columns per purchase line (Purchase + Fuel, then Amount + Remove). */
+@media (max-width: 1023px) {
+    .lift-line {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+/* Phone: everything stacks; buttons go full width; footers stack. */
+@media (max-width: 767px) {
+    .modal-backdrop {
+        padding: 8px;
+    }
+
+    .modal-body {
+        padding: 16px;
+    }
+
+    .lift-form-section {
+        padding: 12px;
+    }
+
+    .lift-fields,
+    .lift-line,
+    .lift-info-row {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .lift-line-remove {
+        padding-top: 0;
+    }
+
+    .lift-totals > .btn {
+        width: 100%;
+    }
+
+    .modal-footer {
+        flex-direction: column;
+        align-items: stretch;
+        padding: 12px 16px;
+    }
+
+    .modal-footer .btn,
+    .modal-footer form,
+    .modal-footer form .btn {
         width: 100%;
     }
 }

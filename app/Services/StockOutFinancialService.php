@@ -26,6 +26,9 @@ class StockOutFinancialService
             ->leftJoin('haul_allocations', 'haul_allocations.id', '=', 'stock_outs.haul_allocation_id')
             ->leftJoin('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')
             ->leftJoin('purchase_items as source_purchase_item', 'source_purchase_item.id', '=', 'hauls.purchase_item_id')
+            // Where the fuel physically left from: a garage tank, or the depot of a direct release.
+            ->leftJoin('storage_locations as source_garage', 'source_garage.id', '=', 'stock_outs.storage_location_id')
+            ->leftJoin('depots as source_depot', 'source_depot.id', '=', DB::raw('COALESCE(stock_outs.depot_id, hauls.depot_id)'))
             ->leftJoinSub($payments, 'payments_total', 'payments_total.sale_id', '=', 'sales.id')
             ->leftJoinSub($saleTotals, 'sale_totals', 'sale_totals.sale_id', '=', 'sales.id')
             ->whereNull('sales.deleted_at')
@@ -37,6 +40,8 @@ class StockOutFinancialService
                     ->orWhere('customers.name', 'like', $term)
                     ->orWhere('customers.company_name', 'like', $term)
                     ->orWhere('fuel_types.name', 'like', $term)
+                    ->orWhere('source_garage.name', 'like', $term)
+                    ->orWhere('source_depot.name', 'like', $term)
                     ->orWhere('stock_outs.status', 'like', $term);
             }))
             ->select([
@@ -46,6 +51,9 @@ class StockOutFinancialService
                 'stock_outs.quantity_liters',
                 'stock_outs.status',
                 'stock_outs.source_type',
+                'source_garage.name as garage_name',
+                'source_depot.id as source_depot_id',
+                'source_depot.name as depot_name',
                 'sales.sale_code',
                 'customers.name as customer_name',
                 'customers.company_name',

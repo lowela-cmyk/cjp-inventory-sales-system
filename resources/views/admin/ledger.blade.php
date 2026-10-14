@@ -14,7 +14,7 @@
                 <button class="btn btn-primary" type="submit">Fuel Type (All)</button>
             </form>
             <div class="table-wrap">
-                <table class="admin-table">
+                <table class="admin-table ledger-table">
                     <thead><tr><th>Purchase ID</th><th>Fuel Type</th><th>Depot</th><th>Purchased Quantity</th><th>Total Lifted</th><th>Remaining Quantity</th><th>Status</th></tr></thead>
                     <tbody>
                         @forelse ($ledger as $row)
@@ -44,7 +44,7 @@
                 <button class="btn btn-primary" type="submit">Fuel Type (All)</button>
             </form>
             <div class="table-wrap">
-                <table class="admin-table">
+                <table class="admin-table ledger-table">
                     <thead><tr><th>Purchase ID</th><th>Fuel Type</th><th>Depot</th><th>Purchased Quantity</th><th>Total Lifted</th><th>Remaining Quantity</th><th>Status</th><th>Actions</th></tr></thead>
                     <tbody>
                         @forelse ($transactions as $row)

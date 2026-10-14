@@ -9,6 +9,8 @@ use Illuminate\Support\Str;
 /**
  * Sidebar red dots: a module gets a dot when one of its records was created or updated after the
  * user last opened that module. Each module costs one query (the MAX(updated_at) of its tables).
+ * Every user starts with all their modules marked as seen (on creation, approval and role change),
+ * so nobody gets dots for history they never had a chance to see.
  */
 class ModuleActivityService
 {
@@ -49,7 +51,7 @@ class ModuleActivityService
     ];
 
     /** Sidebar modules each role can open. */
-    private const ROLE_MODULES = [
+    public const ROLE_MODULES = [
         'admin' => ['inventory', 'ledger', 'fuel-lifting', 'sales', 'alerts', 'account-requests', 'user-management'],
         'inventory_officer' => ['inventory', 'ledger', 'alerts'],
         'sales_officer' => ['sales', 'alerts'],
@@ -97,8 +99,20 @@ class ModuleActivityService
     }
 
     /**
-     * Modules (of those the user's role can open) with records changed since the user last opened them.
-     * A module the user has never opened counts as unseen when it has any records.
+     * Marks every module the user's role can open as seen now (new, approved or re-roled users).
+     */
+    public function markAllViewed(User $user): void
+    {
+        $now = now();
+        $rows = array_map(fn (string $module): array => ['user_id' => $user->getKey(), 'module' => $module, 'last_viewed_at' => $now], self::ROLE_MODULES[$user->role]);
+
+        DB::table('user_module_views')->upsert($rows, ['user_id', 'module'], ['last_viewed_at']);
+        unset($this->unseenCache[$user->getKey()]);
+    }
+
+    /**
+     * Modules (of those the user's role can open) with records created or updated after the user last
+     * opened them. A module without a row yet is recorded as seen now, so it never shows a false dot.
      *
      * @return array<int, string>
      */
@@ -113,12 +127,17 @@ class ModuleActivityService
             ->where('user_id', $user->getKey())
             ->pluck('last_viewed_at', 'module');
 
-        $unseen = [];
-        foreach ($modules as $module) {
-            $latest = $this->latestChange($user, $module);
-            $viewed = $lastViewed[$module] ?? null;
+        $missing = array_values(array_diff($modules, $lastViewed->keys()->all()));
+        if ($missing !== []) {
+            $now = now();
+            DB::table('user_module_views')->insertOrIgnore(array_map(fn (string $module): array => ['user_id' => $user->getKey(), 'module' => $module, 'last_viewed_at' => $now], $missing));
+        }
 
-            if ($latest !== null && ($viewed === null || strtotime($latest) > strtotime((string) $viewed))) {
+        $unseen = [];
+        foreach (array_diff($modules, $missing) as $module) {
+            $latest = $this->latestChange($user, $module);
+
+            if ($latest !== null && strtotime($latest) > strtotime((string) $lastViewed[$module])) {
                 $unseen[] = $module;
             }
         }

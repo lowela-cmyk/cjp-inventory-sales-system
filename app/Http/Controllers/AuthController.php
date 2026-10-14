@@ -150,9 +150,11 @@ class AuthController extends Controller
 
         $request->session()->regenerate();
 
-        $request->user()->forceFill([
-            'last_login_at' => now(),
-        ])->save();
+        // A login is not a change to the account: keep updated_at so other users get no red dot for it.
+        $user = $request->user();
+        $user->timestamps = false;
+        $user->forceFill(['last_login_at' => now()])->save();
+        $user->timestamps = true;
 
         return redirect()
             ->route($this->dashboardRouteFor($request->user()->role))

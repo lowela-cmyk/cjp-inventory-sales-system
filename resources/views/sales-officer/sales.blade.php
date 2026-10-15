@@ -25,13 +25,7 @@
 @component($salesLayout, ['title' => 'Sales Management', 'active' => 'sales'])
     <div data-tabs>
         <h2 class="section-title" data-tab-heading>{{ $activeTab === 'customers' ? 'Customers' : 'Receivables' }}</h2>
-        @if (session('status'))
-            <div class="admin-flash admin-flash-success" role="status">{{ session('status') }}</div>
-        @endif
 
-        @if ($errors->any())
-            <div class="admin-flash admin-flash-error" role="alert">{{ $errors->first() }}</div>
-        @endif
 
         <div class="tabs">
             <button class="tab-button {{ $activeTab === 'receivables' ? 'is-active' : '' }}" type="button" data-tab-target="receivables" data-tab-url="{{ route($salesRoutePrefix.'.sales') }}" data-heading="Receivables">Receivables</button>

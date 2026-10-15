@@ -13,13 +13,7 @@
     <div data-tabs>
         <h2 class="section-title" data-tab-heading>{{ $headings[$activeTab] }}</h2>
 
-        @if (session('status'))
-            <div class="admin-flash admin-flash-success" role="status">{{ session('status') }}</div>
-        @endif
 
-        @if ($errors->any())
-            <div class="admin-flash admin-flash-error" role="alert">{{ $errors->first() }}</div>
-        @endif
 
         <div class="tabs">
             <button class="tab-button {{ $activeTab === 'purchases' ? 'is-active' : '' }}" type="button" data-tab-target="purchases" data-tab-url="{{ route($inventoryRoutePrefix) }}" data-heading="Purchases">Purchases</button>

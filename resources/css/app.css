@@ -594,28 +594,22 @@ form[aria-busy="true"] {
     background: var(--admin-head);
 }
 
-/* Preserve per-row colour on sticky td */
-.admin-table tbody tr td:last-child {
-    background: inherit;
+/* The sticky cell must be opaque, or the columns scrolling underneath show through it.
+   White by default; coloured rows repaint it with their tint (higher specificity on purpose). */
+.admin-table tbody td:last-child {
+    background: #fff;
 }
 
-/* Ensure coloured rows paint their background on the sticky cell */
-.row-danger td:last-child {
+.admin-table .row-danger td:last-child {
     background: var(--danger-soft);
 }
 
-.row-warning td:last-child {
+.admin-table .row-warning td:last-child {
     background: var(--warning-soft);
 }
 
-.row-success td:last-child {
+.admin-table .row-success td:last-child {
     background: var(--success-soft);
-}
-
-/* Fallback: plain white background when no row class is set */
-.admin-table tbody tr:not([class]) td:last-child,
-.admin-table tbody tr[class=""] td:last-child {
-    background: #fff;
 }
 
 /* Center status chips/badges in all tables */

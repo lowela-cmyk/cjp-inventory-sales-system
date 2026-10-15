@@ -12,13 +12,7 @@
     <div data-tabs>
         <h2 class="section-title" data-driver-heading>{{ $activeTab === 'hauled' ? 'Hauled' : 'Schedule' }}</h2>
 
-        @if (session('status'))
-            <div class="alert-bar alert-success driver-notice" role="status">{{ session('status') }}</div>
-        @endif
 
-        @if ($errors->any())
-            <div class="alert-bar alert-warning driver-notice" role="alert">{{ $errors->first() }}</div>
-        @endif
 
         <div class="tabs">
             <button class="tab-button {{ $activeTab === 'schedule' ? 'is-active' : '' }}" type="button" data-tab-target="schedule" data-tab-url="{{ route('driver.fuel-lifting') }}" data-heading="Schedule">Schedule</button>

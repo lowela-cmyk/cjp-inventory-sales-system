@@ -24,7 +24,9 @@ class SystemAnalysisRevisionsTest extends TestCase
             ->get(route('driver.fuel-lifting'));
 
         $page->assertOk()
-            ->assertSee('driver-notice', false)
+            // One notification channel (2.1): the message is a toast, never an inline banner too.
+            ->assertDontSee('driver-notice', false)
+            ->assertSee('class="cjp-toast cjp-toast-success"', false)
             ->assertSee('Withdrawal receipt uploaded successfully.')
             ->assertSee('driver-profile-grid', false)
             ->assertSee('Emergency Contact')
@@ -72,7 +74,9 @@ class SystemAnalysisRevisionsTest extends TestCase
             ->withSession(['status' => 'Customer record created successfully.'])
             ->get(route('sales-officer.sales'))
             ->assertOk()
-            ->assertSee('<div class="admin-flash admin-flash-success" role="status">Customer record created successfully.</div>', false);
+            ->assertDontSee('admin-flash', false)
+            ->assertSee('class="cjp-toast cjp-toast-success"', false)
+            ->assertSee('Customer record created successfully.');
     }
 
     public function test_dispatch_filters_apply_without_date_from_and_lift_date_matches_one_day(): void

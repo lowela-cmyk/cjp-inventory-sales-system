@@ -45,15 +45,15 @@ Compliance check of the CJP Southern Star OPC system against the "System Analysi
 | 1.6 | 1 | Add Purchase: Depot selectable | ✅ DONE | flow 1.5/1.6 | Saved F1 + Batangas Energy Terminal. |
 | 1.7 | 1 | No Delivery Receipt upload in Add Purchase | ✅ DONE | flow 1.7; `PurchaseReceiptUploadTest::test_purchase_form_rejects_receipt_upload_tampering` | |
 | 1.8 | 1 | Admin can add/edit/manage customers and sales; no "managed in Sales Officer module" notice | ✅ DONE | `CompliancePhase2Test::test_admin_manages_customers_from_user_management_with_their_real_codes`; `phase2/um-customers-*.png`, `phase2/um-add-customer-1366.png` | Admin has the full Sales page. **Phase 2:** User Management → Customers now uses real Add and Edit forms (Bank Name and Status included). They post to the existing validated `admin.sales.customers.*` routes and return to the Customers tab; errors reopen the modal. The dead-end notice is gone. The table, search and CSV export use the stored `customer_code` (previously `CSM-` + row id). The page heading follows the active tab. Browser: codes match the DB at 375/768/1366/1920; add and edit verified. |
-| 1.9 | 1 | No big empty spaces; tables/content fill the width | ⚠️ PARTIAL | `sweep-chrome.json` (no table leaves >40 px unused); `5.15-purchases-table-1366*.png` | Depots, ledger, alerts and trucks fill the width. **But** at 1366 px Purchases (14 cols) hides 900 px behind a sideways scroll; Sales and Dispatch scroll too. Page overflows sideways: Dashboard +87 px @1366 and +497 px @768; Reports +87 px @768; Driver +26 px @768. The sidebar background stops partway down long pages (dashboard). |
-| 1.10 | 1 | No overlapping buttons; consistent spacing and sizes | ⚠️ PARTIAL | sweep: no control overlaps outside modals; toolbar heights uniform; `chrome-1366-sales_sales-officer_sales.png`; `1.10-sticky-bleed-row.png` | The sticky **Actions** cell renders transparent (computed `rgba(0,0,0,0)`), so the columns scrolling underneath show between View/Cancel. Root cause: `.admin-table tbody tr td:last-child { background: inherit }` (`app.css:597`) outranks the `.row-* td:last-child` tint rules (`app.css:603-613`), and the `<tr>` has no background to inherit. At rest it also covers 117 px of each Purchases *Inventory Status* pill @1366. Driver page: "Fuel Type" filter wraps onto its own full-width row. |
+| 1.9 | 1 | No big empty spaces; tables/content fill the width | ⚠️ PARTIAL | `sweep-chrome.json`; `5.15-purchases-table-1366*.png` | No unused space: Depots, ledger, alerts and trucks fill the width. **Still open:** at 1366px the 11–16-column tables scroll sideways inside their frame (Purchases hides 900px, Sales 1,407, Dispatch 1,011, Stock-Out 1,219, Stock-In 698). **Phase 3 attempt reverted:** allowing cells to wrap only halved the hidden width, split IDs like `PUR-261015-8WDFH` and `TRK-001 / NFD-4821` across lines, and tripled row height. That is a readability regression, so it was not shipped. Fitting at 1366 needs fewer or merged columns; **this needs your decision** (see Phase 3 notes). Page-level overflow (Dashboard, Reports, Driver) is Phase 4. |
+| 1.10 | 1 | No overlapping buttons; consistent spacing and sizes | ✅ DONE | `CompliancePhase3Test::test_sticky_action_cells_always_paint_an_opaque_background`; `phase3/1.10-sticky-row-1366.png`; `phase3/phase3.json` | **Phase 3:** the sticky Actions cell is opaque. It is white by default and keeps the row tint (`app.css` sticky block), so nothing shows through between the buttons. Browser: 0 transparent sticky cells and 0 control overlaps on 9 pages × 4 widths. Remaining: the Purchases status pill still sits under the Actions column at 1366px until you scroll sideways; that is part of 1.9. |
 | 1.11 | 1 | No empty profile circle top-right | ✅ DONE | sweep `avatar: false` on all 144 renders; `components/admin/header.blade.php` | |
 | 1.12 | 1 | Sidebar logo never cut off | ✅ DONE | `1.12-sidebar-logo-{768,1366}.png` | At ≤768 px the sidebar is a drawer (hamburger); the logo is intact inside it. |
 | 1.13 | 1 | No hardcoded dummy data in alerts/ledger | ✅ DONE | grep of `app/`, `resources/` (only `OperationalDataRepairService`); `InventoryLedgerTest::test_view_transactions_modal_displays_all_lift_blocks_and_contained_details_from_database` | Alerts and ledger read only from the DB. Demo customers/depots come from `DatabaseSeeder` → `OperationalDataRepairService::seedMasterData()`, so they are DB rows, not view code. The fabricated customer IDs are listed under 1.8. |
 | 1.14 | 1 | Driver uploads receipt pictures + optional notes; shown in Inventory > Purchases | ✅ DONE | flow 1.14 / 7.1; `PurchaseReceiptUploadTest` (5 tests) | Upload unlocks once the lift is Lifted; it can be replaced. |
 | 1.15 | 1 | Exactly 4 fuel types: F1, Unleaded, Premium, Diesel | ✅ DONE | `FuelCatalogRegressionTest` (5 tests); DB: 4 active fuel types (main and audit) | 4 legacy fuel types are kept as *inactive* for history; validation rejects them. |
 | 1.16 | 1 | 2 garage tanks per fuel (8); leftover fuel goes to the tanks | ✅ DONE | DB: 8 active garage tanks, 2 per fuel (main and audit); flow 7.3 | 8 legacy tanks for the inactive fuels are inactive. |
-| 2.1 | 2 | Same greeting format for every role (login toast only; no inline banners) | ⚠️ PARTIAL | flow 2.1 FAIL; sweep `inlineWelcome: false` | The welcome is toast-only everywhere ✅. **But** every other success message shows twice: an inline `.admin-flash` / `.alert-bar` **and** a toast (inventory, sales, dispatch, driver, user management, account requests, reports). |
+| 2.1 | 2 | Same greeting format for every role (login toast only; no inline banners) | ✅ DONE | `CompliancePhase3Test::test_success_messages_are_toasts_only_on_every_role_page`; `phase3/2.1-toast-only-*.png` | **Phase 3:** the 12 inline `.admin-flash` / `.driver-notice` banners in 6 views were removed. Success and error messages appear once, as a toast, on every role's pages; field errors stay next to their fields. Browser: a real save shows exactly 1 toast and 0 banners at 375/768/1366/1920. |
 | 2.2 | 2 | Depots have their own Inventory tab | ✅ DONE | `chrome-1366-inventory_inventory-officer_inventory_depots.png` | Add Depot lives here. |
 | 2.3 | 2 | Sales automatically become Stock-Out | ✅ DONE | see 4.14 | **C1 resolved (Phase 1):** stock-out is automatic and posts on delivery, as approved. |
 | 2.4 | 2 | Price × liters shows the total automatically; payments reduce the balance | ✅ DONE | flow 2.4 (1,000 L × 65 → "65,000.00"; balance after 30,000 + 5,000) | |
@@ -64,7 +64,7 @@ Compliance check of the CJP Southern Star OPC system against the "System Analysi
 | 2.9 | 2 | 4 fuel types | ✅ DONE | = 1.15 | |
 | 3.1 | 3 | Purchase status automatic (no manual Status dropdown) | ✅ DONE | flow 3.1; `inventory.blade.php` Add modal shows a fixed "Pending" pill | |
 | 3.2 | 3 | Creating a purchase creates an alert | ✅ DONE | flow 3.2 (Inventory Officer and Admin alerts list the new purchase); `PurchaseService.php:72`; `flow-*-3.2-alert-created.png` | `cjp_inventory_sales_db` has 0 alerts only because its 4 purchases were seeded, not created through the app. Phase 1: alert bodies now state their own event ("Status: Received" on a Received alert), so they no longer show a lagging purchase status (`CompliancePhase1Test::test_purchase_alert_messages_state_their_own_event`). Alerts created before the fix keep their old text. |
-| 3.3 | 3 | Every status has a color everywhere | ⚠️ PARTIAL | `components/admin/status-badge.blade.php` | One shared pill component everywhere. Statuses with no color (they fall back to gray *neutral*): `confirmed` (sale order), `rejected` (account request), `maintenance` (truck), `planned` (allocation), `info` / `warning` (alert severity). |
+| 3.3 | 3 | Every status has a color everywhere | ✅ DONE | `CompliancePhase3Test::test_every_status_has_a_colour`; `phase3/3.3-account-requests-1366.png` | **Phase 3:** colors added for confirmed and info (blue), planned (pending), maintenance and warning (amber), and rejected (red). Refund due is amber. Browser: 0 gray pills across inventory, sales, dispatch, driver, user management, account requests and alerts at all four widths. |
 | 3.4 | 3 | Driver "location" = pickup depot | ✅ DONE | flow 3.4/3.5; `flow-*-3.4-driver-row.png` | Columns are "Pickup Depot" and "Depot Address". |
 | 3.5 | 3 | Second lift on the same purchase works; source = purchase's depot | ✅ DONE | flow (lifts on purchases that already had lifts); `LiftSchedulingFlowTest::test_dispatch_creates_lift_assignments_under_the_same_purchase_and_blocks_invalid_quantities` | No free text is stored as the source. |
 | 3.6 | 3 | No free-text Location in Schedule Lift; depot-derived | ✅ DONE | flow 3.6 ("Pickup Depot: Batangas Energy Terminal — Shell Tabangao, Batangas City") | |
@@ -158,6 +158,7 @@ Compliance check of the CJP Southern Star OPC system against the "System Analysi
 | Audit baseline (`main` @ `80aef6f`) | 437 passed, **8 failed** |
 | After Phase 1 | 447 passed, **4 failed** (only the open October 12 security items below) |
 | After Phase 2 | 449 passed, **4 failed** (same four) |
+| After Phase 3 | 452 passed, **4 failed** (same four) |
 
 **Fixed in Phase 1:**
 - `AdminUserManagementTest` duplicate…, `FormValidationTest` ×2 and `RoleBasedAccessControlTest` registration… failed because of a regression from 9fa4d4b (red dots). `ModuleActivityService` now treats a missing or unknown role as "no modules", via `modulesFor()`. Regression test: `CompliancePhase1Test::test_red_dots_tolerate_users_without_a_known_role`.
@@ -174,21 +175,29 @@ Compliance check of the CJP Southern Star OPC system against the "System Analysi
 ## Other findings (outside the document)
 
 - ~~In Dispatch / Fuel Lifting the "In Progress" count includes **Lifted** lifts.~~ **Fixed in Phase 1:** Lifted counts as Completed on the Dispatch and Driver cards (`CompliancePhase1Test::test_lifted_lifts_count_as_completed_in_the_dispatch_and_driver_cards`).
-- Login / Register: the "Log In" heading and the input text are indented further than the field labels.
+- Login / Register: the "Log In" heading and the input text are indented further than the field labels (not changed; it was planned for Phase 3 and is deferred with 1.9).
 
 ## Summary
 
 | Status | Count | Items |
 |---|---|---|
-| ✅ DONE | 86 | everything not listed below |
-| ⚠️ PARTIAL | 5 | 1.9, 1.10, 2.1, 3.3, 3.9 |
+| ✅ DONE | 89 | everything not listed below |
+| ⚠️ PARTIAL | 2 | 1.9, 3.9 |
 | ❌ NOT DONE | 0 |  |
 | 🔀 CONFLICT | 0 |  |
 | **Total** | **91** | |
 
-Every feature the document asks for exists and works end to end. **Open after Phase 2:**
-- Visual consistency (1.9, 1.10, 2.1, 3.3).
-- A Firefox run (3.9).
+Every feature the document asks for exists and works end to end. **Open after Phase 3:**
+- 1.9: wide tables at 1366px need a column decision.
+- 3.9: a Firefox run.
+- Phase 4 page overflow.
+
+**Phase 3 note (1.9):** fitting Purchases (14 columns), Sales (16) and Stock-Out (15) into the 1016px content area at 1366px is not possible by styling alone without hurting readability. The options are:
+- (a) keep sideways scrolling with the sticky Actions column (current behavior, now opaque);
+- (b) merge columns into stacked cells, e.g. Cost/Liter + Total Cost, Purchase + Payment Status, Customer + Company, Total / Paid / Balance;
+- (c) hide secondary columns below 1600px and show them in View.
+
+(b) and (c) change table layouts requested in Parts 4 and 6, so they need sign-off.
 
 ## Phased fix plan (only ⚠️ / 🔀 items)
 

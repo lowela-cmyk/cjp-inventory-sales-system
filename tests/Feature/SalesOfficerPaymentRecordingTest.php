@@ -280,6 +280,8 @@ class SalesOfficerPaymentRecordingTest extends TestCase
 
     public function test_selected_payment_schedule_tracks_partial_and_final_installments(): void
     {
+        // The schedules below fall due on fixed dates; pin the clock before them so "pending" never turns "overdue".
+        $this->travelTo('2026-09-01 09:00:00');
         $records = $this->baseRecords();
         $saleId = $this->sale($records, [
             'line_total' => 60000,

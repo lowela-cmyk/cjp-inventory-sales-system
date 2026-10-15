@@ -45,7 +45,7 @@ Compliance check of the CJP Southern Star OPC system against the "System Analysi
 | 1.6 | 1 | Add Purchase: Depot selectable | ✅ DONE | flow 1.5/1.6 | Saved F1 + Batangas Energy Terminal. |
 | 1.7 | 1 | No Delivery Receipt upload in Add Purchase | ✅ DONE | flow 1.7; `PurchaseReceiptUploadTest::test_purchase_form_rejects_receipt_upload_tampering` | |
 | 1.8 | 1 | Admin can add/edit/manage customers and sales; no "managed in Sales Officer module" notice | ✅ DONE | `CompliancePhase2Test::test_admin_manages_customers_from_user_management_with_their_real_codes`; `phase2/um-customers-*.png`, `phase2/um-add-customer-1366.png` | Admin has the full Sales page. **Phase 2:** User Management → Customers now uses real Add and Edit forms (Bank Name and Status included). They post to the existing validated `admin.sales.customers.*` routes and return to the Customers tab; errors reopen the modal. The dead-end notice is gone. The table, search and CSV export use the stored `customer_code` (previously `CSM-` + row id). The page heading follows the active tab. Browser: codes match the DB at 375/768/1366/1920; add and edit verified. |
-| 1.9 | 1 | No big empty spaces; tables/content fill the width | ⚠️ PARTIAL | `sweep-chrome.json`; `5.15-purchases-table-1366*.png` | No unused space: Depots, ledger, alerts and trucks fill the width. **Still open:** at 1366px the 11–16-column tables scroll sideways inside their frame (Purchases hides 900px, Sales 1,407, Dispatch 1,011, Stock-Out 1,219, Stock-In 698). **Phase 3 attempt reverted:** allowing cells to wrap only halved the hidden width, split IDs like `PUR-261015-8WDFH` and `TRK-001 / NFD-4821` across lines, and tripled row height. That is a readability regression, so it was not shipped. Fitting at 1366 needs fewer or merged columns; **this needs your decision** (see Phase 3 notes). Page-level overflow (Dashboard, Reports, Driver) is Phase 4. |
+| 1.9 | 1 | No big empty spaces; tables/content fill the width | ✅ DONE | `CompliancePhase3Test::test_purchases_sales_and_stock_out_stack_related_values_without_dropping_any`; `phase3/1.9-purchases-1366.png`, `phase3/1.9-sales-1366.png`, `phase3/1.9-stock-out-1366.png`; `phase3/phase3b.json`; `phase3/export-*.csv` | **Phase 3, option (b) as approved: stacked cells.**<br>**Purchases:** Purchase-ID over Date; Purchased / Hauled / Received; Cost/Liter over Total Cost; Inventory / Purchase / Payment status in one column (header order); Receipt column unchanged.<br>**Sales:** Order-ID / SO No. / Date; Customer over Company; Fuel / Qty / Price per liter; Total / Paid / Balance (Balance red when above 0); Due / Last paid; Delivery over Receivable status; View and Cancel stacked.<br>**Stock-Out:** Order-ID over Date; Customer over Company; Fuel over Qty; Cost/Unit over Total Cost; Price/Unit / Total Price / Total Paid; Margin over Realized Profit (tooltips kept).<br>Every line except names, depots and sources is `white-space: nowrap`, so IDs and amounts never break. Browser: **0px sideways scroll at 1366 and 1920** for all three tables; 0 broken ID or amount lines at every width. Below 1366 they scroll inside the frame with the solid sticky Actions column, as allowed. **Export:** the Export button writes one value per column (15 columns on Stock-Out, matching the header), with no labels in the values. |
 | 1.10 | 1 | No overlapping buttons; consistent spacing and sizes | ✅ DONE | `CompliancePhase3Test::test_sticky_action_cells_always_paint_an_opaque_background`; `phase3/1.10-sticky-row-1366.png`; `phase3/phase3.json` | **Phase 3:** the sticky Actions cell is opaque. It is white by default and keeps the row tint (`app.css` sticky block), so nothing shows through between the buttons. Browser: 0 transparent sticky cells and 0 control overlaps on 9 pages × 4 widths. Remaining: the Purchases status pill still sits under the Actions column at 1366px until you scroll sideways; that is part of 1.9. |
 | 1.11 | 1 | No empty profile circle top-right | ✅ DONE | sweep `avatar: false` on all 144 renders; `components/admin/header.blade.php` | |
 | 1.12 | 1 | Sidebar logo never cut off | ✅ DONE | `1.12-sidebar-logo-{768,1366}.png` | At ≤768 px the sidebar is a drawer (hamburger); the logo is intact inside it. |
@@ -158,7 +158,7 @@ Compliance check of the CJP Southern Star OPC system against the "System Analysi
 | Audit baseline (`main` @ `80aef6f`) | 437 passed, **8 failed** |
 | After Phase 1 | 447 passed, **4 failed** (only the open October 12 security items below) |
 | After Phase 2 | 449 passed, **4 failed** (same four) |
-| After Phase 3 | 452 passed, **4 failed** (same four) |
+| After Phase 3 | 453 passed, **4 failed** (same four) |
 
 **Fixed in Phase 1:**
 - `AdminUserManagementTest` duplicate…, `FormValidationTest` ×2 and `RoleBasedAccessControlTest` registration… failed because of a regression from 9fa4d4b (red dots). `ModuleActivityService` now treats a missing or unknown role as "no modules", via `modulesFor()`. Regression test: `CompliancePhase1Test::test_red_dots_tolerate_users_without_a_known_role`.
@@ -175,29 +175,21 @@ Compliance check of the CJP Southern Star OPC system against the "System Analysi
 ## Other findings (outside the document)
 
 - ~~In Dispatch / Fuel Lifting the "In Progress" count includes **Lifted** lifts.~~ **Fixed in Phase 1:** Lifted counts as Completed on the Dispatch and Driver cards (`CompliancePhase1Test::test_lifted_lifts_count_as_completed_in_the_dispatch_and_driver_cards`).
-- Login / Register: the "Log In" heading and the input text are indented further than the field labels (not changed; it was planned for Phase 3 and is deferred with 1.9).
+- ~~Login / Register: the "Log In" heading and the input text are indented further than the field labels.~~ **Fixed in Phase 3:** heading, labels and fields share one left edge, typed text is inset 24px, and the password field keeps 64px on the right for the eye icon. Verified at all four widths (`phase3/login-aligned-*.png`).
 
 ## Summary
 
 | Status | Count | Items |
 |---|---|---|
-| ✅ DONE | 89 | everything not listed below |
-| ⚠️ PARTIAL | 2 | 1.9, 3.9 |
+| ✅ DONE | 90 | everything not listed below |
+| ⚠️ PARTIAL | 1 | 3.9 |
 | ❌ NOT DONE | 0 |  |
 | 🔀 CONFLICT | 0 |  |
 | **Total** | **91** | |
 
 Every feature the document asks for exists and works end to end. **Open after Phase 3:**
-- 1.9: wide tables at 1366px need a column decision.
 - 3.9: a Firefox run.
-- Phase 4 page overflow.
-
-**Phase 3 note (1.9):** fitting Purchases (14 columns), Sales (16) and Stock-Out (15) into the 1016px content area at 1366px is not possible by styling alone without hurting readability. The options are:
-- (a) keep sideways scrolling with the sticky Actions column (current behavior, now opaque);
-- (b) merge columns into stacked cells, e.g. Cost/Liter + Total Cost, Purchase + Payment Status, Customer + Company, Total / Paid / Balance;
-- (c) hide secondary columns below 1600px and show them in View.
-
-(b) and (c) change table layouts requested in Parts 4 and 6, so they need sign-off.
+- Phase 4 page overflow (Dashboard, Reports, Driver).
 
 ## Phased fix plan (only ⚠️ / 🔀 items)
 

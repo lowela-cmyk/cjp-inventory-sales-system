@@ -42,27 +42,39 @@
                 <button class="btn btn-secondary btn-wide" type="button" data-modal-open="io-purchase-add">+ Record Purchase</button>
             </x-filter.bar>
             <div class="table-wrap inventory-table-wrap">
-                <table class="admin-table inventory-table inventory-table-actions">
-                    <thead><tr><th>Purchase-ID</th><th>Date</th><th>Fuel</th><th>Depot</th><th>Purchased (L)</th><th>Hauled (L)</th><th>Received</th><th class="inventory-status-column">Inventory Status</th><th>Cost / Liter</th><th>Total Cost</th><th>Receipt</th><th class="inventory-status-column">Purchase Status</th><th class="inventory-status-column">Payment Status</th><th>Actions</th></tr></thead>
+                <table class="admin-table inventory-table inventory-table-actions table-stacked">
+                    <thead><tr>
+                        <th><span class="th-line" data-export-part>Purchase-ID</span><span class="th-line" data-export-part>Date</span></th><th>Fuel</th><th>Depot</th>
+                        <th><span class="th-line" data-export-part>Purchased (L)</span><span class="th-line" data-export-part>Hauled (L)</span><span class="th-line" data-export-part>Received (L)</span></th>
+                        <th><span class="th-line" data-export-part>Cost / Liter</span><span class="th-line" data-export-part>Total Cost</span></th>
+                        <th>Receipt</th>
+                        <th class="inventory-status-column"><span class="th-line" data-export-part>Inventory Status</span><span class="th-line" data-export-part>Purchase Status</span><span class="th-line" data-export-part>Payment Status</span></th>
+                        <th>Actions</th>
+                    </tr></thead>
                     <tbody>
                         @forelse ($purchases as $row)
+                            @php $c = $row['cells']; @endphp
                             <tr class="{{ $row['class'] }}">
-                                @foreach ($row['cells'] as $cell)
-                                    @if ($loop->index === 10)
-                                        {{-- Withdrawal receipts the driver uploaded for this purchase's lifts. --}}
-                                        <td class="inventory-receipt-cell">
-                                            @if (count($row['withdrawals']) > 0)
-                                                <button class="btn btn-secondary btn-small receipt-view-button" type="button" data-modal-open="{{ $row['modal_id'] }}-receipts">{{ count($row['withdrawals']) === 1 ? 'View Receipt' : 'View Receipts ('.count($row['withdrawals']).')' }}</button>
-                                            @else
-                                                <span class="receipt-none" aria-label="No receipt uploaded">-</span>
-                                            @endif
-                                        </td>
-                                    @elseif ($loop->last || $loop->index === 7 || $loop->index === 11)
-                                        <td><x-admin.status-badge :status="$cell" /></td>
+                                <td><x-table.stack :lines="[['value' => $c[0]], ['value' => $c[1], 'class' => 'is-secondary']]" /></td>
+                                <td>{{ $c[2] }}</td>
+                                <td class="cell-wrap">{{ $c[3] }}</td>
+                                <td><x-table.stack :lines="[['label' => 'Purchased', 'value' => $c[4]], ['label' => 'Hauled', 'value' => $c[5]], ['label' => 'Received', 'value' => $c[6]]]" /></td>
+                                <td><x-table.stack :lines="[['label' => '/L', 'value' => $c[8]], ['label' => 'Total', 'value' => $c[9]]]" /></td>
+                                {{-- Withdrawal receipts the driver uploaded for this purchase's lifts. --}}
+                                <td class="inventory-receipt-cell">
+                                    @if (count($row['withdrawals']) > 0)
+                                        <button class="btn btn-secondary btn-small receipt-view-button" type="button" data-modal-open="{{ $row['modal_id'] }}-receipts">{{ count($row['withdrawals']) === 1 ? 'View Receipt' : 'View Receipts ('.count($row['withdrawals']).')' }}</button>
                                     @else
-                                        <td>{{ $cell }}</td>
+                                        <span class="receipt-none" aria-label="No receipt uploaded">-</span>
                                     @endif
-                                @endforeach
+                                </td>
+                                <td>
+                                    <span class="cell-stack cell-stack-badges">
+                                        <span class="cell-line" data-export-part title="Inventory status"><x-admin.status-badge :status="$c[7]" /></span>
+                                        <span class="cell-line" data-export-part title="Purchase status"><x-admin.status-badge :status="$c[11]" /></span>
+                                        <span class="cell-line" data-export-part title="Payment status"><x-admin.status-badge :status="$c[12]" /></span>
+                                    </span>
+                                </td>
                                 <td>
                                     <div class="inventory-row-actions">
                                         <button class="btn btn-secondary" type="button" data-modal-open="{{ $row['modal_id'] }}">Edit</button>
@@ -73,7 +85,7 @@
                                 </td>
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="14">No records found.</td></tr>
+                            <tr><td class="empty-cell" colspan="8">No records found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -125,26 +137,38 @@
             </x-filter.bar>
             <p class="table-help">Stock-Out is posted automatically when a sale's Delivery Status becomes Delivered.</p>
             <div class="table-wrap inventory-table-wrap">
-                <table class="admin-table inventory-table">
-                    <thead><tr><th>Order-ID</th><th>Transaction Date</th><th>Customer Name</th><th>Company Name</th><th>Fuel</th><th>QTY Released</th><th>Cost / Unit</th><th>Total Cost</th><th>Price / Unit</th><th>Total Price</th><th>Total Paid</th><th>Source</th><th class="inventory-status-column">Status</th><th><span class="th-hint" tabindex="0" title="Margin = Total Price − Total Cost (expected profit once fully paid)">Margin</span></th><th><span class="th-hint" tabindex="0" title="Realized Profit = Total Paid − Total Cost (negative until payments cover the cost)">Realized Profit</span></th></tr></thead>
+                <table class="admin-table inventory-table table-stacked stock-out-table">
+                    <thead><tr>
+                        <th><span class="th-line" data-export-part>Order-ID</span><span class="th-line" data-export-part>Transaction Date</span></th>
+                        <th><span class="th-line" data-export-part>Customer Name</span><span class="th-line" data-export-part>Company Name</span></th>
+                        <th><span class="th-line" data-export-part>Fuel</span><span class="th-line" data-export-part>QTY Released</span></th>
+                        <th><span class="th-line" data-export-part>Cost / Unit</span><span class="th-line" data-export-part>Total Cost</span></th>
+                        <th><span class="th-line" data-export-part>Price / Unit</span><span class="th-line" data-export-part>Total Price</span><span class="th-line" data-export-part>Total Paid</span></th>
+                        <th>Source</th>
+                        <th class="inventory-status-column">Status</th>
+                        <th><span class="th-line th-hint" tabindex="0" data-export-part title="Margin = Total Price − Total Cost (expected profit once fully paid)">Margin</span><span class="th-line th-hint" tabindex="0" data-export-part title="Realized Profit = Total Paid − Total Cost (negative until payments cover the cost)">Realized Profit</span></th>
+                    </tr></thead>
                     <tbody>
                         @forelse ($stockOut as $row)
+                            @php
+                                $c = $row['cells'];
+                                $negative = fn (mixed $value): bool => is_numeric($value) && $value < 0;
+                            @endphp
                             <tr class="{{ $row['class'] }}">
-                                @foreach ($row['cells'] as $cell)
-                                    @if ($loop->index === 12)
-                                        <td><x-admin.status-badge :status="$cell" /></td>
-                                    @else
-                                        @php($money = match ($loop->index) { 13 => $row['margin'], 14 => $row['profit'], default => null })
-                                        <td @class([
-                                            'inventory-number' => in_array($loop->index, [5, 6, 7, 8, 9, 10, 13, 14], true),
-                                            'inventory-profit' => $loop->index >= 13,
-                                            'is-negative' => is_numeric($money) && $money < 0,
-                                        ])>{{ $cell }}</td>
-                                    @endif
-                                @endforeach
+                                <td><x-table.stack :lines="[['value' => $c[0]], ['value' => $c[1], 'class' => 'is-secondary']]" /></td>
+                                <td class="cell-wrap"><x-table.stack :lines="[['value' => $c[2]], ['value' => $c[3], 'class' => 'is-secondary']]" /></td>
+                                <td><x-table.stack :lines="[['value' => $c[4]], ['label' => 'Qty', 'value' => $c[5]]]" /></td>
+                                <td class="inventory-number"><x-table.stack :lines="[['label' => '/Unit', 'value' => $c[6]], ['label' => 'Total', 'value' => $c[7]]]" /></td>
+                                <td class="inventory-number"><x-table.stack :lines="[['label' => '/Unit', 'value' => $c[8]], ['label' => 'Total', 'value' => $c[9]], ['label' => 'Paid', 'value' => $c[10]]]" /></td>
+                                <td class="cell-wrap">{{ $c[11] }}</td>
+                                <td><x-admin.status-badge :status="$c[12]" /></td>
+                                <td class="inventory-number inventory-profit"><x-table.stack :lines="[
+                                    ['label' => 'Margin', 'value' => $c[13], 'class' => $negative($row['margin']) ? 'is-negative' : null],
+                                    ['label' => 'Realized', 'value' => $c[14], 'class' => $negative($row['profit']) ? 'is-negative' : null],
+                                ]" /></td>
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="15">No records found.</td></tr>
+                            <tr><td class="empty-cell" colspan="8">No records found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>

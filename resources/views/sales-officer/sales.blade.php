@@ -58,39 +58,35 @@
             </x-filter.bar>
             <p class="table-help">Stock-Out is posted automatically when a sale's Delivery Status becomes Delivered.</p>
             <div class="table-wrap">
-                <table class="admin-table">
+                <table class="admin-table table-stacked">
                     <thead>
                         <tr>
-                            <th>Order-ID</th>
-                            <th>Sales Order No.</th>
-                            <th>Transaction Date</th>
-                            <th>Customer Name</th>
-                            <th>Company Name</th>
-                            <th>Fuel</th>
-                            <th>QTY</th>
-                            <th>Price / Liter</th>
-                            <th>Total</th>
-                            <th>Total Paid</th>
-                            <th>Balance</th>
-                            <th>Due Date</th>
-                            <th>Latest Payment</th>
-                            <th>Delivery Status</th>
-                            <th>Status</th>
+                            <th><span class="th-line" data-export-part>Order-ID</span><span class="th-line" data-export-part>Sales Order No.</span><span class="th-line" data-export-part>Transaction Date</span></th>
+                            <th><span class="th-line" data-export-part>Customer Name</span><span class="th-line" data-export-part>Company Name</span></th>
+                            <th><span class="th-line" data-export-part>Fuel</span><span class="th-line" data-export-part>QTY</span><span class="th-line" data-export-part>Price / Liter</span></th>
+                            <th><span class="th-line" data-export-part>Total</span><span class="th-line" data-export-part>Total Paid</span><span class="th-line" data-export-part>Balance</span></th>
+                            <th><span class="th-line" data-export-part>Due Date</span><span class="th-line" data-export-part>Latest Payment</span></th>
+                            <th><span class="th-line" data-export-part>Delivery Status</span><span class="th-line" data-export-part>Status</span></th>
                             <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         @forelse ($sales as $row)
+                            @php $c = $row['cells']; @endphp
                             <tr class="{{ $row['class'] }}">
-                                @foreach ($row['cells'] as $cell)
-                                    @if ($loop->last || $loop->index === count($row['cells']) - 2)
-                                        <td><x-admin.status-badge :status="$cell" /></td>
-                                    @else
-                                        <td>{{ $cell }}</td>
-                                    @endif
-                                @endforeach
+                                <td><x-table.stack :lines="[['value' => $c[0]], ['label' => 'SO', 'value' => $c[1], 'class' => 'is-secondary'], ['value' => $c[2], 'class' => 'is-secondary']]" /></td>
+                                <td class="cell-wrap"><x-table.stack :lines="[['value' => $c[3]], ['value' => $c[4], 'class' => 'is-secondary']]" /></td>
+                                <td><x-table.stack :lines="[['value' => $c[5]], ['label' => 'Qty', 'value' => $c[6]], ['label' => '/L', 'value' => $c[7]]]" /></td>
+                                <td><x-table.stack :lines="[['label' => 'Total', 'value' => $c[8]], ['label' => 'Paid', 'value' => $c[9]], ['label' => 'Balance', 'value' => $c[10], 'class' => (float) str_replace(',', '', $c[10]) > 0 ? 'is-due' : null]]" /></td>
+                                <td><x-table.stack :lines="[['label' => 'Due', 'value' => $c[11]], ['label' => 'Last paid', 'value' => $c[12], 'class' => 'is-secondary']]" /></td>
                                 <td>
-                                    <div class="sales-row-actions">
+                                    <span class="cell-stack cell-stack-badges">
+                                        <span class="cell-line" data-export-part title="Delivery status"><x-admin.status-badge :status="$c[13]" /></span>
+                                        <span class="cell-line" data-export-part title="Receivable status"><x-admin.status-badge :status="$c[14]" /></span>
+                                    </span>
+                                </td>
+                                <td>
+                                    <div class="sales-row-actions row-actions-stack">
                                         <button class="btn btn-secondary" type="button" data-modal-open="{{ $row['modal_id'] }}">View</button>
                                         @if ($row['correction_action'] === 'delete')
                                             <form method="POST" action="{{ route($salesRoutePrefix.'.sales.cancel', $row['id']) }}" data-confirm-message="Delete this untouched draft sale? This cannot be undone.">
@@ -105,7 +101,7 @@
                                 </td>
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="16">No records found.</td></tr>
+                            <tr><td class="empty-cell" colspan="7">No records found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>

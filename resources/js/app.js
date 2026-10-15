@@ -505,10 +505,16 @@ const exportVisibleTable = (trigger) => {
     }
 
     // Export exactly what the table shows: rows hidden by the live search are left out.
+    // A stacked cell exports one column per [data-export-part] line, so files keep one value per column.
+    const csvValue = (node) => `"${node.textContent.trim().replace(/\s+/g, ' ').replace(/"/g, '""')}"`;
     const rows = [...table.querySelectorAll('tr')]
         .filter((row) => ! row.hidden)
         .map((row) => [...row.querySelectorAll('th, td')]
-            .map((cell) => `"${cell.textContent.trim().replace(/\s+/g, ' ').replace(/"/g, '""')}"`)
+            .flatMap((cell) => {
+                const parts = cell.querySelectorAll('[data-export-part]');
+
+                return parts.length > 0 ? [...parts].map(csvValue) : [csvValue(cell)];
+            })
             .join(','))
         .filter(Boolean);
 

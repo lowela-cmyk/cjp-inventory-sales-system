@@ -29,7 +29,7 @@ class Part6RevisionsTest extends TestCase
         $this->assertMatchesRegularExpression('/\.password-input-wrap \{[^}]*position: relative;/', $styles);
         $this->assertMatchesRegularExpression('/\.password-toggle-btn \{[^}]*position: absolute;[^}]*right: 20px;[^}]*z-index: 2;/', $styles);
         // The input reserves room on the right so typed text never runs under the icon.
-        $this->assertMatchesRegularExpression('/\.login-field input,\n\.login-field select \{[^}]*padding: 0 76px;/', $styles);
+        $this->assertMatchesRegularExpression('/\.password-input-wrap input \{[^}]*padding-right: 64px;/', $styles);
     }
 
     public function test_purchases_table_hides_allocation_columns_and_shows_receipt_column(): void

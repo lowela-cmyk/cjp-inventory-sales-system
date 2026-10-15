@@ -65,4 +65,42 @@ class CompliancePhase3Test extends TestCase
             $this->assertMatchesRegularExpression('/\.admin-table \.row-'.$tone.' td:last-child \{\s*background: var\(--'.$tone.'-soft\);/', $styles);
         }
     }
+
+    public function test_purchases_sales_and_stock_out_stack_related_values_without_dropping_any(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin', 'status' => 'active', 'approval_status' => 'approved']);
+        $headers = [
+            'admin.inventory' => ['Purchase-ID', 'Date', 'Fuel', 'Depot', 'Purchased (L)', 'Hauled (L)', 'Received (L)', 'Cost / Liter', 'Total Cost', 'Receipt', 'Inventory Status', 'Purchase Status', 'Payment Status', 'Actions'],
+            'admin.sales' => ['Order-ID', 'Sales Order No.', 'Transaction Date', 'Customer Name', 'Company Name', 'Fuel', 'QTY', 'Price / Liter', 'Total', 'Total Paid', 'Balance', 'Due Date', 'Latest Payment', 'Delivery Status', 'Status', 'Actions'],
+            'admin.inventory.stock-out' => ['Order-ID', 'Transaction Date', 'Customer Name', 'Company Name', 'Fuel', 'QTY Released', 'Cost / Unit', 'Total Cost', 'Price / Unit', 'Total Price', 'Total Paid', 'Source', 'Status', 'Margin', 'Realized Profit'],
+        ];
+
+        foreach ($headers as $route => $expected) {
+            $html = $this->actingAs($admin)->get(route($route))->assertOk()->getContent();
+            $this->assertStringContainsString('table-stacked', $html, $route);
+            $this->assertSeeInOrderText($html, $expected, $route);
+        }
+
+        // Each stacked header line is its own export column.
+        $stockOut = $this->get(route('admin.inventory.stock-out'))->getContent();
+        $this->assertStringContainsString('<span class="th-line" data-export-part>Cost / Unit</span><span class="th-line" data-export-part>Total Cost</span>', $stockOut);
+
+        $styles = File::get(resource_path('css/app.css'));
+        $this->assertMatchesRegularExpression('/\.cell-line \{\s*white-space: nowrap;/', $styles);
+        $this->assertStringContainsString("parts.length > 0 ? [...parts].map(csvValue) : [csvValue(cell)]", File::get(resource_path('js/app.js')));
+    }
+
+    /**
+     * @param  array<int, string>  $values
+     */
+    private function assertSeeInOrderText(string $html, array $values, string $message): void
+    {
+        $text = html_entity_decode(strip_tags(preg_replace('#<tbody.*?</tbody>#s', '', $html)));
+        $position = 0;
+        foreach ($values as $value) {
+            $found = strpos($text, $value, $position);
+            $this->assertNotFalse($found, $message.': missing header "'.$value.'"');
+            $position = $found + strlen($value);
+        }
+    }
 }

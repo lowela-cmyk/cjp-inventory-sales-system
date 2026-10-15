@@ -166,6 +166,9 @@ class FunctionalTestingTest extends TestCase
 
     public function test_customer_sale_stock_out_payment_success_and_failed_overpayment(): void
     {
+        // Payments are dated 2026-09-04 with a 2026-09-30 due date: freeze "today" so the receivable is
+        // partial, not overdue, whenever the suite runs.
+        Carbon::setTestNow('2026-09-04 09:00:00');
         $records = $this->baseRecords();
         $this->seedGarageStock($records, 12000);
 
@@ -234,10 +237,12 @@ class FunctionalTestingTest extends TestCase
                 'reference_number' => 'BNK-FUNC-002',
             ])
             ->assertRedirect(route('sales-officer.sales'))
-            ->assertSessionHasErrors('payment');
+            // The overpayment error is shown under the Amount field (key "amount", since commit 5003805).
+            ->assertSessionHasErrors(['amount' => 'Amount paid cannot exceed the remaining balance of PHP 80,000.00.']);
 
         $this->assertSame(100000.0, round((float) DB::table('payments')->where('sale_id', $sale->id)->sum('amount'), 2));
         $this->assertDatabaseHas('receivables', ['sale_id' => $sale->id, 'status' => 'partial']);
+        Carbon::setTestNow();
     }
 
     public function test_dashboard_reports_and_analytics_pages_render_real_system_totals(): void

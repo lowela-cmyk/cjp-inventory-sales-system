@@ -37,7 +37,9 @@ class WorkflowAlertService
             return;
         }
 
-        $status = str_replace('_', ' ', (string) $purchase->workflow_status);
+        // The alert records this event, so its message states the event (as the title does) rather than
+        // the purchase status at that instant, which can lag behind (e.g. "Received" while still "In Transit").
+        $status = str_replace('_', ' ', $event);
         $message = sprintf(
             '%s | Fuel: %s | Quantity: %s L | Depot: %s | Purchase date: %s | Status: %s | Created by: %s',
             $purchase->purchase_code,

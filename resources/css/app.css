@@ -126,6 +126,17 @@ select {
     background: var(--admin-ink);
 }
 
+/* Red dot: the module has records the user has not seen yet. */
+.nav-dot {
+    flex: none;
+    width: 9px;
+    height: 9px;
+    margin-left: 10px;
+    border-radius: 50%;
+    background: var(--danger);
+    box-shadow: 0 0 0 2px #fff;
+}
+
 .sidebar-account {
     margin-top: auto;
     border-top: 1px solid var(--admin-line);
@@ -241,15 +252,33 @@ select {
     max-width: none;
 }
 
+/* Only the active tab's panel may render: no other display rule can resurrect a hidden panel. */
+[data-tab-panel][hidden] {
+    display: none !important;
+}
+
+/* Shared filter bar (x-filter.bar): white outlined "+" action buttons, a wider primary action. */
+.filter-bar .btn-secondary {
+    background: #fff;
+    color: var(--admin-ink);
+}
+
+.toolbar .btn-wide,
+.filter-bar .btn-wide {
+    flex: 1 1 200px;
+    min-width: 190px;
+}
+
 .toolbar-ledger {
     max-width: none;
 }
 
-/* Admin ledger: full-width table with header and cell content centered beneath each other.
-   Only headers and depot names wrap, so IDs, quantities and status pills stay on one line. */
+/* Ledger and Transaction tabs (every role): full-width table, equal-width columns, header and
+   cell content centered beneath each other. Only headers and depot names wrap. */
 .admin-table.ledger-table {
     width: 100%;
-    table-layout: auto;
+    min-width: 960px;
+    table-layout: fixed;
 }
 
 .admin-table.ledger-table th,
@@ -565,28 +594,22 @@ form[aria-busy="true"] {
     background: var(--admin-head);
 }
 
-/* Preserve per-row colour on sticky td */
-.admin-table tbody tr td:last-child {
-    background: inherit;
+/* The sticky cell must be opaque, or the columns scrolling underneath show through it.
+   White by default; coloured rows repaint it with their tint (higher specificity on purpose). */
+.admin-table tbody td:last-child {
+    background: #fff;
 }
 
-/* Ensure coloured rows paint their background on the sticky cell */
-.row-danger td:last-child {
+.admin-table .row-danger td:last-child {
     background: var(--danger-soft);
 }
 
-.row-warning td:last-child {
+.admin-table .row-warning td:last-child {
     background: var(--warning-soft);
 }
 
-.row-success td:last-child {
+.admin-table .row-success td:last-child {
     background: var(--success-soft);
-}
-
-/* Fallback: plain white background when no row class is set */
-.admin-table tbody tr:not([class]) td:last-child,
-.admin-table tbody tr[class=""] td:last-child {
-    background: #fff;
 }
 
 /* Center status chips/badges in all tables */
@@ -755,14 +778,188 @@ table td:has(.status-badge) {
     color: var(--danger);
 }
 
-.inventory-withdrawal-cell {
-    min-width: max-content;
+/* One-line explanation under a toolbar (e.g. when Stock-Out is posted). */
+.table-help {
+    margin: -4px 0 12px;
+    color: var(--admin-muted);
+    font-size: 13px;
+}
+
+/* Column header with a formula tooltip (hover or keyboard focus). */
+.th-hint {
+    border-bottom: 1px dotted currentColor;
+    cursor: help;
+}
+
+/* Receipt column: a "View Receipt(s)" button when the driver uploaded one, or "-" when none. */
+.inventory-receipt-cell {
+    min-width: 170px;
+    text-align: center !important;
     white-space: nowrap;
 }
 
-.inventory-withdrawal-cell .status-badge { margin-right: 8px; }
-.inventory-withdrawal-cell .btn {
-    min-width: auto;
+.inventory-receipt-cell .receipt-view-button {
+    min-width: 140px;
+}
+
+/* Receipt lightbox: only the image, large and centered, on a dark backdrop. */
+.modal-backdrop.receipt-lightbox {
+    background: rgb(5 8 15 / 88%);
+}
+
+.receipt-lightbox-dialog {
+    position: relative;
+    display: grid;
+    justify-items: center;
+    gap: 12px;
+    width: min(1100px, 100%);
+    max-height: 100%;
+    padding: 48px 56px 16px;
+}
+
+.receipt-lightbox-slide {
+    display: grid;
+    justify-items: center;
+    gap: 8px;
+    margin: 0;
+}
+
+.receipt-lightbox-slide[hidden] {
+    display: none;
+}
+
+.receipt-lightbox-slide img {
+    display: block;
+    max-width: 100%;
+    max-height: calc(100vh - 220px);
+    object-fit: contain;
+    border-radius: 6px;
+    background: #fff;
+}
+
+.receipt-lightbox-slide figcaption {
+    color: #e5e7eb;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.receipt-lightbox-close {
+    position: absolute;
+    top: 4px;
+    right: 8px;
+    width: 40px;
+    height: 40px;
+    border: 2px solid #fff;
+    border-radius: 6px;
+    background: transparent;
+    cursor: pointer;
+}
+
+.receipt-lightbox-close::before,
+.receipt-lightbox-close::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 22px;
+    height: 2px;
+    background: #fff;
+    transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.receipt-lightbox-close::after {
+    transform: translate(-50%, -50%) rotate(-45deg);
+}
+
+.receipt-lightbox-nav {
+    position: absolute;
+    top: 45%;
+    width: 44px;
+    height: 64px;
+    border: 0;
+    border-radius: 6px;
+    background: rgb(255 255 255 / 18%);
+    color: #fff;
+    font-size: 40px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.receipt-lightbox-nav.is-prev { left: 4px; }
+.receipt-lightbox-nav.is-next { right: 4px; }
+
+.receipt-lightbox-thumbs {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+}
+
+.receipt-lightbox-thumbs button {
+    width: 64px;
+    height: 48px;
+    padding: 0;
+    border: 2px solid transparent;
+    border-radius: 4px;
+    background: #fff;
+    cursor: pointer;
+    overflow: hidden;
+}
+
+.receipt-lightbox-thumbs button.is-active {
+    border-color: var(--danger);
+}
+
+.receipt-lightbox-thumbs img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+@media (max-width: 767px) {
+    .receipt-lightbox-dialog {
+        padding: 52px 8px 12px;
+    }
+
+    .receipt-lightbox-nav {
+        top: auto;
+        bottom: 70px;
+    }
+}
+
+.receipt-link {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: #1d4ed8;
+    font: inherit;
+    font-weight: 700;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.receipt-link:hover,
+.receipt-link:focus-visible {
+    color: var(--admin-red);
+}
+
+.receipt-none {
+    color: var(--admin-muted);
+}
+
+.receipt-list {
+    display: grid;
+    gap: 8px;
+    margin: 12px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.receipt-list li {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: baseline;
 }
 
 @media (max-width: 760px) {
@@ -1802,6 +1999,18 @@ table td:has(.status-badge) {
     color: #333;
 }
 
+.form-row textarea {
+    width: 100%;
+    min-height: 84px;
+    border: 0;
+    border-radius: 8px;
+    padding: 10px 16px;
+    background: #d8d8d8;
+    color: #333;
+    font: inherit;
+    resize: vertical;
+}
+
 .lift-transaction-modal {
     margin-top: 24px;
     border: 1px solid #111;
@@ -2401,14 +2610,17 @@ table td:has(.status-badge) {
     flex: 1 1 132px;
 }
 
-/* Auto-applied dispatch fuel filters: keep search, date, selects and the action on one row at laptop widths. */
-.dispatch-fuel-filter input[type="search"] {
+/* Auto-applied dispatch and driver fuel filters: keep search, dates and selects on one row at laptop widths. */
+.dispatch-fuel-filter input[type="search"],
+.driver-filter-row input[type="search"] {
     flex: 999 1 180px;
     min-width: 160px;
 }
 
 .dispatch-fuel-filter select,
-.dispatch-fuel-filter input[type="date"] {
+.dispatch-fuel-filter input[type="date"],
+.driver-filter-row select,
+.driver-filter-row input[type="date"] {
     flex: 1 1 136px;
     min-width: 128px;
     padding: 0 10px;
@@ -3019,7 +3231,8 @@ body.login-page {
 }
 
 .login-form-wrap h1 {
-    margin: 0 0 34px 36px;
+    /* Heading, labels and typed text share one left edge (login, register, reset). */
+    margin: 0 0 34px;
     color: #fff;
     font-size: clamp(36px, 3vw, 44px);
     line-height: 1;
@@ -3037,7 +3250,7 @@ body.login-page {
 }
 
 .login-field label {
-    margin-left: 22px;
+    margin-left: 0;
     color: #fff;
     font-size: clamp(15px, 1vw, 19px);
     line-height: 1;
@@ -3052,7 +3265,7 @@ body.login-page {
     border-radius: 5px;
     background: #fff;
     color: #000;
-    padding: 0 76px;
+    padding: 0 24px;
     font-size: clamp(17px, 1.2vw, 22px);
     outline: none;
 }
@@ -3079,6 +3292,7 @@ body.login-page {
 
 .password-input-wrap input {
     width: 100%;
+    padding-right: 64px;
 }
 
 .password-toggle-btn {
@@ -3614,9 +3828,39 @@ body.login-page {
     font-size: 13px;
 }
 
+/* Allocation row of a purchase line: Garage liters + tank, Depot (direct) liters + client sale. */
+.lift-allocation {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1.6fr);
+    gap: 14px;
+    min-width: 0;
+    margin: 0;
+    padding: 12px 0 0;
+    border: 0;
+    border-top: 1px dashed #c8d0dc;
+}
+
+.lift-allocation legend {
+    float: left;
+    width: 100%;
+    margin: 0 0 2px;
+    padding: 0;
+    grid-column: 1 / -1;
+    font-size: 13px;
+    font-weight: 800;
+    text-transform: uppercase;
+    color: var(--admin-muted);
+}
+
+.lift-allocation .input-suffix {
+    min-width: 0;
+}
+
 /* Tablet: two columns per purchase line (Purchase + Fuel, then Amount + Remove). */
 @media (max-width: 1023px) {
-    .lift-line {
+    .lift-line,
+    .lift-allocation {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
@@ -3637,6 +3881,7 @@ body.login-page {
 
     .lift-fields,
     .lift-line,
+    .lift-allocation,
     .lift-info-row {
         grid-template-columns: minmax(0, 1fr);
     }
@@ -3659,5 +3904,127 @@ body.login-page {
     .modal-footer form,
     .modal-footer form .btn {
         width: 100%;
+    }
+}
+
+/* -- Stacked table cells (System Analysis 1.9) ---------------------------
+   Purchases, Sales and Stock-Out fit 1366px by stacking closely related values in one cell.
+   Every line keeps white-space: nowrap, so IDs and amounts never break mid-value; only cells
+   marked .cell-wrap (names, depots, sources) wrap between words. */
+.admin-table.table-stacked {
+    width: 100%;
+}
+
+.table-stacked th,
+.table-stacked td {
+    padding-right: 8px;
+    padding-left: 8px;
+}
+
+.table-stacked th .th-line {
+    display: block;
+}
+
+.table-stacked td.cell-wrap {
+    min-width: 96px;
+    white-space: normal;
+}
+
+.cell-stack {
+    display: inline-grid;
+    gap: 3px;
+    justify-items: start;
+}
+
+.cell-line {
+    white-space: nowrap;
+}
+
+.cell-line[data-label]::before {
+    content: attr(data-label) " ";
+    color: var(--admin-muted);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.cell-line.is-secondary {
+    color: var(--admin-muted);
+    font-size: 13px;
+}
+
+.cell-line.is-due {
+    color: var(--danger);
+    font-weight: 800;
+}
+
+.cell-stack-badges {
+    justify-items: center;
+}
+
+.table-stacked .row-actions-stack {
+    display: inline-grid;
+    gap: 6px;
+}
+
+.table-stacked .inventory-receipt-cell {
+    min-width: 0;
+}
+
+.inventory-table.table-stacked .status-badge {
+    width: 140px;
+    min-width: 140px;
+    max-width: 140px;
+}
+
+/* Names, depots and sources may wrap between words (they contain no IDs). */
+.table-stacked td.cell-wrap .cell-line {
+    white-space: normal;
+}
+
+.inventory-table .inventory-profit .cell-line.is-negative {
+    color: var(--danger);
+}
+
+.inventory-table.stock-out-table .status-badge {
+    width: 112px;
+    min-width: 112px;
+    max-width: 112px;
+}
+
+/* -- Responsive overflow (System Analysis Phase 4) ------------------------
+   Grid tracks must be allowed to shrink below their content, or a wide chart or field
+   pushes the whole page sideways (Dashboard, Reports, Driver at 768/1366px). */
+.chart-panel,
+.dashboard-grid > * {
+    min-width: 0;
+}
+
+.chart-panel canvas {
+    max-width: 100%;
+}
+
+/* Two breakdown lists side by side only when each gets its ~290px; otherwise they stack. */
+.dashboard-breakdown-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr));
+}
+
+.driver-profile-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
+}
+
+@media (max-width: 1180px) {
+    .dashboard-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (max-width: 1023px) {
+    .driver-overview-card {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .driver-overview-identity {
+        border-right: 0;
+        border-bottom: 1px solid var(--admin-line);
     }
 }

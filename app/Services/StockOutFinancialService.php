@@ -90,6 +90,8 @@ class StockOutFinancialService
             'unit_price' => $unitPrice,
             'total_price' => $totalPrice,
             'total_paid' => $allocatedPaid,
+            // Margin is the expected profit; realized profit only counts what has been paid so far.
+            'margin' => $totalCost === null ? null : round($totalPrice - $totalCost, 2),
             'profit' => $totalCost === null ? null : round($allocatedPaid - $totalCost, 2),
         ];
     }

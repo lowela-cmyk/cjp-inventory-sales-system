@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\LiftAllocationService;
 use App\Services\PurchaseWorkflowService;
 use App\Services\TruckAvailabilityService;
 use Illuminate\Http\RedirectResponse;
@@ -13,7 +14,8 @@ class DriverLiftingStatusController extends Controller
 {
     public function __construct(
         private readonly PurchaseWorkflowService $purchaseWorkflow,
-        private readonly TruckAvailabilityService $truckAvailability
+        private readonly TruckAvailabilityService $truckAvailability,
+        private readonly LiftAllocationService $liftAllocations
     ) {}
 
     public const STATUS_TRANSITIONS = [
@@ -42,7 +44,8 @@ class DriverLiftingStatusController extends Controller
                 ->with('status', 'Lifting status update was already submitted.');
         }
 
-        $result = DB::transaction(function () use ($haul, $actorId, $actingForDriver, $data): ?string {
+        $notes = [];
+        $result = DB::transaction(function () use ($haul, $actorId, $actingForDriver, $data, &$notes): ?string {
             $row = $this->haulForDriverUpdate($haul, $actingForDriver ? null : $actorId);
 
             if (! $row) {
@@ -82,6 +85,7 @@ class DriverLiftingStatusController extends Controller
                 ->update($updates);
 
             $purchaseIds = collect([(int) $row->purchase_id]);
+            $haulIds = collect([(int) $row->id]);
             if ($row->lifting_schedule_id) {
                 $siblings = DB::table('hauls')
                     ->where('lifting_schedule_id', $row->lifting_schedule_id)
@@ -96,6 +100,14 @@ class DriverLiftingStatusController extends Controller
                     'updated_at' => now(),
                 ]);
                 $purchaseIds = $purchaseIds->merge($siblings->pluck('purchase_id')->map(fn ($id): int => (int) $id));
+                $haulIds = $haulIds->merge($siblings->pluck('id')->map(fn ($id): int => (int) $id));
+            }
+
+            // The driver finishing the lift posts its garage stock-in and direct release (audit C01).
+            if ($nextStatus === 'lifted') {
+                foreach ($haulIds as $haulId) {
+                    $notes = array_merge($notes, $this->liftAllocations->settle($haulId, $actorId));
+                }
             }
 
             foreach ($purchaseIds->unique() as $purchaseId) {
@@ -115,7 +127,7 @@ class DriverLiftingStatusController extends Controller
 
         return redirect()
             ->route($redirectRoute)
-            ->with('status', 'Lifting status updated successfully.');
+            ->with('status', trim('Lifting status updated successfully. '.implode(' ', $notes)));
     }
 
     private function haulForDriverUpdate(int $haul, ?int $driverId): ?object

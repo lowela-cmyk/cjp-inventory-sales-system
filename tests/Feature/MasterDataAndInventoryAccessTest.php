@@ -55,7 +55,7 @@ class MasterDataAndInventoryAccessTest extends TestCase
         $this->actingAs($admin)
             ->get(route('admin.inventory'))
             ->assertOk()
-            ->assertSee('Record Purchases')
+            ->assertSee('+ Record Purchase')
             ->assertSee('Fuel Type')
             ->assertSee('Depot');
 

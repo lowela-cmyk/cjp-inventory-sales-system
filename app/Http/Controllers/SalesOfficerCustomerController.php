@@ -26,9 +26,9 @@ class SalesOfficerCustomerController extends Controller
         private readonly SaleCorrectionService $saleCorrectionService
     ) {}
 
-    private const PAYMENT_STATUSES = ['clear', 'pending', 'partial', 'unpaid'];
+    public const PAYMENT_STATUSES = ['clear', 'pending', 'partial', 'unpaid'];
 
-    private const ACCOUNT_STATUSES = ['active', 'inactive'];
+    public const ACCOUNT_STATUSES = ['active', 'inactive'];
 
     private const SALE_STATUSES = ['draft', 'confirmed', 'partially_paid', 'paid', 'unpaid', 'cancelled'];
 
@@ -38,21 +38,55 @@ class SalesOfficerCustomerController extends Controller
 
     private const PAYMENT_TERMS = ['cod', 'installment', 'advance'];
 
+    /** Receivable statuses shown in the Status column (filter value => label). */
+    /** Why a sale is being voided (System Analysis 4.13); "other" needs a note. */
+    public const CANCEL_REASONS = [
+        'wrong_customer' => 'Wrong customer',
+        'wrong_quantity_or_price' => 'Wrong quantity or price',
+        'wrong_fuel_type' => 'Wrong fuel type',
+        'duplicate_entry' => 'Duplicate entry',
+        'customer_cancelled' => 'Customer cancelled the order',
+        'other' => 'Other',
+    ];
+
+    private const RECEIVABLE_FILTER_STATUSES = ['unpaid' => 'Unpaid', 'partial' => 'Partially Paid', 'overdue' => 'Overdue', 'clear' => 'Settled', 'cancelled' => 'Cancelled'];
+
     public function index(Request $request, DashboardSummaryService $dashboardSummary, string $state = 'receivables'): View
     {
+        $activeTab = $state === 'customers' ? 'customers' : 'receivables';
         $data = $request->validate([
             'search' => ['nullable', 'string', 'max:100'],
+            'status' => ['nullable', Rule::in($activeTab === 'customers' ? self::ACCOUNT_STATUSES : array_keys(self::RECEIVABLE_FILTER_STATUSES))],
+            'delivery_status' => ['nullable', Rule::in(self::DELIVERY_STATUSES)],
+            'date' => ['nullable', 'date'],
+            'fuel_type_id' => ['nullable', 'integer', Rule::exists('fuel_types', 'id')],
+            'location' => ['nullable', 'string', 'max:255'],
         ]);
 
         $search = trim((string) ($data['search'] ?? ''));
         $normalizedSearch = $search === '' ? null : $search;
+        // Filters belong to the tab whose toolbar submitted them; the other tab stays unfiltered.
+        $filters = array_filter([
+            'status' => $data['status'] ?? null,
+            'delivery_status' => $data['delivery_status'] ?? null,
+            'date' => $data['date'] ?? null,
+            'fuel_type_id' => $data['fuel_type_id'] ?? null,
+            'location' => $data['location'] ?? null,
+        ], fn (mixed $value): bool => $value !== null && $value !== '');
 
         return view('sales-officer.sales', [
-            'activeTab' => $state === 'customers' ? 'customers' : 'receivables',
+            'activeTab' => $activeTab,
             'search' => $normalizedSearch,
+            'filters' => $filters,
+            'filterOptions' => [
+                'receivableStatuses' => self::RECEIVABLE_FILTER_STATUSES,
+                'deliveryStatuses' => collect(self::DELIVERY_STATUSES)->mapWithKeys(fn (string $status): array => [$status => $this->label($status)])->all(),
+                'accountStatuses' => collect(self::ACCOUNT_STATUSES)->mapWithKeys(fn (string $status): array => [$status => $this->label($status)])->all(),
+                'locations' => DB::table('customers')->whereNotNull('location')->where('location', '!=', '')->distinct()->orderBy('location')->pluck('location', 'location'),
+            ],
             'summaryCards' => $dashboardSummary->salesCards(),
-            'sales' => $this->salesRows($normalizedSearch),
-            'customers' => $this->customerRows($normalizedSearch),
+            'sales' => $this->salesRows($normalizedSearch, filters: $activeTab === 'receivables' ? $filters : []),
+            'customers' => $this->customerRows($normalizedSearch, filters: $activeTab === 'customers' ? $filters : []),
             'customerOptions' => $this->customerOptions($state === 'customers' ? $normalizedSearch : null),
             'fuelTypes' => $this->fuelTypeOptions(),
             'paymentStatuses' => self::PAYMENT_STATUSES,
@@ -443,15 +477,25 @@ class SalesOfficerCustomerController extends Controller
 
     public function cancelSale(Request $request, int $sale): RedirectResponse
     {
-        $data = $request->validate([
-            'reason' => ['nullable', 'string', 'max:500'],
-        ]);
+        // An untouched draft is deleted outright; anything else is voided and must say why.
+        $reason = null;
+        if ($this->saleCorrectionService->correctionMode($sale) === 'cancel') {
+            $data = $request->validate([
+                'cancel_reason' => ['required', Rule::in(array_keys(self::CANCEL_REASONS))],
+                'cancel_note' => ['nullable', 'required_if:cancel_reason,other', 'string', 'max:400'],
+            ], [
+                'cancel_reason.required' => 'Select why this sale is being cancelled.',
+                'cancel_note.required_if' => 'Describe the reason when "Other" is selected.',
+            ]);
+            $note = trim((string) ($data['cancel_note'] ?? ''));
+            $reason = self::CANCEL_REASONS[$data['cancel_reason']].($note !== '' ? ' — '.$note : '');
+        }
 
         try {
             $result = $this->saleCorrectionService->correct(
                 $sale,
                 (int) $request->user()->id,
-                $data['reason'] ?? null
+                $reason
             );
         } catch (\RuntimeException $exception) {
             if ($exception->getMessage() === 'Sale record not found.') {
@@ -517,8 +561,7 @@ class SalesOfficerCustomerController extends Controller
                 ->withErrors(['company_name' => 'Customer record could not be saved. Please review the customer details and try again.']);
         }
 
-        return redirect()
-            ->route($this->customersRedirectRoute(request()))
+        return $this->customersRedirect(request())
             ->with('status', 'Customer record created successfully.');
     }
 
@@ -548,8 +591,7 @@ class SalesOfficerCustomerController extends Controller
                 ->withErrors(['company_name' => 'Customer record could not be updated. Please review the customer details and try again.']);
         }
 
-        return redirect()
-            ->route($this->customersRedirectRoute(request()))
+        return $this->customersRedirect(request())
             ->with('status', 'Customer record updated successfully.');
     }
 
@@ -569,8 +611,7 @@ class SalesOfficerCustomerController extends Controller
                 ->withErrors(['customer' => 'Customer record could not be deactivated. Please try again.']);
         }
 
-        return redirect()
-            ->route($this->customersRedirectRoute(request()))
+        return $this->customersRedirect(request())
             ->with('status', 'Customer record deactivated successfully.');
     }
 
@@ -596,9 +637,14 @@ class SalesOfficerCustomerController extends Controller
         ]);
     }
 
-    private function customerRows(?string $search, ?int $perPage = 25)
+    /**
+     * @param  array{status?: string, location?: string}  $filters
+     */
+    private function customerRows(?string $search, ?int $perPage = 25, array $filters = [])
     {
         $query = DB::table('customers')
+            ->when($filters['status'] ?? null, fn (Builder $query, string $status): Builder => $query->where('status', $status))
+            ->when($filters['location'] ?? null, fn (Builder $query, string $location): Builder => $query->where('location', $location))
             ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
                 'customer_code',
                 'name',
@@ -660,6 +706,20 @@ class SalesOfficerCustomerController extends Controller
                 ->flip()
                 ->all();
 
+        // Payments recorded on cancelled sales are owed back to the customer.
+        $refundDueTotals = $customerIds->isEmpty()
+            ? []
+            : DB::table('payments')
+                ->join('sales', 'sales.id', '=', 'payments.sale_id')
+                ->whereIn('sales.customer_id', $customerIds->all())
+                ->whereNull('sales.deleted_at')
+                ->where('sales.status', 'cancelled')
+                ->groupBy('sales.customer_id')
+                ->selectRaw('sales.customer_id, SUM(payments.amount) as refund_due')
+                ->pluck('refund_due', 'customer_id')
+                ->mapWithKeys(fn (mixed $amount, mixed $id): array => [(int) $id => (float) $amount])
+                ->all();
+
         $hasSalesCustomerIds = $customerIds->isEmpty()
             ? []
             : DB::table('sales')
@@ -672,13 +732,14 @@ class SalesOfficerCustomerController extends Controller
                 ->all();
 
         $transformed = $rows
-            ->map(function (object $row) use ($transactionSummaries, $outstandingTotals, $overdueCustomerIds, $hasSalesCustomerIds): array {
+            ->map(function (object $row) use ($transactionSummaries, $outstandingTotals, $overdueCustomerIds, $hasSalesCustomerIds, $refundDueTotals): array {
                 $cid = (int) $row->id;
                 $outstanding = (float) ($outstandingTotals[$cid] ?? 0);
                 $hasOverdue = isset($overdueCustomerIds[$cid]);
                 $hasSales = isset($hasSalesCustomerIds[$cid]);
+                $refundDue = (float) ($refundDueTotals[$cid] ?? 0);
                 $derivedPaymentStatus = $hasSales
-                    ? ($hasOverdue ? 'overdue' : ($outstanding > 0 ? 'pending' : 'clear'))
+                    ? ($hasOverdue ? 'overdue' : ($outstanding > 0 ? 'pending' : ($refundDue > 0 ? 'refund_due' : 'clear')))
                     : ($row->payment_status ?: 'clear');
 
                 return [
@@ -743,7 +804,10 @@ class SalesOfficerCustomerController extends Controller
             ->get(['id', 'name', 'company_name']);
     }
 
-    private function salesRows(?string $search, ?int $perPage = 25)
+    /**
+     * @param  array{status?: string, delivery_status?: string, date?: string, fuel_type_id?: int|string}  $filters
+     */
+    private function salesRows(?string $search, ?int $perPage = 25, array $filters = [])
     {
         $payments = DB::table('payments')
             ->selectRaw('sale_id, COALESCE(SUM(amount), 0) as total_paid')
@@ -771,6 +835,14 @@ class SalesOfficerCustomerController extends Controller
                 'sales.payment_method',
                 'receivables.status',
             ]))
+            ->when($filters['date'] ?? null, fn (Builder $query, string $date): Builder => $query->whereDate('sales.sale_date', $date))
+            ->when($filters['delivery_status'] ?? null, fn (Builder $query, string $status): Builder => $query->where('sales.delivery_status', $status))
+            ->when($filters['fuel_type_id'] ?? null, fn (Builder $query, mixed $fuelTypeId): Builder => $query->whereExists(
+                fn (Builder $exists): Builder => $exists->selectRaw('1')->from('sale_items as filter_items')
+                    ->whereColumn('filter_items.sale_id', 'sales.id')
+                    ->where('filter_items.fuel_type_id', (int) $fuelTypeId)
+            ))
+            ->when($filters['status'] ?? null, fn (Builder $query, string $status): Builder => $this->whereReceivableStatus($query, $status))
             ->orderByDesc('sales.sale_date')
             ->orderByDesc('sales.id');
 
@@ -784,6 +856,7 @@ class SalesOfficerCustomerController extends Controller
             'sales.payment_terms',
             'sales.status',
             'sales.delivery_status',
+            'sales.cancellation_reason',
             'customers.name as customer_name',
             'customers.company_name',
             'items_total.item_count',
@@ -823,8 +896,14 @@ class SalesOfficerCustomerController extends Controller
                 $saleTotal = (float) $row->sale_total;
                 $isCancelled = $row->status === 'cancelled';
                 $balance = $isCancelled ? 0 : max(0, $saleTotal - $paid);
-                $receivableStatus = $isCancelled ? 'clear' : $this->receivableStatusForSale($saleTotal, $paid, $row->due_date);
-                $status = $isCancelled ? 'Cancelled' : $this->receivableStatusLabel($receivableStatus);
+                // Payments on a voided sale are owed back to the customer, so they are not "clear".
+                $refundDue = $isCancelled ? round($paid, 2) : 0.0;
+                $receivableStatus = $isCancelled ? ($refundDue > 0 ? 'refund_due' : 'clear') : $this->receivableStatusForSale($saleTotal, $paid, $row->due_date);
+                $status = match (true) {
+                    $refundDue > 0 => 'Refund due: ₱'.number_format($refundDue, 2),
+                    $isCancelled => 'Cancelled',
+                    default => $this->receivableStatusLabel($receivableStatus),
+                };
                 $saleItems = $itemsBySale[$saleId] ?? [];
                 $latestPaymentDate = $latestPaymentDates[$saleId] ?? null;
                 $correctionAction = $this->saleCorrectionService->correctionMode($saleId);
@@ -847,8 +926,9 @@ class SalesOfficerCustomerController extends Controller
                     'latest_payment_date' => $latestPaymentDate,
                     'has_dependencies' => $dependencyMap[$saleId] ?? false,
                     'correction_action' => $correctionAction,
+                    'refund_due' => $refundDue,
                     'items' => $saleItems,
-                    'class' => $this->rowClass($receivableStatus === 'overdue' ? 'overdue' : $status),
+                    'class' => $this->rowClass(in_array($receivableStatus, ['overdue', 'refund_due'], true) ? $receivableStatus : $status),
                     'cells' => [
                         $row->sale_code,
                         $row->sales_order_number ?: 'N/A',
@@ -884,7 +964,7 @@ class SalesOfficerCustomerController extends Controller
                         'Payment Terms' => $this->label($row->payment_terms),
                         'Payment Method' => $this->paymentMethodLabel($row->payment_method),
                         'Order Status' => $this->label($row->status),
-                    ],
+                    ] + ($isCancelled ? ['Cancellation Reason' => $row->cancellation_reason ?: 'N/A'] : []),
                     'payments' => $paymentsBySale[$saleId] ?? [],
                     'payment_schedules' => $schedulesBySale[$saleId] ?? [],
                     'sale_total' => $this->formatNumber($saleTotal),
@@ -1286,6 +1366,30 @@ class SalesOfficerCustomerController extends Controller
         return $this->isOverdue($saleTotal, $totalPaid, $dueDate) ? 'overdue' : 'partial';
     }
 
+    /**
+     * SQL mirror of receivableStatusForSale() so the Status filter matches the Status column.
+     */
+    private function whereReceivableStatus(Builder $query, string $status): Builder
+    {
+        if ($status === 'cancelled') {
+            return $query->where('sales.status', 'cancelled');
+        }
+
+        $paid = 'ROUND(COALESCE(payments_total.total_paid, 0), 2)';
+        $total = 'ROUND(items_total.sale_total, 2)';
+        $overdue = "(receivables.due_date IS NOT NULL AND receivables.due_date < ? AND {$paid} < {$total})";
+        $today = now()->toDateString();
+
+        $query->where('sales.status', '!=', 'cancelled');
+
+        return match ($status) {
+            'clear' => $query->whereRaw("{$paid} >= {$total}"),
+            'overdue' => $query->whereRaw($overdue, [$today]),
+            'unpaid' => $query->whereRaw("{$paid} <= 0")->whereRaw("NOT {$overdue}", [$today]),
+            default => $query->whereRaw("{$paid} > 0 AND {$paid} < {$total}")->whereRaw("NOT {$overdue}", [$today]),
+        };
+    }
+
     private function isOverdue(float $saleTotal, float $totalPaid, mixed $dueDate): bool
     {
         return $dueDate
@@ -1652,6 +1756,18 @@ class SalesOfficerCustomerController extends Controller
             : 'sales-officer.sales';
     }
 
+    /**
+     * Back to the customer list the form came from: Admin can also manage customers from User Management.
+     */
+    private function customersRedirect(Request $request): RedirectResponse
+    {
+        if ($request->input('return_to') === 'user-management' && str_starts_with((string) $request->route()?->getName(), 'admin.')) {
+            return redirect()->route('admin.user-management', ['tab' => 'customers']);
+        }
+
+        return redirect()->route($this->customersRedirectRoute($request));
+    }
+
     private function customersRedirectRoute(Request $request): string
     {
         return str_starts_with((string) $request->route()?->getName(), 'admin.')
@@ -1716,7 +1832,7 @@ class SalesOfficerCustomerController extends Controller
     {
         return match (strtolower(str_replace(' ', '_', (string) $status))) {
             'unpaid' => 'row-danger',
-            'pending', 'partial', 'partially_paid' => 'row-warning',
+            'pending', 'partial', 'partially_paid', 'refund_due' => 'row-warning',
             'paid', 'clear', 'settled' => 'row-success',
             default => '',
         };

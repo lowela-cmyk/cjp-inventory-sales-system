@@ -1,7 +1,9 @@
 <?php
 
 use App\Services\AIService;
+use App\Services\LiftAllocationService;
 use App\Services\OperationalDataRepairService;
+use App\Services\TruckAvailabilityService;
 use App\Services\WorkflowSmokeTestService;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -51,7 +53,7 @@ Artisan::command('cjp:workflow-smoke-test {--persist-staging : Persist generated
     return 0;
 })->purpose('Run a rollback-safe database transactional smoke test for purchase-to-payment workflow (directly inserts records; not an HTTP/UI acceptance test)');
 
-Artisan::command('cjp:readiness-audit {--permissive : Run in permissive mode with warnings instead of failures for missing operational data} {--turnover : Explicitly enforce strict turnover mode}', function (WorkflowSmokeTestService $smokeTest): int {
+Artisan::command('cjp:readiness-audit {--permissive : Run in permissive mode with warnings instead of failures for missing operational data} {--turnover : Explicitly enforce strict turnover mode} {--env-file= : Environment file to audit (defaults to the project .env)}', function (WorkflowSmokeTestService $smokeTest): int {
     $failures = 0;
     $warnings = 0;
     $turnoverMode = ! (bool) $this->option('permissive') || (bool) $this->option('turnover');
@@ -80,7 +82,8 @@ Artisan::command('cjp:readiness-audit {--permissive : Run in permissive mode wit
         }
     };
 
-    $env = collect(file_exists(base_path('.env')) ? file(base_path('.env'), FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) : [])
+    $envFile = (string) ($this->option('env-file') ?: base_path('.env'));
+    $env = collect(file_exists($envFile) ? file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) : [])
         ->mapWithKeys(function (string $line): array {
             $line = trim($line);
 
@@ -268,3 +271,53 @@ Artisan::command('cjp:repair-data', function (OperationalDataRepairService $repa
         return 1;
     }
 })->purpose('Repair legacy operational data, provision master data, and seed reconciled acceptance workflows for CJP Southern Star OPC');
+
+Artisan::command('cjp:backfill-lift-allocations {--apply : Create the allocations (default is a dry run that changes nothing)}', function (LiftAllocationService $allocations): int {
+    // Audit C01: lifts scheduled before Part 7 have no garage/client allocation, so their fuel can never be stocked in.
+    $plan = $allocations->backfillPlan();
+
+    if ($plan->isEmpty()) {
+        $this->info('Every lift already has an allocation. Nothing to backfill.');
+
+        return 0;
+    }
+
+    $this->table(
+        ['Haul', 'Lift ID', 'Lift status', 'Purchase', 'Fuel', 'Garage allocation (L)', 'Tank (unconfirmed)'],
+        $plan->map(fn (array $row): array => [$row['haul_id'], $row['haul_code'], $row['haul_status'], $row['purchase_code'], $row['fuel'], number_format($row['quantity_liters'], 2), $row['tank']])->all()
+    );
+
+    if (! $this->option('apply')) {
+        $this->warn('DRY RUN: '.$plan->count().' garage allocation(s) would be created. Nothing was changed. Re-run with --apply to create them.');
+
+        return 0;
+    }
+
+    $created = $allocations->applyBackfill();
+    $this->info($created.' garage allocation(s) created. They appear under Pending Garage Receipts for the Inventory Officer to confirm.');
+
+    return 0;
+})->purpose('Audit C01: give lifts without an allocation a garage allocation (dry run unless --apply)');
+
+Artisan::command('cjp:sync-truck-status {--apply : Update the trucks (default is a dry run that changes nothing)}', function (TruckAvailabilityService $trucks): int {
+    $drift = $trucks->statusDrift();
+
+    if ($drift->isEmpty()) {
+        $this->info('Every truck status matches its lifts. Nothing to fix.');
+
+        return 0;
+    }
+
+    $this->table(['Truck', 'Code', 'Stored status', 'Correct status', 'Open lifts'], $drift->map(fn (array $row): array => array_values($row))->all());
+
+    if (! $this->option('apply')) {
+        $this->warn('DRY RUN: '.$drift->count().' truck(s) would be updated. Nothing was changed. Re-run with --apply.');
+
+        return 0;
+    }
+
+    DB::transaction(fn () => $drift->each(fn (array $row) => $trucks->synchronizeStatus($row['truck_id'])));
+    $this->info($drift->count().' truck(s) updated.');
+
+    return 0;
+})->purpose('Make each truck status match its lifts (dry run unless --apply)');

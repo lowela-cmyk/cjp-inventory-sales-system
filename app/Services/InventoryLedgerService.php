@@ -8,12 +8,16 @@ use Illuminate\Support\Facades\DB;
 
 class InventoryLedgerService
 {
+    /** Lifting statuses a ledger row can have, keyed by filter value. */
+    public const STATUSES = ['incomplete' => 'Incomplete', 'partially_lifted' => 'Partially Lifted', 'complete' => 'Complete'];
+
     /**
+     * @param  array{date?: ?string, depot_id?: mixed, fuel_type_id?: mixed, status?: ?string}  $filters
      * @return array{ledger: Collection<int, array<string, mixed>>, transactions: Collection<int, array<string, mixed>>, latestBalances: array<string, float>}
      */
-    public function rows(?string $search = null): array
+    public function rows(?string $search = null, array $filters = []): array
     {
-        $purchaseRows = $this->purchaseProgressRows($search);
+        $purchaseRows = $this->purchaseProgressRows($search, $filters);
         $purchaseItemIds = $purchaseRows->pluck('purchase_item_id')->map(fn (mixed $id): int => (int) $id)->all();
         $liftsByPurchaseItem = $this->liftsByPurchaseItem($purchaseItemIds);
         $movementsByPurchaseItem = $this->movementSummariesByPurchaseItem($purchaseItemIds);
@@ -70,6 +74,12 @@ class InventoryLedgerService
             ];
         });
 
+        // Status is derived from lifted quantities, so it is filtered after the rows are built.
+        $statusLabel = self::STATUSES[$filters['status'] ?? ''] ?? null;
+        if ($statusLabel !== null) {
+            $transactions = $transactions->filter(fn (array $row): bool => $row['status'] === $statusLabel);
+        }
+
         return [
             'ledger' => $transactions
                 ->filter(fn (array $row): bool => (float) str_replace(',', '', $row['cells'][5]) > 0)
@@ -80,7 +90,10 @@ class InventoryLedgerService
         ];
     }
 
-    private function purchaseProgressRows(?string $search): Collection
+    /**
+     * @param  array{date?: ?string, depot_id?: mixed, fuel_type_id?: mixed}  $filters
+     */
+    private function purchaseProgressRows(?string $search, array $filters = []): Collection
     {
         $completedLifts = DB::table('hauls')
             ->whereIn('status', ['lifted', 'completed'])
@@ -104,6 +117,9 @@ class InventoryLedgerService
                     $query->orWhere($column, 'like', '%'.$search.'%');
                 }
             }))
+            ->when($filters['date'] ?? null, fn (Builder $query, string $date): Builder => $query->whereDate('purchases.purchase_date', $date))
+            ->when($filters['depot_id'] ?? null, fn (Builder $query, mixed $depotId): Builder => $query->where('purchases.depot_id', (int) $depotId))
+            ->when($filters['fuel_type_id'] ?? null, fn (Builder $query, mixed $fuelTypeId): Builder => $query->where('purchase_items.fuel_type_id', (int) $fuelTypeId))
             ->orderByDesc('purchases.purchase_date')
             ->orderByDesc('purchase_items.id')
             ->get([

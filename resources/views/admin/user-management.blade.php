@@ -2,24 +2,25 @@
     $activeTab = in_array($activeTab, ['office', 'drivers', 'customers'], true) ? $activeTab : 'office';
     $staffId = fn ($user) => 'EMP-'.str_pad((string) $user->id, 6, '0', STR_PAD_LEFT);
     $driverId = fn ($driver) => $driver->driver_code ?: 'DRV-'.str_pad((string) $driver->id, 6, '0', STR_PAD_LEFT);
+    $filters = $filters ?? [];
+    $filterOptions = $filterOptions ?? ['statuses' => [], 'approvalStatuses' => [], 'locations' => collect(), 'companies' => collect()];
+    $tabFilters = fn (string $tab): array => $tab === $activeTab ? $filters : [];
+    // Customer forms post to the Sales customer routes and come back here (return_to=user-management).
+    $paymentStatuses = \App\Http\Controllers\SalesOfficerCustomerController::PAYMENT_STATUSES;
+    $accountStatuses = \App\Http\Controllers\SalesOfficerCustomerController::ACCOUNT_STATUSES;
+    $addCustomerFailed = old('form_context') === 'um-add-customer' && $errors->any();
 @endphp
 
 @component('layouts.admin', ['title' => 'User Management', 'active' => 'user-management'])
     <div data-tabs>
-        <h2 class="section-title">Office Staff</h2>
+        <h2 class="section-title" data-tab-heading>{{ ['office' => 'Office Staff', 'drivers' => 'Drivers', 'customers' => 'Customers'][$activeTab] }}</h2>
 
-        @if (session('status'))
-            <div class="admin-flash admin-flash-success" role="status">{{ session('status') }}</div>
-        @endif
 
-        @if ($errors->any())
-            <div class="admin-flash admin-flash-error" role="alert">{{ $errors->first() }}</div>
-        @endif
 
         <div class="tabs">
-            <button class="tab-button {{ $activeTab === 'office' ? 'is-active' : '' }}" type="button" data-tab-target="office">Office Staff</button>
-            <button class="tab-button {{ $activeTab === 'drivers' ? 'is-active' : '' }}" type="button" data-tab-target="drivers">Drivers</button>
-            <button class="tab-button {{ $activeTab === 'customers' ? 'is-active' : '' }}" type="button" data-tab-target="customers">Customers</button>
+            <button class="tab-button {{ $activeTab === 'office' ? 'is-active' : '' }}" type="button" data-tab-target="office" data-heading="Office Staff" data-tab-url="{{ route('admin.user-management', ['tab' => 'office']) }}">Office Staff</button>
+            <button class="tab-button {{ $activeTab === 'drivers' ? 'is-active' : '' }}" type="button" data-tab-target="drivers" data-heading="Drivers" data-tab-url="{{ route('admin.user-management', ['tab' => 'drivers']) }}">Drivers</button>
+            <button class="tab-button {{ $activeTab === 'customers' ? 'is-active' : '' }}" type="button" data-tab-target="customers" data-heading="Customers" data-tab-url="{{ route('admin.user-management', ['tab' => 'customers']) }}">Customers</button>
         </div>
         <div class="actions-right">
             <a
@@ -30,12 +31,14 @@
         </div>
 
         <section data-tab-panel="office" {{ $activeTab !== 'office' ? 'hidden' : '' }}>
-            <div class="toolbar toolbar-narrow">
-                <input type="search" placeholder="Search..." aria-label="Search office staff">
-                <button class="btn btn-primary" type="button" data-sort-table="2">Position</button>
-                <button class="btn btn-primary" type="button" data-sort-table="6">Contact</button>
-                <button class="btn btn-primary" type="button" data-modal-open="staff-add">+ Add Office Staff</button>
-            </div>
+            <x-filter.bar class="toolbar-narrow" :action="route('admin.user-management')">
+                <input type="hidden" name="tab" value="office">
+                <x-filter.search label="Search office staff" :value="$tabFilters('office')['search'] ?? null" />
+                <x-filter.select name="role" label="Position" :options="$officeRoles" :selected="$tabFilters('office')['role'] ?? null" />
+                <x-filter.select name="status" label="Account Status" :options="$filterOptions['statuses']" :selected="$tabFilters('office')['status'] ?? null" />
+                <x-filter.select name="approval_status" label="Approval Status" :options="$filterOptions['approvalStatuses']" :selected="$tabFilters('office')['approval_status'] ?? null" />
+                <button class="btn btn-secondary btn-wide" type="button" data-modal-open="staff-add">+ Add Office Staff</button>
+            </x-filter.bar>
             <div class="table-wrap">
                 <table class="admin-table">
                     <thead><tr><th>Staff ID</th><th>Name</th><th>Position</th><th>Account Status</th><th>Approval Status</th><th>Email</th><th>Contact Number</th><th>Actions</th></tr></thead>
@@ -65,12 +68,13 @@
         </section>
 
         <section data-tab-panel="drivers" {{ $activeTab !== 'drivers' ? 'hidden' : '' }}>
-            <div class="toolbar toolbar-narrow">
-                <input type="search" placeholder="Search..." aria-label="Search drivers">
-                <button class="btn btn-primary" type="button" data-sort-table="2">License</button>
-                <button class="btn btn-primary" type="button" data-sort-table="6">Contact</button>
-                <button class="btn btn-primary" type="button" data-modal-open="driver-add">+ Add Driver</button>
-            </div>
+            <x-filter.bar class="toolbar-narrow" :action="route('admin.user-management')">
+                <input type="hidden" name="tab" value="drivers">
+                <x-filter.search label="Search drivers" :value="$tabFilters('drivers')['search'] ?? null" />
+                <x-filter.select name="status" label="Account Status" :options="$filterOptions['statuses']" :selected="$tabFilters('drivers')['status'] ?? null" />
+                <x-filter.select name="approval_status" label="Approval Status" :options="$filterOptions['approvalStatuses']" :selected="$tabFilters('drivers')['approval_status'] ?? null" />
+                <button class="btn btn-secondary btn-wide" type="button" data-modal-open="driver-add">+ Add Driver</button>
+            </x-filter.bar>
             <div class="table-wrap">
                 <table class="admin-table">
                     <thead><tr><th>Driver ID</th><th>Name</th><th>License No.</th><th>Account Status</th><th>Approval Status</th><th>Email</th><th>Contact Number</th><th>Actions</th></tr></thead>
@@ -100,28 +104,31 @@
         </section>
 
         <section data-tab-panel="customers" {{ $activeTab !== 'customers' ? 'hidden' : '' }}>
-            <div class="toolbar toolbar-narrow">
-                <input type="search" placeholder="Search..." aria-label="Search customers">
-                <button class="btn btn-primary" type="button" data-sort-table="3">Location</button>
-                <button class="btn btn-primary" type="button" data-sort-table="2">Company</button>
-                <button class="btn btn-primary" type="button" data-modal-open="customer-add">+ Add Customer</button>
-            </div>
+            <x-filter.bar class="toolbar-narrow" :action="route('admin.user-management')">
+                <input type="hidden" name="tab" value="customers">
+                <x-filter.search label="Search customers" :value="$tabFilters('customers')['search'] ?? null" />
+                <x-filter.select name="location" label="Location" :options="$filterOptions['locations']" :selected="$tabFilters('customers')['location'] ?? null" />
+                <x-filter.select name="company" label="Company" :options="$filterOptions['companies']" :selected="$tabFilters('customers')['company'] ?? null" />
+                <button class="btn btn-secondary btn-wide" type="button" data-modal-open="customer-add">+ Add Customer</button>
+            </x-filter.bar>
             <div class="table-wrap">
                 <table class="admin-table">
-                    <thead><tr><th>Customer ID</th><th>Customer Name</th><th>Company Name</th><th>Location</th><th>Email</th><th>Contact Number</th><th>Actions</th></tr></thead>
+                    <thead><tr><th>Customer ID</th><th>Customer Name</th><th>Company Name</th><th>Location</th><th>Email</th><th>Contact Number</th><th>Bank Name</th><th>Status</th><th>Actions</th></tr></thead>
                     <tbody>
                         @forelse ($customers as $row)
                             <tr>
-                                <td>{{ 'CSM-'.str_pad((string) $row->id, 6, '0', STR_PAD_LEFT) }}</td>
+                                <td>{{ $row->customer_code }}</td>
                                 <td>{{ $row->name }}</td>
                                 <td>{{ $row->company_name }}</td>
                                 <td>{{ $row->location ?: 'N/A' }}</td>
                                 <td>{{ $row->email ?: 'N/A' }}</td>
                                 <td>{{ $row->phone ?: 'N/A' }}</td>
+                                <td>{{ $row->bank_name ?: 'N/A' }}</td>
+                                <td><x-admin.status-badge :status="ucwords($row->status)" /></td>
                                 <td><button class="btn btn-secondary" type="button" data-modal-open="customer-edit-{{ $row->id }}">Edit</button></td>
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="7">No customer records found.</td></tr>
+                            <tr><td class="empty-cell" colspan="9">No customer records found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -177,9 +184,32 @@
         </form>
     </x-admin.modal>
 
-    <x-admin.modal id="customer-add" title="Add Customers" wide>
-        <div class="modal-card"><p class="detail-value">Customer records are connected from the existing customers table and are managed in the customer/sales workflow.</p></div>
-        <div class="modal-actions"><button class="btn btn-pill btn-danger" type="button" data-modal-close>Close</button></div>
+    <x-admin.modal id="customer-add" title="Add Customer" wide>
+        @if ($addCustomerFailed)
+            <span hidden data-open-modal-on-load="customer-add"></span>
+            <p class="form-alert" role="alert">{{ $errors->first() }}</p>
+        @endif
+        <form id="um-customer-add-form" method="POST" action="{{ route('admin.sales.customers.store') }}" data-prevent-double-submit>
+            @csrf
+            <input type="hidden" name="form_context" value="um-add-customer">
+            <input type="hidden" name="return_to" value="user-management">
+            <div class="modal-card">
+                <div class="form-grid">
+                    <div class="form-row"><label for="um_customer_name">Customer Name</label><input id="um_customer_name" name="name" type="text" maxlength="255" placeholder="Enter Customer Name" value="{{ $addCustomerFailed ? old('name') : '' }}" required></div>
+                    <div class="form-row"><label for="um_customer_company">Company Name</label><input id="um_customer_company" name="company_name" type="text" maxlength="255" placeholder="Enter Company Name" value="{{ $addCustomerFailed ? old('company_name') : '' }}" required></div>
+                    <div class="form-row"><label for="um_customer_location">Location</label><input id="um_customer_location" name="location" type="text" maxlength="255" placeholder="Enter Location" value="{{ $addCustomerFailed ? old('location') : '' }}"></div>
+                    <div class="form-row"><label for="um_customer_email">Email</label><input id="um_customer_email" name="email" type="email" maxlength="255" placeholder="Enter Email" value="{{ $addCustomerFailed ? old('email') : '' }}"></div>
+                    <div class="form-row"><label for="um_customer_phone">Contact Number</label><input id="um_customer_phone" name="phone" type="tel" maxlength="30" placeholder="Enter Contact Number" value="{{ $addCustomerFailed ? old('phone') : '' }}"></div>
+                    <div class="form-row"><label for="um_customer_bank">Bank Name</label><input id="um_customer_bank" name="bank_name" type="text" maxlength="255" placeholder="Enter Bank Name" value="{{ $addCustomerFailed ? old('bank_name') : '' }}"></div>
+                    <div class="form-row"><label for="um_customer_payment_status">Payment Status</label><select id="um_customer_payment_status" name="payment_status" required>@foreach ($paymentStatuses as $status)<option value="{{ $status }}" @selected(($addCustomerFailed ? old('payment_status') : 'clear') === $status)>{{ ucwords($status) }}</option>@endforeach</select></div>
+                    <div class="form-row"><label for="um_customer_status">Status</label><select id="um_customer_status" name="status" required>@foreach ($accountStatuses as $status)<option value="{{ $status }}" @selected(($addCustomerFailed ? old('status') : 'active') === $status)>{{ ucwords($status) }}</option>@endforeach</select></div>
+                </div>
+            </div>
+        </form>
+        <x-slot:footer>
+            <button class="btn btn-pill btn-secondary" type="submit" form="um-customer-add-form">Add</button>
+            <button class="btn btn-pill btn-danger" type="button" data-modal-close>Cancel</button>
+        </x-slot:footer>
     </x-admin.modal>
 
     @foreach ($staff as $row)
@@ -248,18 +278,38 @@
     @endforeach
 
     @foreach ($customers as $row)
-        <x-admin.modal id="customer-edit-{{ $row->id }}" title="Edit Customer Record">
+        @php
+            $isEditedCustomer = (int) old('edit_customer_id') === (int) $row->id;
+            $customerOld = fn (string $key, mixed $default = null): mixed => $isEditedCustomer ? old($key, $default) : $default;
+        @endphp
+        <x-admin.modal id="customer-edit-{{ $row->id }}" title="Edit Customer Record" wide>
+            @if ($isEditedCustomer && $errors->any())
+                <span hidden data-open-modal-on-load="customer-edit-{{ $row->id }}"></span>
+                <p class="form-alert" role="alert">{{ $errors->first() }}</p>
+            @endif
+            <form id="um-customer-update-{{ $row->id }}" method="POST" action="{{ route('admin.sales.customers.update', $row->id) }}" data-prevent-double-submit>
+                @csrf
+                @method('PATCH')
+                <input type="hidden" name="edit_customer_id" value="{{ $row->id }}">
+                <input type="hidden" name="return_to" value="user-management">
+            </form>
             <div class="modal-card">
-                <p class="detail-id">{{ 'CSM-'.str_pad((string) $row->id, 6, '0', STR_PAD_LEFT) }}</p>
-                <div class="detail-grid">
-                    <div class="detail-row"><div class="detail-label">Customer Name</div><div class="detail-value">{{ $row->name }}</div></div>
-                    <div class="detail-row"><div class="detail-label">Company Name</div><div class="detail-value">{{ $row->company_name }}</div></div>
-                    <div class="detail-row"><div class="detail-label">Location</div><div class="detail-value">{{ $row->location ?: 'N/A' }}</div></div>
-                    <div class="detail-row"><div class="detail-label">Email</div><div class="detail-value">{{ $row->email ?: 'N/A' }}</div></div>
-                    <div class="detail-row"><div class="detail-label">Contact Number</div><div class="detail-value">{{ $row->phone ?: 'N/A' }}</div></div>
+                <p class="detail-id">{{ $row->customer_code }}</p>
+                <div class="form-grid">
+                    <div class="form-row"><label for="um_customer_name_{{ $row->id }}">Customer Name</label><input form="um-customer-update-{{ $row->id }}" id="um_customer_name_{{ $row->id }}" name="name" type="text" maxlength="255" value="{{ $customerOld('name', $row->name) }}" required></div>
+                    <div class="form-row"><label for="um_customer_company_{{ $row->id }}">Company Name</label><input form="um-customer-update-{{ $row->id }}" id="um_customer_company_{{ $row->id }}" name="company_name" type="text" maxlength="255" value="{{ $customerOld('company_name', $row->company_name) }}" required></div>
+                    <div class="form-row"><label for="um_customer_location_{{ $row->id }}">Location</label><input form="um-customer-update-{{ $row->id }}" id="um_customer_location_{{ $row->id }}" name="location" type="text" maxlength="255" value="{{ $customerOld('location', $row->location) }}"></div>
+                    <div class="form-row"><label for="um_customer_email_{{ $row->id }}">Email</label><input form="um-customer-update-{{ $row->id }}" id="um_customer_email_{{ $row->id }}" name="email" type="email" maxlength="255" value="{{ $customerOld('email', $row->email) }}"></div>
+                    <div class="form-row"><label for="um_customer_phone_{{ $row->id }}">Contact Number</label><input form="um-customer-update-{{ $row->id }}" id="um_customer_phone_{{ $row->id }}" name="phone" type="tel" maxlength="30" value="{{ $customerOld('phone', $row->phone) }}"></div>
+                    <div class="form-row"><label for="um_customer_bank_{{ $row->id }}">Bank Name</label><input form="um-customer-update-{{ $row->id }}" id="um_customer_bank_{{ $row->id }}" name="bank_name" type="text" maxlength="255" value="{{ $customerOld('bank_name', $row->bank_name) }}"></div>
+                    <div class="form-row"><label for="um_customer_payment_status_{{ $row->id }}">Payment Status</label><select form="um-customer-update-{{ $row->id }}" id="um_customer_payment_status_{{ $row->id }}" name="payment_status" required>@foreach ($paymentStatuses as $status)<option value="{{ $status }}" @selected($customerOld('payment_status', $row->payment_status) === $status)>{{ ucwords($status) }}</option>@endforeach</select></div>
+                    <div class="form-row"><label for="um_customer_status_{{ $row->id }}">Status</label><select form="um-customer-update-{{ $row->id }}" id="um_customer_status_{{ $row->id }}" name="status" required>@foreach ($accountStatuses as $status)<option value="{{ $status }}" @selected($customerOld('status', $row->status) === $status)>{{ ucwords($status) }}</option>@endforeach</select></div>
                 </div>
             </div>
-            <div class="modal-actions"><button class="btn btn-pill btn-danger" type="button" data-modal-close>Close</button></div>
+            <x-slot:footer>
+                <button class="btn btn-pill btn-secondary" type="submit" form="um-customer-update-{{ $row->id }}">Save</button>
+                <button class="btn btn-pill btn-danger" type="button" data-modal-close>Cancel</button>
+            </x-slot:footer>
         </x-admin.modal>
     @endforeach
 @endcomponent

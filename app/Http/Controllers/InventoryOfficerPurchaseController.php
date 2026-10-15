@@ -6,7 +6,6 @@ use App\Rules\ApprovedFuelType;
 use App\Services\DashboardSummaryService;
 use App\Services\GarageTankService;
 use App\Services\IdempotencyService;
-use App\Services\InventoryCostService;
 use App\Services\PurchaseService;
 use App\Services\StockInService;
 use App\Services\StockOutFinancialService;
@@ -28,7 +27,6 @@ class InventoryOfficerPurchaseController extends Controller
         private readonly IdempotencyService $idempotencyService,
         private readonly PurchaseService $purchaseService,
         private readonly StockInService $stockInService,
-        private readonly InventoryCostService $inventoryCost,
         private readonly StockOutFinancialService $stockOutFinancials
     ) {}
 
@@ -39,8 +37,6 @@ class InventoryOfficerPurchaseController extends Controller
     private const STOCK_IN_REFERENCE_TYPE = 'haul_allocation';
 
     private const STOCK_OUT_REFERENCE_TYPE = 'stock_out';
-
-    private const ELIGIBLE_SALE_STATUSES = ['confirmed', 'partially_paid', 'paid', 'unpaid'];
 
     /** Status filter options per inventory tab (Stock-In movements are always posted, so it has none). */
     private const TAB_FILTER_STATUSES = [
@@ -120,11 +116,8 @@ class InventoryOfficerPurchaseController extends Controller
                 ->orderBy('name')
                 ->get(['id', 'name', 'fuel_type_id', 'tank_number']),
             'garageAllocations' => $this->garageAllocationOptions(),
-            'stockOutSaleItems' => $this->stockOutSaleItemOptions(),
-            'directDeliveryAllocations' => $this->directDepotReleaseAllocationOptions(),
             'paymentStatuses' => self::PAYMENT_STATUSES,
             'purchaseIdempotencyKey' => (string) Str::uuid(),
-            'stockOutIdempotencyKey' => (string) Str::uuid(),
         ]);
     }
 
@@ -256,78 +249,6 @@ class InventoryOfficerPurchaseController extends Controller
             ->with('status', 'Stock-In recorded successfully.');
     }
 
-    public function storeStockOut(Request $request): RedirectResponse
-    {
-        $data = $request->validate([
-            'idempotency_key' => ['required', 'uuid'],
-            'source_type' => ['required', Rule::in(['garage', 'depot'])],
-            'sale_item_id' => ['required', 'integer', Rule::exists('sale_items', 'id')],
-            'storage_location_id' => ['required_if:source_type,garage', 'nullable', 'integer', Rule::exists('storage_locations', 'id')->where(fn (Builder $query): Builder => $query->where('type', 'garage')->where('status', 'active'))],
-            'haul_allocation_id' => ['required_if:source_type,depot', 'nullable', 'integer', Rule::exists('haul_allocations', 'id')],
-            'quantity_liters' => ['required', 'numeric', 'gt:0', 'max:1000000'],
-            'stock_out_at' => ['required', 'date'],
-            'remarks' => ['nullable', 'string', 'max:1000'],
-        ]);
-        $sessionKey = 'stock_outs.created.'.((string) $data['idempotency_key']);
-
-        if ($request->session()->has($sessionKey)) {
-            return redirect()
-                ->route($this->inventoryRouteName($request, 'stock-out'))
-                ->with('status', 'Stock-Out record was already submitted.');
-        }
-
-        try {
-            $idempotency = $this->idempotencyService->run(
-                (string) $data['idempotency_key'],
-                'stock_outs.store',
-                (int) $request->user()->id,
-                function () use ($request, $data): array {
-                    $saleItem = $this->saleItemForStockOut((int) $data['sale_item_id']);
-
-                    if (! $saleItem) {
-                        throw new \RuntimeException('The selected sale is not eligible for stock-out.');
-                    }
-
-                    $quantity = round((float) $data['quantity_liters'], 2);
-                    $remaining = round((float) $saleItem->quantity_liters - (float) $saleItem->fulfilled_quantity_liters, 2);
-
-                    if ($quantity > $remaining) {
-                        throw new \RuntimeException('Quantity released cannot exceed the remaining sale quantity.');
-                    }
-
-                    if ($data['source_type'] === 'garage') {
-                        $error = $this->releaseFromGarage($request, $data, $saleItem, $quantity);
-                    } else {
-                        $error = $this->releaseDirectFromDepot($request, $data, $saleItem, $quantity);
-                    }
-
-                    if ($error) {
-                        throw new \RuntimeException($error);
-                    }
-
-                    return [
-                        'reference_id' => (int) $saleItem->id,
-                        'response_reference' => 'stock_out',
-                    ];
-                }
-            );
-        } catch (\RuntimeException $e) {
-            return back()->withErrors(['stock_out' => $e->getMessage()])->withInput();
-        }
-
-        if ($idempotency['duplicate']) {
-            return redirect()
-                ->route($this->inventoryRouteName($request, 'stock-out'))
-                ->with('status', 'Stock-Out record was already submitted.');
-        }
-
-        $request->session()->put($sessionKey, true);
-
-        return redirect()
-            ->route($this->inventoryRouteName($request, 'stock-out'))
-            ->with('status', 'Stock-Out recorded successfully.');
-    }
-
     /**
      * @return array<string, mixed>
      */
@@ -405,6 +326,11 @@ class InventoryOfficerPurchaseController extends Controller
         $paginator = $query->paginate(25, ['*'], 'stock_out_page')->withQueryString();
         $transformed = collect($paginator->items())->map(function (object $row): array {
             $amounts = $this->stockOutFinancials->calculate($row);
+            // A voided release earns nothing (any payment is a refund due), so it has no margin or profit.
+            if ($row->status === 'cancelled') {
+                $amounts['margin'] = null;
+                $amounts['profit'] = null;
+            }
 
             return [
                 'cells' => [
@@ -421,373 +347,17 @@ class InventoryOfficerPurchaseController extends Controller
                     $this->formatNumber($amounts['total_paid']),
                     $this->stockOutSourceLabel($row),
                     $this->label($row->status),
-                    $this->formatFinancial($amounts['profit']),
+                    $row->status === 'cancelled' ? '—' : $this->formatFinancial($amounts['margin']),
+                    $row->status === 'cancelled' ? '—' : $this->formatFinancial($amounts['profit']),
                 ],
                 'class' => $this->rowClass($row->status),
+                'margin' => $amounts['margin'],
                 'profit' => $amounts['profit'],
             ];
         });
         $paginator->setCollection($transformed);
 
         return $paginator;
-    }
-
-    private function saleItemForStockOut(int $saleItemId): ?object
-    {
-        return DB::table('sale_items')
-            ->join('sales', 'sales.id', '=', 'sale_items.sale_id')
-            ->join('customers', 'customers.id', '=', 'sales.customer_id')
-            ->where('sale_items.id', $saleItemId)
-            ->whereNull('sales.deleted_at')
-            ->whereIn('sales.status', self::ELIGIBLE_SALE_STATUSES)
-            ->where('sales.delivery_status', 'delivered')
-            ->lockForUpdate()
-            ->first([
-                'sale_items.id',
-                'sale_items.sale_id',
-                'sale_items.fuel_type_id',
-                'sale_items.quantity_liters',
-                'sale_items.fulfilled_quantity_liters',
-                'sale_items.unit_price',
-                'sales.sale_code',
-                'sales.customer_id',
-                'customers.name as customer_name',
-                'customers.company_name',
-            ]);
-    }
-
-    /**
-     * @param  array<string, mixed>  $data
-     */
-    private function releaseFromGarage(Request $request, array $data, object $saleItem, float $quantity): ?string
-    {
-        $garageId = (int) $data['storage_location_id'];
-        $garage = DB::table('storage_locations')
-            ->where('id', $garageId)
-            ->where('type', 'garage')
-            ->where('status', 'active')
-            ->lockForUpdate()
-            ->first(['id', 'fuel_type_id', 'tank_number']);
-
-        if (! $garage) {
-            return 'The selected garage tank is invalid.';
-        }
-
-        if ($garage->fuel_type_id && (int) $garage->fuel_type_id !== (int) $saleItem->fuel_type_id) {
-            return 'The selected garage tank does not match the sale fuel type.';
-        }
-
-        $available = $this->availableGarageStockForUpdate($garageId, (int) $saleItem->fuel_type_id);
-
-        if ($quantity > $available) {
-            return 'Garage inventory is insufficient for this stock-out.';
-        }
-
-        $unitCost = $this->inventoryCost->currentUnitCostForUpdate($garageId, (int) $saleItem->fuel_type_id);
-
-        if ($unitCost === null) {
-            return 'The selected garage inventory has no verifiable cost basis.';
-        }
-
-        if ($this->duplicateGarageStockOutExists($saleItem, $garageId, $quantity, (string) $data['stock_out_at'])) {
-            return 'This stock-out release has already been recorded.';
-        }
-
-        if (! $this->increaseFulfilledQuantity($saleItem, $quantity)) {
-            return 'Quantity released cannot exceed the remaining sale quantity.';
-        }
-
-        $prepared = $this->preparedStockOutForSaleItem($saleItem);
-        $stockOutId = null;
-
-        if ($prepared && $this->sameQuantity((float) $prepared->quantity_liters, $quantity)) {
-            DB::table('stock_outs')
-                ->where('id', $prepared->id)
-                ->update([
-                    'storage_location_id' => $garageId,
-                    'source_type' => 'garage',
-                    'quantity_liters' => $quantity,
-                    'unit_cost' => $unitCost,
-                    'stock_out_at' => $data['stock_out_at'],
-                    'status' => 'released',
-                    'created_by' => $request->user()->id,
-                    'updated_at' => now(),
-                ]);
-
-            $stockOutId = (int) $prepared->id;
-        } else {
-            $this->reducePreparedStockOut($prepared, $quantity);
-
-            $stockOutId = $this->idempotencyService->retryOnCollision('stock_out_code', function () use ($saleItem, $garageId, $quantity, $unitCost, $data, $request): int {
-                return (int) DB::table('stock_outs')->insertGetId([
-                    'stock_out_code' => $this->nextCode('stock_outs', 'stock_out_code', 'STO'),
-                    'sale_id' => $saleItem->sale_id,
-                    'sale_item_id' => $saleItem->id,
-                    'customer_id' => $saleItem->customer_id,
-                    'fuel_type_id' => $saleItem->fuel_type_id,
-                    'storage_location_id' => $garageId,
-                    'source_type' => 'garage',
-                    'quantity_liters' => $quantity,
-                    'unit_cost' => $unitCost,
-                    'stock_out_at' => $data['stock_out_at'],
-                    'status' => 'released',
-                    'created_by' => $request->user()->id,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
-            });
-        }
-
-        $movementId = $this->idempotencyService->retryOnCollision('movement_code', function () use ($garageId, $saleItem, $quantity, $unitCost, $stockOutId, $data, $request): int {
-            return (int) DB::table('inventory_movements')->insertGetId([
-                'movement_code' => $this->nextCode('inventory_movements', 'movement_code', 'MOV'),
-                'storage_location_id' => $garageId,
-                'fuel_type_id' => $saleItem->fuel_type_id,
-                'movement_type' => 'stock_out',
-                'direction' => 'out',
-                'quantity_liters' => $quantity,
-                'unit_cost' => $unitCost,
-                'reference_type' => self::STOCK_OUT_REFERENCE_TYPE,
-                'reference_id' => $stockOutId,
-                'movement_date' => $data['stock_out_at'],
-                'remarks' => $data['remarks'] ?? null,
-                'created_by' => $request->user()->id,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-        });
-
-        DB::table('stock_outs')
-            ->where('id', $stockOutId)
-            ->whereNull('inventory_movement_id')
-            ->update([
-                'inventory_movement_id' => $movementId,
-                'updated_at' => now(),
-            ]);
-
-        return null;
-    }
-
-    /**
-     * @param  array<string, mixed>  $data
-     */
-    private function releaseDirectFromDepot(Request $request, array $data, object $saleItem, float $quantity): ?string
-    {
-        $allocation = DB::table('haul_allocations')
-            ->join('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')
-            ->join('purchase_items', 'purchase_items.id', '=', 'hauls.purchase_item_id')
-            ->join('purchases', 'purchases.id', '=', 'hauls.purchase_id')
-            ->where('haul_allocations.id', (int) $data['haul_allocation_id'])
-            ->where('haul_allocations.destination_type', 'customer')
-            ->where('haul_allocations.sale_id', $saleItem->sale_id)
-            ->where('haul_allocations.customer_id', $saleItem->customer_id)
-            ->where('haul_allocations.fuel_type_id', $saleItem->fuel_type_id)
-            ->where('haul_allocations.status', '!=', 'cancelled')
-            ->where('hauls.status', 'completed')
-            ->whereNull('purchases.deleted_at')
-            ->whereColumn('hauls.purchase_id', 'purchase_items.purchase_id')
-            ->whereColumn('hauls.depot_id', 'purchases.depot_id')
-            ->whereColumn('hauls.fuel_type_id', 'purchase_items.fuel_type_id')
-            ->whereColumn('haul_allocations.fuel_type_id', 'hauls.fuel_type_id')
-            ->lockForUpdate()
-            ->first([
-                'haul_allocations.id',
-                'haul_allocations.haul_id',
-                'haul_allocations.quantity_liters',
-                'haul_allocations.status',
-                'hauls.quantity_liters as haul_quantity_liters',
-                'hauls.depot_id',
-                'hauls.truck_id',
-                'hauls.driver_user_id',
-                'purchase_items.unit_cost',
-            ]);
-
-        if (! $allocation) {
-            return 'The selected direct depot release source does not match this sale.';
-        }
-
-        if (! $this->haulAllocationsAreWithinQuantity((int) $allocation->haul_id, (float) $allocation->haul_quantity_liters)) {
-            return 'The selected haul has invalid allocation quantities.';
-        }
-
-        $committed = (float) DB::table('stock_outs')
-            ->where('haul_allocation_id', $allocation->id)
-            ->where('source_type', 'depot')
-            ->where('status', '!=', 'cancelled')
-            ->lockForUpdate()
-            ->selectRaw('COALESCE(SUM(quantity_liters), 0) as committed_liters')
-            ->value('committed_liters');
-
-        $allocationRemaining = round((float) $allocation->quantity_liters - $committed, 2);
-
-        if ($quantity > $allocationRemaining) {
-            return 'Quantity released cannot exceed the remaining direct depot allocation.';
-        }
-
-        if ($this->duplicateDirectDepotReleaseExists($allocation, $saleItem, $quantity, (string) $data['stock_out_at'])) {
-            return 'This direct depot release has already been recorded.';
-        }
-
-        $saleRemaining = round((float) $saleItem->quantity_liters - (float) $saleItem->fulfilled_quantity_liters, 2);
-
-        if ($quantity > $saleRemaining) {
-            return 'Quantity released cannot exceed the remaining sale quantity.';
-        }
-
-        if (! $this->increaseFulfilledQuantity($saleItem, $quantity)) {
-            return 'Quantity released cannot exceed the remaining sale quantity.';
-        }
-
-        $prepared = $this->preparedStockOutForSaleItem($saleItem);
-
-        if ($prepared && $this->sameQuantity((float) $prepared->quantity_liters, $quantity)) {
-            DB::table('stock_outs')
-                ->where('id', $prepared->id)
-                ->update([
-                    'source_type' => 'depot',
-                    'storage_location_id' => null,
-                    'depot_id' => $allocation->depot_id,
-                    'haul_allocation_id' => $allocation->id,
-                    'quantity_liters' => $quantity,
-                    'unit_cost' => $allocation->unit_cost,
-                    'stock_out_at' => $data['stock_out_at'],
-                    'status' => 'released',
-                    'created_by' => $request->user()->id,
-                    'updated_at' => now(),
-                ]);
-        } else {
-            $this->reducePreparedStockOut($prepared, $quantity);
-
-            $this->idempotencyService->retryOnCollision('stock_out_code', function () use ($saleItem, $allocation, $quantity, $data, $request): void {
-                DB::table('stock_outs')->insert([
-                    'stock_out_code' => $this->nextCode('stock_outs', 'stock_out_code', 'STO'),
-                    'sale_id' => $saleItem->sale_id,
-                    'sale_item_id' => $saleItem->id,
-                    'customer_id' => $saleItem->customer_id,
-                    'fuel_type_id' => $saleItem->fuel_type_id,
-                    'source_type' => 'depot',
-                    'storage_location_id' => null,
-                    'depot_id' => $allocation->depot_id,
-                    'haul_allocation_id' => $allocation->id,
-                    'quantity_liters' => $quantity,
-                    'unit_cost' => $allocation->unit_cost,
-                    'stock_out_at' => $data['stock_out_at'],
-                    'status' => 'released',
-                    'created_by' => $request->user()->id,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
-            });
-        }
-
-        if (round($allocationRemaining - $quantity, 2) <= 0) {
-            DB::table('haul_allocations')
-                ->where('id', $allocation->id)
-                ->update([
-                    'status' => 'delivered',
-                    'updated_at' => now(),
-                ]);
-        }
-
-        return null;
-    }
-
-    private function availableGarageStockForUpdate(int $garageId, int $fuelTypeId): float
-    {
-        DB::table('inventory_movements')
-            ->where('storage_location_id', $garageId)
-            ->where('fuel_type_id', $fuelTypeId)
-            ->whereNotExists($this->cancelledStockOutExists())
-            ->whereNotExists($this->cancelledHaulAllocationExists())
-            ->lockForUpdate()
-            ->get(['id']);
-
-        $balance = DB::table('inventory_movements')
-            ->where('storage_location_id', $garageId)
-            ->where('fuel_type_id', $fuelTypeId)
-            ->whereNotExists($this->cancelledStockOutExists())
-            ->whereNotExists($this->cancelledHaulAllocationExists())
-            ->selectRaw("COALESCE(SUM(CASE WHEN direction = 'in' THEN quantity_liters ELSE -quantity_liters END), 0) as balance")
-            ->value('balance');
-
-        return round((float) $balance, 2);
-    }
-
-    private function increaseFulfilledQuantity(object $saleItem, float $quantity): bool
-    {
-        return DB::table('sale_items')
-            ->where('id', $saleItem->id)
-            ->where('fulfilled_quantity_liters', '<=', DB::raw('quantity_liters - '.$quantity))
-            ->update([
-                'fulfilled_quantity_liters' => DB::raw('fulfilled_quantity_liters + '.$quantity),
-                'updated_at' => now(),
-            ]) === 1;
-    }
-
-    private function duplicateGarageStockOutExists(object $saleItem, int $garageId, float $quantity, string $stockOutAt): bool
-    {
-        return DB::table('stock_outs')
-            ->where('sale_id', $saleItem->sale_id)
-            ->where('sale_item_id', $saleItem->id)
-            ->where('customer_id', $saleItem->customer_id)
-            ->where('fuel_type_id', $saleItem->fuel_type_id)
-            ->where('storage_location_id', $garageId)
-            ->where('quantity_liters', $quantity)
-            ->where('stock_out_at', $stockOutAt)
-            ->where('status', '!=', 'cancelled')
-            ->lockForUpdate()
-            ->first(['id']) !== null;
-    }
-
-    private function preparedStockOutForSaleItem(object $saleItem): ?object
-    {
-        return DB::table('stock_outs')
-            ->where('sale_id', $saleItem->sale_id)
-            ->where('sale_item_id', $saleItem->id)
-            ->where('customer_id', $saleItem->customer_id)
-            ->where('fuel_type_id', $saleItem->fuel_type_id)
-            ->where('status', 'prepared')
-            ->lockForUpdate()
-            ->orderBy('id')
-            ->first(['id', 'quantity_liters']);
-    }
-
-    private function reducePreparedStockOut(?object $prepared, float $quantity): void
-    {
-        if (! $prepared) {
-            return;
-        }
-
-        $remaining = round((float) $prepared->quantity_liters - $quantity, 2);
-
-        DB::table('stock_outs')
-            ->where('id', $prepared->id)
-            ->update([
-                'quantity_liters' => max(0, $remaining),
-                'status' => $remaining > 0 ? 'prepared' : 'cancelled',
-                'updated_at' => now(),
-            ]);
-    }
-
-    private function sameQuantity(float $left, float $right): bool
-    {
-        return abs(round($left, 2) - round($right, 2)) < 0.01;
-    }
-
-    private function duplicateDirectDepotReleaseExists(object $allocation, object $saleItem, float $quantity, string $stockOutAt): bool
-    {
-        return DB::table('stock_outs')
-            ->where('sale_id', $saleItem->sale_id)
-            ->where('sale_item_id', $saleItem->id)
-            ->where('customer_id', $saleItem->customer_id)
-            ->where('fuel_type_id', $saleItem->fuel_type_id)
-            ->where('source_type', 'depot')
-            ->where('haul_allocation_id', $allocation->id)
-            ->where('quantity_liters', $quantity)
-            ->where('stock_out_at', $stockOutAt)
-            ->where('status', '!=', 'cancelled')
-            ->lockForUpdate()
-            ->first(['id']) !== null;
     }
 
     private function purchaseItemForUpdate(int $purchaseItem): ?object
@@ -872,43 +442,6 @@ class InventoryOfficerPurchaseController extends Controller
             ->first(['id']) !== null;
     }
 
-    private function cancelledStockOutExists(): \Closure
-    {
-        return function (Builder $query): void {
-            $query->selectRaw('1')
-                ->from('stock_outs')
-                ->whereColumn('stock_outs.id', 'inventory_movements.reference_id')
-                ->where('inventory_movements.reference_type', self::STOCK_OUT_REFERENCE_TYPE)
-                ->where('stock_outs.status', 'cancelled');
-        };
-    }
-
-    private function cancelledHaulAllocationExists(): \Closure
-    {
-        return function (Builder $query): void {
-            $query->selectRaw('1')
-                ->from('haul_allocations')
-                ->whereColumn('haul_allocations.id', 'inventory_movements.reference_id')
-                ->where('inventory_movements.reference_type', self::STOCK_IN_REFERENCE_TYPE)
-                ->where('haul_allocations.status', 'cancelled');
-        };
-    }
-
-    private function haulAllocationsAreWithinQuantity(int $haulId, float $haulQuantity): bool
-    {
-        DB::table('haul_allocations')
-            ->where('haul_id', $haulId)
-            ->lockForUpdate()
-            ->get(['id']);
-
-        $allocated = (float) DB::table('haul_allocations')
-            ->where('haul_id', $haulId)
-            ->where('status', '!=', 'cancelled')
-            ->sum('quantity_liters');
-
-        return round($allocated, 2) <= round($haulQuantity, 2);
-    }
-
     /**
      * @param  Collection<int, object>  $movements
      * @return array<string, string>
@@ -982,7 +515,7 @@ class InventoryOfficerPurchaseController extends Controller
             ->leftJoinSub($received, 'received', 'received.reference_id', '=', 'haul_allocations.id')
             ->where('haul_allocations.destination_type', 'garage')
             ->where('haul_allocations.status', '!=', 'cancelled')
-            ->where('hauls.status', 'completed')
+            ->whereIn('hauls.status', ['lifted', 'completed'])
             ->whereNull('purchases.deleted_at')
             ->selectRaw('haul_allocations.id, haul_allocations.storage_location_id, hauls.purchase_item_id, hauls.haul_code, hauls.scheduled_at, purchases.purchase_code, fuel_types.id as fuel_type_id, fuel_types.name as fuel_name, depots.name as depot_name, storage_locations.name as garage_name, haul_allocations.quantity_liters, COALESCE(received.received_liters, 0) as received_liters')
             ->orderByDesc('hauls.scheduled_at')
@@ -998,75 +531,6 @@ class InventoryOfficerPurchaseController extends Controller
             });
     }
 
-    private function stockOutSaleItemOptions()
-    {
-        $garageStock = $this->activeInventoryBalancesByFuelQuery();
-
-        return DB::table('sale_items')
-            ->join('sales', 'sales.id', '=', 'sale_items.sale_id')
-            ->join('customers', 'customers.id', '=', 'sales.customer_id')
-            ->join('fuel_types', 'fuel_types.id', '=', 'sale_items.fuel_type_id')
-            ->leftJoinSub($garageStock, 'garage_stock', 'garage_stock.fuel_type_id', '=', 'sale_items.fuel_type_id')
-            ->whereNull('sales.deleted_at')
-            ->whereIn('sales.status', self::ELIGIBLE_SALE_STATUSES)
-            ->where('sales.delivery_status', 'delivered')
-            ->selectRaw('sale_items.id, sale_items.sale_id, sale_items.fuel_type_id, sales.sale_code, customers.name as customer_name, customers.company_name, fuel_types.name as fuel_name, sale_items.quantity_liters, sale_items.fulfilled_quantity_liters, COALESCE(garage_stock.available_liters, 0) as available_liters')
-            ->orderByDesc('sales.sale_date')
-            ->orderByDesc('sales.id')
-            ->get()
-            ->filter(fn (object $row): bool => ((float) $row->quantity_liters - (float) $row->fulfilled_quantity_liters) > 0)
-            ->values()
-            ->map(function (object $row): object {
-                $row->remaining_liters = round((float) $row->quantity_liters - (float) $row->fulfilled_quantity_liters, 2);
-                $row->label = $row->sale_code.' / '.$row->company_name.' / '.$row->fuel_name.' / remaining '.$this->formatLiters($row->remaining_liters).' / garage '.$this->formatLiters($row->available_liters);
-
-                return $row;
-            });
-    }
-
-    private function activeInventoryBalancesByFuelQuery(): Builder
-    {
-        return DB::table('inventory_movements')
-            ->whereIn('direction', ['in', 'out'])
-            ->whereNotExists($this->cancelledStockOutExists())
-            ->whereNotExists($this->cancelledHaulAllocationExists())
-            ->selectRaw("fuel_type_id, COALESCE(SUM(CASE WHEN direction = 'in' THEN quantity_liters WHEN direction = 'out' THEN -quantity_liters ELSE 0 END), 0) as available_liters")
-            ->groupBy('fuel_type_id');
-    }
-
-    private function directDepotReleaseAllocationOptions()
-    {
-        $delivered = DB::table('stock_outs')
-            ->where('source_type', 'depot')
-            ->where('status', '!=', 'cancelled')
-            ->whereNotNull('haul_allocation_id')
-            ->selectRaw('haul_allocation_id, COALESCE(SUM(quantity_liters), 0) as delivered_liters')
-            ->groupBy('haul_allocation_id');
-
-        return DB::table('haul_allocations')
-            ->join('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')
-            ->join('sales', 'sales.id', '=', 'haul_allocations.sale_id')
-            ->join('customers', 'customers.id', '=', 'haul_allocations.customer_id')
-            ->join('fuel_types', 'fuel_types.id', '=', 'haul_allocations.fuel_type_id')
-            ->leftJoinSub($delivered, 'delivered', 'delivered.haul_allocation_id', '=', 'haul_allocations.id')
-            ->where('haul_allocations.destination_type', 'customer')
-            ->whereNotNull('haul_allocations.sale_id')
-            ->where('haul_allocations.status', '!=', 'cancelled')
-            ->where('hauls.status', '!=', 'cancelled')
-            ->whereNull('sales.deleted_at')
-            ->selectRaw('haul_allocations.id, haul_allocations.sale_id, sales.sale_code, customers.company_name, fuel_types.name as fuel_name, haul_allocations.quantity_liters, COALESCE(delivered.delivered_liters, 0) as delivered_liters')
-            ->orderByDesc('hauls.scheduled_at')
-            ->get()
-            ->filter(fn (object $row): bool => ((float) $row->quantity_liters - (float) $row->delivered_liters) > 0)
-            ->values()
-            ->map(function (object $row): object {
-                $row->remaining_liters = round((float) $row->quantity_liters - (float) $row->delivered_liters, 2);
-                $row->label = $row->sale_code.' / '.$row->company_name.' / '.$row->fuel_name.' / depot remaining '.$this->formatLiters($row->remaining_liters);
-
-                return $row;
-            });
-    }
-
     /**
      * @param  array<int, string>  $columns
      */
@@ -1077,15 +541,6 @@ class InventoryOfficerPurchaseController extends Controller
                 $query->orWhere($column, 'like', '%'.$term.'%');
             }
         });
-    }
-
-    private function nextCode(string $table, string $column, string $prefix): string
-    {
-        do {
-            $code = $prefix.'-'.now()->format('ymd').'-'.Str::upper(Str::random(5));
-        } while (DB::table($table)->where($column, $code)->exists());
-
-        return $code;
     }
 
     private function lineTotal(mixed $quantity, mixed $unitCost): float

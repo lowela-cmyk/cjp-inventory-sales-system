@@ -10,13 +10,7 @@
 @component('layouts.admin', ['title' => 'Account Requests', 'active' => 'account-requests'])
     <h2 class="section-title">Account Requests</h2>
 
-    @if (session('status'))
-        <div class="admin-flash admin-flash-success" role="status">{{ session('status') }}</div>
-    @endif
 
-    @if ($errors->any())
-        <div class="admin-flash admin-flash-error" role="alert">{{ $errors->first() }}</div>
-    @endif
 
     <div class="table-wrap">
         <table class="admin-table account-request-table">

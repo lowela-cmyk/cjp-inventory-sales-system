@@ -129,7 +129,8 @@ class StockInService
             ->where('haul_allocations.id', $allocationId)
             ->where('haul_allocations.destination_type', 'garage')
             ->where('haul_allocations.status', '!=', 'cancelled')
-            ->where('hauls.status', 'completed')
+            // "lifted" is the driver's final step; "completed" is the dispatcher's confirmation.
+            ->whereIn('hauls.status', ['lifted', 'completed'])
             ->whereNull('purchases.deleted_at')
             ->whereColumn('hauls.purchase_id', 'purchase_items.purchase_id')
             ->whereColumn('hauls.depot_id', 'purchases.depot_id')
@@ -154,6 +155,7 @@ class StockInService
                 'haul_allocations.fuel_type_id',
                 'haul_allocations.quantity_liters',
                 'haul_allocations.status',
+                'haul_allocations.receive_on_completion',
                 'purchases.id as purchase_id',
                 'hauls.quantity_liters as haul_quantity_liters',
                 'purchase_items.unit_cost',

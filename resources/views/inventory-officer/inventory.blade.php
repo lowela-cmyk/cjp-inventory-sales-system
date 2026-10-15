@@ -13,19 +13,13 @@
     <div data-tabs>
         <h2 class="section-title" data-tab-heading>{{ $headings[$activeTab] }}</h2>
 
-        @if (session('status'))
-            <div class="admin-flash admin-flash-success" role="status">{{ session('status') }}</div>
-        @endif
 
-        @if ($errors->any())
-            <div class="admin-flash admin-flash-error" role="alert">{{ $errors->first() }}</div>
-        @endif
 
         <div class="tabs">
-            <button class="tab-button {{ $activeTab === 'purchases' ? 'is-active' : '' }}" type="button" data-tab-target="purchases" data-heading="Purchases">Purchases</button>
-            <button class="tab-button {{ $activeTab === 'stock-in' ? 'is-active' : '' }}" type="button" data-tab-target="stock-in" data-heading="Stock-In">Stock-In</button>
-            <button class="tab-button {{ $activeTab === 'stock-out' ? 'is-active' : '' }}" type="button" data-tab-target="stock-out" data-heading="Stock-Out">Stock Out</button>
-            <button class="tab-button {{ $activeTab === 'depots' ? 'is-active' : '' }}" type="button" data-tab-target="depots" data-heading="Depots">Depots</button>
+            <button class="tab-button {{ $activeTab === 'purchases' ? 'is-active' : '' }}" type="button" data-tab-target="purchases" data-tab-url="{{ route($inventoryRoutePrefix) }}" data-heading="Purchases">Purchases</button>
+            <button class="tab-button {{ $activeTab === 'stock-in' ? 'is-active' : '' }}" type="button" data-tab-target="stock-in" data-tab-url="{{ route($inventoryRoutePrefix.'.stock-in') }}" data-heading="Stock-In">Stock-In</button>
+            <button class="tab-button {{ $activeTab === 'stock-out' ? 'is-active' : '' }}" type="button" data-tab-target="stock-out" data-tab-url="{{ route($inventoryRoutePrefix.'.stock-out') }}" data-heading="Stock-Out">Stock Out</button>
+            <button class="tab-button {{ $activeTab === 'depots' ? 'is-active' : '' }}" type="button" data-tab-target="depots" data-tab-url="{{ route($inventoryRoutePrefix.'.depots') }}" data-heading="Depots">Depots</button>
         </div>
         <div class="actions-right"><button class="btn btn-secondary" type="button" data-export-table>Export</button></div>
 
@@ -42,33 +36,45 @@
         @endif
 
         <section data-tab-panel="purchases" @if ($activeTab !== 'purchases') hidden @endif>
-            <form class="toolbar toolbar-inventory" method="GET" action="{{ route($inventoryRoutePrefix) }}" data-auto-filter>
-                <input type="search" name="search" placeholder="Search..." aria-label="Search purchases" value="{{ $search }}">
+            <x-filter.bar class="toolbar-inventory" :action="route($inventoryRoutePrefix)">
+                <x-filter.search label="Search purchases" :value="$search" />
                 @include('inventory-officer.partials.filter-controls', ['tab' => 'purchases'])
-                <button class="btn btn-primary" type="button" data-modal-open="io-purchase-add">+ Record Purchases</button>
-            </form>
+                <button class="btn btn-secondary btn-wide" type="button" data-modal-open="io-purchase-add">+ Record Purchase</button>
+            </x-filter.bar>
             <div class="table-wrap inventory-table-wrap">
-                <table class="admin-table inventory-table inventory-table-actions">
-                    <thead><tr><th>Purchase-ID</th><th>Date</th><th>Fuel</th><th>Depot</th><th>Purchased (L)</th><th>Hauled (L)</th><th>Garage Allocation</th><th>Direct Allocation</th><th>Received</th><th class="inventory-status-column">Inventory Status</th><th>Cost / Liter</th><th>Total Cost</th><th>Withdrawals</th><th class="inventory-status-column">Purchase Status</th><th class="inventory-status-column">Payment Status</th><th>Actions</th></tr></thead>
+                <table class="admin-table inventory-table inventory-table-actions table-stacked">
+                    <thead><tr>
+                        <th><span class="th-line" data-export-part>Purchase-ID</span><span class="th-line" data-export-part>Date</span></th><th>Fuel</th><th>Depot</th>
+                        <th><span class="th-line" data-export-part>Purchased (L)</span><span class="th-line" data-export-part>Hauled (L)</span><span class="th-line" data-export-part>Received (L)</span></th>
+                        <th><span class="th-line" data-export-part>Cost / Liter</span><span class="th-line" data-export-part>Total Cost</span></th>
+                        <th>Receipt</th>
+                        <th class="inventory-status-column"><span class="th-line" data-export-part>Inventory Status</span><span class="th-line" data-export-part>Purchase Status</span><span class="th-line" data-export-part>Payment Status</span></th>
+                        <th>Actions</th>
+                    </tr></thead>
                     <tbody>
                         @forelse ($purchases as $row)
+                            @php $c = $row['cells']; @endphp
                             <tr class="{{ $row['class'] }}">
-                                @foreach ($row['cells'] as $cell)
-                                    @if ($loop->index === 12)
-                                        <td class="inventory-withdrawal-cell">
-                                            @if (empty($row['withdrawals']))
-                                                <x-admin.status-badge status="No Receipt" />
-                                            @else
-                                                <x-admin.status-badge status="Uploaded" />
-                                                <button class="btn btn-secondary btn-small" type="button" data-modal-open="{{ $row['modal_id'] }}">View Receipt{{ count($row['withdrawals']) > 1 ? 's' : '' }}</button>
-                                            @endif
-                                        </td>
-                                    @elseif ($loop->last || $loop->index === 9 || $loop->index === 13)
-                                        <td><x-admin.status-badge :status="$cell" /></td>
+                                <td><x-table.stack :lines="[['value' => $c[0]], ['value' => $c[1], 'class' => 'is-secondary']]" /></td>
+                                <td>{{ $c[2] }}</td>
+                                <td class="cell-wrap">{{ $c[3] }}</td>
+                                <td><x-table.stack :lines="[['label' => 'Purchased', 'value' => $c[4]], ['label' => 'Hauled', 'value' => $c[5]], ['label' => 'Received', 'value' => $c[6]]]" /></td>
+                                <td><x-table.stack :lines="[['label' => '/L', 'value' => $c[8]], ['label' => 'Total', 'value' => $c[9]]]" /></td>
+                                {{-- Withdrawal receipts the driver uploaded for this purchase's lifts. --}}
+                                <td class="inventory-receipt-cell">
+                                    @if (count($row['withdrawals']) > 0)
+                                        <button class="btn btn-secondary btn-small receipt-view-button" type="button" data-modal-open="{{ $row['modal_id'] }}-receipts">{{ count($row['withdrawals']) === 1 ? 'View Receipt' : 'View Receipts ('.count($row['withdrawals']).')' }}</button>
                                     @else
-                                        <td>{{ $cell }}</td>
+                                        <span class="receipt-none" aria-label="No receipt uploaded">-</span>
                                     @endif
-                                @endforeach
+                                </td>
+                                <td>
+                                    <span class="cell-stack cell-stack-badges">
+                                        <span class="cell-line" data-export-part title="Inventory status"><x-admin.status-badge :status="$c[7]" /></span>
+                                        <span class="cell-line" data-export-part title="Purchase status"><x-admin.status-badge :status="$c[11]" /></span>
+                                        <span class="cell-line" data-export-part title="Payment status"><x-admin.status-badge :status="$c[12]" /></span>
+                                    </span>
+                                </td>
                                 <td>
                                     <div class="inventory-row-actions">
                                         <button class="btn btn-secondary" type="button" data-modal-open="{{ $row['modal_id'] }}">Edit</button>
@@ -79,7 +85,7 @@
                                 </td>
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="16">No records found.</td></tr>
+                            <tr><td class="empty-cell" colspan="8">No records found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -92,10 +98,10 @@
         </section>
 
         <section data-tab-panel="stock-in" @if ($activeTab !== 'stock-in') hidden @endif>
-            <form class="toolbar toolbar-inventory" method="GET" action="{{ route($inventoryRoutePrefix.'.stock-in') }}" data-auto-filter>
-                <input type="search" name="search" placeholder="Search..." aria-label="Search stock-in" value="{{ $search }}">
+            <x-filter.bar class="toolbar-inventory" :action="route($inventoryRoutePrefix.'.stock-in')">
+                <x-filter.search label="Search stock-in" :value="$search" />
                 @include('inventory-officer.partials.filter-controls', ['tab' => 'stock-in', 'fields' => ['date', 'depot', 'fuel']])
-            </form>
+            </x-filter.bar>
             <div class="table-wrap inventory-table-wrap">
                 <table class="admin-table inventory-table inventory-table-actions">
                     <thead><tr><th>Purchase / Haul</th><th>Received Date</th><th>Fuel</th><th>Garage</th><th>QTY Received (L)</th><th>Cost / Liter</th><th>Total Cost</th><th>Stock In</th><th>Stock Out</th><th class="inventory-status-column">Status</th><th>Actions</th></tr></thead>
@@ -125,31 +131,44 @@
         </section>
 
         <section data-tab-panel="stock-out" @if ($activeTab !== 'stock-out') hidden @endif>
-            <form class="toolbar toolbar-inventory" method="GET" action="{{ route($inventoryRoutePrefix.'.stock-out') }}" data-auto-filter>
-                <input type="search" name="search" placeholder="Search..." aria-label="Search stock-out" value="{{ $search }}">
+            <x-filter.bar class="toolbar-inventory" :action="route($inventoryRoutePrefix.'.stock-out')">
+                <x-filter.search label="Search stock-out" :value="$search" />
                 @include('inventory-officer.partials.filter-controls', ['tab' => 'stock-out'])
-                <button class="btn btn-primary" type="button" data-modal-open="io-stockout-add">+ Record Stock-Out</button>
-            </form>
+            </x-filter.bar>
+            <p class="table-help">Stock-Out is posted automatically when a sale's Delivery Status becomes Delivered.</p>
             <div class="table-wrap inventory-table-wrap">
-                <table class="admin-table inventory-table">
-                    <thead><tr><th>Order-ID</th><th>Transaction Date</th><th>Customer Name</th><th>Company Name</th><th>Fuel</th><th>QTY Released</th><th>Cost / Unit</th><th>Total Cost</th><th>Price / Unit</th><th>Total Price</th><th>Total Paid</th><th>Source</th><th class="inventory-status-column">Status</th><th>Profit</th></tr></thead>
+                <table class="admin-table inventory-table table-stacked stock-out-table">
+                    <thead><tr>
+                        <th><span class="th-line" data-export-part>Order-ID</span><span class="th-line" data-export-part>Transaction Date</span></th>
+                        <th><span class="th-line" data-export-part>Customer Name</span><span class="th-line" data-export-part>Company Name</span></th>
+                        <th><span class="th-line" data-export-part>Fuel</span><span class="th-line" data-export-part>QTY Released</span></th>
+                        <th><span class="th-line" data-export-part>Cost / Unit</span><span class="th-line" data-export-part>Total Cost</span></th>
+                        <th><span class="th-line" data-export-part>Price / Unit</span><span class="th-line" data-export-part>Total Price</span><span class="th-line" data-export-part>Total Paid</span></th>
+                        <th>Source</th>
+                        <th class="inventory-status-column">Status</th>
+                        <th><span class="th-line th-hint" tabindex="0" data-export-part title="Margin = Total Price − Total Cost (expected profit once fully paid)">Margin</span><span class="th-line th-hint" tabindex="0" data-export-part title="Realized Profit = Total Paid − Total Cost (negative until payments cover the cost)">Realized Profit</span></th>
+                    </tr></thead>
                     <tbody>
                         @forelse ($stockOut as $row)
+                            @php
+                                $c = $row['cells'];
+                                $negative = fn (mixed $value): bool => is_numeric($value) && $value < 0;
+                            @endphp
                             <tr class="{{ $row['class'] }}">
-                                @foreach ($row['cells'] as $cell)
-                                    @if ($loop->index === 12)
-                                        <td><x-admin.status-badge :status="$cell" /></td>
-                                    @else
-                                        <td @class([
-                                            'inventory-number' => in_array($loop->index, [5, 6, 7, 8, 9, 10, 13], true),
-                                            'inventory-profit' => $loop->last,
-                                            'is-negative' => $loop->last && is_numeric($row['profit']) && $row['profit'] < 0,
-                                        ])>{{ $cell }}</td>
-                                    @endif
-                                @endforeach
+                                <td><x-table.stack :lines="[['value' => $c[0]], ['value' => $c[1], 'class' => 'is-secondary']]" /></td>
+                                <td class="cell-wrap"><x-table.stack :lines="[['value' => $c[2]], ['value' => $c[3], 'class' => 'is-secondary']]" /></td>
+                                <td><x-table.stack :lines="[['value' => $c[4]], ['label' => 'Qty', 'value' => $c[5]]]" /></td>
+                                <td class="inventory-number"><x-table.stack :lines="[['label' => '/Unit', 'value' => $c[6]], ['label' => 'Total', 'value' => $c[7]]]" /></td>
+                                <td class="inventory-number"><x-table.stack :lines="[['label' => '/Unit', 'value' => $c[8]], ['label' => 'Total', 'value' => $c[9]], ['label' => 'Paid', 'value' => $c[10]]]" /></td>
+                                <td class="cell-wrap">{{ $c[11] }}</td>
+                                <td><x-admin.status-badge :status="$c[12]" /></td>
+                                <td class="inventory-number inventory-profit"><x-table.stack :lines="[
+                                    ['label' => 'Margin', 'value' => $c[13], 'class' => $negative($row['margin']) ? 'is-negative' : null],
+                                    ['label' => 'Realized', 'value' => $c[14], 'class' => $negative($row['profit']) ? 'is-negative' : null],
+                                ]" /></td>
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="14">No records found.</td></tr>
+                            <tr><td class="empty-cell" colspan="8">No records found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -162,11 +181,11 @@
         </section>
 
         <section data-tab-panel="depots" @if ($activeTab !== 'depots') hidden @endif>
-            <form class="toolbar toolbar-inventory" method="GET" action="{{ route($inventoryRoutePrefix.'.depots') }}" data-auto-filter>
-                <input type="search" name="search" placeholder="Search..." aria-label="Search depots" value="{{ $search }}">
+            <x-filter.bar class="toolbar-inventory" :action="route($inventoryRoutePrefix.'.depots')">
+                <x-filter.search label="Search depots" :value="$search" />
                 @include('inventory-officer.partials.filter-controls', ['tab' => 'depots', 'fields' => ['status']])
                 <button class="btn btn-secondary" type="button" data-modal-open="io-depot-add">+ Depot</button>
-            </form>
+            </x-filter.bar>
             <div class="table-wrap inventory-table-wrap">
                 <table class="admin-table depot-table inventory-table">
                     <thead><tr><th>Depot Code</th><th>Name</th><th>Address</th><th>Contact Person</th><th>Phone</th><th class="inventory-status-column">Status</th></tr></thead>
@@ -218,6 +237,9 @@
     </x-admin.modal>
 
     @foreach ($purchases as $row)
+        @if (count($row['withdrawals']) > 0)
+            @include('inventory-officer.partials.receipt-lightbox', ['lightboxId' => $row['modal_id'].'-receipts', 'purchaseCode' => $row['purchase_code'], 'receipts' => $row['withdrawals']])
+        @endif
         <x-admin.modal id="{{ $row['modal_id'] }}" title="Edit Purchase Record">
             <form id="purchase-update-{{ $row['id'] }}" method="POST" action="{{ route($inventoryRoutePrefix.'.purchases.update', $row['id']) }}">
                 @csrf
@@ -341,28 +363,6 @@
             </x-slot:footer>
         </x-admin.modal>
     @endforeach
-
-    <x-admin.modal id="io-stockout-add" title="Record Stock-Out" wide>
-        <form id="stockout-add-form" method="POST" action="{{ route($inventoryRoutePrefix.'.stock-out.store') }}">
-            @csrf
-            <input type="hidden" name="idempotency_key" value="{{ old('idempotency_key', $stockOutIdempotencyKey) }}">
-            <div class="modal-card">
-                <div class="form-grid">
-                    <div class="form-row"><label for="stock_out_source_type">Source</label><select id="stock_out_source_type" name="source_type" required><option value="garage" @selected(old('source_type', 'garage') === 'garage')>Garage Inventory</option><option value="depot" @selected(old('source_type') === 'depot')>Direct Depot Release</option></select></div>
-                    <div class="form-row"><label for="stock_out_sale_item_id">Sale / Item</label><select id="stock_out_sale_item_id" name="sale_item_id" required><option value="" disabled @selected(! old('sale_item_id'))>Select Sale Item</option>@foreach ($stockOutSaleItems as $item)<option value="{{ $item->id }}" @selected((string) old('sale_item_id') === (string) $item->id)>{{ $item->label }}</option>@endforeach</select></div>
-                    <div class="form-row"><label for="stock_out_storage_location_id">Garage</label><select id="stock_out_storage_location_id" name="storage_location_id"><option value="" @selected(! old('storage_location_id'))>Select Garage</option>@foreach ($garages as $garage)<option value="{{ $garage->id }}" @selected((string) old('storage_location_id') === (string) $garage->id)>{{ $garage->name }}</option>@endforeach</select></div>
-                    <div class="form-row"><label for="stock_out_haul_allocation_id">Depot Allocation</label><select id="stock_out_haul_allocation_id" name="haul_allocation_id"><option value="" @selected(! old('haul_allocation_id'))>Select Direct Allocation</option>@foreach ($directDeliveryAllocations as $allocation)<option value="{{ $allocation->id }}" @selected((string) old('haul_allocation_id') === (string) $allocation->id)>{{ $allocation->label }}</option>@endforeach</select></div>
-                    <div class="form-row"><label for="stock_out_quantity_liters">Quantity (Liters)</label><input id="stock_out_quantity_liters" name="quantity_liters" type="number" min="0.01" step="0.01" placeholder="Enter Quantity (Liters)" value="{{ old('quantity_liters') }}" required></div>
-                    <div class="form-row"><label for="stock_out_at">Date</label><input id="stock_out_at" name="stock_out_at" type="datetime-local" value="{{ old('stock_out_at', now()->format('Y-m-d\TH:i')) }}" required></div>
-                    <div class="form-row"><label for="stock_out_remarks">Remarks</label><input id="stock_out_remarks" name="remarks" type="text" placeholder="Enter Remarks" value="{{ old('remarks') }}"></div>
-                </div>
-            </div>
-        </form>
-        <x-slot:footer>
-            <button class="btn btn-pill btn-secondary" type="submit" form="stockout-add-form">Add</button>
-            <button class="btn btn-pill btn-danger" type="button" data-modal-close>Cancel</button>
-        </x-slot:footer>
-    </x-admin.modal>
 
     <x-admin.modal id="io-depot-add" title="Add Depot">
         <form id="depot-add-form" method="POST" action="{{ route($inventoryRoutePrefix.'.depots.store') }}">

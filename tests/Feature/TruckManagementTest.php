@@ -16,10 +16,14 @@ class TruckManagementTest extends TestCase
         $admin = User::factory()->create(['role' => 'admin', 'status' => 'active']);
         $dispatch = User::factory()->create(['role' => 'dispatch_officer', 'status' => 'active']);
 
-        $this->actingAs($admin)->get(route('admin.trucks'))
-            ->assertOk()->assertSee('Truck Management')->assertSee('Add Truck');
-        $this->actingAs($dispatch)->get(route('dispatch.trucks'))
-            ->assertOk()->assertSee('Truck Management');
+        // Trucks is the third Fuel Lifting tab; the old page URLs redirect to it (keeping the query string).
+        $this->actingAs($admin)->get(route('admin.trucks', ['status' => 'available']))
+            ->assertRedirect(route('admin.fuel-lifting.trucks', ['status' => 'available']));
+        $this->actingAs($dispatch)->get('/dispatch/trucks')->assertRedirect(route('dispatch.fuel-lifting.trucks'));
+        $this->actingAs($admin)->get(route('admin.fuel-lifting.trucks'))
+            ->assertOk()->assertSee('data-tab-target="trucks"', false)->assertSee('+ Add Truck');
+        $this->actingAs($dispatch)->get(route('dispatch.fuel-lifting.trucks'))
+            ->assertOk()->assertSee('+ Add Truck');
 
         $this->actingAs($admin)->post(route('admin.trucks.store'), [
             'truck_code' => ' trk-101 ',
@@ -29,7 +33,7 @@ class TruckManagementTest extends TestCase
             'capacity_liters' => 20000,
             'truck_type' => 'hauling',
             'status' => 'available',
-        ])->assertRedirect(route('admin.trucks'));
+        ])->assertRedirect(route('admin.fuel-lifting.trucks'));
 
         $truckId = (int) DB::table('trucks')->where('plate_number', 'ABC-1234')->value('id');
         $this->assertGreaterThan(0, $truckId);
@@ -48,10 +52,10 @@ class TruckManagementTest extends TestCase
             'capacity_liters' => 22000,
             'truck_type' => 'mixed',
             'status' => 'maintenance',
-        ])->assertRedirect(route('dispatch.trucks'));
+        ])->assertRedirect(route('dispatch.fuel-lifting.trucks'));
         $this->assertDatabaseHas('trucks', ['id' => $truckId, 'name' => 'Southern Tanker One', 'status' => 'maintenance']);
 
-        $this->actingAs($admin)->from(route('admin.trucks'))->post(route('admin.trucks.store'), [
+        $this->actingAs($admin)->from(route('admin.fuel-lifting.trucks'))->post(route('admin.trucks.store'), [
             'truck_code' => 'TRK-102',
             'plate_number' => 'abc-1234',
             'name' => 'Duplicate Plate Truck',
@@ -71,15 +75,17 @@ class TruckManagementTest extends TestCase
             'created_at' => now(), 'updated_at' => now(),
         ]);
 
-        $this->actingAs($dispatch)->patch(route('dispatch.trucks.status', $truckId))->assertRedirect(route('dispatch.trucks'));
+        $this->actingAs($dispatch)->patch(route('dispatch.trucks.status', $truckId))->assertRedirect(route('dispatch.fuel-lifting.trucks'));
         $this->assertDatabaseHas('trucks', ['id' => $truckId, 'status' => 'inactive']);
-        $this->actingAs($admin)->patch(route('admin.trucks.status', $truckId))->assertRedirect(route('admin.trucks'));
+        $this->actingAs($admin)->patch(route('admin.trucks.status', $truckId))->assertRedirect(route('admin.fuel-lifting.trucks'));
         $this->assertDatabaseHas('trucks', ['id' => $truckId, 'status' => 'available']);
 
         foreach (['inventory_officer', 'sales_officer', 'driver'] as $role) {
             $user = User::factory()->create(['role' => $role, 'status' => 'active']);
             $this->actingAs($user)->get(route('admin.trucks'))->assertForbidden();
             $this->actingAs($user)->get(route('dispatch.trucks'))->assertForbidden();
+            $this->actingAs($user)->get(route('admin.fuel-lifting.trucks'))->assertForbidden();
+            $this->actingAs($user)->get(route('dispatch.fuel-lifting.trucks'))->assertForbidden();
         }
     }
 }

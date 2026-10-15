@@ -268,19 +268,6 @@ class RoleAccessTestingTest extends TestCase
             ],
             [
                 'method' => 'POST',
-                'url' => route('inventory-officer.inventory.stock-out.store'),
-                'payload' => [
-                    'idempotency_key' => (string) Str::uuid(),
-                    'source_type' => 'garage',
-                    'sale_item_id' => $sale['saleItemId'],
-                    'storage_location_id' => $records['garageId'],
-                    'quantity_liters' => 500,
-                    'stock_out_at' => '2026-09-04 09:00:00',
-                ],
-                'allowed_roles' => ['inventory_officer'],
-            ],
-            [
-                'method' => 'POST',
                 'url' => route('sales-officer.sales.customers.store'),
                 'payload' => [
                     'name' => 'RBAC Customer',

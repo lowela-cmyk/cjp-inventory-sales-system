@@ -6,9 +6,24 @@ const closeModal = (modal) => {
     modal?.setAttribute('aria-hidden', 'true');
 };
 
+// Receipt lightbox: show one slide at a time; images load on first open (they are private, role-gated files).
+const showReceiptSlide = (lightbox, index) => {
+    const slides = [...lightbox.querySelectorAll('[data-receipt-slide]')];
+    if (slides.length === 0) return;
+    const next = (index + slides.length) % slides.length;
+    slides.forEach((slide, i) => { slide.hidden = i !== next; });
+    lightbox.querySelectorAll('[data-receipt-go]').forEach((thumb, i) => thumb.classList.toggle('is-active', i === next));
+    lightbox.dataset.receiptIndex = String(next);
+};
+
 const openModal = (modal) => {
     if (!modal) {
         return;
+    }
+
+    if (modal.matches('[data-receipt-lightbox]')) {
+        modal.querySelectorAll('img[data-src]').forEach((img) => { img.src = img.dataset.src; img.removeAttribute('data-src'); });
+        showReceiptSlide(modal, 0);
     }
 
     document.querySelectorAll('.modal-backdrop.is-open').forEach((openModalElement) => {
@@ -43,6 +58,13 @@ document.addEventListener('click', (event) => {
             }
         }
         return;
+    }
+
+    const receiptStep = event.target.closest('[data-receipt-step], [data-receipt-go]');
+    if (receiptStep) {
+        const lightbox = receiptStep.closest('[data-receipt-lightbox]');
+        const current = Number(lightbox.dataset.receiptIndex || 0);
+        showReceiptSlide(lightbox, receiptStep.dataset.receiptGo !== undefined ? Number(receiptStep.dataset.receiptGo) : current + Number(receiptStep.dataset.receiptStep));
     }
 
     const modalButton = event.target.closest('[data-modal-open]');
@@ -102,6 +124,11 @@ document.addEventListener('click', (event) => {
         const exportLink = scope.querySelector('[data-tab-export-url]');
         if (exportLink) {
             exportLink.href = exportLink.dataset.tabExportUrl.replace('__TAB__', encodeURIComponent(target));
+        }
+
+        // Keep the address bar on the active tab so a reload, filter or form redirect returns to it.
+        if (tabButton.dataset.tabUrl) {
+            window.history.replaceState(null, '', tabButton.dataset.tabUrl);
         }
     }
 
@@ -183,7 +210,7 @@ document.addEventListener('click', (event) => {
         if (items && source) {
             const clone = source.cloneNode(true);
             clone.querySelectorAll('select').forEach((select) => { select.selectedIndex = 0; });
-            clone.querySelectorAll('input').forEach((input) => { input.value = ''; });
+            clone.querySelectorAll('input').forEach((input) => { input.value = input.matches('[data-allocation-direct]') ? '0' : ''; });
             clone.querySelectorAll('.field-error').forEach((message) => message.remove());
             const summary = clone.querySelector('[data-purchase-summary]');
             if (summary) summary.textContent = 'Select a purchase';
@@ -203,7 +230,53 @@ document.addEventListener('click', (event) => {
     }
 });
 
+// Schedule Lift allocation: Garage + Depot (direct) always add up to Amount to Lift; editing one updates the other.
+const roundLiters = (value) => Math.round(Math.max(0, value) * 100) / 100;
+
+const syncLiftAllocation = (row, changed) => {
+    const amount = Number(row.querySelector('[data-lifting-quantity]')?.value || 0);
+    const garage = row.querySelector('[data-allocation-garage]');
+    const direct = row.querySelector('[data-allocation-direct]');
+    if (!garage || !direct) return;
+
+    if (changed === garage) {
+        direct.value = roundLiters(amount - Number(garage.value || 0));
+    } else {
+        // Amount or depot changed: whatever is not released directly goes to the garage (the default).
+        if (Number(direct.value || 0) > amount) direct.value = roundLiters(amount);
+        garage.value = roundLiters(amount - Number(direct.value || 0));
+    }
+
+    const tank = row.querySelector('[data-allocation-tank]');
+    const sale = row.querySelector('[data-allocation-sale]');
+    if (tank) tank.required = Number(garage.value || 0) > 0;
+    if (sale) sale.required = Number(direct.value || 0) > 0;
+};
+
+// Only tanks and client sales of the selected purchase's fuel type can be chosen.
+const filterAllocationOptions = (row) => {
+    const fuel = row.querySelector('[data-lifting-purchase]')?.selectedOptions?.[0]?.dataset.fuelTypeId || '';
+    row.querySelectorAll('[data-allocation-tank], [data-allocation-sale]').forEach((select) => {
+        [...select.options].forEach((option) => {
+            if (!option.value) return;
+            const matches = fuel !== '' && option.dataset.fuelTypeId === fuel;
+            option.hidden = !matches;
+            option.disabled = !matches;
+        });
+        if (select.selectedOptions[0]?.disabled) select.value = '';
+        if (select.matches('[data-allocation-tank]') && !select.value) {
+            const first = [...select.options].find((option) => option.value && !option.disabled);
+            if (first) select.value = first.value;
+        }
+    });
+};
+
 document.addEventListener('input', (event) => {
+    const liftRow = event.target.closest('[data-lifting-item]');
+    if (liftRow && event.target.matches('[data-lifting-quantity], [data-allocation-garage], [data-allocation-direct]')) {
+        syncLiftAllocation(liftRow, event.target);
+    }
+
     if (event.target.closest('[data-sales-item]')) {
         updateSalesTotals(event.target.closest('[data-sales-items]'));
     }
@@ -218,6 +291,10 @@ document.addEventListener('input', (event) => {
 });
 
 document.addEventListener('change', (event) => {
+    if (event.target.matches('[data-lifting-purchase]')) {
+        filterAllocationOptions(event.target.closest('[data-lifting-item]'));
+    }
+
     const liftingForm = event.target.closest('[data-lifting-schedule-form]');
     if (liftingForm) updateLiftingSchedule(liftingForm);
 });
@@ -265,6 +342,9 @@ const updateLiftingSchedule = (form) => {
             // The depot label is built server-side, so no separator character is ever encoded in JS.
             depotLabel ||= option.dataset.pickup || '';
             if (quantity > remaining) error ||= 'An amount to lift exceeds its remaining purchase quantity.';
+            const garageLiters = Number(row.querySelector('[data-allocation-garage]')?.value || 0);
+            const directLiters = Number(row.querySelector('[data-allocation-direct]')?.value || 0);
+            if (quantity > 0 && Math.abs(garageLiters + directLiters - quantity) > 0.005) error ||= 'Garage + Depot allocation must equal the Amount to Lift.';
             if (quantityInput) quantityInput.max = String(remaining);
             if (summary) summary.textContent = `${option.dataset.fuel} \u00b7 ${remaining.toLocaleString()} L remaining`;
         } else if (summary) {
@@ -285,6 +365,10 @@ const updateLiftingSchedule = (form) => {
     if (submit) submit.disabled = Boolean(error) || rows.some((row) => !row.querySelector('[data-lifting-purchase]')?.value) || capacity <= 0 || total <= 0;
 };
 
+document.querySelectorAll('[data-lifting-item]').forEach((row) => {
+    filterAllocationOptions(row);
+    if (row.querySelector('[data-allocation-garage]')?.value === '') syncLiftAllocation(row, null);
+});
 document.querySelectorAll('[data-lifting-schedule-form]').forEach(updateLiftingSchedule);
 
 // Reopen a modal after a redirect (e.g. Payment History after recording a payment).
@@ -421,10 +505,16 @@ const exportVisibleTable = (trigger) => {
     }
 
     // Export exactly what the table shows: rows hidden by the live search are left out.
+    // A stacked cell exports one column per [data-export-part] line, so files keep one value per column.
+    const csvValue = (node) => `"${node.textContent.trim().replace(/\s+/g, ' ').replace(/"/g, '""')}"`;
     const rows = [...table.querySelectorAll('tr')]
         .filter((row) => ! row.hidden)
         .map((row) => [...row.querySelectorAll('th, td')]
-            .map((cell) => `"${cell.textContent.trim().replace(/\s+/g, ' ').replace(/"/g, '""')}"`)
+            .flatMap((cell) => {
+                const parts = cell.querySelectorAll('[data-export-part]');
+
+                return parts.length > 0 ? [...parts].map(csvValue) : [csvValue(cell)];
+            })
             .join(','))
         .filter(Boolean);
 
@@ -474,6 +564,35 @@ document.addEventListener('input', (event) => {
 
         row.hidden = query !== '' && ! row.textContent.toLowerCase().includes(query);
     });
+});
+
+// Reports period filter: show only the inputs the chosen period needs, and apply once they are filled in.
+const syncReportPeriodFields = (form) => {
+    const period = form.querySelector('[data-report-period]')?.value;
+
+    form.querySelectorAll('[data-period-field]').forEach((field) => {
+        const active = field.dataset.periodField === period;
+        field.hidden = !active;
+        field.disabled = !active;
+    });
+};
+
+document.querySelectorAll('form[data-report-filter]').forEach(syncReportPeriodFields);
+
+document.addEventListener('change', (event) => {
+    const form = event.target.closest('form[data-report-filter]');
+    if (!form) {
+        return;
+    }
+
+    if (event.target.matches('[data-report-period]')) {
+        syncReportPeriodFields(form);
+    }
+
+    const fields = [...form.querySelectorAll('[data-period-field]:not([disabled])')];
+    if (fields.every((field) => field.value !== '' && field.checkValidity())) {
+        form.requestSubmit();
+    }
 });
 
 // Filter forms marked [data-auto-filter] apply on change (selects/dates) and after a pause in typing (search).
@@ -535,6 +654,11 @@ document.addEventListener('input', (event) => {
 })();
 
 document.addEventListener('keydown', (event) => {
+    const openLightbox = document.querySelector('[data-receipt-lightbox].is-open');
+    if (openLightbox && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+        showReceiptSlide(openLightbox, Number(openLightbox.dataset.receiptIndex || 0) + (event.key === 'ArrowRight' ? 1 : -1));
+    }
+
     if (event.key === 'Escape') {
         document.querySelectorAll('.modal-backdrop.is-open').forEach(closeModal);
         document.body.classList.remove('sidebar-open');

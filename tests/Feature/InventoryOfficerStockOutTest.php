@@ -4,17 +4,22 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use App\Services\StockOutFinancialService;
+use App\Services\StockOutReleaseService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
+/**
+ * Stock-out happens automatically when a sale is delivered (StockOutReleaseService); there is no manual
+ * "+ Record Stock-Out" entry any more. These tests drive that automatic release directly.
+ */
 class InventoryOfficerStockOutTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_stock_out_uses_inventory_cost_and_actual_payments_for_profit(): void
+    public function test_automatic_stock_out_uses_inventory_cost_and_actual_payments_for_profit(): void
     {
         $records = $this->baseRecords();
         $this->garageMovement($records, ['quantity_liters' => 100000, 'unit_cost' => 60]);
@@ -31,11 +36,7 @@ class InventoryOfficerStockOutTest extends TestCase
             'updated_at' => now(),
         ]);
 
-        $this->actingAs($records['inventoryOfficer'])
-            ->post(route('inventory-officer.inventory.stock-out.store'), $this->stockOutPayload($records, $sale, [
-                'quantity_liters' => 100000,
-            ]))
-            ->assertRedirect(route('inventory-officer.inventory.stock-out'));
+        $this->assertNull($this->release($records, $sale, 100000));
 
         $stockOut = DB::table('stock_outs')->first();
         $this->assertSame(60.0, (float) $stockOut->unit_cost);
@@ -87,12 +88,7 @@ class InventoryOfficerStockOutTest extends TestCase
         ]);
 
         foreach (['2026-08-30 11:00:00', '2026-08-30 12:00:00'] as $stockOutAt) {
-            $this->actingAs($records['inventoryOfficer'])
-                ->post(route('inventory-officer.inventory.stock-out.store'), $this->stockOutPayload($records, $sale, [
-                    'quantity_liters' => 50000,
-                    'stock_out_at' => $stockOutAt,
-                ]))
-                ->assertRedirect(route('inventory-officer.inventory.stock-out'));
+            $this->assertNull($this->release($records, $sale, 50000));
         }
 
         $financials = app(StockOutFinancialService::class);
@@ -104,17 +100,13 @@ class InventoryOfficerStockOutTest extends TestCase
         $this->assertSame(-2750000.0, round((float) $rows->sum('profit'), 2));
     }
 
-    public function test_inventory_officer_records_garage_stock_out_and_deducts_inventory_once(): void
+    public function test_sale_release_records_garage_stock_out_and_deducts_inventory_once(): void
     {
         $records = $this->baseRecords();
         $this->garageMovement($records, ['quantity_liters' => 20000]);
         $sale = $this->sale($records, ['quantity_liters' => 15000]);
 
-        $this->actingAs($records['inventoryOfficer'])
-            ->post(route('inventory-officer.inventory.stock-out.store'), $this->stockOutPayload($records, $sale, [
-                'quantity_liters' => 12000,
-            ]))
-            ->assertRedirect(route('inventory-officer.inventory.stock-out'));
+        $this->assertNull($this->release($records, $sale, 12000));
 
         $stockOut = DB::table('stock_outs')->first();
         $this->assertNotNull($stockOut);
@@ -144,25 +136,11 @@ class InventoryOfficerStockOutTest extends TestCase
         $this->garageMovement($records, ['quantity_liters' => 30000]);
         $sale = $this->sale($records, ['quantity_liters' => 20000]);
 
-        $this->actingAs($records['inventoryOfficer'])
-            ->post(route('inventory-officer.inventory.stock-out.store'), $this->stockOutPayload($records, $sale, [
-                'quantity_liters' => 12000,
-            ]))
-            ->assertRedirect(route('inventory-officer.inventory.stock-out'));
+        $this->assertNull($this->release($records, $sale, 12000));
 
-        $this->actingAs($records['inventoryOfficer'])
-            ->from(route('inventory-officer.inventory.stock-out'))
-            ->post(route('inventory-officer.inventory.stock-out.store'), $this->stockOutPayload($records, $sale, [
-                'quantity_liters' => 9000,
-            ]))
-            ->assertRedirect(route('inventory-officer.inventory.stock-out'))
-            ->assertSessionHasErrors('stock_out');
+        $this->assertNotNull($this->release($records, $sale, 9000));
 
-        $this->actingAs($records['inventoryOfficer'])
-            ->post(route('inventory-officer.inventory.stock-out.store'), $this->stockOutPayload($records, $sale, [
-                'quantity_liters' => 8000,
-            ]))
-            ->assertRedirect(route('inventory-officer.inventory.stock-out'));
+        $this->assertNull($this->release($records, $sale, 8000));
 
         $this->assertSame(10000.0, $this->garageBalance($records));
         $this->assertSame(2, DB::table('stock_outs')->count());
@@ -170,35 +148,6 @@ class InventoryOfficerStockOutTest extends TestCase
             'id' => $sale['saleItemId'],
             'fulfilled_quantity_liters' => '20000.00',
         ]);
-    }
-
-    public function test_stock_out_rejects_insufficient_inventory_invalid_quantities_and_wrong_sale_item(): void
-    {
-        $records = $this->baseRecords();
-        $this->garageMovement($records, ['quantity_liters' => 5000]);
-        $sale = $this->sale($records, ['quantity_liters' => 10000]);
-
-        $this->actingAs($records['inventoryOfficer'])
-            ->from(route('inventory-officer.inventory.stock-out'))
-            ->post(route('inventory-officer.inventory.stock-out.store'), $this->stockOutPayload($records, $sale, [
-                'quantity_liters' => 6000,
-            ]))
-            ->assertRedirect(route('inventory-officer.inventory.stock-out'))
-            ->assertSessionHasErrors('stock_out');
-
-        $this->actingAs($records['inventoryOfficer'])
-            ->post(route('inventory-officer.inventory.stock-out.store'), $this->stockOutPayload($records, $sale, [
-                'quantity_liters' => 0,
-            ]))
-            ->assertSessionHasErrors('quantity_liters');
-
-        $this->actingAs($records['inventoryOfficer'])
-            ->post(route('inventory-officer.inventory.stock-out.store'), $this->stockOutPayload($records, ['saleItemId' => 999999]))
-            ->assertSessionHasErrors('sale_item_id');
-
-        $this->assertSame(5000.0, $this->garageBalance($records));
-        $this->assertSame(0, DB::table('stock_outs')->count());
-        $this->assertSame(1, DB::table('inventory_movements')->count());
     }
 
     public function test_cancelled_draft_or_undelivered_sales_are_not_eligible_for_stock_out(): void
@@ -210,11 +159,7 @@ class InventoryOfficerStockOutTest extends TestCase
         $pendingSale = $this->sale($records, ['sale_code' => 'SLS-PENDING', 'delivery_status' => 'pending']);
 
         foreach ([$cancelledSale, $draftSale, $pendingSale] as $sale) {
-            $this->actingAs($records['inventoryOfficer'])
-                ->from(route('inventory-officer.inventory.stock-out'))
-                ->post(route('inventory-officer.inventory.stock-out.store'), $this->stockOutPayload($records, $sale))
-                ->assertRedirect(route('inventory-officer.inventory.stock-out'))
-                ->assertSessionHasErrors('stock_out');
+            $this->assertNotNull($this->release($records, $sale, 5000));
         }
 
         $this->assertSame(20000.0, $this->garageBalance($records));
@@ -228,14 +173,7 @@ class InventoryOfficerStockOutTest extends TestCase
         $sale = $this->sale($records, ['quantity_liters' => 10000]);
         $allocationId = $this->directAllocation($records, $sale, ['quantity_liters' => 10000]);
 
-        $this->actingAs($records['inventoryOfficer'])
-            ->post(route('inventory-officer.inventory.stock-out.store'), $this->stockOutPayload($records, $sale, [
-                'source_type' => 'depot',
-                'storage_location_id' => null,
-                'haul_allocation_id' => $allocationId,
-                'quantity_liters' => 10000,
-            ]))
-            ->assertRedirect(route('inventory-officer.inventory.stock-out'));
+        $this->assertNull($this->release($records, $sale, 10000));
 
         $this->assertSame(9000.0, $this->garageBalance($records));
         $this->assertSame(1, DB::table('stock_outs')->where('source_type', 'depot')->count());
@@ -273,13 +211,7 @@ class InventoryOfficerStockOutTest extends TestCase
         ]);
         DB::table('haul_allocations')->where('id', $allocationId)->update(['status' => 'cancelled']);
 
-        $this->actingAs($records['inventoryOfficer'])
-            ->from(route('inventory-officer.inventory.stock-out'))
-            ->post(route('inventory-officer.inventory.stock-out.store'), $this->stockOutPayload($records, $sale, [
-                'quantity_liters' => 5000,
-            ]))
-            ->assertRedirect(route('inventory-officer.inventory.stock-out'))
-            ->assertSessionHasErrors('stock_out');
+        $this->assertNotNull($this->release($records, $sale, 5000));
 
         $this->assertSame(0, DB::table('stock_outs')->count());
         $this->assertDatabaseHas('sale_items', [
@@ -288,248 +220,53 @@ class InventoryOfficerStockOutTest extends TestCase
         ]);
     }
 
-    public function test_direct_depot_delivery_rejects_invalid_purchase_haul_relationship(): void
+    public function test_insufficient_inventory_and_unknown_sale_items_are_rejected(): void
     {
         $records = $this->baseRecords();
-        $this->garageMovement($records, ['quantity_liters' => 9000]);
+        $this->garageMovement($records, ['quantity_liters' => 5000]);
         $sale = $this->sale($records, ['quantity_liters' => 10000]);
-        $allocationId = $this->directAllocation($records, $sale, ['quantity_liters' => 10000]);
-        $haulId = DB::table('haul_allocations')->where('id', $allocationId)->value('haul_id');
-        $otherPurchaseId = DB::table('purchases')->insertGetId([
-            'purchase_code' => 'PUR-WRONG-DIRECT',
-            'depot_id' => $records['depotId'],
-            'purchase_date' => '2026-08-29',
-            'payment_status' => 'paid',
-            'status' => 'hauled',
-            'created_by' => $records['inventoryOfficer']->id,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
 
-        DB::table('hauls')->where('id', $haulId)->update(['purchase_id' => $otherPurchaseId]);
+        $this->assertSame('Insufficient available garage inventory to complete delivery.', $this->release($records, $sale, 6000));
+        $this->assertSame('The selected sale is not eligible for stock-out.', $this->release($records, ['saleItemId' => 999999], 1000));
 
-        $this->actingAs($records['inventoryOfficer'])
-            ->from(route('inventory-officer.inventory.stock-out'))
-            ->post(route('inventory-officer.inventory.stock-out.store'), $this->stockOutPayload($records, $sale, [
-                'source_type' => 'depot',
-                'storage_location_id' => null,
-                'haul_allocation_id' => $allocationId,
-                'quantity_liters' => 10000,
-            ]))
-            ->assertRedirect(route('inventory-officer.inventory.stock-out'))
-            ->assertSessionHasErrors('stock_out');
-
-        $this->assertSame(9000.0, $this->garageBalance($records));
-        $this->assertFalse(Schema::hasTable('deliveries'));
-        $this->assertDatabaseHas('sale_items', [
-            'id' => $sale['saleItemId'],
-            'fulfilled_quantity_liters' => '0.00',
-        ]);
-    }
-
-    public function test_duplicate_stock_out_submission_token_does_not_double_deduct_inventory(): void
-    {
-        $records = $this->baseRecords();
-        $this->garageMovement($records, ['quantity_liters' => 30000]);
-        $sale = $this->sale($records, ['quantity_liters' => 30000]);
-        $payload = $this->stockOutPayload($records, $sale, [
-            'quantity_liters' => 12000,
-        ]);
-
-        $this->actingAs($records['inventoryOfficer'])
-            ->post(route('inventory-officer.inventory.stock-out.store'), $payload)
-            ->assertRedirect(route('inventory-officer.inventory.stock-out'));
-
-        $this->actingAs($records['inventoryOfficer'])
-            ->post(route('inventory-officer.inventory.stock-out.store'), $payload)
-            ->assertRedirect(route('inventory-officer.inventory.stock-out'));
-
-        $this->assertSame(18000.0, $this->garageBalance($records));
-        $this->assertSame(1, DB::table('stock_outs')->count());
-        $this->assertSame(2, DB::table('inventory_movements')->count());
-        $this->assertDatabaseHas('sale_items', [
-            'id' => $sale['saleItemId'],
-            'fulfilled_quantity_liters' => '12000.00',
-        ]);
-    }
-
-    public function test_duplicate_garage_stock_out_physical_release_is_rejected(): void
-    {
-        $records = $this->baseRecords();
-        $this->garageMovement($records, ['quantity_liters' => 30000]);
-        $sale = $this->sale($records, ['quantity_liters' => 30000]);
-        $payload = $this->stockOutPayload($records, $sale, [
-            'quantity_liters' => 10000,
-            'stock_out_at' => '2026-08-30 11:00:00',
-        ]);
-
-        $this->actingAs($records['inventoryOfficer'])
-            ->post(route('inventory-officer.inventory.stock-out.store'), $payload)
-            ->assertRedirect(route('inventory-officer.inventory.stock-out'));
-
-        $this->actingAs($records['inventoryOfficer'])
-            ->from(route('inventory-officer.inventory.stock-out'))
-            ->post(route('inventory-officer.inventory.stock-out.store'), array_merge($payload, [
-                'idempotency_key' => (string) Str::uuid(),
-            ]))
-            ->assertRedirect(route('inventory-officer.inventory.stock-out'))
-            ->assertSessionHasErrors('stock_out');
-
-        $this->actingAs($records['inventoryOfficer'])
-            ->post(route('inventory-officer.inventory.stock-out.store'), array_merge($payload, [
-                'idempotency_key' => (string) Str::uuid(),
-                'stock_out_at' => '2026-08-30 12:00:00',
-            ]))
-            ->assertRedirect(route('inventory-officer.inventory.stock-out'));
-
-        $this->assertSame(10000.0, $this->garageBalance($records));
-        $this->assertSame(2, DB::table('stock_outs')->count());
-        $this->assertSame(3, DB::table('inventory_movements')->count());
-        $this->assertDatabaseHas('sale_items', [
-            'id' => $sale['saleItemId'],
-            'fulfilled_quantity_liters' => '20000.00',
-        ]);
-    }
-
-    public function test_direct_depot_stock_out_requires_completed_lift_and_rejects_duplicate_physical_release(): void
-    {
-        $records = $this->baseRecords();
-        $this->garageMovement($records, ['quantity_liters' => 9000]);
-        $pendingSale = $this->sale($records, ['quantity_liters' => 10000]);
-        $pendingAllocationId = $this->directAllocation($records, $pendingSale, [
-            'haul_status' => 'in_transit',
-        ]);
-
-        $this->actingAs($records['inventoryOfficer'])
-            ->from(route('inventory-officer.inventory.stock-out'))
-            ->post(route('inventory-officer.inventory.stock-out.store'), $this->stockOutPayload($records, $pendingSale, [
-                'source_type' => 'depot',
-                'storage_location_id' => null,
-                'haul_allocation_id' => $pendingAllocationId,
-                'quantity_liters' => 10000,
-            ]))
-            ->assertRedirect(route('inventory-officer.inventory.stock-out'))
-            ->assertSessionHasErrors('stock_out');
-
-        $sale = $this->sale($records, ['quantity_liters' => 20000]);
-        $allocationId = $this->directAllocation($records, $sale, ['quantity_liters' => 20000]);
-        $payload = $this->stockOutPayload($records, $sale, [
-            'source_type' => 'depot',
-            'storage_location_id' => null,
-            'haul_allocation_id' => $allocationId,
-            'quantity_liters' => 10000,
-            'stock_out_at' => '2026-08-30 11:00:00',
-        ]);
-
-        $this->actingAs($records['inventoryOfficer'])
-            ->post(route('inventory-officer.inventory.stock-out.store'), $payload)
-            ->assertRedirect(route('inventory-officer.inventory.stock-out'));
-
-        $this->actingAs($records['inventoryOfficer'])
-            ->from(route('inventory-officer.inventory.stock-out'))
-            ->post(route('inventory-officer.inventory.stock-out.store'), array_merge($payload, [
-                'idempotency_key' => (string) Str::uuid(),
-            ]))
-            ->assertRedirect(route('inventory-officer.inventory.stock-out'))
-            ->assertSessionHasErrors('stock_out');
-
-        $this->assertSame(9000.0, $this->garageBalance($records));
-        $this->assertSame(1, DB::table('stock_outs')->where('source_type', 'depot')->count());
-        $this->assertDatabaseHas('sale_items', [
-            'id' => $pendingSale['saleItemId'],
-            'fulfilled_quantity_liters' => '0.00',
-        ]);
-        $this->assertDatabaseHas('sale_items', [
-            'id' => $sale['saleItemId'],
-            'fulfilled_quantity_liters' => '10000.00',
-        ]);
-    }
-
-    public function test_direct_depot_release_respects_already_scheduled_direct_deliveries(): void
-    {
-        $records = $this->baseRecords();
-        $sale = $this->sale($records, ['quantity_liters' => 20000]);
-        $allocationId = $this->directAllocation($records, $sale, ['quantity_liters' => 20000]);
-
-        DB::table('stock_outs')->insert([
-            'stock_out_code' => 'STO-PENDING-DIRECT',
-            'sale_id' => $sale['saleId'],
-            'sale_item_id' => $sale['saleItemId'],
-            'customer_id' => $records['customerId'],
-            'fuel_type_id' => $records['fuelTypeId'],
-            'source_type' => 'depot',
-            'storage_location_id' => null,
-            'depot_id' => $records['depotId'],
-            'haul_allocation_id' => $allocationId,
-            'quantity_liters' => 12000,
-            'stock_out_at' => '2026-08-30 12:00:00',
-            'status' => 'released',
-            'created_by' => $records['inventoryOfficer']->id,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
-        $this->actingAs($records['inventoryOfficer'])
-            ->from(route('inventory-officer.inventory.stock-out'))
-            ->post(route('inventory-officer.inventory.stock-out.store'), $this->stockOutPayload($records, $sale, [
-                'source_type' => 'depot',
-                'storage_location_id' => null,
-                'haul_allocation_id' => $allocationId,
-                'quantity_liters' => 9000,
-            ]))
-            ->assertRedirect(route('inventory-officer.inventory.stock-out'))
-            ->assertSessionHasErrors('stock_out');
-
-        $this->actingAs($records['inventoryOfficer'])
-            ->post(route('inventory-officer.inventory.stock-out.store'), $this->stockOutPayload($records, $sale, [
-                'source_type' => 'depot',
-                'storage_location_id' => null,
-                'haul_allocation_id' => $allocationId,
-                'quantity_liters' => 8000,
-                'stock_out_at' => '2026-08-30 13:00:00',
-            ]))
-            ->assertRedirect(route('inventory-officer.inventory.stock-out'));
-
-        $this->assertSame(2, DB::table('stock_outs')->where('source_type', 'depot')->count());
-        $this->assertDatabaseHas('sale_items', [
-            'id' => $sale['saleItemId'],
-            'fulfilled_quantity_liters' => '8000.00',
-        ]);
-    }
-
-    public function test_non_inventory_roles_cannot_create_stock_out(): void
-    {
-        $records = $this->baseRecords();
-        $this->garageMovement($records, ['quantity_liters' => 10000]);
-        $sale = $this->sale($records);
-        $salesOfficer = User::factory()->create(['role' => 'sales_officer', 'status' => 'active']);
-
-        $this->actingAs($salesOfficer)
-            ->post(route('inventory-officer.inventory.stock-out.store'), $this->stockOutPayload($records, $sale))
-            ->assertForbidden();
-
+        $this->assertSame(5000.0, $this->garageBalance($records));
         $this->assertSame(0, DB::table('stock_outs')->count());
-        $this->assertSame(10000.0, $this->garageBalance($records));
+    }
+
+    public function test_manual_stock_out_entry_is_removed(): void
+    {
+        $this->assertFalse(Route::has('inventory-officer.inventory.stock-out.store'));
+        $this->assertFalse(Route::has('admin.inventory.stock-out.store'));
+
+        $records = $this->baseRecords();
+        $this->actingAs($records['inventoryOfficer'])
+            ->post('/inventory-officer/inventory/stock-out', ['quantity_liters' => 100])
+            ->assertStatus(405);
+
+        $this->actingAs($records['inventoryOfficer'])
+            ->get(route('inventory-officer.inventory.stock-out'))
+            ->assertOk()
+            ->assertDontSee('+ Record Stock-Out')
+            ->assertDontSee('io-stockout-add');
     }
 
     /**
+     * Release through the same service the sale delivery flow uses. Returns the error, or null on success.
+     *
      * @param  array<string, mixed>  $records
      * @param  array<string, mixed>  $sale
-     * @param  array<string, mixed>  $overrides
-     * @return array<string, mixed>
      */
-    private function stockOutPayload(array $records, array $sale, array $overrides = []): array
+    private function release(array $records, array $sale, float $quantity, string $stockOutAt = '2026-08-30 11:00:00'): ?string
     {
-        return array_filter(array_merge([
-            'idempotency_key' => (string) Str::uuid(),
-            'source_type' => 'garage',
-            'sale_item_id' => $sale['saleItemId'],
-            'storage_location_id' => $records['garageId'],
-            'haul_allocation_id' => null,
-            'quantity_liters' => 5000,
-            'stock_out_at' => '2026-08-30 11:00:00',
-            'remarks' => 'Release to client',
-        ], $overrides), fn (mixed $value): bool => $value !== null);
+        return DB::transaction(fn (): ?string => app(StockOutReleaseService::class)->releaseSaleItemFromGarage(
+            (int) $sale['saleItemId'],
+            $quantity,
+            $stockOutAt,
+            (int) $records['inventoryOfficer']->id,
+            (int) $records['garageId'],
+            'Release to client',
+            allowPreparation: false,
+        ));
     }
 
     /**

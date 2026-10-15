@@ -3,69 +3,18 @@
 namespace App\Http\Controllers;
 
 use App\Services\TruckAvailabilityService;
-use Illuminate\Database\Query\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
-use Illuminate\View\View;
 
+/**
+ * Truck writes. The fleet list itself is the Trucks tab of Fuel Lifting (DispatchDeliveryController).
+ */
 class TruckController extends Controller
 {
-    private const TRUCK_TYPES = ['hauling', 'delivery', 'mixed'];
-
     public function __construct(private readonly TruckAvailabilityService $availability) {}
-
-    public function index(Request $request): View
-    {
-        $data = $request->validate([
-            'search' => ['nullable', 'string', 'max:100'],
-            'status' => ['nullable', Rule::in(['available', 'assigned', 'in_use', 'maintenance', 'inactive'])],
-        ]);
-        $search = trim((string) ($data['search'] ?? ''));
-
-        $activeLifts = DB::table('hauls')
-            ->whereIn('status', TruckAvailabilityService::ACTIVE_HAUL_STATUSES)
-            ->selectRaw("truck_id, COUNT(*) as active_lift_count, MAX(CASE WHEN status IN ('in_transit', 'lifted') THEN 1 ELSE 0 END) as has_in_use, MIN(scheduled_at) as next_schedule")
-            ->groupBy('truck_id');
-
-        $effectiveStatusSql = "CASE WHEN trucks.status IN ('maintenance', 'inactive') THEN trucks.status WHEN COALESCE(active_lifts.has_in_use, 0) > 0 THEN 'in_use' WHEN COALESCE(active_lifts.active_lift_count, 0) > 0 THEN 'assigned' ELSE 'available' END";
-
-        $trucks = DB::table('trucks')
-            ->leftJoinSub($activeLifts, 'active_lifts', 'active_lifts.truck_id', '=', 'trucks.id')
-            ->when($search !== '', function (Builder $query) use ($search): void {
-                $query->where(function (Builder $query) use ($search): void {
-                    $query->where('trucks.truck_code', 'like', '%'.$search.'%')
-                        ->orWhere('trucks.plate_number', 'like', '%'.$search.'%')
-                        ->orWhere('trucks.name', 'like', '%'.$search.'%')
-                        ->orWhere('trucks.description', 'like', '%'.$search.'%');
-                });
-            })
-            ->when(! empty($data['status']), fn (Builder $query): Builder => $query->whereRaw($effectiveStatusSql.' = ?', [$data['status']]))
-            ->orderByRaw('COALESCE(trucks.plate_number, trucks.truck_code)')
-            ->select([
-                'trucks.*',
-                DB::raw('COALESCE(active_lifts.active_lift_count, 0) as active_lift_count'),
-                'active_lifts.has_in_use',
-                'active_lifts.next_schedule',
-                DB::raw($effectiveStatusSql.' as effective_status'),
-            ])
-            ->paginate(20)
-            ->withQueryString();
-
-        $isAdmin = $request->user()->role === 'admin';
-
-        return view('trucks.index', [
-            'layout' => $isAdmin ? 'layouts.admin' : 'layouts.dispatch',
-            'routePrefix' => $isAdmin ? 'admin.trucks' : 'dispatch.trucks',
-            'trucks' => $trucks,
-            'search' => $search,
-            'statusFilter' => $data['status'] ?? null,
-            'truckTypes' => self::TRUCK_TYPES,
-            'managedStatuses' => TruckAvailabilityService::MANAGED_STATUSES,
-        ]);
-    }
 
     public function store(Request $request): RedirectResponse
     {
@@ -137,7 +86,7 @@ class TruckController extends Controller
             'name' => ['required', 'string', 'max:100'],
             'description' => ['nullable', 'string', 'max:255'],
             'capacity_liters' => ['required', 'numeric', 'gt:0', 'max:1000000'],
-            'truck_type' => ['required', Rule::in(self::TRUCK_TYPES)],
+            'truck_type' => ['required', Rule::in(TruckAvailabilityService::TRUCK_TYPES)],
             'status' => ['required', Rule::in(TruckAvailabilityService::MANAGED_STATUSES)],
         ];
     }
@@ -152,6 +101,6 @@ class TruckController extends Controller
 
     private function routeName(Request $request): string
     {
-        return str_starts_with((string) $request->route()?->getName(), 'admin.') ? 'admin.trucks' : 'dispatch.trucks';
+        return str_starts_with((string) $request->route()?->getName(), 'admin.') ? 'admin.fuel-lifting.trucks' : 'dispatch.fuel-lifting.trucks';
     }
 }

@@ -12,17 +12,11 @@
     <div data-tabs>
         <h2 class="section-title" data-driver-heading>{{ $activeTab === 'hauled' ? 'Hauled' : 'Schedule' }}</h2>
 
-        @if (session('status'))
-            <div class="alert-bar alert-success driver-notice" role="status">{{ session('status') }}</div>
-        @endif
 
-        @if ($errors->any())
-            <div class="alert-bar alert-warning driver-notice" role="alert">{{ $errors->first() }}</div>
-        @endif
 
         <div class="tabs">
-            <button class="tab-button {{ $activeTab === 'schedule' ? 'is-active' : '' }}" type="button" data-tab-target="schedule" data-heading="Schedule">Schedule</button>
-            <button class="tab-button {{ $activeTab === 'hauled' ? 'is-active' : '' }}" type="button" data-tab-target="hauled" data-heading="Hauled">Hauled</button>
+            <button class="tab-button {{ $activeTab === 'schedule' ? 'is-active' : '' }}" type="button" data-tab-target="schedule" data-tab-url="{{ route('driver.fuel-lifting') }}" data-heading="Schedule">Schedule</button>
+            <button class="tab-button {{ $activeTab === 'hauled' ? 'is-active' : '' }}" type="button" data-tab-target="hauled" data-tab-url="{{ route('driver.fuel-lifting.hauled') }}" data-heading="Hauled">Hauled</button>
         </div>
 
         <div class="actions-right">
@@ -60,35 +54,16 @@
         </div>
 
         <section data-tab-panel="schedule" {{ $activeTab !== 'schedule' ? 'hidden' : '' }}>
-            <form class="driver-filter-row" method="GET" action="{{ route('driver.fuel-lifting') }}">
-                <input type="search" name="search" placeholder="Search..." aria-label="Search scheduled lifts" value="{{ $search }}">
-                <select name="task_status" aria-label="Filter by status">
-                    <option value="">Status (All)</option>
-                    @foreach ($filterOptions['statuses'] as $status)
-                        <option value="{{ $status }}" @selected(($filters['task_status'] ?? '') === $status)>{{ ucwords(str_replace('_', ' ', $status)) }}</option>
-                    @endforeach
-                </select>
-                <input type="date" name="date_from" aria-label="Filter from date" value="{{ $filters['date_from'] ?? '' }}">
-                <input type="date" name="date_to" aria-label="Filter to date" value="{{ $filters['date_to'] ?? '' }}">
-                <select name="depot_id" aria-label="Filter by depot">
-                    <option value="">Depot (All)</option>
-                    @foreach ($filterOptions['depots'] as $depot)
-                        <option value="{{ $depot->id }}" @selected((string) ($filters['depot_id'] ?? '') === (string) $depot->id)>{{ $depot->name }}</option>
-                    @endforeach
-                </select>
-                <select name="destination_type" aria-label="Filter by destination">
-                    <option value="">Destination</option>
-                    <option value="garage" @selected(($filters['destination_type'] ?? '') === 'garage')>Garage</option>
-                    <option value="customer" @selected(($filters['destination_type'] ?? '') === 'customer')>Client</option>
-                </select>
-                <select name="fuel_type_id" aria-label="Filter by fuel type">
-                    <option value="">Fuel Type (All)</option>
-                    @foreach ($filterOptions['fuelTypes'] as $fuelType)
-                        <option value="{{ $fuelType->id }}" @selected((string) ($filters['fuel_type_id'] ?? '') === (string) $fuelType->id)>{{ $fuelType->name }}</option>
-                    @endforeach
-                </select>
-                <button class="btn btn-primary" type="submit">Filter</button>
-            </form>
+            <x-filter.bar class="driver-filter-row" :action="route('driver.fuel-lifting')">
+                <x-filter.search label="Search scheduled lifts" :value="$search" />
+                <x-filter.select name="task_status" label="Status" :selected="$filters['task_status'] ?? null"
+                    :options="collect($filterOptions['statuses'])->mapWithKeys(fn (string $status): array => [$status => ucwords(str_replace('_', ' ', $status))])" />
+                <x-filter.date name="date_from" label="From date" :value="$filters['date_from'] ?? null" />
+                <x-filter.date name="date_to" label="To date" :value="$filters['date_to'] ?? null" />
+                <x-filter.select name="depot_id" label="Depot" :options="$filterOptions['depots']->pluck('name', 'id')" :selected="$filters['depot_id'] ?? null" />
+                <x-filter.select name="destination_type" label="Destination" :options="['garage' => 'Garage', 'customer' => 'Client']" :selected="$filters['destination_type'] ?? null" />
+                <x-filter.select name="fuel_type_id" label="Fuel Type" :options="$filterOptions['fuelTypes']->pluck('name', 'id')" :selected="$filters['fuel_type_id'] ?? null" />
+            </x-filter.bar>
 
             <div class="table-wrap driver-table-wrap">
                 <table class="admin-table driver-table">
@@ -130,35 +105,16 @@
         </section>
 
         <section data-tab-panel="hauled" {{ $activeTab !== 'hauled' ? 'hidden' : '' }}>
-            <form class="driver-filter-row" method="GET" action="{{ route('driver.fuel-lifting.hauled') }}">
-                <input type="search" name="search" placeholder="Search..." aria-label="Search hauled lifts" value="{{ $search }}">
-                <select name="task_status" aria-label="Filter by status">
-                    <option value="">Status (All)</option>
-                    @foreach ($filterOptions['statuses'] as $status)
-                        <option value="{{ $status }}" @selected(($filters['task_status'] ?? '') === $status)>{{ ucwords(str_replace('_', ' ', $status)) }}</option>
-                    @endforeach
-                </select>
-                <input type="date" name="date_from" aria-label="Filter from date" value="{{ $filters['date_from'] ?? '' }}">
-                <input type="date" name="date_to" aria-label="Filter to date" value="{{ $filters['date_to'] ?? '' }}">
-                <select name="depot_id" aria-label="Filter by depot">
-                    <option value="">Depot (All)</option>
-                    @foreach ($filterOptions['depots'] as $depot)
-                        <option value="{{ $depot->id }}" @selected((string) ($filters['depot_id'] ?? '') === (string) $depot->id)>{{ $depot->name }}</option>
-                    @endforeach
-                </select>
-                <select name="destination_type" aria-label="Filter by destination">
-                    <option value="">Destination</option>
-                    <option value="garage" @selected(($filters['destination_type'] ?? '') === 'garage')>Garage</option>
-                    <option value="customer" @selected(($filters['destination_type'] ?? '') === 'customer')>Client</option>
-                </select>
-                <select name="fuel_type_id" aria-label="Filter by fuel type">
-                    <option value="">Fuel Type (All)</option>
-                    @foreach ($filterOptions['fuelTypes'] as $fuelType)
-                        <option value="{{ $fuelType->id }}" @selected((string) ($filters['fuel_type_id'] ?? '') === (string) $fuelType->id)>{{ $fuelType->name }}</option>
-                    @endforeach
-                </select>
-                <button class="btn btn-primary" type="submit">Filter</button>
-            </form>
+            <x-filter.bar class="driver-filter-row" :action="route('driver.fuel-lifting.hauled')">
+                <x-filter.search label="Search hauled lifts" :value="$search" />
+                <x-filter.select name="task_status" label="Status" :selected="$filters['task_status'] ?? null"
+                    :options="collect($filterOptions['statuses'])->mapWithKeys(fn (string $status): array => [$status => ucwords(str_replace('_', ' ', $status))])" />
+                <x-filter.date name="date_from" label="From date" :value="$filters['date_from'] ?? null" />
+                <x-filter.date name="date_to" label="To date" :value="$filters['date_to'] ?? null" />
+                <x-filter.select name="depot_id" label="Depot" :options="$filterOptions['depots']->pluck('name', 'id')" :selected="$filters['depot_id'] ?? null" />
+                <x-filter.select name="destination_type" label="Destination" :options="['garage' => 'Garage', 'customer' => 'Client']" :selected="$filters['destination_type'] ?? null" />
+                <x-filter.select name="fuel_type_id" label="Fuel Type" :options="$filterOptions['fuelTypes']->pluck('name', 'id')" :selected="$filters['fuel_type_id'] ?? null" />
+            </x-filter.bar>
 
             <div class="table-wrap driver-table-wrap">
                 <table class="admin-table driver-table">

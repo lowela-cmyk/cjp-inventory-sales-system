@@ -458,7 +458,8 @@ class Phase5PerformanceTest extends TestCase
         $this->assertSame(500000.0, (float) $item->line_total);
 
         // Test Update
-        $purchaseService->updatePurchase($purchase->id, [
+        // Update and cancel take the purchase ITEM id (passing the purchase id only worked when both ids matched).
+        $purchaseService->updatePurchase($item->id, [
             'purchase_date' => '2026-08-31',
             'depot_id' => $depotId,
             'fuel_type_id' => $fuelTypeId,
@@ -472,7 +473,7 @@ class Phase5PerformanceTest extends TestCase
         $this->assertSame(600000.0, (float) $updatedItem->line_total);
 
         // Test Cancel
-        $purchaseService->cancelPurchase($purchase->id);
+        $purchaseService->cancelPurchase($item->id);
 
         $cancelledPurchase = DB::table('purchases')->where('id', $purchase->id)->first();
         $this->assertSame('cancelled', $cancelledPurchase->status);

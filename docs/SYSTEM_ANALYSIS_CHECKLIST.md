@@ -166,12 +166,12 @@ Compliance check of the CJP Southern Star OPC system against the "System Analysi
 | After Phase 2 | 449 passed, **4 failed** (same four) |
 | After Phase 3 | 453 passed, **4 failed** (same four) |
 | After Phase 4 | 455 passed, **4 failed** (same four) |
+| After security phase | **464 passed, 0 failed** (SQLite), and **464 passed, 0 failed** on MariaDB (`cjp_audit_testing`) |
 
 **Fixed in Phase 1:**
 - `AdminUserManagementTest` duplicate…, `FormValidationTest` ×2 and `RoleBasedAccessControlTest` registration… failed because of a regression from 9fa4d4b (red dots). `ModuleActivityService` now treats a missing or unknown role as "no modules", via `modulesFor()`. Regression test: `CompliancePhase1Test::test_red_dots_tolerate_users_without_a_known_role`.
 - `Part6RevisionsTest` red-dot tests were clock-dependent. They travelled back to 09:00, so rows seeded by the migrations (stamped with the real time) looked newer than every visit, and the test failed whenever it ran after 9 AM. The tests now travel forward instead.
 
-| After security phase | **464 passed, 0 failed** (SQLite), and **464 passed, 0 failed** on MariaDB (`cjp_audit_testing`) |
 
 **Fixed in the security phase** (October 12 audit items, all previously failing):
 

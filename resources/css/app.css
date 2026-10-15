@@ -3990,3 +3990,41 @@ body.login-page {
     min-width: 112px;
     max-width: 112px;
 }
+
+/* -- Responsive overflow (System Analysis Phase 4) ------------------------
+   Grid tracks must be allowed to shrink below their content, or a wide chart or field
+   pushes the whole page sideways (Dashboard, Reports, Driver at 768/1366px). */
+.chart-panel,
+.dashboard-grid > * {
+    min-width: 0;
+}
+
+.chart-panel canvas {
+    max-width: 100%;
+}
+
+/* Two breakdown lists side by side only when each gets its ~290px; otherwise they stack. */
+.dashboard-breakdown-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr));
+}
+
+.driver-profile-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
+}
+
+@media (max-width: 1180px) {
+    .dashboard-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (max-width: 1023px) {
+    .driver-overview-card {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .driver-overview-identity {
+        border-right: 0;
+        border-bottom: 1px solid var(--admin-line);
+    }
+}

@@ -70,7 +70,7 @@ Compliance check of the CJP Southern Star OPC system against the "System Analysi
 | 3.6 | 3 | No free-text Location in Schedule Lift; depot-derived | ✅ DONE | flow 3.6 ("Pickup Depot: Batangas Energy Terminal — Shell Tabangao, Batangas City") | |
 | 3.7 | 3 | Several purchase IDs on one lift ("+ Add Purchase") | ✅ DONE | flow 3.7 (one schedule, 2 purchases × 20,000 L on a 40,000 L truck); `flow-*-3.7-schedule-two-purchases.png` | |
 | 3.8 | 3 | *Superseded by 7.3:* no manual Stock-In; stock posts when the driver completes the lift | ✅ DONE | flow 3.8/7.3 (2 stock receipts posted on Lifted); `C01LiftCompletionReceivableStockTest` | No "+ Add Stock-In" button. A fallback "Assign Tank" remains in the Purchase Edit modal for completed lifts that could not post (e.g. the tank is full). |
-| 3.9 | 3 | Works the same in Chrome, Edge, Firefox, Safari, Opera | ⚠️ PARTIAL | `flow-chrome.json`, `flow-webkit.json`, `sweep-chrome.json`, `sweep-webkit.json` | Chrome and WebKit (Safari's engine) match: same flow results, 0 layout differences across 144 renders, no JS errors. Edge and Opera use Chrome's engine (covered by engine, not run as real browsers). **Firefox is not verified:** Playwright's Firefox 1495 would not launch on this macOS 27 machine. Not an app finding, but it needs a run elsewhere (Phase 4). |
+| 3.9 | 3 | Works the same in Chrome, Edge, Firefox, Safari, Opera | ⚠️ PARTIAL | `phase4/sweep-chrome.json`, `phase4/sweep-webkit.json`; `docs/FIREFOX_CHECKLIST.md` | Chrome and WebKit (Safari's engine) both show **0 problems across 128 renders** after Phase 4: no page overflow, overlaps, transparent sticky cells, clipped logos, Filter buttons, inline banners or JS errors. Edge and Opera use Chrome's engine. **Firefox:** Playwright's Firefox will not launch on this macOS 27 machine, so a manual checklist (`docs/FIREFOX_CHECKLIST.md`) covers login, record purchase, schedule a lift with two purchases, driver Lifted + receipt upload, sale + payment + Delivered, and the ledger hover. **Pending your Firefox run.** |
 | 4.1 | 4 | *Superseded by 6.19:* welcome block removed | ✅ DONE | = 6.19 | |
 | 4.2 | 4 | "+ Schedule Lift" doesn't overlap | ✅ DONE | `chrome-1366-dispatch_dispatch_fuel-lifting.png`; sweep: no overlaps | |
 | 4.3 | 4 | = 1.14 | ✅ DONE | = 1.14 | |
@@ -142,13 +142,19 @@ Compliance check of the CJP Southern Star OPC system against the "System Analysi
   - **4.9**, where my script was too strict. It expected Cost/Unit 60.00, but the tank's weighted-average cost was 59.79 / 59.84 because earlier stock was bought at 58. The math is correct.
 - **Firefox:** the bundled build fails to start its `plugin-container` helper on this macOS 27 machine ("sandbox_extension_issue_file_to_process … Operation not permitted"). The same happens outside the tool sandbox and after re-extracting with `ditto`. This is an environment problem, not an app finding. Phase 4 includes running the same scripts on another machine or in CI.
 
-**Responsive (Chrome = WebKit):**
+**Phase 4 responsive fixes:**
+- Grid tracks now shrink below their content: `.chart-panel` uses `min-width: 0`, and the Dashboard goes to one column at ≤1180px.
+- The Dashboard breakdown lists stack when narrower than about 290px each.
+- Driver profile fields wrap, and the driver card stacks at ≤1023px.
+- Chart canvases render at their drawing size (no distortion).
+
+**Responsive (Chrome = WebKit, audit-time figures with Phase 4 updates):**
 
 | Width | Pages scrolling sideways | Notes |
 |---|---|---|
 | 375 | none | Sidebar becomes a drawer; tables scroll inside their frame with a "Scroll sideways" hint. |
-| 768 | Dashboard +497 px, Reports +87 px, Driver ×2 +26 px | Everything else fits. |
-| 1366 | Dashboard +87 px | Purchases / Sales / Dispatch tables scroll inside their frame (Purchases hides 900 px). |
+| 768 | ~~Dashboard +497 px, Reports +87 px, Driver ×2 +26 px~~ **fixed in Phase 4:** none | Everything fits. |
+| 1366 | ~~Dashboard +87 px~~ **fixed in Phase 4:** none | Purchases, Sales and Stock-Out fit (Phase 3). Other wide tables scroll inside their frame. |
 | 1920 | none | Purchases still scrolls 346 px inside its frame; no pill overlap. |
 
 ## Test suite
@@ -159,6 +165,7 @@ Compliance check of the CJP Southern Star OPC system against the "System Analysi
 | After Phase 1 | 447 passed, **4 failed** (only the open October 12 security items below) |
 | After Phase 2 | 449 passed, **4 failed** (same four) |
 | After Phase 3 | 453 passed, **4 failed** (same four) |
+| After Phase 4 | 455 passed, **4 failed** (same four) |
 
 **Fixed in Phase 1:**
 - `AdminUserManagementTest` duplicate…, `FormValidationTest` ×2 and `RoleBasedAccessControlTest` registration… failed because of a regression from 9fa4d4b (red dots). `ModuleActivityService` now treats a missing or unknown role as "no modules", via `modulesFor()`. Regression test: `CompliancePhase1Test::test_red_dots_tolerate_users_without_a_known_role`.
@@ -187,9 +194,8 @@ Compliance check of the CJP Southern Star OPC system against the "System Analysi
 | 🔀 CONFLICT | 0 |  |
 | **Total** | **91** | |
 
-Every feature the document asks for exists and works end to end. **Open after Phase 3:**
-- 3.9: a Firefox run.
-- Phase 4 page overflow (Dashboard, Reports, Driver).
+Every feature the document asks for exists and works end to end. **Open after Phase 4:**
+- 3.9: your manual Firefox run (`docs/FIREFOX_CHECKLIST.md`).
 
 ## Phased fix plan (only ⚠️ / 🔀 items)
 

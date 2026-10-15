@@ -26,9 +26,9 @@ class SalesOfficerCustomerController extends Controller
         private readonly SaleCorrectionService $saleCorrectionService
     ) {}
 
-    private const PAYMENT_STATUSES = ['clear', 'pending', 'partial', 'unpaid'];
+    public const PAYMENT_STATUSES = ['clear', 'pending', 'partial', 'unpaid'];
 
-    private const ACCOUNT_STATUSES = ['active', 'inactive'];
+    public const ACCOUNT_STATUSES = ['active', 'inactive'];
 
     private const SALE_STATUSES = ['draft', 'confirmed', 'partially_paid', 'paid', 'unpaid', 'cancelled'];
 
@@ -561,8 +561,7 @@ class SalesOfficerCustomerController extends Controller
                 ->withErrors(['company_name' => 'Customer record could not be saved. Please review the customer details and try again.']);
         }
 
-        return redirect()
-            ->route($this->customersRedirectRoute(request()))
+        return $this->customersRedirect(request())
             ->with('status', 'Customer record created successfully.');
     }
 
@@ -592,8 +591,7 @@ class SalesOfficerCustomerController extends Controller
                 ->withErrors(['company_name' => 'Customer record could not be updated. Please review the customer details and try again.']);
         }
 
-        return redirect()
-            ->route($this->customersRedirectRoute(request()))
+        return $this->customersRedirect(request())
             ->with('status', 'Customer record updated successfully.');
     }
 
@@ -613,8 +611,7 @@ class SalesOfficerCustomerController extends Controller
                 ->withErrors(['customer' => 'Customer record could not be deactivated. Please try again.']);
         }
 
-        return redirect()
-            ->route($this->customersRedirectRoute(request()))
+        return $this->customersRedirect(request())
             ->with('status', 'Customer record deactivated successfully.');
     }
 
@@ -1757,6 +1754,18 @@ class SalesOfficerCustomerController extends Controller
         return str_starts_with((string) $request->route()?->getName(), 'admin.')
             ? 'admin.sales'
             : 'sales-officer.sales';
+    }
+
+    /**
+     * Back to the customer list the form came from: Admin can also manage customers from User Management.
+     */
+    private function customersRedirect(Request $request): RedirectResponse
+    {
+        if ($request->input('return_to') === 'user-management' && str_starts_with((string) $request->route()?->getName(), 'admin.')) {
+            return redirect()->route('admin.user-management', ['tab' => 'customers']);
+        }
+
+        return redirect()->route($this->customersRedirectRoute($request));
     }
 
     private function customersRedirectRoute(Request $request): string

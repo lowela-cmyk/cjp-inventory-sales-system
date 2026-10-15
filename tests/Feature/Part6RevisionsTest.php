@@ -130,7 +130,7 @@ class Part6RevisionsTest extends TestCase
         $offenders = [];
         foreach (File::allFiles(resource_path('views')) as $file) {
             $contents = $file->getContents();
-            if (preg_match_all('/<button[^>]*>\s*(Filter|Apply|Search|Date|Status|Depot|Location|Company|Source|Destination|Driver|Truck|Position|Contact|License|Fuel Type[^<]*)\s*<\/button>/', $contents, $matches)) {
+            if (preg_match_all('/<button[^>]*>\s*(Filter|Apply|Generate|Search|Date|Status|Depot|Location|Company|Source|Destination|Driver|Truck|Position|Contact|License|Fuel Type[^<]*)\s*<\/button>/', $contents, $matches)) {
                 $offenders[] = $file->getRelativePathname().': '.implode(', ', $matches[1]);
             }
             if (str_contains($contents, 'data-sort-table')) {

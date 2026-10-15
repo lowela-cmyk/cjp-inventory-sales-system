@@ -560,6 +560,35 @@ document.addEventListener('input', (event) => {
     });
 });
 
+// Reports period filter: show only the inputs the chosen period needs, and apply once they are filled in.
+const syncReportPeriodFields = (form) => {
+    const period = form.querySelector('[data-report-period]')?.value;
+
+    form.querySelectorAll('[data-period-field]').forEach((field) => {
+        const active = field.dataset.periodField === period;
+        field.hidden = !active;
+        field.disabled = !active;
+    });
+};
+
+document.querySelectorAll('form[data-report-filter]').forEach(syncReportPeriodFields);
+
+document.addEventListener('change', (event) => {
+    const form = event.target.closest('form[data-report-filter]');
+    if (!form) {
+        return;
+    }
+
+    if (event.target.matches('[data-report-period]')) {
+        syncReportPeriodFields(form);
+    }
+
+    const fields = [...form.querySelectorAll('[data-period-field]:not([disabled])')];
+    if (fields.every((field) => field.value !== '' && field.checkValidity())) {
+        form.requestSubmit();
+    }
+});
+
 // Filter forms marked [data-auto-filter] apply on change (selects/dates) and after a pause in typing (search).
 const AUTO_FILTER_FOCUS_KEY = 'cjp:auto-filter-focus';
 let autoFilterTimer = null;

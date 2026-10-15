@@ -96,16 +96,18 @@ class AdminUserManagementController extends Controller
                 ]);
             }
         } elseif ($tab === 'customers') {
-            $this->writeCsvRow($handle, ['Customer ID', 'Customer Name', 'Company Name', 'Location', 'Email', 'Contact Number']);
+            $this->writeCsvRow($handle, ['Customer ID', 'Customer Name', 'Company Name', 'Location', 'Email', 'Contact Number', 'Bank Name', 'Status']);
 
             foreach ($this->customerRows() as $row) {
                 $this->writeCsvRow($handle, [
-                    'CSM-'.str_pad((string) $row->id, 6, '0', STR_PAD_LEFT),
+                    $row->customer_code,
                     $row->name,
                     $row->company_name,
                     $row->location ?: 'N/A',
                     $row->email ?: 'N/A',
                     $row->phone ?: 'N/A',
+                    $row->bank_name ?: 'N/A',
+                    ucwords((string) $row->status),
                 ]);
             }
         } else {
@@ -490,7 +492,7 @@ class AdminUserManagementController extends Controller
     {
         $query = DB::table('customers')
             ->when($filters['search'] ?? null, fn ($query, string $term) => $query->where(fn ($query) => $query
-                ->where('name', 'like', '%'.$term.'%')->orWhere('company_name', 'like', '%'.$term.'%')
+                ->where('customer_code', 'like', '%'.$term.'%')->orWhere('name', 'like', '%'.$term.'%')->orWhere('company_name', 'like', '%'.$term.'%')
                 ->orWhere('email', 'like', '%'.$term.'%')->orWhere('phone', 'like', '%'.$term.'%')
                 ->orWhere('location', 'like', '%'.$term.'%')))
             ->when($filters['location'] ?? null, fn ($query, string $location) => $query->where('location', $location))

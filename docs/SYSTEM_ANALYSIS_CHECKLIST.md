@@ -44,7 +44,7 @@ Compliance check of the CJP Southern Star OPC system against the "System Analysi
 | 1.5 | 1 | Add Purchase: Fuel Type selectable | ✅ DONE | flow 1.5/1.6; `flow-*-1.5-add-purchase.png` | Lists the 4 active fuels. |
 | 1.6 | 1 | Add Purchase: Depot selectable | ✅ DONE | flow 1.5/1.6 | Saved F1 + Batangas Energy Terminal. |
 | 1.7 | 1 | No Delivery Receipt upload in Add Purchase | ✅ DONE | flow 1.7; `PurchaseReceiptUploadTest::test_purchase_form_rejects_receipt_upload_tampering` | |
-| 1.8 | 1 | Admin can add/edit/manage customers and sales; no "managed in Sales Officer module" notice | ⚠️ PARTIAL | `resources/views/admin/user-management.blade.php:187-190, 258-266, 122` | Admin has the full Sales page (`/admin/sales`), customers included. **But** Admin → User Management → Customers still has the old flow: (a) "+ Add Customer" opens the dead-end notice *"…managed in the customer/sales workflow"*; (b) "Edit" is read-only; (c) IDs are built as `'CSM-'.str_pad($row->id)`, so `CSM-000157` is shown for the real `CSM-000001`. |
+| 1.8 | 1 | Admin can add/edit/manage customers and sales; no "managed in Sales Officer module" notice | ✅ DONE | `CompliancePhase2Test::test_admin_manages_customers_from_user_management_with_their_real_codes`; `phase2/um-customers-*.png`, `phase2/um-add-customer-1366.png` | Admin has the full Sales page. **Phase 2:** User Management → Customers now uses real Add and Edit forms (Bank Name and Status included). They post to the existing validated `admin.sales.customers.*` routes and return to the Customers tab; errors reopen the modal. The dead-end notice is gone. The table, search and CSV export use the stored `customer_code` (previously `CSM-` + row id). The page heading follows the active tab. Browser: codes match the DB at 375/768/1366/1920; add and edit verified. |
 | 1.9 | 1 | No big empty spaces; tables/content fill the width | ⚠️ PARTIAL | `sweep-chrome.json` (no table leaves >40 px unused); `5.15-purchases-table-1366*.png` | Depots, ledger, alerts and trucks fill the width. **But** at 1366 px Purchases (14 cols) hides 900 px behind a sideways scroll; Sales and Dispatch scroll too. Page overflows sideways: Dashboard +87 px @1366 and +497 px @768; Reports +87 px @768; Driver +26 px @768. The sidebar background stops partway down long pages (dashboard). |
 | 1.10 | 1 | No overlapping buttons; consistent spacing and sizes | ⚠️ PARTIAL | sweep: no control overlaps outside modals; toolbar heights uniform; `chrome-1366-sales_sales-officer_sales.png`; `1.10-sticky-bleed-row.png` | The sticky **Actions** cell renders transparent (computed `rgba(0,0,0,0)`), so the columns scrolling underneath show between View/Cancel. Root cause: `.admin-table tbody tr td:last-child { background: inherit }` (`app.css:597`) outranks the `.row-* td:last-child` tint rules (`app.css:603-613`), and the `<tr>` has no background to inherit. At rest it also covers 117 px of each Purchases *Inventory Status* pill @1366. Driver page: "Fuel Type" filter wraps onto its own full-width row. |
 | 1.11 | 1 | No empty profile circle top-right | ✅ DONE | sweep `avatar: false` on all 144 renders; `components/admin/header.blade.php` | |
@@ -122,7 +122,7 @@ Compliance check of the CJP Southern Star OPC system against the "System Analysi
 | 6.17 | 6 | Dispatch: no inline welcome | ✅ DONE | sweep `inlineWelcome: false` | |
 | 6.18 | 6 | Dispatch Schedule Lift fields work (typeable, no overlap, no "â€”") | ✅ DONE | flow 4.5/5.6/6.18 (mojibake = false) | |
 | 6.19 | 6 | Driver: no inline welcome | ✅ DONE | sweep `inlineWelcome: false` | |
-| 6.A | 6 | Every filter is a dropdown; no Filter buttons anywhere | ⚠️ PARTIAL | `admin/reports.blade.php:3-20`; sweep `filterButtons: 0` | All list pages ✅. **Reports** still shows all six period inputs at once (period, date, start, end, month, year) behind a manual **Generate** submit. |
+| 6.A | 6 | Every filter is a dropdown; no Filter buttons anywhere | ✅ DONE | `CompliancePhase2Test::test_reports_period_filter_shows_only_the_needed_inputs_and_has_no_generate_button`; `Part6RevisionsTest::test_no_filter_submit_buttons_…` (now also rejects a bare "Generate"); `phase2/reports-range-*.png` | **Phase 2:** Reports uses a Period dropdown that shows only the inputs that period needs: date, start + end, month or year. Hidden inputs are disabled, so they leave the URL. The filter applies on change once those inputs are filled (Date Range waits for both dates). "Generate" is removed; Export and Print stay. AI "Generate Insight" buttons are actions, not filters, and stay. |
 | 6.B | 6 | Red dots for unseen updates; none on first login | ✅ DONE | misc script: newly approved user → 0 dots; `Part6RevisionsTest::test_sidebar_red_dot_…` | It introduced a regression that breaks 4 tests; see "Test suite". |
 | 7.1 | 7 | Receipt column shows only "View Receipt"; opens only the image | ✅ DONE | flow 7.1; `flow-*-7.1-receipt-viewer.png`; `Part7RevisionsTest::test_receipt_column_opens_an_image_only_lightbox_…` | Several receipts → "View Receipts (n)". |
 | 7.2 | 7 | No Record Stock-Out button or modal | ✅ DONE | = 6.11 | |
@@ -157,6 +157,7 @@ Compliance check of the CJP Southern Star OPC system against the "System Analysi
 |---|---|
 | Audit baseline (`main` @ `80aef6f`) | 437 passed, **8 failed** |
 | After Phase 1 | 447 passed, **4 failed** (only the open October 12 security items below) |
+| After Phase 2 | 449 passed, **4 failed** (same four) |
 
 **Fixed in Phase 1:**
 - `AdminUserManagementTest` duplicate…, `FormValidationTest` ×2 and `RoleBasedAccessControlTest` registration… failed because of a regression from 9fa4d4b (red dots). `ModuleActivityService` now treats a missing or unknown role as "no modules", via `modulesFor()`. Regression test: `CompliancePhase1Test::test_red_dots_tolerate_users_without_a_known_role`.
@@ -179,15 +180,13 @@ Compliance check of the CJP Southern Star OPC system against the "System Analysi
 
 | Status | Count | Items |
 |---|---|---|
-| ✅ DONE | 84 | everything not listed below |
-| ⚠️ PARTIAL | 7 | 1.8, 1.9, 1.10, 2.1, 3.3, 3.9, 6.A |
+| ✅ DONE | 86 | everything not listed below |
+| ⚠️ PARTIAL | 5 | 1.9, 1.10, 2.1, 3.3, 3.9 |
 | ❌ NOT DONE | 0 |  |
 | 🔀 CONFLICT | 0 |  |
 | **Total** | **91** | |
 
-Every feature the document asks for exists and works end to end. **Open after Phase 1:**
-- Admin's customer screen in User Management (1.8).
-- Reports filters (6.A).
+Every feature the document asks for exists and works end to end. **Open after Phase 2:**
 - Visual consistency (1.9, 1.10, 2.1, 3.3).
 - A Firefox run (3.9).
 

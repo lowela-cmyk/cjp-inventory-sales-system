@@ -1,20 +1,20 @@
 @component('layouts.admin', ['title' => 'Reports Tab', 'active' => 'reports'])
     <h2 class="section-title">Reports and A.I Insights</h2>
-    <form class="report-intro report-toolbar" method="GET" action="{{ route('admin.reports') }}">
+    {{-- Period filter: shows only the inputs the chosen period needs and applies on change (see app.js). --}}
+    <form class="report-intro report-toolbar" method="GET" action="{{ route('admin.reports') }}" role="search" data-report-filter>
         <div class="filter-row" style="margin-bottom:0">
-            <select class="form-control" name="period" aria-label="Report period">
+            <select class="form-control" name="period" aria-label="Report period" data-report-period>
                 @foreach (['all' => 'All Time', 'today' => 'Today', 'date' => 'Specific Date', 'range' => 'Date Range', 'month' => 'Month', 'year' => 'Year'] as $value => $label)
                     <option value="{{ $value }}" @selected($filters['period'] === $value)>{{ $label }}</option>
                 @endforeach
             </select>
-            <input class="form-control" type="date" name="date" value="{{ $filters['date'] }}" aria-label="Specific date">
-            <input class="form-control" type="date" name="start_date" value="{{ $filters['start_date'] }}" aria-label="Start date">
-            <input class="form-control" type="date" name="end_date" value="{{ $filters['end_date'] }}" aria-label="End date">
-            <input class="form-control" type="month" name="month" value="{{ $filters['month'] }}" aria-label="Month">
-            <input class="form-control" type="number" name="year" min="2000" max="2100" value="{{ $filters['year'] }}" aria-label="Year">
+            <input class="form-control" type="date" name="date" value="{{ $filters['date'] }}" aria-label="Specific date" data-period-field="date" @if ($filters['period'] !== 'date') hidden disabled @endif>
+            <input class="form-control" type="date" name="start_date" value="{{ $filters['start_date'] }}" aria-label="Start date" data-period-field="range" @if ($filters['period'] !== 'range') hidden disabled @endif>
+            <input class="form-control" type="date" name="end_date" value="{{ $filters['end_date'] }}" aria-label="End date" data-period-field="range" @if ($filters['period'] !== 'range') hidden disabled @endif>
+            <input class="form-control" type="month" name="month" value="{{ $filters['month'] }}" aria-label="Month" data-period-field="month" @if ($filters['period'] !== 'month') hidden disabled @endif>
+            <input class="form-control" type="number" name="year" min="2000" max="2100" value="{{ $filters['year'] }}" aria-label="Year" data-period-field="year" @if ($filters['period'] !== 'year') hidden disabled @endif>
         </div>
         <div class="report-actions">
-            <button class="btn btn-primary" type="submit">Generate</button>
             <a class="btn btn-secondary" href="{{ route('admin.reports.export', request()->query()) }}">Export</a>
             <button class="btn btn-secondary" type="button" data-print-page>Print</button>
         </div>

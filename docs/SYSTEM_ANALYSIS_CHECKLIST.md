@@ -171,13 +171,51 @@ Compliance check of the CJP Southern Star OPC system against the "System Analysi
 - `AdminUserManagementTest` duplicate…, `FormValidationTest` ×2 and `RoleBasedAccessControlTest` registration… failed because of a regression from 9fa4d4b (red dots). `ModuleActivityService` now treats a missing or unknown role as "no modules", via `modulesFor()`. Regression test: `CompliancePhase1Test::test_red_dots_tolerate_users_without_a_known_role`.
 - `Part6RevisionsTest` red-dot tests were clock-dependent. They travelled back to 09:00, so rows seeded by the migrations (stamped with the real time) looked newer than every visit, and the test failed whenever it ran after 9 AM. The tests now travel forward instead.
 
-**Still failing (open, outside this document):**
+| After security phase | **464 passed, 0 failed** (SQLite), and **464 passed, 0 failed** on MariaDB (`cjp_audit_testing`) |
 
-| Failing test | Cause |
-|---|---|
-| `Audit\C02PasswordResetBruteForceTest`, `Audit\H01LoginThrottleSpoofTest` | Open findings AUD-C02 / AUD-H01 from the 2026-10-12 security audit (`AUDIT_REPORT.md`). Login and reset throttling can be bypassed by rotating `X-Forwarded-For`. |
-| `Audit\C03CommittedDatabaseDumpTest` | Open finding AUD-C03: `database/backups/pre_phase3_backup_20260916.sql` is still tracked. |
-| `Phase3OperationalAcceptanceTest` repair data… | Open finding AUD-M13: `cjp:readiness-audit --turnover` reads the real `.env` (`APP_ENV`/`APP_DEBUG`), so it returns 1 on a dev machine. |
+**Fixed in the security phase** (October 12 audit items, all previously failing):
+
+| Item | Fix | Evidence |
+|---|---|---|
+| AUD-H01 login throttle bypass | X-Forwarded-For is trusted only from proxies in `TRUSTED_PROXIES` (empty = none), so a faked header no longer changes the client IP. The login limiter layers 5/min per account+IP, **10 per 15 min per account from any IP**, and 30/min per IP. | `Audit\H01LoginThrottleSpoofTest` ✓; `SecurityPhaseTest` (spoofed header ignored; per-account limit holds behind a trusted proxy) |
+| AUD-C02 reset-code brute force | Same proxy fix and layered limiter (5/min per account+IP, 10 per 15 min per account, 20/min per IP). Each code allows **5 wrong tries**, then it is cancelled and a new code must be requested. | `Audit\C02PasswordResetBruteForceTest` ✓; `SecurityPhaseTest::test_a_reset_code_is_cancelled_after_five_wrong_tries` |
+| Throttle message | A throttled login or reset re-renders its own form (HTTP 429) with "Too many attempts. Please try again in X minutes." and keeps the typed username or email. | `SecurityPhaseTest::test_throttled_login_explains_how_long_to_wait`; `phase5/login-throttled-*.png` (verified at 375/768/1366/1920) |
+| AUD-C03 committed DB dump | `database/backups/pre_phase3_backup_20260916.sql` removed from the index (local copy kept). `.gitignore` now ignores `*.sql`, `*.sql.gz`, `*.dump`, `/database/backups/` and `/storage/backups/`. **History is not rewritten**; see the steps below. | `Audit\C03CommittedDatabaseDumpTest` ✓ |
+| AUD-M13 readiness test used the real `.env` | `cjp:readiness-audit` accepts `--env-file=` (default: the project `.env`, so production behavior is unchanged). The test passes a production-shaped fixture, and a new test proves the audit still fails on a development env file. | `Phase3OperationalAcceptanceTest` ✓; `SecurityPhaseTest::test_readiness_audit_still_fails_on_a_development_env_file` |
+| MariaDB-only test bugs (found while verifying) | `FollowupsTest` fixtures used codes longer than the 30-character column (SQLite ignores column lengths). `Phase5PerformanceTest` passed a purchase id where a purchase-item id is expected (the order-dependence noted under AUD-M13). Test-only fixes; they also failed on untouched `main`. | MariaDB run: 464/464 |
+
+**Deployment note:** if the app runs behind a reverse proxy or load balancer, set `TRUSTED_PROXIES` to its address. Otherwise every user appears to come from the proxy's IP and shares the per-IP limits.
+
+### C03: removing the dump from git history (not done; your decision)
+
+The dump is in commit `7aeb007` (2026-09-17), which is on `origin/main`. It contains the **admin account row (`admin@gmail.com`) with its password hash**, sessions, customers, sales and payments. **Change that admin password now**, whatever you decide about history.
+
+Rewriting history changes every commit hash from `7aeb007` on, and everyone must re-clone. Steps (git-filter-repo):
+
+```bash
+# 0. Make sure everyone has pushed their work, then stop pushing until step 6 is done.
+brew install git-filter-repo
+
+# 1. Work on a fresh mirror clone, never on your working copy.
+git clone --mirror https://github.com/lowela-cmyk/cjp-inventory-sales-system.git cjp-mirror.git
+cd cjp-mirror.git
+
+# 2. Drop the file from every commit on every branch and tag.
+git filter-repo --invert-paths --path database/backups/pre_phase3_backup_20260916.sql
+
+# 3. Verify it is gone (both commands must print nothing).
+git log --all --oneline -- database/backups/pre_phase3_backup_20260916.sql
+git rev-list --all --objects | grep pre_phase3_backup
+
+# 4. filter-repo removes the remote on purpose; add it back and force-push everything.
+git remote add origin https://github.com/lowela-cmyk/cjp-inventory-sales-system.git
+git push --force --mirror origin
+
+# 5. Everyone deletes their old clone and clones again. Old local branches
+#    (e.g. backup-main-before-rename) still contain the file and must not be pushed back.
+# 6. Ask GitHub Support to purge cached views and pull-request refs of the old commits
+#    (https://support.github.com > "Remove sensitive data").
+```
 
 ## Other findings (outside the document)
 
@@ -194,8 +232,9 @@ Compliance check of the CJP Southern Star OPC system against the "System Analysi
 | 🔀 CONFLICT | 0 |  |
 | **Total** | **91** | |
 
-Every feature the document asks for exists and works end to end. **Open after Phase 4:**
+Every feature the document asks for exists and works end to end. **Open:**
 - 3.9: your manual Firefox run (`docs/FIREFOX_CHECKLIST.md`).
+- C03: the optional history rewrite and the admin password change (see "Test suite").
 
 ## Phased fix plan (only ⚠️ / 🔀 items)
 

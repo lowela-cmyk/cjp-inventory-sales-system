@@ -38,9 +38,24 @@ class Phase3OperationalAcceptanceTest extends TestCase
         $exitCode = Artisan::call('cjp:repair-data');
         $this->assertSame(0, $exitCode);
 
-        // Run readiness audit in strict turnover mode
-        $auditExitCode = Artisan::call('cjp:readiness-audit', ['--turnover' => true]);
-        $this->assertSame(0, $auditExitCode);
+        // Run readiness audit in strict turnover mode against a production-shaped env file, so the result
+        // does not depend on the developer's own .env (audit M13).
+        $envFile = tempnam(sys_get_temp_dir(), 'cjp-env-');
+        file_put_contents($envFile, implode("\n", [
+            'APP_ENV=production',
+            'APP_DEBUG=false',
+            'APP_URL=https://cjp-southern-star.example.org',
+            'AI_API_KEY=',
+            'MAIL_MAILER=smtp',
+            'MAIL_FROM_ADDRESS=noreply@cjp-southern-star.example.org',
+        ]));
+
+        try {
+            $auditExitCode = Artisan::call('cjp:readiness-audit', ['--turnover' => true, '--env-file' => $envFile]);
+            $this->assertSame(0, $auditExitCode, Artisan::output());
+        } finally {
+            unlink($envFile);
+        }
     }
 
     public function test_legacy_sale_is_reconciled_with_proper_movement_and_stock_out(): void

@@ -53,7 +53,7 @@ Artisan::command('cjp:workflow-smoke-test {--persist-staging : Persist generated
     return 0;
 })->purpose('Run a rollback-safe database transactional smoke test for purchase-to-payment workflow (directly inserts records; not an HTTP/UI acceptance test)');
 
-Artisan::command('cjp:readiness-audit {--permissive : Run in permissive mode with warnings instead of failures for missing operational data} {--turnover : Explicitly enforce strict turnover mode}', function (WorkflowSmokeTestService $smokeTest): int {
+Artisan::command('cjp:readiness-audit {--permissive : Run in permissive mode with warnings instead of failures for missing operational data} {--turnover : Explicitly enforce strict turnover mode} {--env-file= : Environment file to audit (defaults to the project .env)}', function (WorkflowSmokeTestService $smokeTest): int {
     $failures = 0;
     $warnings = 0;
     $turnoverMode = ! (bool) $this->option('permissive') || (bool) $this->option('turnover');
@@ -82,7 +82,8 @@ Artisan::command('cjp:readiness-audit {--permissive : Run in permissive mode wit
         }
     };
 
-    $env = collect(file_exists(base_path('.env')) ? file(base_path('.env'), FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) : [])
+    $envFile = (string) ($this->option('env-file') ?: base_path('.env'));
+    $env = collect(file_exists($envFile) ? file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) : [])
         ->mapWithKeys(function (string $line): array {
             $line = trim($line);
 

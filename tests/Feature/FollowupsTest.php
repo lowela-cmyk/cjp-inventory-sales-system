@@ -241,7 +241,7 @@ class FollowupsTest extends AuditTestCase
      */
     private function sale(array $a, int $liters): int
     {
-        $saleId = DB::table('sales')->insertGetId(['sale_code' => 'SLS-FU-'.$this->uuid(), 'customer_id' => $a['customer'], 'sale_date' => '2026-10-15', 'payment_method' => 'cash_on_delivery', 'payment_terms' => 'cod', 'status' => 'confirmed', 'delivery_status' => 'pending', 'created_by' => $a['sales']->id, 'created_at' => now(), 'updated_at' => now()]);
+        $saleId = DB::table('sales')->insertGetId(['sale_code' => 'SLS-FU-'.substr($this->uuid(), 0, 8), 'customer_id' => $a['customer'], 'sale_date' => '2026-10-15', 'payment_method' => 'cash_on_delivery', 'payment_terms' => 'cod', 'status' => 'confirmed', 'delivery_status' => 'pending', 'created_by' => $a['sales']->id, 'created_at' => now(), 'updated_at' => now()]);
         DB::table('sale_items')->insert(['sale_id' => $saleId, 'fuel_type_id' => $a['fuel'], 'quantity_liters' => $liters, 'unit_price' => 10, 'line_total' => $liters * 10, 'fulfilled_quantity_liters' => 0, 'created_at' => now(), 'updated_at' => now()]);
         DB::table('receivables')->insert(['sale_id' => $saleId, 'status' => 'pending', 'created_at' => now(), 'updated_at' => now()]);
 
@@ -253,7 +253,7 @@ class FollowupsTest extends AuditTestCase
      */
     private function purchase(array $a): int
     {
-        $purchaseId = DB::table('purchases')->insertGetId(['purchase_code' => 'PUR-FU-'.$this->uuid(), 'depot_id' => $a['depot'], 'purchase_date' => '2026-10-15', 'payment_status' => 'unpaid', 'status' => 'ordered', 'workflow_status' => 'pending', 'created_by' => $a['inventory']->id, 'created_at' => now(), 'updated_at' => now()]);
+        $purchaseId = DB::table('purchases')->insertGetId(['purchase_code' => 'PUR-FU-'.substr($this->uuid(), 0, 8), 'depot_id' => $a['depot'], 'purchase_date' => '2026-10-15', 'payment_status' => 'unpaid', 'status' => 'ordered', 'workflow_status' => 'pending', 'created_by' => $a['inventory']->id, 'created_at' => now(), 'updated_at' => now()]);
 
         return DB::table('purchase_items')->insertGetId(['purchase_id' => $purchaseId, 'fuel_type_id' => $a['fuel'], 'quantity_ordered_liters' => 1000, 'unit_cost' => 50, 'line_total' => 50000, 'quantity_hauled_liters' => 0, 'status' => 'unlifted', 'created_at' => now(), 'updated_at' => now()]);
     }

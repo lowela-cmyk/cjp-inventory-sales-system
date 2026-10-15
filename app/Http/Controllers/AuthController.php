@@ -8,9 +8,11 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
@@ -18,6 +20,9 @@ use Throwable;
 
 class AuthController extends Controller
 {
+    /** Wrong codes allowed before a password-reset code is cancelled (audit C02). */
+    private const MAX_RESET_CODE_ATTEMPTS = 5;
+
     public function showLogin(): View|RedirectResponse
     {
         if (Auth::check()) {
@@ -77,6 +82,7 @@ class AuthController extends Controller
                     'created_at' => now(),
                 ]
             );
+            Cache::forget($this->resetAttemptsKey($user->email));
 
             try {
                 Mail::to($user->email)->send(new PasswordResetCodeMail($user, $code));
@@ -228,6 +234,22 @@ class AuthController extends Controller
         $codeIsExpired = ! $reset || Carbon::parse($reset->created_at)->addMinutes(15)->isPast();
 
         if (! $user || $codeIsExpired || ! Hash::check($data['code'], $reset->token)) {
+            // A code allows a few wrong tries; then it is cancelled and a new one must be requested (audit C02).
+            if ($reset && ! $codeIsExpired) {
+                $attemptsKey = $this->resetAttemptsKey($data['email']);
+                $attempts = Cache::increment($attemptsKey);
+                Cache::put($attemptsKey, $attempts, now()->addMinutes(15));
+
+                if ($attempts >= self::MAX_RESET_CODE_ATTEMPTS) {
+                    DB::table('password_reset_tokens')->where('email', $reset->email)->delete();
+                    Cache::forget($attemptsKey);
+
+                    throw ValidationException::withMessages([
+                        'code' => 'Too many wrong codes. This reset code has been cancelled; please request a new one.',
+                    ]);
+                }
+            }
+
             throw ValidationException::withMessages([
                 'code' => 'The reset code is invalid or has expired.',
             ]);
@@ -241,11 +263,17 @@ class AuthController extends Controller
         DB::table('password_reset_tokens')
             ->where('email', $user->email)
             ->delete();
+        Cache::forget($this->resetAttemptsKey($user->email));
 
         return redirect()
             ->route('login')
             ->with('status', 'Password updated successfully. Please log in with your new password.')
             ->with('toast_type', 'success');
+    }
+
+    private function resetAttemptsKey(string $email): string
+    {
+        return 'password-reset-attempts:'.sha1(Str::lower(trim($email)));
     }
 
     public function logout(Request $request): RedirectResponse

@@ -784,6 +784,19 @@ table td:has(.status-badge) {
     color: var(--danger);
 }
 
+/* One-line explanation under a toolbar (e.g. when Stock-Out is posted). */
+.table-help {
+    margin: -4px 0 12px;
+    color: var(--admin-muted);
+    font-size: 13px;
+}
+
+/* Column header with a formula tooltip (hover or keyboard focus). */
+.th-hint {
+    border-bottom: 1px dotted currentColor;
+    cursor: help;
+}
+
 /* Receipt column: a "View Receipt(s)" button when the driver uploaded one, or "-" when none. */
 .inventory-receipt-cell {
     min-width: 170px;
@@ -1990,6 +2003,18 @@ table td:has(.status-badge) {
     padding: 0 16px;
     background: #d8d8d8;
     color: #333;
+}
+
+.form-row textarea {
+    width: 100%;
+    min-height: 84px;
+    border: 0;
+    border-radius: 8px;
+    padding: 10px 16px;
+    background: #d8d8d8;
+    color: #333;
+    font: inherit;
+    resize: vertical;
 }
 
 .lift-transaction-modal {

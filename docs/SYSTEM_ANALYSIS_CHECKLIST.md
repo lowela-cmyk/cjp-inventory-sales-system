@@ -4,7 +4,7 @@ Compliance check of the CJP Southern Star OPC system against the "System Analysi
 
 - **Date:** 2026-10-15
 - **Code checked:** `main` @ `80aef6f`
-- **Branch:** `audit-system-analysis-compliance`. Git cannot create `audit/system-analysis-compliance` while the local branch `audit` exists.
+- **Branches:** the audit is on `audit/system-analysis-compliance`. Fixes are on `fix/compliance-phase-1` … `fix/compliance-phase-4`, each branched off the previous one.
 - **Scope:** audit only. No application code was changed.
 
 ## How it was checked
@@ -55,7 +55,7 @@ Compliance check of the CJP Southern Star OPC system against the "System Analysi
 | 1.16 | 1 | 2 garage tanks per fuel (8); leftover fuel goes to the tanks | ✅ DONE | DB: 8 active garage tanks, 2 per fuel (main and audit); flow 7.3 | 8 legacy tanks for the inactive fuels are inactive. |
 | 2.1 | 2 | Same greeting format for every role (login toast only; no inline banners) | ⚠️ PARTIAL | flow 2.1 FAIL; sweep `inlineWelcome: false` | The welcome is toast-only everywhere ✅. **But** every other success message shows twice: an inline `.admin-flash` / `.alert-bar` **and** a toast (inventory, sales, dispatch, driver, user management, account requests, reports). |
 | 2.2 | 2 | Depots have their own Inventory tab | ✅ DONE | `chrome-1366-inventory_inventory-officer_inventory_depots.png` | Add Depot lives here. |
-| 2.3 | 2 | Sales automatically become Stock-Out | 🔀 CONFLICT | see 4.14 | Same conflict as 4.14. |
+| 2.3 | 2 | Sales automatically become Stock-Out | ✅ DONE | see 4.14 | **C1 resolved (Phase 1):** stock-out is automatic and posts on delivery, as approved. |
 | 2.4 | 2 | Price × liters shows the total automatically; payments reduce the balance | ✅ DONE | flow 2.4 (1,000 L × 65 → "65,000.00"; balance after 30,000 + 5,000) | |
 | 2.5 | 2 | Ledger updates from lifts (remaining quantity and status derived) | ✅ DONE | flow 2.5; `InventoryLedgerTest` (5 tests) | Fully lifted purchases drop off the Ledger tab and stay in Transactions. |
 | 2.6 | 2 | Ledger > Transactions holds all purchases incl. lifts | ✅ DONE | `InventoryLedgerTest::test_ledger_shows_active_purchase_progress_and_transactions_keep_zero_lift_purchases` | |
@@ -63,7 +63,7 @@ Compliance check of the CJP Southern Star OPC system against the "System Analysi
 | 2.8 | 2 | Hover a segment → Lift-ID + Date Lifted | ✅ DONE | flow 2.7/2.8 (opacity 0→1, "Lift-ID … Date Lifted …") | Also on keyboard focus; always shown on touch screens. |
 | 2.9 | 2 | 4 fuel types | ✅ DONE | = 1.15 | |
 | 3.1 | 3 | Purchase status automatic (no manual Status dropdown) | ✅ DONE | flow 3.1; `inventory.blade.php` Add modal shows a fixed "Pending" pill | |
-| 3.2 | 3 | Creating a purchase creates an alert | ✅ DONE | flow 3.2 (Inventory Officer and Admin alerts list the new purchase); `PurchaseService.php:72`; `flow-*-3.2-alert-created.png` | `cjp_inventory_sales_db` has 0 alerts only because its 4 purchases were seeded, not created through the app. Minor: alert bodies repeat the purchase's status from when the alert was created (a "Received" alert says "Status: In Transit"). |
+| 3.2 | 3 | Creating a purchase creates an alert | ✅ DONE | flow 3.2 (Inventory Officer and Admin alerts list the new purchase); `PurchaseService.php:72`; `flow-*-3.2-alert-created.png` | `cjp_inventory_sales_db` has 0 alerts only because its 4 purchases were seeded, not created through the app. Phase 1: alert bodies now state their own event ("Status: Received" on a Received alert), so they no longer show a lagging purchase status (`CompliancePhase1Test::test_purchase_alert_messages_state_their_own_event`). Alerts created before the fix keep their old text. |
 | 3.3 | 3 | Every status has a color everywhere | ⚠️ PARTIAL | `components/admin/status-badge.blade.php` | One shared pill component everywhere. Statuses with no color (they fall back to gray *neutral*): `confirmed` (sale order), `rejected` (account request), `maintenance` (truck), `planned` (allocation), `info` / `warning` (alert severity). |
 | 3.4 | 3 | Driver "location" = pickup depot | ✅ DONE | flow 3.4/3.5; `flow-*-3.4-driver-row.png` | Columns are "Pickup Depot" and "Depot Address". |
 | 3.5 | 3 | Second lift on the same purchase works; source = purchase's depot | ✅ DONE | flow (lifts on purchases that already had lifts); `LiftSchedulingFlowTest::test_dispatch_creates_lift_assignments_under_the_same_purchase_and_blocks_invalid_quantities` | No free text is stored as the source. |
@@ -79,12 +79,12 @@ Compliance check of the CJP Southern Star OPC system against the "System Analysi
 | 4.6 | 4 | *Superseded by 6.13:* trucks by plate + availability, as a Fuel Lifting tab | ✅ DONE | = 6.13; `chrome-1366-admin_admin_fuel-lifting_trucks.png` | |
 | 4.7 | 4 | *Superseded by 6.9 / 7.1:* receipt column | ✅ DONE | = 7.1 | |
 | 4.8 | 4 | Depots table fits the width | ✅ DONE | depots screenshot; sweep gap ≤ 40 px | |
-| 4.9 | 4 | Stock-Out: Cost/Unit; Total Cost = Qty × Cost; Profit = Paid − Cost | ✅ DONE | flow 4.9 row "1,000.00 · 59.79 · 59,790.00 · 65.00 · 65,000.00 · 35,000.00 · −24,790.00"; `InventoryOfficerStockOutTest::test_automatic_stock_out_uses_inventory_cost_and_actual_payments_for_profit` | Matches the formula as written: 100,000 × 60 = 6,000,000; paid 6,500,000 → profit 500,000. Cost/Unit is the source tank's weighted-average cost, or the purchase cost for direct depot releases. **Unpaid / partly paid sales:** profit is cash-basis, so it shows **negative** (−cost, red) until payments come in, then rises to the full margin when the sale is paid. Payments are shared across a sale's lines by value. See Phase 1 for a suggested label. |
+| 4.9 | 4 | Stock-Out: Cost/Unit; Total Cost = Qty × Cost; Profit = Paid − Cost | ✅ DONE | `InventoryOfficerStockOutTest::test_automatic_stock_out_uses_inventory_cost_and_actual_payments_for_profit`; `CompliancePhase1Test::test_stock_out_shows_margin_and_realized_profit_with_formula_tooltips`; `phase1/stock-out-1366.png` | 100,000 × 60 = 6,000,000; paid 6,500,000 → 500,000 ✓. Cost/Unit is the source tank's weighted-average cost (purchase cost for direct depot releases). **C2 (Phase 1):** two columns with formula tooltips: **Margin** = Total Price − Total Cost (expected profit), and **Realized Profit** = Total Paid − Total Cost (negative until payments cover the cost). Cancelled releases show "—" in both. Profit appears nowhere else (Reports and Dashboard do not show it). |
 | 4.10 | 4 | Alert cards aligned, full width | ✅ DONE | `chrome-1366-admin_admin_alerts.png`; `FrontendBugFixesTest::test_alert_pages_use_full_width_responsive_shared_layout` | |
 | 4.11 | 4 | No manual Order ID in Record Sales | ✅ DONE | flow 4.11 | |
 | 4.12 | 4 | Record Sales has "amount paid" | ✅ DONE | flow 4.12/5.9; `flow-*-4.12-record-sale.png` | It cannot exceed the total (overpayment is rejected). |
-| 4.13 | 4 | A wrong sale can be deleted, or cancelled/voided with a reason, keeping an audit trail | ⚠️ PARTIAL | `SaleCorrectionService.php:32-129`; `sales.blade.php:100-105, 408-412` | Untouched drafts are deleted; everything else is voided (stock-out cancelled, stock returned, payments kept) ✅. **But** the UI never sends a reason: the controller accepts `reason`, yet every void is stored as "Order correction". A cancelled sale that already had payments sets the receivable to `clear` with no refund/credit record. |
-| 4.14 | 4 | Delivery Status (Pending/Delivered); Stock-Out only once Delivered | 🔀 CONFLICT | `SaleConfirmationService.php:50-138`; `StockOutReleaseService.php:121`; `LiftAllocationService::settle()`; flow 4.14 | **What the system does now:** recording a sale creates **no** stock-out (flow: 0 rows while Pending). Setting **Delivered** posts the stock-out from garage stock (flow: 1 row). A direct-depot allocation in Schedule Lift marks its sale Delivered when the driver marks the lift Lifted, and that posts the depot release. There is no manual Stock-Out button. **This is already the suggested resolution.** It needs your sign-off, plus one wording fix: the Sales and Stock-Out screens should say "Stock-Out posts on delivery" (today only the Record Sales modal says it). |
+| 4.13 | 4 | A wrong sale can be deleted, or cancelled/voided with a reason, keeping an audit trail | ✅ DONE | `CompliancePhase1Test::test_cancelling_a_sale_requires_a_reason_and_shows_refund_due_when_it_had_payments`; `phase1/4.13-cancel-modal-1366.png`, `phase1/4.13-refund-due-row.png` | **Phase 1:** Cancel opens a modal with a **required reason** dropdown (Wrong customer / Wrong quantity or price / Wrong fuel type / Duplicate entry / Customer cancelled the order / Other) and an optional note (required for Other). It is stored as "Reason — note" and shown in the sale View. A cancelled sale with payments shows **"Refund due: ₱X"**, and its customer shows **Refund Due**, instead of clear. Untouched drafts are still deleted with a plain confirm, since there is no record left to hold a reason. Browser: empty submit reopens the modal with the error; a valid reason voids the sale and its stock-out. |
+| 4.14 | 4 | Delivery Status (Pending/Delivered); Stock-Out only once Delivered | ✅ DONE | `CompliancePhase1Test::test_stock_out_posts_only_on_delivery_for_garage_sales_and_on_lifted_for_direct_depot_sales`; `phase1/stock-out-*.png`, `phase1/sales-*.png` | **C1 approved as built.** A new sale posts no stock-out. **Delivered** posts it from garage stock. A direct-depot allocation posts when the driver marks the lift Lifted. No manual stock-out. Phase 1 added the help line "Stock-Out is posted automatically when a sale's Delivery Status becomes Delivered." on Receivables and Stock-Out (verified at 375/768/1366/1920). |
 | 5.1 | 5 | No oversized welcome (driver) | ✅ DONE | = 6.19 | |
 | 5.2 | 5 | Driver details card shows every field | ✅ DONE | `chrome-1366-driver_driver_fuel-lifting.png` | Full-width card with every profile field. |
 | 5.3 | 5 | Right-side lift panel removed | ✅ DONE | same | Details are in View. |
@@ -153,37 +153,43 @@ Compliance check of the CJP Southern Star OPC system against the "System Analysi
 
 ## Test suite
 
-`php artisan test` (SQLite): **437 passed, 8 failed.** None of the 8 failures is a System Analysis item.
+| Run | Result |
+|---|---|
+| Audit baseline (`main` @ `80aef6f`) | 437 passed, **8 failed** |
+| After Phase 1 | 447 passed, **4 failed** (only the open October 12 security items below) |
+
+**Fixed in Phase 1:**
+- `AdminUserManagementTest` duplicate…, `FormValidationTest` ×2 and `RoleBasedAccessControlTest` registration… failed because of a regression from 9fa4d4b (red dots). `ModuleActivityService` now treats a missing or unknown role as "no modules", via `modulesFor()`. Regression test: `CompliancePhase1Test::test_red_dots_tolerate_users_without_a_known_role`.
+- `Part6RevisionsTest` red-dot tests were clock-dependent. They travelled back to 09:00, so rows seeded by the migrations (stamped with the real time) looked newer than every visit, and the test failed whenever it ran after 9 AM. The tests now travel forward instead.
+
+**Still failing (open, outside this document):**
 
 | Failing test | Cause |
 |---|---|
-| `AdminUserManagementTest` duplicate…, `FormValidationTest` ×2, `RoleBasedAccessControlTest` registration… | **Regression from 9fa4d4b (red dots).** `ModuleActivityService::markAllViewed()` indexes `ROLE_MODULES[$user->role]` with no fallback (`ModuleActivityService.php:107`). Users created without a role (the factory default) throw `Undefined array key ""`. |
 | `Audit\C02PasswordResetBruteForceTest`, `Audit\H01LoginThrottleSpoofTest` | Open findings AUD-C02 / AUD-H01 from the 2026-10-12 security audit (`AUDIT_REPORT.md`). Login and reset throttling can be bypassed by rotating `X-Forwarded-For`. |
 | `Audit\C03CommittedDatabaseDumpTest` | Open finding AUD-C03: `database/backups/pre_phase3_backup_20260916.sql` is still tracked. |
 | `Phase3OperationalAcceptanceTest` repair data… | Open finding AUD-M13: `cjp:readiness-audit --turnover` reads the real `.env` (`APP_ENV`/`APP_DEBUG`), so it returns 1 on a dev machine. |
 
 ## Other findings (outside the document)
 
-- In Dispatch / Fuel Lifting the "In Progress" count includes **Lifted** lifts. The truck is already free and the stock is posted at that point, so the card disagrees with the Trucks tab.
+- ~~In Dispatch / Fuel Lifting the "In Progress" count includes **Lifted** lifts.~~ **Fixed in Phase 1:** Lifted counts as Completed on the Dispatch and Driver cards (`CompliancePhase1Test::test_lifted_lifts_count_as_completed_in_the_dispatch_and_driver_cards`).
 - Login / Register: the "Log In" heading and the input text are indented further than the field labels.
 
 ## Summary
 
 | Status | Count | Items |
 |---|---|---|
-| ✅ DONE | 81 | everything not listed below |
-| ⚠️ PARTIAL | 8 | 1.8, 1.9, 1.10, 2.1, 3.3, 3.9, 4.13, 6.A |
-| ❌ NOT DONE | 0 | |
-| 🔀 CONFLICT | 2 | 2.3, 4.14 (the same conflict, C1) |
+| ✅ DONE | 84 | everything not listed below |
+| ⚠️ PARTIAL | 7 | 1.8, 1.9, 1.10, 2.1, 3.3, 3.9, 6.A |
+| ❌ NOT DONE | 0 |  |
+| 🔀 CONFLICT | 0 |  |
 | **Total** | **91** | |
 
-Every feature the document asks for exists and works end to end. What remains:
+Every feature the document asks for exists and works end to end. **Open after Phase 1:**
 - Admin's customer screen in User Management (1.8).
-- Sale void reason (4.13).
 - Reports filters (6.A).
 - Visual consistency (1.9, 1.10, 2.1, 3.3).
 - A Firefox run (3.9).
-- Sign-off on the stock-out timing that is already implemented (C1).
 
 ## Phased fix plan (only ⚠️ / 🔀 items)
 
@@ -265,7 +271,10 @@ Each phase can ship and be tested on its own. Verification after every phase:
 
 ## Conflicts and proposed resolutions
 
-### C1. When does a sale become a Stock-Out? (2.3 / 6.11 / 7.2 vs 4.14)
+### C1. When does a sale become a Stock-Out? (2.3 / 6.11 / 7.2 vs 4.14): RESOLVED
+
+**Decision (2026-10-15):** approved as built. Help text added in Phase 1.
+
 
 - **The requirements:** Parts 2, 6 and 7 say "stock-out happens when a sale is recorded". Part 4 #13 says "only once it is Delivered".
 - **What the code does today:** it already follows Part 4 #13.
@@ -281,7 +290,10 @@ Each phase can ship and be tested on its own. Verification after every phase:
   - Add a regression test that covers both paths end to end.
 - **Needs your sign-off.**
 
-### C2. Profit for unpaid / partly paid sales (4.9 clarification, not a contradiction)
+### C2. Profit for unpaid / partly paid sales (4.9 clarification, not a contradiction): RESOLVED
+
+**Decision (2026-10-15):** show both columns with formula tooltips. Done in Phase 1.
+
 
 - Part 4 defines Profit = Total Paid − Total Cost, and that is what is implemented. As a result, an unpaid sale shows a **negative** profit (−cost) until it is paid.
 - **Proposed resolution:** keep the formula, and add these to the Stock-Out tab:

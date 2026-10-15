@@ -69,6 +69,16 @@ class ModuleActivityService
     /** @var array<int, array<int, string>> */
     private array $unseenCache = [];
 
+    /**
+     * Sidebar modules the user's role can open; none for a missing or unknown role.
+     *
+     * @return array<int, string>
+     */
+    private function modulesFor(User $user): array
+    {
+        return self::ROLE_MODULES[(string) $user->role] ?? [];
+    }
+
     public function moduleForRoute(?string $routeName): ?string
     {
         if ($routeName === null) {
@@ -86,7 +96,7 @@ class ModuleActivityService
 
     public function markViewed(User $user, string $module): void
     {
-        if (! in_array($module, self::ROLE_MODULES[$user->role], true)) {
+        if (! in_array($module, $this->modulesFor($user), true)) {
             return;
         }
 
@@ -103,8 +113,13 @@ class ModuleActivityService
      */
     public function markAllViewed(User $user): void
     {
+        $modules = $this->modulesFor($user);
+        if ($modules === []) {
+            return;
+        }
+
         $now = now();
-        $rows = array_map(fn (string $module): array => ['user_id' => $user->getKey(), 'module' => $module, 'last_viewed_at' => $now], self::ROLE_MODULES[$user->role]);
+        $rows = array_map(fn (string $module): array => ['user_id' => $user->getKey(), 'module' => $module, 'last_viewed_at' => $now], $modules);
 
         DB::table('user_module_views')->upsert($rows, ['user_id', 'module'], ['last_viewed_at']);
         unset($this->unseenCache[$user->getKey()]);
@@ -122,7 +137,7 @@ class ModuleActivityService
             return $this->unseenCache[$user->getKey()];
         }
 
-        $modules = self::ROLE_MODULES[$user->role];
+        $modules = $this->modulesFor($user);
         $lastViewed = DB::table('user_module_views')
             ->where('user_id', $user->getKey())
             ->pluck('last_viewed_at', 'module');

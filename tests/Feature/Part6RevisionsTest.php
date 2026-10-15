@@ -188,7 +188,9 @@ class Part6RevisionsTest extends TestCase
     public function test_sidebar_red_dot_shows_unseen_changes_and_clears_when_the_module_is_opened(): void
     {
         $records = $this->records();
-        $this->travelTo(now()->setTime(9, 0));
+        // Move forward, never back: rows seeded by the migrations carry the real clock, and travelling
+        // back to a fixed hour made them look newer than every visit after that hour.
+        $this->travel(1)->minutes();
 
         // Opening Inventory records the visit and clears its dot on that same page.
         $this->actingAs($records['inventory'])->get(route('inventory-officer.inventory'))->assertOk()
@@ -218,7 +220,7 @@ class Part6RevisionsTest extends TestCase
     {
         $records = $this->records();
         $otherDriver = User::factory()->create(['role' => 'driver', 'status' => 'active', 'approval_status' => 'approved']);
-        $this->travelTo(now()->setTime(9, 0));
+        $this->travel(1)->minutes();
         $this->actingAs($records['driver'])->get(route('driver.fuel-lifting'))->assertOk();
 
         $this->travel(5)->minutes();

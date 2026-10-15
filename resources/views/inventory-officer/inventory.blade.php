@@ -129,9 +129,10 @@
                 <x-filter.search label="Search stock-out" :value="$search" />
                 @include('inventory-officer.partials.filter-controls', ['tab' => 'stock-out'])
             </x-filter.bar>
+            <p class="table-help">Stock-Out is posted automatically when a sale's Delivery Status becomes Delivered.</p>
             <div class="table-wrap inventory-table-wrap">
                 <table class="admin-table inventory-table">
-                    <thead><tr><th>Order-ID</th><th>Transaction Date</th><th>Customer Name</th><th>Company Name</th><th>Fuel</th><th>QTY Released</th><th>Cost / Unit</th><th>Total Cost</th><th>Price / Unit</th><th>Total Price</th><th>Total Paid</th><th>Source</th><th class="inventory-status-column">Status</th><th>Profit</th></tr></thead>
+                    <thead><tr><th>Order-ID</th><th>Transaction Date</th><th>Customer Name</th><th>Company Name</th><th>Fuel</th><th>QTY Released</th><th>Cost / Unit</th><th>Total Cost</th><th>Price / Unit</th><th>Total Price</th><th>Total Paid</th><th>Source</th><th class="inventory-status-column">Status</th><th><span class="th-hint" tabindex="0" title="Margin = Total Price − Total Cost (expected profit once fully paid)">Margin</span></th><th><span class="th-hint" tabindex="0" title="Realized Profit = Total Paid − Total Cost (negative until payments cover the cost)">Realized Profit</span></th></tr></thead>
                     <tbody>
                         @forelse ($stockOut as $row)
                             <tr class="{{ $row['class'] }}">
@@ -139,16 +140,17 @@
                                     @if ($loop->index === 12)
                                         <td><x-admin.status-badge :status="$cell" /></td>
                                     @else
+                                        @php($money = match ($loop->index) { 13 => $row['margin'], 14 => $row['profit'], default => null })
                                         <td @class([
-                                            'inventory-number' => in_array($loop->index, [5, 6, 7, 8, 9, 10, 13], true),
-                                            'inventory-profit' => $loop->last,
-                                            'is-negative' => $loop->last && is_numeric($row['profit']) && $row['profit'] < 0,
+                                            'inventory-number' => in_array($loop->index, [5, 6, 7, 8, 9, 10, 13, 14], true),
+                                            'inventory-profit' => $loop->index >= 13,
+                                            'is-negative' => is_numeric($money) && $money < 0,
                                         ])>{{ $cell }}</td>
                                     @endif
                                 @endforeach
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="14">No records found.</td></tr>
+                            <tr><td class="empty-cell" colspan="15">No records found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>

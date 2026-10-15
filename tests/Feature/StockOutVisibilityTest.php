@@ -158,7 +158,7 @@ class StockOutVisibilityTest extends TestCase
         $this->actingAs($records['sales'])->patch(route('sales-officer.sales.delivery-status.update', $saleId), ['delivery_status' => 'delivered']);
 
         $this->actingAs($records['sales'])
-            ->patch(route('sales-officer.sales.cancel', $saleId), ['reason' => 'Customer returned order'])
+            ->patch(route('sales-officer.sales.cancel', $saleId), ['cancel_reason' => 'other', 'cancel_note' => 'Customer returned order'])
             ->assertSessionHasNoErrors();
 
         $saleCode = (string) DB::table('sales')->where('id', $saleId)->value('sale_code');

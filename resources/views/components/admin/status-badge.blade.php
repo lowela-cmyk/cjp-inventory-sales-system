@@ -2,7 +2,8 @@
 
 @php
     $normalized = strtolower(str_replace([' ', '-', '/'], '_', trim((string) $status)));
-    $tone = match ($normalized) {
+    // "Refund due: ₱X" carries its amount, so match it by prefix.
+    $tone = str_starts_with($normalized, 'refund_due') ? 'partial' : match ($normalized) {
         'pending', 'pending_receipt', 'no_receipt', 'pending_hauling', 'awaiting_garage_receipt', 'not_allocated', 'open', 'unread', 'draft', 'ordered', 'unlifted', 'incomplete', 'prepared' => 'pending',
         'scheduled' => 'scheduled',
         'assigned', 'in_progress', 'in_transit', 'in_use', 'lifted', 'hauled', 'out_for_delivery' => 'progress',

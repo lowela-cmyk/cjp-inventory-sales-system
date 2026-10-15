@@ -62,6 +62,7 @@
                 <x-filter.select name="fuel_type_id" label="Fuel Type" :options="$fuelTypes->pluck('name', 'id')" :selected="$receivableFilters['fuel_type_id'] ?? null" />
                 <button class="btn btn-secondary btn-wide" type="button" data-modal-open="so-sales-add">+ Record Sales</button>
             </x-filter.bar>
+            <p class="table-help">Stock-Out is posted automatically when a sale's Delivery Status becomes Delivered.</p>
             <div class="table-wrap">
                 <table class="admin-table">
                     <thead>
@@ -97,12 +98,14 @@
                                 <td>
                                     <div class="sales-row-actions">
                                         <button class="btn btn-secondary" type="button" data-modal-open="{{ $row['modal_id'] }}">View</button>
-                                        @if ($row['correction_action'])
-                                            <form method="POST" action="{{ route($salesRoutePrefix.'.sales.cancel', $row['id']) }}" data-confirm-message="{{ $row['correction_action'] === 'delete' ? 'Delete this untouched draft sale? This cannot be undone.' : 'Cancel this sale? Related payments and transaction history will be preserved, while stock and receivable effects will be reversed.' }}">
+                                        @if ($row['correction_action'] === 'delete')
+                                            <form method="POST" action="{{ route($salesRoutePrefix.'.sales.cancel', $row['id']) }}" data-confirm-message="Delete this untouched draft sale? This cannot be undone.">
                                                 @csrf
                                                 @method('PATCH')
-                                                <button class="btn btn-danger" type="submit">{{ $row['correction_action'] === 'delete' ? 'Delete' : 'Cancel' }}</button>
+                                                <button class="btn btn-danger" type="submit">Delete</button>
                                             </form>
+                                        @elseif ($row['correction_action'] === 'cancel')
+                                            <button class="btn btn-danger" type="button" data-modal-open="so-sale-cancel-{{ $row['id'] }}">Cancel</button>
                                         @endif
                                     </div>
                                 </td>
@@ -404,15 +407,21 @@
                 @if ($row['status'] !== 'cancelled')
                     <button class="btn btn-pill btn-secondary" type="submit" form="sale-update-{{ $row['id'] }}">Edit</button>
                 @endif
-                @if ($row['correction_action'])
-                    <form method="POST" action="{{ route($salesRoutePrefix.'.sales.cancel', $row['id']) }}" data-confirm-message="{{ $row['correction_action'] === 'delete' ? 'Delete this untouched draft sale? This cannot be undone.' : 'Cancel this sale? Related payments and transaction history will be preserved, while stock and receivable effects will be reversed.' }}">
+                @if ($row['correction_action'] === 'delete')
+                    <form method="POST" action="{{ route($salesRoutePrefix.'.sales.cancel', $row['id']) }}" data-confirm-message="Delete this untouched draft sale? This cannot be undone.">
                         @csrf
                         @method('PATCH')
-                        <button class="btn btn-pill btn-danger" type="submit">{{ $row['correction_action'] === 'delete' ? 'Delete' : 'Cancel' }}</button>
+                        <button class="btn btn-pill btn-danger" type="submit">Delete</button>
                     </form>
+                @elseif ($row['correction_action'] === 'cancel')
+                    <button class="btn btn-pill btn-danger" type="button" data-modal-swap="so-sale-cancel-{{ $row['id'] }}">Cancel</button>
                 @endif
             </x-slot:footer>
         </x-admin.modal>
+
+        @if ($row['correction_action'] === 'cancel')
+            @include('sales-officer.partials.cancel-sale-modal', ['row' => $row, 'salesRoutePrefix' => $salesRoutePrefix])
+        @endif
 
         @include('admin.partials.payment-history-modal', [
             'row' => $row,

@@ -417,8 +417,9 @@ class DispatchDeliveryController extends Controller
         return [
             ['label' => 'Assigned Lifts', 'value' => number_format($rows->count())],
             ['label' => 'Scheduled', 'value' => number_format($rows->where('raw_status', 'scheduled')->count())],
-            ['label' => 'In Progress', 'value' => number_format($rows->whereIn('raw_status', ['in_transit', 'lifted'])->count())],
-            ['label' => 'Completed', 'value' => number_format($rows->where('raw_status', 'completed')->count())],
+            // "Lifted" is the driver's final step (stock posted, truck free), so it counts as completed.
+            ['label' => 'In Progress', 'value' => number_format($rows->where('raw_status', 'in_transit')->count())],
+            ['label' => 'Completed', 'value' => number_format($rows->whereIn('raw_status', ['lifted', 'completed'])->count())],
         ];
     }
 

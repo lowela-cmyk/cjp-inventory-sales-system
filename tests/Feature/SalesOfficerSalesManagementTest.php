@@ -366,7 +366,7 @@ class SalesOfficerSalesManagementTest extends TestCase
             ->assertSessionHasErrors('sale');
 
         $this->actingAs($records['salesOfficer'])
-            ->patch(route('sales-officer.sales.cancel', $saleId))
+            ->patch(route('sales-officer.sales.cancel', $saleId), ['cancel_reason' => 'customer_cancelled'])
             ->assertRedirect(route('sales-officer.sales'));
 
         $this->assertDatabaseHas('sales', [
@@ -425,7 +425,7 @@ class SalesOfficerSalesManagementTest extends TestCase
         $this->assertNotNull($stockOut->inventory_movement_id);
 
         $this->actingAs($records['salesOfficer'])
-            ->patch(route('sales-officer.sales.cancel', $sale->id))
+            ->patch(route('sales-officer.sales.cancel', $sale->id), ['cancel_reason' => 'customer_cancelled'])
             ->assertRedirect(route('sales-officer.sales'));
 
         $this->assertDatabaseHas('stock_outs', ['id' => $stockOut->id, 'status' => 'cancelled']);
@@ -447,18 +447,18 @@ class SalesOfficerSalesManagementTest extends TestCase
         $this->actingAs($records['admin'])
             ->get(route('admin.sales'))
             ->assertOk()
-            ->assertSee('Related payments and transaction history will be preserved')
+            ->assertSee('Payments and transaction history are kept.')
             ->assertSee('>Cancel<', false);
 
         $this->actingAs($records['admin'])
-            ->patch(route('admin.sales.cancel', $saleId), ['reason' => 'Incorrect customer order'])
+            ->patch(route('admin.sales.cancel', $saleId), ['cancel_reason' => 'wrong_customer', 'cancel_note' => 'Incorrect customer order'])
             ->assertRedirect(route('admin.sales'));
 
         $this->assertDatabaseHas('sales', [
             'id' => $saleId,
             'status' => 'cancelled',
             'cancelled_by' => $records['admin']->id,
-            'cancellation_reason' => 'Incorrect customer order',
+            'cancellation_reason' => 'Wrong customer — Incorrect customer order',
         ]);
 
         $this->get(route('admin.sales'))
@@ -559,7 +559,7 @@ class SalesOfficerSalesManagementTest extends TestCase
         $saleId = $this->createSale($records, ['sale_code' => 'SLS-CANCEL']);
 
         $this->actingAs($records['salesOfficer'])
-            ->patch(route('sales-officer.sales.cancel', $saleId))
+            ->patch(route('sales-officer.sales.cancel', $saleId), ['cancel_reason' => 'customer_cancelled'])
             ->assertRedirect(route('sales-officer.sales'));
 
         $this->assertDatabaseHas('sales', ['id' => $saleId, 'status' => 'cancelled']);

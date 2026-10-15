@@ -39,6 +39,16 @@ class SalesOfficerCustomerController extends Controller
     private const PAYMENT_TERMS = ['cod', 'installment', 'advance'];
 
     /** Receivable statuses shown in the Status column (filter value => label). */
+    /** Why a sale is being voided (System Analysis 4.13); "other" needs a note. */
+    public const CANCEL_REASONS = [
+        'wrong_customer' => 'Wrong customer',
+        'wrong_quantity_or_price' => 'Wrong quantity or price',
+        'wrong_fuel_type' => 'Wrong fuel type',
+        'duplicate_entry' => 'Duplicate entry',
+        'customer_cancelled' => 'Customer cancelled the order',
+        'other' => 'Other',
+    ];
+
     private const RECEIVABLE_FILTER_STATUSES = ['unpaid' => 'Unpaid', 'partial' => 'Partially Paid', 'overdue' => 'Overdue', 'clear' => 'Settled', 'cancelled' => 'Cancelled'];
 
     public function index(Request $request, DashboardSummaryService $dashboardSummary, string $state = 'receivables'): View
@@ -467,15 +477,25 @@ class SalesOfficerCustomerController extends Controller
 
     public function cancelSale(Request $request, int $sale): RedirectResponse
     {
-        $data = $request->validate([
-            'reason' => ['nullable', 'string', 'max:500'],
-        ]);
+        // An untouched draft is deleted outright; anything else is voided and must say why.
+        $reason = null;
+        if ($this->saleCorrectionService->correctionMode($sale) === 'cancel') {
+            $data = $request->validate([
+                'cancel_reason' => ['required', Rule::in(array_keys(self::CANCEL_REASONS))],
+                'cancel_note' => ['nullable', 'required_if:cancel_reason,other', 'string', 'max:400'],
+            ], [
+                'cancel_reason.required' => 'Select why this sale is being cancelled.',
+                'cancel_note.required_if' => 'Describe the reason when "Other" is selected.',
+            ]);
+            $note = trim((string) ($data['cancel_note'] ?? ''));
+            $reason = self::CANCEL_REASONS[$data['cancel_reason']].($note !== '' ? ' — '.$note : '');
+        }
 
         try {
             $result = $this->saleCorrectionService->correct(
                 $sale,
                 (int) $request->user()->id,
-                $data['reason'] ?? null
+                $reason
             );
         } catch (\RuntimeException $exception) {
             if ($exception->getMessage() === 'Sale record not found.') {
@@ -689,6 +709,20 @@ class SalesOfficerCustomerController extends Controller
                 ->flip()
                 ->all();
 
+        // Payments recorded on cancelled sales are owed back to the customer.
+        $refundDueTotals = $customerIds->isEmpty()
+            ? []
+            : DB::table('payments')
+                ->join('sales', 'sales.id', '=', 'payments.sale_id')
+                ->whereIn('sales.customer_id', $customerIds->all())
+                ->whereNull('sales.deleted_at')
+                ->where('sales.status', 'cancelled')
+                ->groupBy('sales.customer_id')
+                ->selectRaw('sales.customer_id, SUM(payments.amount) as refund_due')
+                ->pluck('refund_due', 'customer_id')
+                ->mapWithKeys(fn (mixed $amount, mixed $id): array => [(int) $id => (float) $amount])
+                ->all();
+
         $hasSalesCustomerIds = $customerIds->isEmpty()
             ? []
             : DB::table('sales')
@@ -701,13 +735,14 @@ class SalesOfficerCustomerController extends Controller
                 ->all();
 
         $transformed = $rows
-            ->map(function (object $row) use ($transactionSummaries, $outstandingTotals, $overdueCustomerIds, $hasSalesCustomerIds): array {
+            ->map(function (object $row) use ($transactionSummaries, $outstandingTotals, $overdueCustomerIds, $hasSalesCustomerIds, $refundDueTotals): array {
                 $cid = (int) $row->id;
                 $outstanding = (float) ($outstandingTotals[$cid] ?? 0);
                 $hasOverdue = isset($overdueCustomerIds[$cid]);
                 $hasSales = isset($hasSalesCustomerIds[$cid]);
+                $refundDue = (float) ($refundDueTotals[$cid] ?? 0);
                 $derivedPaymentStatus = $hasSales
-                    ? ($hasOverdue ? 'overdue' : ($outstanding > 0 ? 'pending' : 'clear'))
+                    ? ($hasOverdue ? 'overdue' : ($outstanding > 0 ? 'pending' : ($refundDue > 0 ? 'refund_due' : 'clear')))
                     : ($row->payment_status ?: 'clear');
 
                 return [
@@ -824,6 +859,7 @@ class SalesOfficerCustomerController extends Controller
             'sales.payment_terms',
             'sales.status',
             'sales.delivery_status',
+            'sales.cancellation_reason',
             'customers.name as customer_name',
             'customers.company_name',
             'items_total.item_count',
@@ -863,8 +899,14 @@ class SalesOfficerCustomerController extends Controller
                 $saleTotal = (float) $row->sale_total;
                 $isCancelled = $row->status === 'cancelled';
                 $balance = $isCancelled ? 0 : max(0, $saleTotal - $paid);
-                $receivableStatus = $isCancelled ? 'clear' : $this->receivableStatusForSale($saleTotal, $paid, $row->due_date);
-                $status = $isCancelled ? 'Cancelled' : $this->receivableStatusLabel($receivableStatus);
+                // Payments on a voided sale are owed back to the customer, so they are not "clear".
+                $refundDue = $isCancelled ? round($paid, 2) : 0.0;
+                $receivableStatus = $isCancelled ? ($refundDue > 0 ? 'refund_due' : 'clear') : $this->receivableStatusForSale($saleTotal, $paid, $row->due_date);
+                $status = match (true) {
+                    $refundDue > 0 => 'Refund due: ₱'.number_format($refundDue, 2),
+                    $isCancelled => 'Cancelled',
+                    default => $this->receivableStatusLabel($receivableStatus),
+                };
                 $saleItems = $itemsBySale[$saleId] ?? [];
                 $latestPaymentDate = $latestPaymentDates[$saleId] ?? null;
                 $correctionAction = $this->saleCorrectionService->correctionMode($saleId);
@@ -887,8 +929,9 @@ class SalesOfficerCustomerController extends Controller
                     'latest_payment_date' => $latestPaymentDate,
                     'has_dependencies' => $dependencyMap[$saleId] ?? false,
                     'correction_action' => $correctionAction,
+                    'refund_due' => $refundDue,
                     'items' => $saleItems,
-                    'class' => $this->rowClass($receivableStatus === 'overdue' ? 'overdue' : $status),
+                    'class' => $this->rowClass(in_array($receivableStatus, ['overdue', 'refund_due'], true) ? $receivableStatus : $status),
                     'cells' => [
                         $row->sale_code,
                         $row->sales_order_number ?: 'N/A',
@@ -924,7 +967,7 @@ class SalesOfficerCustomerController extends Controller
                         'Payment Terms' => $this->label($row->payment_terms),
                         'Payment Method' => $this->paymentMethodLabel($row->payment_method),
                         'Order Status' => $this->label($row->status),
-                    ],
+                    ] + ($isCancelled ? ['Cancellation Reason' => $row->cancellation_reason ?: 'N/A'] : []),
                     'payments' => $paymentsBySale[$saleId] ?? [],
                     'payment_schedules' => $schedulesBySale[$saleId] ?? [],
                     'sale_total' => $this->formatNumber($saleTotal),
@@ -1780,7 +1823,7 @@ class SalesOfficerCustomerController extends Controller
     {
         return match (strtolower(str_replace(' ', '_', (string) $status))) {
             'unpaid' => 'row-danger',
-            'pending', 'partial', 'partially_paid' => 'row-warning',
+            'pending', 'partial', 'partially_paid', 'refund_due' => 'row-warning',
             'paid', 'clear', 'settled' => 'row-success',
             default => '',
         };

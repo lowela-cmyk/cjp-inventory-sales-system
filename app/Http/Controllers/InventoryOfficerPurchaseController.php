@@ -326,6 +326,11 @@ class InventoryOfficerPurchaseController extends Controller
         $paginator = $query->paginate(25, ['*'], 'stock_out_page')->withQueryString();
         $transformed = collect($paginator->items())->map(function (object $row): array {
             $amounts = $this->stockOutFinancials->calculate($row);
+            // A voided release earns nothing (any payment is a refund due), so it has no margin or profit.
+            if ($row->status === 'cancelled') {
+                $amounts['margin'] = null;
+                $amounts['profit'] = null;
+            }
 
             return [
                 'cells' => [
@@ -342,9 +347,11 @@ class InventoryOfficerPurchaseController extends Controller
                     $this->formatNumber($amounts['total_paid']),
                     $this->stockOutSourceLabel($row),
                     $this->label($row->status),
-                    $this->formatFinancial($amounts['profit']),
+                    $row->status === 'cancelled' ? '—' : $this->formatFinancial($amounts['margin']),
+                    $row->status === 'cancelled' ? '—' : $this->formatFinancial($amounts['profit']),
                 ],
                 'class' => $this->rowClass($row->status),
+                'margin' => $amounts['margin'],
                 'profit' => $amounts['profit'],
             ];
         });

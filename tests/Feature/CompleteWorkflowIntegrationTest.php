@@ -169,7 +169,8 @@ class CompleteWorkflowIntegrationTest extends TestCase
             ->assertRedirect(route('sales-officer.sales'));
 
         $this->assertSame(0.0, $this->garageBalance($records));
-        $this->assertSame(0, DB::table('inventory_movements')->count());
+        // No stock left the tanks (the sale's stock-in lot is test setup; see CreatesStockLots).
+        $this->assertSame(0, DB::table('inventory_movements')->where('direction', 'out')->count());
         $this->assertSame(1, DB::table('stock_outs')->where('sale_id', $sale['saleId'])->count());
         $this->assertDatabaseHas('stock_outs', [
             'sale_id' => $sale['saleId'],
@@ -194,7 +195,8 @@ class CompleteWorkflowIntegrationTest extends TestCase
 
         $this->assertDatabaseHas('receivables', ['sale_id' => $sale['saleId'], 'status' => 'clear']);
         $this->assertSame(0.0, $this->garageBalance($records));
-        $this->assertSame(0, DB::table('inventory_movements')->count());
+        // No stock left the tanks (the sale's stock-in lot is test setup; see CreatesStockLots).
+        $this->assertSame(0, DB::table('inventory_movements')->where('direction', 'out')->count());
 
         Carbon::setTestNow();
     }
@@ -238,7 +240,8 @@ class CompleteWorkflowIntegrationTest extends TestCase
             ->assertRedirect(route('sales-officer.sales'))
             ->assertSessionHasErrors('payment');
 
-        $this->assertSame(0, DB::table('inventory_movements')->count());
+        // No stock left the tanks (the sale's stock-in lot is test setup; see CreatesStockLots).
+        $this->assertSame(0, DB::table('inventory_movements')->where('direction', 'out')->count());
         $this->assertSame(0, DB::table('stock_outs')->count());
         $this->assertFalse(Schema::hasTable('deliveries'));
         $this->assertSame(0, DB::table('payments')->count());

@@ -59,7 +59,8 @@ class StockOutVisibilityTest extends TestCase
             $this->assertSame('10/12/2026 09:00 AM', $row[1]);
             $this->assertSame('Diesel', $row[4]);
             $this->assertSame('6,000.00', $row[5]);
-            $this->assertSame('Garage — '.$records['garageName'], $row[11]);
+            // Part 8: a release from a stock lot names the lot's purchase after the tank.
+            $this->assertStringStartsWith('Garage — '.$records['garageName'].' · PUR-', $row[11]);
             $this->assertSame('Released', $row[12]);
         }
 

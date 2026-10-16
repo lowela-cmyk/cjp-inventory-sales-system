@@ -102,13 +102,7 @@ class Part8RevisionsTest extends AuditTestCase
     {
         $a = $this->actors();
         $this->twoLots($a);
-        $this->actingAs($a['sales'])->post(route('sales-officer.sales.store'), [
-            'idempotency_key' => $this->uuid(), 'customer_id' => $a['customer'], 'sale_date' => '2026-10-15',
-            'items' => [['fuel_type_id' => $a['fuel'], 'quantity_liters' => 500, 'unit_price' => 65]],
-            'payment_method' => 'cash_on_delivery', 'payment_terms' => 'installment',
-        ])->assertSessionHasNoErrors();
-        $saleId = (int) DB::table('sales')->value('id');
-        $this->assertNull(DB::table('sale_items')->where('sale_id', $saleId)->value('stock_in_movement_id'));
+        $saleId = $this->legacySale($a, 500);
 
         $this->actingAs($a['sales'])->patch(route('sales-officer.sales.delivery-status.update', $saleId), ['delivery_status' => 'delivered'])->assertSessionHasNoErrors();
         $this->assertDatabaseHas('stock_outs', ['sale_id' => $saleId, 'status' => 'released', 'quantity_liters' => 500]);
@@ -119,6 +113,61 @@ class Part8RevisionsTest extends AuditTestCase
         // Lot figures still add up to the tank balances after the pooled release (charged oldest-first).
         $lots = app(StockLotService::class)->lots();
         $this->assertSame(9500.0, round((float) $lots->sum('on_hand'), 2));
+    }
+
+    public function test_every_new_sale_line_needs_a_stock_source_for_sales_officer_and_admin(): void
+    {
+        $a = $this->actors();
+        $this->twoLots($a);
+        $this->withoutStockLots();
+
+        foreach ([[$a['sales'], 'sales-officer'], [$a['admin'], 'admin']] as [$user, $prefix]) {
+            $base = ['idempotency_key' => $this->uuid(), 'customer_id' => $a['customer'], 'sale_date' => '2026-10-15', 'payment_method' => 'cash_on_delivery', 'payment_terms' => 'installment'];
+
+            $this->actingAs($user)->from(route($prefix.'.sales'))->post(route($prefix.'.sales.store'), $base + ['items' => [['fuel_type_id' => $a['fuel'], 'quantity_liters' => 100, 'unit_price' => 65]]])
+                ->assertSessionHasErrors(['items.0.stock_lot_id' => 'Select a stock source for this line.']);
+            // The old single-line form has no line to carry a lot.
+            $this->actingAs($user)->from(route($prefix.'.sales'))->post(route($prefix.'.sales.store'), $base + ['fuel_type_id' => $a['fuel'], 'quantity_liters' => 100, 'unit_price' => 65])
+                ->assertSessionHasErrors(['items' => 'Add at least one line with a stock source.']);
+        }
+        $this->assertSame(0, DB::table('sales')->count());
+
+        // The error shows under the field when Record Sales reopens.
+        $this->actingAs($a['sales'])->from(route('sales-officer.sales'))->post(route('sales-officer.sales.store'), [
+            'idempotency_key' => $this->uuid(), 'form_context' => 'record-sale', 'customer_id' => $a['customer'], 'sale_date' => '2026-10-15',
+            'payment_method' => 'cash_on_delivery', 'payment_terms' => 'installment', 'items' => [['quantity_liters' => 100, 'unit_price' => 65]],
+        ]);
+        $html = $this->get(route('sales-officer.sales'))->getContent();
+        $this->assertMatchesRegularExpression('#name="items\[0\]\[stock_lot_id\]"[^>]*aria-invalid="true"#', $html);
+        $this->assertStringContainsString('<p class="field-error form-row-message">Select a stock source for this line.</p>', $html);
+    }
+
+    public function test_a_sale_recorded_before_lots_stays_editable_but_added_lines_need_a_lot(): void
+    {
+        $a = $this->actors();
+        [$older] = $this->twoLots($a);
+        $saleId = $this->legacySale($a, 500);
+        $this->withoutStockLots();
+        $edit = fn (array $items) => $this->actingAs($a['sales'])->from(route('sales-officer.sales'))->patch(route('sales-officer.sales.update', $saleId), [
+            'edit_sale_id' => $saleId, 'customer_id' => $a['customer'], 'sale_date' => '2026-10-01', 'payment_method' => 'cash_on_delivery', 'payment_terms' => 'installment', 'items' => $items,
+        ]);
+
+        // Its own lot-less line can still change (quantity here) without a lot.
+        $edit([['fuel_type_id' => $a['fuel'], 'quantity_liters' => 600, 'unit_price' => 65]])->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('sale_items', ['sale_id' => $saleId, 'quantity_liters' => 600, 'stock_in_movement_id' => null]);
+
+        // An extra line without a lot is refused, under that line.
+        $edit([['fuel_type_id' => $a['fuel'], 'quantity_liters' => 600, 'unit_price' => 65], ['fuel_type_id' => $a['fuel'], 'quantity_liters' => 100, 'unit_price' => 65]])
+            ->assertSessionHasErrors(['items.1.stock_lot_id' => 'Select a stock source for this line.']);
+
+        // An extra line from a lot is fine.
+        $edit([['fuel_type_id' => $a['fuel'], 'quantity_liters' => 600, 'unit_price' => 65], ['stock_lot_id' => $older, 'quantity_liters' => 100, 'unit_price' => 65]])->assertSessionHasNoErrors();
+        $this->assertSame([null, $older], DB::table('sale_items')->where('sale_id', $saleId)->orderBy('id')->pluck('stock_in_movement_id')->map(fn ($id) => $id ? (int) $id : null)->all());
+
+        // The Edit modal adds new lines from a Stock Source template.
+        $html = $this->actingAs($a['sales'])->get(route('sales-officer.sales'))->getContent();
+        $this->assertStringContainsString('<template data-sales-item-template>', $html);
+        $this->assertMatchesRegularExpression('#<template data-sales-item-template>\s*<div class="sales-item-row" data-sales-item>\s*<div class="form-row">\s*<label for="sale_lot_\d+_new">Stock Source</label>#', $html);
     }
 
     public function test_truck_codes_are_generated_and_cannot_be_typed_or_edited(): void
@@ -236,6 +285,20 @@ class Part8RevisionsTest extends AuditTestCase
             $alert('payment');
         }
         $this->assertStringContainsString('data-alert-bell-count>99+<', $bell($a['sales'], 'sales-officer.sales'));
+    }
+
+    /**
+     * A sale as recorded before stock lots existed: its line names a fuel, not a lot.
+     *
+     * @param  array<string, mixed>  $a
+     */
+    private function legacySale(array $a, float $liters): int
+    {
+        $saleId = DB::table('sales')->insertGetId(['sale_code' => 'SLS-PRE-LOT-'.substr($this->uuid(), 0, 6), 'customer_id' => $a['customer'], 'sale_date' => '2026-10-01', 'payment_method' => 'cash_on_delivery', 'payment_terms' => 'installment', 'status' => 'confirmed', 'delivery_status' => 'pending', 'created_by' => $a['sales']->id, 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('sale_items')->insert(['sale_id' => $saleId, 'fuel_type_id' => $a['fuel'], 'quantity_liters' => $liters, 'unit_price' => 65, 'line_total' => $liters * 65, 'fulfilled_quantity_liters' => 0, 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('receivables')->insert(['sale_id' => $saleId, 'status' => 'pending', 'created_at' => now(), 'updated_at' => now()]);
+
+        return (int) $saleId;
     }
 
     /**

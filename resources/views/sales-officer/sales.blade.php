@@ -379,6 +379,28 @@
                             </div>
                         @endforeach
                     </div>
+                    {{-- A line added while editing is sold from a stock lot, even on a sale recorded before lots. --}}
+                    <template data-sales-item-template>
+                        <div class="sales-item-row" data-sales-item>
+                            <div class="form-row">
+                                <label for="sale_lot_{{ $row['id'] }}_new">Stock Source</label>
+                                <select form="sale-update-{{ $row['id'] }}" id="sale_lot_{{ $row['id'] }}_new" name="items[0][stock_lot_id]" data-stock-lot required>
+                                    <option value="">{{ $stockLotOptions->isEmpty() ? 'No stock available' : 'Select stock source' }}</option>
+                                    @foreach ($stockLotOptions->groupBy('fuel_name') as $fuelName => $lots)
+                                        <optgroup label="{{ $fuelName }}">
+                                            @foreach ($lots as $lot)
+                                                <option value="{{ $lot->id }}" data-available="{{ $lot->available }}">{{ $lot->label }}</option>
+                                            @endforeach
+                                        </optgroup>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <div class="form-row"><label for="sale_qty_{{ $row['id'] }}_new">Quantity</label><input form="sale-update-{{ $row['id'] }}" id="sale_qty_{{ $row['id'] }}_new" name="items[0][quantity_liters]" type="number" min="0.01" step="0.01" required></div>
+                            <div class="form-row"><label for="sale_price_{{ $row['id'] }}_new">Price / Liter</label><input form="sale-update-{{ $row['id'] }}" id="sale_price_{{ $row['id'] }}_new" name="items[0][unit_price]" type="number" min="0.01" step="0.01" required></div>
+                            <div class="form-row sale-line-total"><label>Line Total</label><output data-sales-line-total>0.00</output></div>
+                            <button class="btn btn-secondary sales-item-remove" type="button" data-sales-item-remove>Remove Item</button>
+                        </div>
+                    </template>
                     <div class="sales-item-actions">
                         <button class="btn btn-primary" type="button" data-sales-item-add>Add Item</button>
                         <output class="sales-total-preview" data-sales-total-preview>Total: 0.00</output>

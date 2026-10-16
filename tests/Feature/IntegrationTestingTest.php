@@ -37,15 +37,8 @@ class IntegrationTestingTest extends TestCase
         $purchase = $this->createPurchase($records, 100000);
         $this->assertSame(0.0, $this->garageBalance($records), 'Purchase alone must not increase garage stock.');
 
-        $garageSale = $this->createSale($records, [
-            'sale_code' => 'SLS-INT-GARAGE',
-            'quantity_liters' => 40000,
-            'unit_price' => 5,
-            'payment_method' => 'bank_transfer',
-            'payment_terms' => 'installment',
-            'due_date' => '2026-09-30',
-        ]);
         $directSale = $this->createSale($records, [
+            'legacy' => true,
             'sale_code' => 'SLS-INT-DIRECT',
             'quantity_liters' => 35000,
             'unit_price' => 6,
@@ -54,8 +47,6 @@ class IntegrationTestingTest extends TestCase
             'due_date' => '2026-09-30',
         ]);
 
-        $this->assertSame(0.0, $this->garageBalance($records), 'Sale alone must not deduct garage stock.');
-        $this->assertSame(0, DB::table('payments')->whereIn('sale_id', [$garageSale['saleId'], $directSale['saleId']])->count(), 'Payment method alone is not a payment.');
 
         $haulId = $this->haul($records, $purchase, 100000);
         $garageAllocationId = $this->allocation($records, $haulId, 65000, [
@@ -80,6 +71,18 @@ class IntegrationTestingTest extends TestCase
         $this->stockIn($records, $garageAllocationId, 40000, '2026-09-04 12:00:00');
         $this->assertSame(65000.0, $this->garageBalance($records));
         $this->assertDatabaseHas('haul_allocations', ['id' => $garageAllocationId, 'status' => 'received']);
+
+        // A garage sale is sold from a stock lot, so it is recorded once the stock is in (Part 8 follow-up).
+        $garageSale = $this->createSale($records, [
+            'sale_code' => 'SLS-INT-GARAGE',
+            'quantity_liters' => 40000,
+            'unit_price' => 5,
+            'payment_method' => 'bank_transfer',
+            'payment_terms' => 'installment',
+            'due_date' => '2026-09-30',
+        ]);
+        $this->assertSame(65000.0, $this->garageBalance($records), 'Sale alone must not deduct garage stock.');
+        $this->assertSame(0, DB::table('payments')->whereIn('sale_id', [$garageSale['saleId'], $directSale['saleId']])->count(), 'Payment method alone is not a payment.');
 
         DB::table('sales')
             ->whereIn('id', [$garageSale['saleId'], $directSale['saleId']])
@@ -265,7 +268,8 @@ class IntegrationTestingTest extends TestCase
             ->assertRedirect(route('sales-officer.sales'))
             ->assertSessionHasErrors('payment');
 
-        $this->assertSame(0, DB::table('inventory_movements')->count());
+        // No stock left the tanks (the sale's stock-in lot is test setup; see CreatesStockLots).
+        $this->assertSame(0, DB::table('inventory_movements')->where('direction', 'out')->count());
         $this->assertSame(0, DB::table('stock_outs')->count());
         $this->assertFalse(Schema::hasTable('deliveries'));
         $this->assertSame(0, DB::table('payments')->count());
@@ -368,6 +372,22 @@ class IntegrationTestingTest extends TestCase
             'payment_terms' => 'installment',
             'status' => 'confirmed',
         ], $overrides);
+
+        if ($payload['legacy'] ?? false) {
+            // A sale recorded before stock lots (Part 8), e.g. one fed by a pre-Part 8 direct depot lift.
+            $saleId = DB::table('sales')->insertGetId([
+                'sale_code' => $payload['sale_code'], 'customer_id' => $payload['customer_id'], 'sale_date' => $payload['sale_date'],
+                'payment_method' => $payload['payment_method'], 'payment_terms' => $payload['payment_terms'], 'status' => 'confirmed',
+                'delivery_status' => 'pending', 'created_by' => $records['salesOfficer']->id, 'created_at' => now(), 'updated_at' => now(),
+            ]);
+            $saleItemId = DB::table('sale_items')->insertGetId([
+                'sale_id' => $saleId, 'fuel_type_id' => $payload['fuel_type_id'], 'quantity_liters' => $payload['quantity_liters'], 'unit_price' => $payload['unit_price'],
+                'line_total' => $payload['quantity_liters'] * $payload['unit_price'], 'fulfilled_quantity_liters' => 0, 'created_at' => now(), 'updated_at' => now(),
+            ]);
+            DB::table('receivables')->insert(['sale_id' => $saleId, 'due_date' => $payload['due_date'] ?? null, 'status' => 'pending', 'created_at' => now(), 'updated_at' => now()]);
+
+            return ['saleId' => (int) $saleId, 'saleItemId' => (int) $saleItemId];
+        }
 
         $this->actingAs($records['salesOfficer'])
             ->post(route('sales-officer.sales.store'), $payload)

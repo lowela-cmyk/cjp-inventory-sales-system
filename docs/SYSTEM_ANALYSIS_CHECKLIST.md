@@ -169,6 +169,7 @@ Compliance check of the CJP Southern Star OPC system against the "System Analysi
 | After security phase | **464 passed, 0 failed** (SQLite), and **464 passed, 0 failed** on MariaDB (`cjp_audit_testing`) |
 | Part 8 baseline (2026-10-16) | 463 passed, 1 failed: a date bomb (a payment schedule due `2026-10-15` turned overdue). Test clock pinned in its own commit. |
 | After Part 8 | **474 passed, 0 failed** (SQLite) and **474 passed, 0 failed** (MariaDB) |
+| After Part 8 follow-ups | **476 passed, 0 failed** on SQLite and MariaDB, also with the system clock faked to 2027-06-01 and 2028-01-01 (libfaketime) |
 
 **Fixed in Phase 1:**
 - `AdminUserManagementTest` duplicate…, `FormValidationTest` ×2 and `RoleBasedAccessControlTest` registration… failed because of a regression from 9fa4d4b (red dots). `ModuleActivityService` now treats a missing or unknown role as "no modules", via `modulesFor()`. Regression test: `CompliancePhase1Test::test_red_dots_tolerate_users_without_a_known_role`.
@@ -388,7 +389,7 @@ Screenshots are in `docs/screenshots/part-8/` (not committed).
 - **Delivered:** releases from that lot's tank **at the lot's cost**. Margin and Realized Profit use that cost, and Source shows the purchase code. If the lot no longer has the stock, delivery is refused with "Stock source … has only N L in stock."
 - **Existing sales:** lines with no lot keep the pooled release and show "—".
 - **Migration:** `2026_10_18_000001_add_stock_lot_to_sale_items` (nullable `sale_items.stock_in_movement_id`). Real foreign key on MySQL/MariaDB; plain indexed column on SQLite, where adding a foreign key would rebuild the table and drop its integrity triggers. Up/down/up tested on `cjp_audit_ui`. Run on `cjp_inventory_sales_db` after the backup `storage/backups/cjp_inventory_sales_db-pre-part8-20261016-074043.sql`.
-- **Decision for you:** the form requires a Stock Source, but the server still accepts a fuel-only line (legacy pooled release). About 50 tests in 18 files post fuel-only sales with no stock, so requiring a lot on the server means rebuilding those fixtures. Say the word and I'll enforce it.
+- ~~Decision for you: the server still accepts a fuel-only line.~~ **Enforced in the follow-ups (below).**
 
 ### Direct allocation (item 5)
 
@@ -400,3 +401,13 @@ Screenshots are in `docs/screenshots/part-8/` (not committed).
   - Stock-Out still labels those rows "Depot — …";
   - the driver's Destination filter and the "Garage received with direct" status still show for old lifts.
 - **Data:** no rows were deleted or changed.
+
+
+### Part 8 follow-ups (2026-10-16, branch `fix/part-8-followups`)
+
+| # | Item | Status | Evidence | Notes |
+|---|---|---|---|---|
+| F1 | Stock Source required on the server for every new sale line | ✅ DONE | `Part8RevisionsTest::test_every_new_sale_line_needs_a_stock_source_for_sales_officer_and_admin`, `::test_a_sale_recorded_before_lots_stays_editable_but_added_lines_need_a_lot`; `followups/*.png` (Chrome + WebKit, 375/1366) | **Record Sales** (Sales Officer and Admin) needs at least one line, and every line a Stock Source; the error "Select a stock source for this line." shows under the field. **Edit:** a sale recorded before lots keeps its lot-less lines editable (as many as it already has); any added line needs a lot. Add Item in Edit now adds a Stock Source line, from a template. **Bug found and fixed:** with mixed lines, validated data could reorder them (a lot line before a lot-less one), which saved lines out of order and put errors under the wrong line. Lines are now restored to their submitted order. |
+| F1-tests | One shared test helper | ✅ DONE | `tests/Concerns/CreatesStockLots.php`, `tests/TestCase.php` | `stockLot()` records a purchase whose lift was received into a tank (one lot). `withStockLots()` gives each new sale line a lot: the test's own stock first, oldest first, otherwise a new lot. TestCase applies it to every POST to Record Sales and gives Edit posts each existing line's lot (as the Edit form does), so the ~50 call sites needed no hand edits. Deliberately invalid lines are left alone, so validation tests still see their errors; `withoutStockLots()` turns it off. **Tests changed individually (8):** 3 "no stock moved" checks now count outgoing movements; the integration flow records its garage sale after the stock arrives, and its direct-to-client sale is a pre-lot sale; the insufficient-inventory test sells from a lot that then loses stock; the Stock-Out source label now includes the lot; 2 Part 8 tests. |
+| F2 | Date-independent test suite | ✅ DONE | `tests/TestCase.php` | Every test runs at **2026-10-01 09:00 Asia/Manila** (Carbon test clock, set before the app boots so migration rows carry it too; `TEST_NOW` overrides). The app reads time only through Carbon. **Proof:** the full suite passes on SQLite and MariaDB with the system clock faked by libfaketime to **2027-06-01** and **2028-01-01**. Control: with the pin itself moved to 2028-01-01 it also passes, so no test depends on the date any more. (libfaketime fakes the PHP clock only; the app writes its timestamps from PHP.) |
+| F3 | No bell for drivers | ✅ DONE | `followups` check 3 | The driver header no longer includes the bell. The red-dot timestamp resolution is left as is, as agreed. |

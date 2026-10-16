@@ -428,6 +428,18 @@ class SalesOfficerCustomerController extends Controller
             }
         }
 
+        // A sale recorded before stock lots keeps its lot-less lines editable; any extra line must name a lot.
+        $legacyLines = DB::table('sale_items')->where('sale_id', $sale)->whereNull('stock_in_movement_id')->count();
+        $lotErrors = [];
+        foreach ($items as $index => $item) {
+            if ($item['stock_lot_id'] === null && --$legacyLines < 0) {
+                $lotErrors["items.$index.stock_lot_id"] = 'Select a stock source for this line.';
+            }
+        }
+        if ($lotErrors !== []) {
+            return back()->withInput()->withErrors($lotErrors);
+        }
+
         try {
             DB::transaction(function () use ($sale, $row, $data, $items, $hasDependencies, $request, $requestedStatus): void {
 
@@ -1013,10 +1025,11 @@ class SalesOfficerCustomerController extends Controller
             ],
             'quantity_liters' => ['required_without:items', 'numeric', 'gt:0', 'max:1000000'],
             'unit_price' => ['required_without:items', 'numeric', 'gt:0', 'max:10000'],
-            'items' => ['nullable', 'array', 'min:1'],
+            // A new sale is recorded line by line, each from a stock lot (Part 8 follow-up).
+            'items' => [$saleId ? 'nullable' : 'required', 'array', 'min:1'],
             // Part 8 #8: a line is sold from a stock lot (its fuel and cost come from the lot). A line without a
             // lot names its fuel instead (legacy pooled release).
-            'items.*.stock_lot_id' => ['nullable', 'integer', Rule::exists('inventory_movements', 'id')->where('direction', 'in')],
+            'items.*.stock_lot_id' => [$saleId ? 'nullable' : 'required', 'integer', Rule::exists('inventory_movements', 'id')->where('direction', 'in')],
             'items.*.fuel_type_id' => [
                 'exclude_with:items.*.stock_lot_id',
                 'nullable',
@@ -1042,6 +1055,9 @@ class SalesOfficerCustomerController extends Controller
             'delivery_status' => ['prohibited'],
             'delivered_at' => ['prohibited'],
             'delivery_status_updated_by' => ['prohibited'],
+        ], [
+            'items.required' => 'Add at least one line with a stock source.',
+            'items.*.stock_lot_id.required' => 'Select a stock source for this line.',
         ]);
     }
 
@@ -1080,7 +1096,10 @@ class SalesOfficerCustomerController extends Controller
                 ->whereIn('id', collect($data['items'])->pluck('stock_lot_id')->filter()->all())
                 ->pluck('fuel_type_id', 'id');
 
+            // Validated data can rebuild items in rule order (a line with a lot before one without), so restore
+            // the submitted order: line N is still items.N for its error messages and for the saved order.
             return collect($data['items'])
+                ->sortKeys()
                 ->map(function (array $item) use ($lotFuel): array {
                     $lotId = ($item['stock_lot_id'] ?? null) ? (int) $item['stock_lot_id'] : null;
 

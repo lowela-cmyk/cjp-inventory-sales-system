@@ -171,7 +171,9 @@ document.addEventListener('click', (event) => {
     if (addSaleItemButton) {
         const modal = addSaleItemButton.closest('.modal-backdrop');
         const items = modal?.querySelector('[data-sales-items]');
-        const source = items?.querySelector('[data-sales-item]:last-child');
+        // Edit forms carry a Stock Source row template: a new line must be sold from a stock lot.
+        const template = modal?.querySelector('template[data-sales-item-template]');
+        const source = template?.content.querySelector('[data-sales-item]') || items?.querySelector('[data-sales-item]:last-child');
 
         if (!items || !source) {
             return;
@@ -360,7 +362,7 @@ const reindexSaleItems = (items) => {
 
         row.querySelectorAll('[id]').forEach((field) => {
             const oldId = field.id;
-            const newId = oldId.replace(/_\d+$/, `_${index}`);
+            const newId = oldId.replace(/_(\d+|new)$/, `_${index}`);
             field.id = newId;
 
             const label = row.querySelector(`label[for="${oldId}"]`);

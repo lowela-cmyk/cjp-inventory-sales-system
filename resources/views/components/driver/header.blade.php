@@ -11,8 +11,8 @@
         <h1>{{ $title }}</h1>
         <p>{{ $subtitle }}</p>
     </div>
+    {{-- Drivers have no Alerts module, so no notification bell (Part 8 follow-up). --}}
     <div class="header-profile">
-        <x-header.bell />
         <div>
             <div class="profile-name">{{ $user?->name ?? $driverName }}</div>
             <div class="profile-role">{{ $user?->role_label ?? 'Driver' }}</div>

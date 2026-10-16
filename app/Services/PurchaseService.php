@@ -475,14 +475,10 @@ class PurchaseService
         return $code;
     }
 
-    private function rowClass(?string $status): string
+    /** Purchases rows are white; only an Unpaid purchase is tinted red (Part 8 #3). */
+    private function rowClass(?string $paymentStatus): string
     {
-        return match ($status) {
-            'unpaid', 'cancelled' => 'row-danger',
-            'partial' => 'row-warning',
-            'paid' => 'row-success',
-            default => '',
-        };
+        return $paymentStatus === 'unpaid' ? 'row-danger' : '';
     }
 
     private function label(?string $value): string

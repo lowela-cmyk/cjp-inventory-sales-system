@@ -37,9 +37,10 @@ class TruckManagementTest extends TestCase
 
         $truckId = (int) DB::table('trucks')->where('plate_number', 'ABC-1234')->value('id');
         $this->assertGreaterThan(0, $truckId);
+        // Part 8 #7: a typed truck code is ignored; the server assigns the next TRK number.
         $this->assertDatabaseHas('trucks', [
             'id' => $truckId,
-            'truck_code' => 'TRK-101',
+            'truck_code' => 'TRK-001',
             'name' => 'Southern Tanker 1',
             'capacity_liters' => '20000.00',
         ]);
@@ -53,7 +54,7 @@ class TruckManagementTest extends TestCase
             'truck_type' => 'mixed',
             'status' => 'maintenance',
         ])->assertRedirect(route('dispatch.fuel-lifting.trucks'));
-        $this->assertDatabaseHas('trucks', ['id' => $truckId, 'name' => 'Southern Tanker One', 'status' => 'maintenance']);
+        $this->assertDatabaseHas('trucks', ['id' => $truckId, 'name' => 'Southern Tanker One', 'status' => 'maintenance', 'truck_code' => 'TRK-001']);
 
         $this->actingAs($admin)->from(route('admin.fuel-lifting.trucks'))->post(route('admin.trucks.store'), [
             'truck_code' => 'TRK-102',

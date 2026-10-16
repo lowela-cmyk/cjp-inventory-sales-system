@@ -384,7 +384,7 @@ class CompleteWorkflowIntegrationTest extends TestCase
                 'quantity_liters' => 10000,
                 'unit_price' => 5,
                 'payment_method' => 'cash_on_delivery',
-                'payment_terms' => 'cod',
+                'payment_terms' => 'installment',
             ], $overrides))
             ->assertRedirect(route('sales-officer.sales'));
 

@@ -31,7 +31,7 @@ class SalesOfficerPaymentRecordingTest extends TestCase
         $this->actingAs($records['salesOfficer'])
             ->post(route('sales-officer.sales.payments.store', $saleId), $this->paymentPayload([
                 'amount' => 70000,
-                'method' => 'advance_payment',
+                'method' => 'cash_on_delivery',
                 'remarks' => 'Final collection',
             ]))
             ->assertRedirect(route('sales-officer.sales'));
@@ -209,7 +209,7 @@ class SalesOfficerPaymentRecordingTest extends TestCase
         $records = $this->baseRecords();
         $saleId = $this->sale($records, [
             'line_total' => 40000,
-            'payment_method' => 'advance_payment',
+            'payment_method' => 'cheque',
             'payment_terms' => 'advance',
         ]);
 
@@ -221,7 +221,7 @@ class SalesOfficerPaymentRecordingTest extends TestCase
         $this->actingAs($records['salesOfficer'])
             ->post(route('sales-officer.sales.payments.store', $saleId), $this->paymentPayload([
                 'amount' => 40000,
-                'method' => 'advance_payment',
+                'method' => 'cash_on_delivery',
             ]))
             ->assertRedirect(route('sales-officer.sales'));
 
@@ -311,7 +311,7 @@ class SalesOfficerPaymentRecordingTest extends TestCase
             ->post(route('sales-officer.sales.payments.store', $saleId), $this->paymentPayload([
                 'payment_schedule_id' => $firstScheduleId,
                 'amount' => 20000,
-                'method' => 'advance_payment',
+                'method' => 'cash_on_delivery',
             ]))
             ->assertRedirect(route('sales-officer.sales'));
 

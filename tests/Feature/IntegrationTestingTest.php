@@ -42,7 +42,7 @@ class IntegrationTestingTest extends TestCase
             'quantity_liters' => 40000,
             'unit_price' => 5,
             'payment_method' => 'bank_transfer',
-            'payment_terms' => 'cod',
+            'payment_terms' => 'installment',
             'due_date' => '2026-09-30',
         ]);
         $directSale = $this->createSale($records, [
@@ -50,7 +50,7 @@ class IntegrationTestingTest extends TestCase
             'quantity_liters' => 35000,
             'unit_price' => 6,
             'payment_method' => 'cash_on_delivery',
-            'payment_terms' => 'cod',
+            'payment_terms' => 'installment',
             'due_date' => '2026-09-30',
         ]);
 
@@ -365,7 +365,7 @@ class IntegrationTestingTest extends TestCase
             'quantity_liters' => 10000,
             'unit_price' => 5,
             'payment_method' => 'cash_on_delivery',
-            'payment_terms' => 'cod',
+            'payment_terms' => 'installment',
             'status' => 'confirmed',
         ], $overrides);
 

@@ -210,7 +210,7 @@ document.addEventListener('click', (event) => {
         if (items && source) {
             const clone = source.cloneNode(true);
             clone.querySelectorAll('select').forEach((select) => { select.selectedIndex = 0; });
-            clone.querySelectorAll('input').forEach((input) => { input.value = input.matches('[data-allocation-direct]') ? '0' : ''; });
+            clone.querySelectorAll('input').forEach((input) => { input.value = ''; });
             clone.querySelectorAll('.field-error').forEach((message) => message.remove());
             const summary = clone.querySelector('[data-purchase-summary]');
             if (summary) summary.textContent = 'Select a purchase';
@@ -230,33 +230,10 @@ document.addEventListener('click', (event) => {
     }
 });
 
-// Schedule Lift allocation: Garage + Depot (direct) always add up to Amount to Lift; editing one updates the other.
-const roundLiters = (value) => Math.round(Math.max(0, value) * 100) / 100;
-
-const syncLiftAllocation = (row, changed) => {
-    const amount = Number(row.querySelector('[data-lifting-quantity]')?.value || 0);
-    const garage = row.querySelector('[data-allocation-garage]');
-    const direct = row.querySelector('[data-allocation-direct]');
-    if (!garage || !direct) return;
-
-    if (changed === garage) {
-        direct.value = roundLiters(amount - Number(garage.value || 0));
-    } else {
-        // Amount or depot changed: whatever is not released directly goes to the garage (the default).
-        if (Number(direct.value || 0) > amount) direct.value = roundLiters(amount);
-        garage.value = roundLiters(amount - Number(direct.value || 0));
-    }
-
-    const tank = row.querySelector('[data-allocation-tank]');
-    const sale = row.querySelector('[data-allocation-sale]');
-    if (tank) tank.required = Number(garage.value || 0) > 0;
-    if (sale) sale.required = Number(direct.value || 0) > 0;
-};
-
-// Only tanks and client sales of the selected purchase's fuel type can be chosen.
+// Only tanks of the selected purchase's fuel type can be chosen; the whole Amount to Lift goes there (Part 8 #5).
 const filterAllocationOptions = (row) => {
     const fuel = row.querySelector('[data-lifting-purchase]')?.selectedOptions?.[0]?.dataset.fuelTypeId || '';
-    row.querySelectorAll('[data-allocation-tank], [data-allocation-sale]').forEach((select) => {
+    row.querySelectorAll('[data-allocation-tank]').forEach((select) => {
         [...select.options].forEach((option) => {
             if (!option.value) return;
             const matches = fuel !== '' && option.dataset.fuelTypeId === fuel;
@@ -272,11 +249,6 @@ const filterAllocationOptions = (row) => {
 };
 
 document.addEventListener('input', (event) => {
-    const liftRow = event.target.closest('[data-lifting-item]');
-    if (liftRow && event.target.matches('[data-lifting-quantity], [data-allocation-garage], [data-allocation-direct]')) {
-        syncLiftAllocation(liftRow, event.target);
-    }
-
     if (event.target.closest('[data-sales-item]')) {
         updateSalesTotals(event.target.closest('[data-sales-items]'));
     }
@@ -291,6 +263,15 @@ document.addEventListener('input', (event) => {
 });
 
 document.addEventListener('change', (event) => {
+    // Record Sales: a stock lot caps the line's quantity at what the lot has available (the server re-checks).
+    if (event.target.matches('[data-stock-lot]')) {
+        const available = event.target.selectedOptions?.[0]?.dataset.available;
+        const quantity = event.target.closest('[data-sales-item]')?.querySelector('input[name$="[quantity_liters]"]');
+        if (quantity) {
+            if (available) quantity.max = available; else quantity.removeAttribute('max');
+        }
+    }
+
     if (event.target.matches('[data-lifting-purchase]')) {
         filterAllocationOptions(event.target.closest('[data-lifting-item]'));
     }
@@ -342,9 +323,6 @@ const updateLiftingSchedule = (form) => {
             // The depot label is built server-side, so no separator character is ever encoded in JS.
             depotLabel ||= option.dataset.pickup || '';
             if (quantity > remaining) error ||= 'An amount to lift exceeds its remaining purchase quantity.';
-            const garageLiters = Number(row.querySelector('[data-allocation-garage]')?.value || 0);
-            const directLiters = Number(row.querySelector('[data-allocation-direct]')?.value || 0);
-            if (quantity > 0 && Math.abs(garageLiters + directLiters - quantity) > 0.005) error ||= 'Garage + Depot allocation must equal the Amount to Lift.';
             if (quantityInput) quantityInput.max = String(remaining);
             if (summary) summary.textContent = `${option.dataset.fuel} \u00b7 ${remaining.toLocaleString()} L remaining`;
         } else if (summary) {
@@ -365,10 +343,7 @@ const updateLiftingSchedule = (form) => {
     if (submit) submit.disabled = Boolean(error) || rows.some((row) => !row.querySelector('[data-lifting-purchase]')?.value) || capacity <= 0 || total <= 0;
 };
 
-document.querySelectorAll('[data-lifting-item]').forEach((row) => {
-    filterAllocationOptions(row);
-    if (row.querySelector('[data-allocation-garage]')?.value === '') syncLiftAllocation(row, null);
-});
+document.querySelectorAll('[data-lifting-item]').forEach(filterAllocationOptions);
 document.querySelectorAll('[data-lifting-schedule-form]').forEach(updateLiftingSchedule);
 
 // Reopen a modal after a redirect (e.g. Payment History after recording a payment).

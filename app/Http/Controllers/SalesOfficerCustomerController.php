@@ -7,6 +7,7 @@ use App\Services\DashboardSummaryService;
 use App\Services\IdempotencyService;
 use App\Services\SaleConfirmationService;
 use App\Services\SaleCorrectionService;
+use App\Services\StockLotService;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
@@ -23,7 +24,8 @@ class SalesOfficerCustomerController extends Controller
     public function __construct(
         private readonly SaleConfirmationService $saleConfirmationService,
         private readonly IdempotencyService $idempotencyService,
-        private readonly SaleCorrectionService $saleCorrectionService
+        private readonly SaleCorrectionService $saleCorrectionService,
+        private readonly StockLotService $stockLots
     ) {}
 
     public const PAYMENT_STATUSES = ['clear', 'pending', 'partial', 'unpaid'];
@@ -34,9 +36,17 @@ class SalesOfficerCustomerController extends Controller
 
     private const DELIVERY_STATUSES = ['pending', 'out_for_delivery', 'delivered', 'cancelled'];
 
-    private const PAYMENT_METHODS = ['cash_on_delivery', 'cheque', 'advance_payment', 'bank_transfer'];
+    /** Methods offered for new sales and payments (Part 8 #10 removed Advance Payment). */
+    private const PAYMENT_METHODS = ['cash_on_delivery', 'cheque', 'bank_transfer'];
 
-    private const PAYMENT_TERMS = ['cod', 'installment', 'advance'];
+    /** Retired methods: existing records keep and display them, but they can't be chosen again. */
+    private const LEGACY_PAYMENT_METHODS = ['advance_payment'];
+
+    /** Terms offered for new sales (Part 8 #11 removed COD). */
+    private const PAYMENT_TERMS = ['installment', 'advance'];
+
+    /** Retired terms: an existing sale keeps its value when edited. */
+    private const LEGACY_PAYMENT_TERMS = ['cod'];
 
     /** Receivable statuses shown in the Status column (filter value => label). */
     /** Why a sale is being voided (System Analysis 4.13); "other" needs a note. */
@@ -89,6 +99,8 @@ class SalesOfficerCustomerController extends Controller
             'customers' => $this->customerRows($normalizedSearch, filters: $activeTab === 'customers' ? $filters : []),
             'customerOptions' => $this->customerOptions($state === 'customers' ? $normalizedSearch : null),
             'fuelTypes' => $this->fuelTypeOptions(),
+            // Stock Source for Record Sales (Part 8 #8): lots with stock, by fuel then oldest first.
+            'stockLotOptions' => $this->stockLots->saleOptions(),
             'paymentStatuses' => self::PAYMENT_STATUSES,
             'accountStatuses' => self::ACCOUNT_STATUSES,
             'saleStatuses' => self::SALE_STATUSES,
@@ -289,11 +301,13 @@ class SalesOfficerCustomerController extends Controller
                             'updated_at' => now(),
                         ]);
 
+                        $this->assertLotStock($items);
                         $now = now();
                         foreach ($items as $item) {
                             DB::table('sale_items')->insertGetId([
                                 'sale_id' => $saleId,
                                 'fuel_type_id' => $item['fuel_type_id'],
+                                'stock_in_movement_id' => $item['stock_lot_id'],
                                 'quantity_liters' => $item['quantity_liters'],
                                 'unit_price' => $item['unit_price'],
                                 'line_total' => $this->lineTotal($item['quantity_liters'], $item['unit_price']),
@@ -430,12 +444,15 @@ class SalesOfficerCustomerController extends Controller
 
                 if (! $hasDependencies && $this->changesProtectedSaleFields($row, $data)) {
                     DB::table('sale_items')->where('sale_id', $sale)->delete();
+                    // Checked after the old lines are gone, so this sale's own reservation is not counted twice.
+                    $this->assertLotStock($items);
 
                     $now = now();
                     foreach ($items as $item) {
                         DB::table('sale_items')->insert([
                             'sale_id' => $sale,
                             'fuel_type_id' => $item['fuel_type_id'],
+                            'stock_in_movement_id' => $item['stock_lot_id'],
                             'quantity_liters' => $item['quantity_liters'],
                             'unit_price' => $item['unit_price'],
                             'line_total' => $this->lineTotal($item['quantity_liters'], $item['unit_price']),
@@ -561,7 +578,7 @@ class SalesOfficerCustomerController extends Controller
                 ->withErrors(['company_name' => 'Customer record could not be saved. Please review the customer details and try again.']);
         }
 
-        return $this->customersRedirect(request())
+        return redirect()->route($this->customersRedirectRoute(request()))
             ->with('status', 'Customer record created successfully.');
     }
 
@@ -591,7 +608,7 @@ class SalesOfficerCustomerController extends Controller
                 ->withErrors(['company_name' => 'Customer record could not be updated. Please review the customer details and try again.']);
         }
 
-        return $this->customersRedirect(request())
+        return redirect()->route($this->customersRedirectRoute(request()))
             ->with('status', 'Customer record updated successfully.');
     }
 
@@ -611,7 +628,7 @@ class SalesOfficerCustomerController extends Controller
                 ->withErrors(['customer' => 'Customer record could not be deactivated. Please try again.']);
         }
 
-        return $this->customersRedirect(request())
+        return redirect()->route($this->customersRedirectRoute(request()))
             ->with('status', 'Customer record deactivated successfully.');
     }
 
@@ -928,7 +945,8 @@ class SalesOfficerCustomerController extends Controller
                     'correction_action' => $correctionAction,
                     'refund_due' => $refundDue,
                     'items' => $saleItems,
-                    'class' => $this->rowClass(in_array($receivableStatus, ['overdue', 'refund_due'], true) ? $receivableStatus : $status),
+                    // Part 8 #9: white by default; red only while money is still owed. Cancelled sales stay white.
+                    'class' => ! $isCancelled && $balance > 0 ? 'row-danger' : '',
                     'cells' => [
                         $row->sale_code,
                         $row->sales_order_number ?: 'N/A',
@@ -961,7 +979,7 @@ class SalesOfficerCustomerController extends Controller
                         'Latest Payment Date' => $latestPaymentDate ? $this->formatDate($latestPaymentDate) : 'N/A',
                         'Receivable Status' => $status,
                         'Delivery Status' => $this->label($row->delivery_status),
-                        'Payment Terms' => $this->label($row->payment_terms),
+                        'Payment Terms' => $row->payment_terms === 'cod' ? 'COD' : $this->label($row->payment_terms),
                         'Payment Method' => $this->paymentMethodLabel($row->payment_method),
                         'Order Status' => $this->label($row->status),
                     ] + ($isCancelled ? ['Cancellation Reason' => $row->cancellation_reason ?: 'N/A'] : []),
@@ -981,6 +999,8 @@ class SalesOfficerCustomerController extends Controller
      */
     private function validatedSaleData(Request $request, ?int $saleId = null): array
     {
+        $current = $saleId ? DB::table('sales')->where('id', $saleId)->first(['payment_method', 'payment_terms']) : null;
+
         return $request->validate([
             'idempotency_key' => [$saleId ? 'nullable' : 'required', 'uuid'],
             'sales_order_number' => ['nullable', 'string', 'max:60', Rule::unique('sales', 'sales_order_number')->ignore($saleId)->whereNull('deleted_at')],
@@ -994,8 +1014,13 @@ class SalesOfficerCustomerController extends Controller
             'quantity_liters' => ['required_without:items', 'numeric', 'gt:0', 'max:1000000'],
             'unit_price' => ['required_without:items', 'numeric', 'gt:0', 'max:10000'],
             'items' => ['nullable', 'array', 'min:1'],
+            // Part 8 #8: a line is sold from a stock lot (its fuel and cost come from the lot). A line without a
+            // lot names its fuel instead (legacy pooled release).
+            'items.*.stock_lot_id' => ['nullable', 'integer', Rule::exists('inventory_movements', 'id')->where('direction', 'in')],
             'items.*.fuel_type_id' => [
-                'required_with:items',
+                'exclude_with:items.*.stock_lot_id',
+                'nullable',
+                'required_without:items.*.stock_lot_id',
                 'integer',
                 ApprovedFuelType::rule(),
             ],
@@ -1005,8 +1030,8 @@ class SalesOfficerCustomerController extends Controller
             'payment_reference_number' => [$saleId ? 'prohibited' : 'nullable', 'string', 'max:100'],
             'payment_date' => [$saleId ? 'prohibited' : 'nullable', 'date', 'after_or_equal:sale_date'],
             'payment_remarks' => [$saleId ? 'prohibited' : 'nullable', 'string', 'max:1000'],
-            'payment_method' => ['required', Rule::in(self::PAYMENT_METHODS)],
-            'payment_terms' => ['nullable', Rule::in(self::PAYMENT_TERMS)],
+            'payment_method' => ['required', Rule::in($this->allowedValues(self::PAYMENT_METHODS, self::LEGACY_PAYMENT_METHODS, $current?->payment_method))],
+            'payment_terms' => ['nullable', Rule::in($this->allowedValues(self::PAYMENT_TERMS, self::LEGACY_PAYMENT_TERMS, $current?->payment_terms))],
             'status' => ['nullable', Rule::in(array_diff(self::SALE_STATUSES, ['paid']))],
             'due_date' => ['nullable', 'date', 'after_or_equal:sale_date'],
             'created_by' => ['prohibited'],
@@ -1051,21 +1076,70 @@ class SalesOfficerCustomerController extends Controller
     private function normalizedSaleItems(array $data): array
     {
         if (! empty($data['items'])) {
+            $lotFuel = DB::table('inventory_movements')
+                ->whereIn('id', collect($data['items'])->pluck('stock_lot_id')->filter()->all())
+                ->pluck('fuel_type_id', 'id');
+
             return collect($data['items'])
-                ->map(fn (array $item): array => [
-                    'fuel_type_id' => (int) $item['fuel_type_id'],
-                    'quantity_liters' => $item['quantity_liters'],
-                    'unit_price' => $item['unit_price'],
-                ])
+                ->map(function (array $item) use ($lotFuel): array {
+                    $lotId = ($item['stock_lot_id'] ?? null) ? (int) $item['stock_lot_id'] : null;
+
+                    return [
+                        // The lot decides the fuel, whatever fuel the client sent.
+                        'fuel_type_id' => $lotId ? (int) $lotFuel[$lotId] : (int) $item['fuel_type_id'],
+                        'stock_lot_id' => $lotId,
+                        'quantity_liters' => $item['quantity_liters'],
+                        'unit_price' => $item['unit_price'],
+                    ];
+                })
                 ->values()
                 ->all();
         }
 
         return [[
             'fuel_type_id' => (int) $data['fuel_type_id'],
+            'stock_lot_id' => null,
             'quantity_liters' => $data['quantity_liters'],
             'unit_price' => $data['unit_price'],
         ]];
+    }
+
+    /**
+     * Part 8 #8: lines sold from a lot may not exceed what that lot still has available (stock on hand
+     * minus other undelivered sales). Lots are row-locked so two sales can't promise the same liters.
+     *
+     * @param  array<int, array{fuel_type_id: int, stock_lot_id: ?int, quantity_liters: mixed, unit_price: mixed}>  $items
+     *
+     * @throws ValidationException
+     */
+    private function assertLotStock(array $items): void
+    {
+        $lotIds = collect($items)->pluck('stock_lot_id')->filter()->unique()->values()->all();
+        if ($lotIds === []) {
+            return;
+        }
+
+        $lots = $this->stockLots->lots($lotIds, true)->keyBy('id');
+        $requested = [];
+        $errors = [];
+
+        foreach ($items as $index => $item) {
+            if (! $item['stock_lot_id']) {
+                continue;
+            }
+
+            $lot = $lots->get($item['stock_lot_id']);
+            $requested[$item['stock_lot_id']] = round(($requested[$item['stock_lot_id']] ?? 0) + (float) $item['quantity_liters'], 2);
+            if (! $lot) {
+                $errors["items.$index.stock_lot_id"] = 'The selected stock source is no longer available.';
+            } elseif ($requested[$item['stock_lot_id']] > $lot->available) {
+                $errors["items.$index.quantity_liters"] = 'Only '.number_format($lot->available, 2).' L of '.$lot->source_code.' ('.$lot->fuel_name.') is available.';
+            }
+        }
+
+        if ($errors !== []) {
+            throw ValidationException::withMessages($errors);
+        }
     }
 
     private function saleForUpdate(int $sale): ?object
@@ -1132,9 +1206,10 @@ class SalesOfficerCustomerController extends Controller
         $existingItems = DB::table('sale_items')
             ->where('sale_id', $row->id)
             ->orderBy('id')
-            ->get(['fuel_type_id', 'quantity_liters', 'unit_price'])
+            ->get(['fuel_type_id', 'stock_in_movement_id', 'quantity_liters', 'unit_price'])
             ->map(fn (object $item): array => [
                 'fuel_type_id' => (int) $item->fuel_type_id,
+                'stock_lot_id' => $item->stock_in_movement_id ? (int) $item->stock_in_movement_id : null,
                 'quantity_liters' => number_format((float) $item->quantity_liters, 2, '.', ''),
                 'unit_price' => number_format((float) $item->unit_price, 2, '.', ''),
             ])
@@ -1143,6 +1218,7 @@ class SalesOfficerCustomerController extends Controller
         $submittedItems = collect($this->normalizedSaleItems($data))
             ->map(fn (array $item): array => [
                 'fuel_type_id' => (int) $item['fuel_type_id'],
+                'stock_lot_id' => $item['stock_lot_id'],
                 'quantity_liters' => number_format((float) $item['quantity_liters'], 2, '.', ''),
                 'unit_price' => number_format((float) $item['unit_price'], 2, '.', ''),
             ])
@@ -1455,7 +1531,19 @@ class SalesOfficerCustomerController extends Controller
 
     private function defaultPaymentTerms(string $paymentMethod): string
     {
-        return $paymentMethod === 'advance_payment' ? 'advance' : 'cod';
+        return $paymentMethod === 'advance_payment' ? 'advance' : 'installment';
+    }
+
+    /**
+     * Offered values, plus a retired one only when the record being edited already uses it.
+     *
+     * @param  array<int, string>  $offered
+     * @param  array<int, string>  $legacy
+     * @return array<int, string>
+     */
+    private function allowedValues(array $offered, array $legacy, ?string $current): array
+    {
+        return in_array($current, $legacy, true) ? [...$offered, $current] : $offered;
     }
 
     private function statusAllowedByPayments(string $requested, float $saleTotal, float $paidTotal): string
@@ -1520,9 +1608,12 @@ class SalesOfficerCustomerController extends Controller
                 'sale_items.unit_price',
                 'sale_items.line_total',
                 'sale_items.fulfilled_quantity_liters',
+                'sale_items.stock_in_movement_id',
                 'fuel_types.name as fuel_name',
             ])
             ->groupBy(fn (object $item): int => (int) $item->sale_id);
+        $lotIds = $items->flatten(1)->pluck('stock_in_movement_id')->filter()->map(fn (mixed $id): int => (int) $id)->unique()->values()->all();
+        $lotLabels = $lotIds === [] ? collect() : $this->stockLots->lots($lotIds)->mapWithKeys(fn (object $lot): array => [(int) $lot->id => $lot->source_code.' · '.$lot->fuel_name.' · ₱'.number_format((float) $lot->unit_cost, 2).'/L']);
 
         return $ids
             ->mapWithKeys(fn (int $saleId): array => [
@@ -1534,6 +1625,8 @@ class SalesOfficerCustomerController extends Controller
                         'unit_price' => $item->unit_price,
                         'line_total' => $item->line_total,
                         'fulfilled_quantity_liters' => $item->fulfilled_quantity_liters,
+                        'stock_lot_id' => $item->stock_in_movement_id ? (int) $item->stock_in_movement_id : null,
+                        'source' => $item->stock_in_movement_id ? ($lotLabels[(int) $item->stock_in_movement_id] ?? '—') : '—',
                     ])
                     ->all(),
             ])
@@ -1754,18 +1847,6 @@ class SalesOfficerCustomerController extends Controller
         return str_starts_with((string) $request->route()?->getName(), 'admin.')
             ? 'admin.sales'
             : 'sales-officer.sales';
-    }
-
-    /**
-     * Back to the customer list the form came from: Admin can also manage customers from User Management.
-     */
-    private function customersRedirect(Request $request): RedirectResponse
-    {
-        if ($request->input('return_to') === 'user-management' && str_starts_with((string) $request->route()?->getName(), 'admin.')) {
-            return redirect()->route('admin.user-management', ['tab' => 'customers']);
-        }
-
-        return redirect()->route($this->customersRedirectRoute($request));
     }
 
     private function customersRedirectRoute(Request $request): string

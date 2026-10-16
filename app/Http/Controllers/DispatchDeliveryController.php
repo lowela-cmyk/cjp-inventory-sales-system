@@ -69,6 +69,7 @@ class DispatchDeliveryController extends Controller
             'truckSearch' => $truckSearch === '' ? null : $truckSearch,
             'truckStatusFilter' => $truckFilters['status'] ?? null,
             'truckTypes' => TruckAvailabilityService::TRUCK_TYPES,
+            'nextTruckCode' => $this->truckAvailability->nextTruckCode(),
             'truckStatuses' => TruckAvailabilityService::DISPLAY_STATUSES,
             'managedStatuses' => TruckAvailabilityService::MANAGED_STATUSES,
             'scheduledRows' => $rows->whereIn('raw_status', self::ACTIVE_HAUL_STATUSES)->values(),
@@ -80,7 +81,6 @@ class DispatchDeliveryController extends Controller
             'trucks' => $this->haulTruckOptions(),
             'purchaseItems' => $this->availablePurchaseItemOptions(),
             'tankOptions' => $this->liftAllocations->tankOptions(),
-            'directSaleOptions' => $this->liftAllocations->directSaleOptions(),
             'createIdempotencyKey' => (string) Str::uuid(),
             'statusIdempotencyKey' => (string) Str::uuid(),
             'truckAssignmentIdempotencyKey' => (string) Str::uuid(),
@@ -94,11 +94,8 @@ class DispatchDeliveryController extends Controller
             'items' => ['sometimes', 'array', 'min:1', 'max:20'],
             'items.*.purchase_item_id' => ['required_with:items', 'integer', 'distinct', Rule::exists('purchase_items', 'id')],
             'items.*.quantity_liters' => ['required_with:items', 'numeric', 'gt:0', 'max:1000000'],
-            // Allocation of each line (Part 7 / audit C01). Omitted = whole line to the default tank, confirmed later.
-            'items.*.garage_liters' => ['nullable', 'numeric', 'gte:0', 'max:1000000'],
+            // The garage tank that receives the whole line (Part 8 #5). Omitted = default tank, confirmed later.
             'items.*.storage_location_id' => ['nullable', 'integer', Rule::exists('storage_locations', 'id')],
-            'items.*.direct_liters' => ['nullable', 'numeric', 'gte:0', 'max:1000000'],
-            'items.*.sale_id' => ['nullable', 'integer', Rule::exists('sales', 'id')],
             'purchase_item_id' => ['required_without:items', 'integer', Rule::exists('purchase_items', 'id')],
             'driver_user_id' => ['required', 'integer', Rule::exists('users', 'id')->where(fn (Builder $query): Builder => $query->where('role', 'driver'))],
             'truck_id' => ['required', 'integer', Rule::exists('trucks', 'id')],
@@ -112,10 +109,7 @@ class DispatchDeliveryController extends Controller
             'dr_number' => 'DR number',
             'items.*.purchase_item_id' => 'purchase',
             'items.*.quantity_liters' => 'amount to lift',
-            'items.*.garage_liters' => 'garage allocation',
             'items.*.storage_location_id' => 'garage tank',
-            'items.*.direct_liters' => 'depot allocation',
-            'items.*.sale_id' => 'client sale',
         ]);
         $items = collect($data['items'] ?? [[
             'purchase_item_id' => $data['purchase_item_id'],
@@ -123,10 +117,7 @@ class DispatchDeliveryController extends Controller
         ]])->map(fn (array $item): array => [
             'purchase_item_id' => (int) $item['purchase_item_id'],
             'quantity_liters' => round((float) $item['quantity_liters'], 2),
-            'garage_liters' => $item['garage_liters'] ?? null,
             'storage_location_id' => $item['storage_location_id'] ?? null,
-            'direct_liters' => $item['direct_liters'] ?? null,
-            'sale_id' => $item['sale_id'] ?? null,
         ])->values();
         $fuelTypeByItem = DB::table('purchase_items')->whereIn('id', $items->pluck('purchase_item_id'))->pluck('fuel_type_id', 'id')->map(fn (mixed $id): int => (int) $id)->all();
         // Field-level allocation errors (under the right input) before anything is written.

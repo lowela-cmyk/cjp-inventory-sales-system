@@ -23,6 +23,22 @@ class TruckAvailabilityService
     public const TRUCK_TYPES = ['hauling', 'delivery', 'mixed'];
 
     /**
+     * Next automatic truck code: TRK-NNN after the highest existing TRK number (Part 8 #7).
+     * Callers insert with IdempotencyService::retryOnCollision('truck_code', …): the unique index on
+     * trucks.truck_code turns a simultaneous create into a retry that picks the following number.
+     */
+    public function nextTruckCode(): string
+    {
+        $highest = DB::table('trucks')
+            ->where('truck_code', 'like', 'TRK-%')
+            ->pluck('truck_code')
+            ->map(fn (string $code): int => preg_match('/^TRK-(\d+)$/', $code, $match) ? (int) $match[1] : 0)
+            ->max() ?? 0;
+
+        return 'TRK-'.str_pad((string) ($highest + 1), 3, '0', STR_PAD_LEFT);
+    }
+
+    /**
      * The fleet list (Fuel Lifting > Trucks tab) with each truck's live availability and lift counts.
      */
     public function directory(string $search = '', ?string $status = null, int $perPage = 20): LengthAwarePaginator

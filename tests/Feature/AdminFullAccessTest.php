@@ -67,7 +67,7 @@ class AdminFullAccessTest extends TestCase
         $this->actingAs($r['admin'])->post(route('admin.sales.store'), [
             'idempotency_key' => (string) Str::uuid(), 'customer_id' => $customerId, 'sale_date' => '2026-10-12',
             'items' => [['fuel_type_id' => $r['fuel'], 'quantity_liters' => 100, 'unit_price' => 60]],
-            'amount_paid' => 1000, 'payment_method' => 'cash_on_delivery', 'payment_terms' => 'cod', 'status' => 'confirmed',
+            'amount_paid' => 1000, 'payment_method' => 'cash_on_delivery', 'payment_terms' => 'installment', 'status' => 'confirmed',
         ])->assertSessionHasNoErrors()->assertRedirect(route('admin.sales'));
         $saleId = (int) DB::table('sales')->value('id');
         $this->assertDatabaseHas('sales', ['id' => $saleId, 'created_by' => $r['admin']->id, 'status' => 'partially_paid']);

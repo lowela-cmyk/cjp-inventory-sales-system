@@ -13,7 +13,7 @@
     $showPaymentForm = $isOldPaymentForm && $errors->any();
     $reopenOnLoad = $isOldPaymentForm || (int) session('payment_sale_id') === (int) $saleId;
     $fieldPrefix = 'payment_'.$saleId;
-    $selectedMethod = ($isOldPaymentForm ? old('method') : null) ?: ($row['payment_method'] ?: 'cash_on_delivery');
+    $selectedMethod = ($isOldPaymentForm ? old('method') : null) ?: (in_array($row['payment_method'], $paymentMethods, true) ? $row['payment_method'] : 'cash_on_delivery');
     // Field errors are shown only in the modal of the sale whose payment form was submitted.
     $paymentError = fn (string $field): ?string => $showPaymentForm ? $errors->first($field) ?: null : null;
 @endphp

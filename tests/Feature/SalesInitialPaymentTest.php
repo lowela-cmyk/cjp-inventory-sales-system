@@ -124,7 +124,7 @@ class SalesInitialPaymentTest extends TestCase
             'unit_price' => '10.25',
             'amount_paid' => '0.00',
             'payment_method' => 'cash_on_delivery',
-            'payment_terms' => 'cod',
+            'payment_terms' => 'installment',
             'status' => 'confirmed',
         ], $overrides);
     }

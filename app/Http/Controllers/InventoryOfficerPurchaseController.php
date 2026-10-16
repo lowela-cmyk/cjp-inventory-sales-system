@@ -576,7 +576,9 @@ class InventoryOfficerPurchaseController extends Controller
             return 'Depot'.($row->depot_name ? ' — '.$row->depot_name : '');
         }
 
-        return 'Garage'.($row->garage_name ? ' — '.$row->garage_name : '');
+        $lot = $row->lot_id ? ' · '.($row->lot_code ?: 'Opening stock') : '';
+
+        return 'Garage'.($row->garage_name ? ' — '.$row->garage_name : '').$lot;
     }
 
     private function rowClass(?string $status): string

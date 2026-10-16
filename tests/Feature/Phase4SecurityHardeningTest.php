@@ -200,23 +200,18 @@ class Phase4SecurityHardeningTest extends TestCase
             'approval_status' => 'approved',
         ]);
 
-        DB::table('customers')->insert([
-            'customer_code' => 'CSM-000098',
-            'name' => '+InjectedCustomer',
-            'company_name' => '=1337',
-            'location' => '@ManilaOffice',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        // Customers left User Management in Part 8 (#12); the staff export goes through the same sanitizer.
+        User::factory()->create(['name' => '+InjectedStaff', 'role' => 'sales_officer', 'status' => 'active', 'approval_status' => 'approved', 'phone' => '@ManilaOffice']);
+        User::factory()->create(['name' => '=1337', 'role' => 'inventory_officer', 'status' => 'active', 'approval_status' => 'approved']);
 
-        $response = $this->actingAs($admin)->get('/admin/user-management/export?tab=customers');
+        $response = $this->actingAs($admin)->get('/admin/user-management/export?tab=office');
 
         $response->assertOk();
         $response->assertHeader('Content-Type', 'text/csv; charset=UTF-8');
 
         $content = $response->getContent();
 
-        $this->assertStringContainsString("'+InjectedCustomer", $content);
+        $this->assertStringContainsString("'+InjectedStaff", $content);
         $this->assertStringContainsString("'=1337", $content);
         $this->assertStringContainsString("'@ManilaOffice", $content);
     }

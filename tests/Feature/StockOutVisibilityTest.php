@@ -258,7 +258,7 @@ class StockOutVisibilityTest extends TestCase
             'items' => [['fuel_type_id' => $records['fuel'], 'quantity_liters' => $quantity, 'unit_price' => 60]],
             'amount_paid' => 0,
             'payment_method' => 'cash_on_delivery',
-            'payment_terms' => 'cod',
+            'payment_terms' => 'installment',
             'status' => 'confirmed',
         ])->assertSessionHasNoErrors();
 

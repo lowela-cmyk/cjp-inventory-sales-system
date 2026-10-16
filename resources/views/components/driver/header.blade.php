@@ -12,6 +12,7 @@
         <p>{{ $subtitle }}</p>
     </div>
     <div class="header-profile">
+        <x-header.bell />
         <div>
             <div class="profile-name">{{ $user?->name ?? $driverName }}</div>
             <div class="profile-role">{{ $user?->role_label ?? 'Driver' }}</div>

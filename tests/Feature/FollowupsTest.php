@@ -62,7 +62,7 @@ class FollowupsTest extends AuditTestCase
             $this->actingAs($user)->from(route($prefix.'.sales'))->post(route($prefix.'.sales.store'), [
                 'idempotency_key' => $this->uuid(), 'form_context' => 'record-sale', 'customer_id' => $a['customer'], 'sale_date' => '2026-10-15',
                 'items' => [['fuel_type_id' => $a['fuel'], 'quantity_liters' => 100, 'unit_price' => 10]],
-                'amount_paid' => 1000.01, 'payment_method' => 'cash_on_delivery', 'payment_terms' => 'cod', 'status' => 'confirmed',
+                'amount_paid' => 1000.01, 'payment_method' => 'cash_on_delivery', 'payment_terms' => 'installment', 'status' => 'confirmed',
                 // A balance sent by the form is never trusted.
                 'balance' => 999999,
             ])->assertSessionHasErrors();
@@ -72,7 +72,7 @@ class FollowupsTest extends AuditTestCase
             $this->actingAs($user)->from(route($prefix.'.sales'))->post(route($prefix.'.sales.store'), [
                 'idempotency_key' => $this->uuid(), 'form_context' => 'record-sale', 'customer_id' => $a['customer'], 'sale_date' => '2026-10-15',
                 'items' => [['fuel_type_id' => $a['fuel'], 'quantity_liters' => 100, 'unit_price' => 10]],
-                'amount_paid' => 1000.01, 'payment_method' => 'cash_on_delivery', 'payment_terms' => 'cod', 'status' => 'confirmed',
+                'amount_paid' => 1000.01, 'payment_method' => 'cash_on_delivery', 'payment_terms' => 'installment', 'status' => 'confirmed',
             ])->assertSessionHasErrors(['amount_paid' => 'Amount paid cannot exceed the sale total.']);
             $this->assertSame($before, DB::table('sales')->count());
         }

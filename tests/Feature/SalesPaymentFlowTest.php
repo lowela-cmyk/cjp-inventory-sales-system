@@ -95,7 +95,7 @@ class SalesPaymentFlowTest extends TestCase
         $base = [
             'form_context' => 'record-sale', 'customer_id' => $customer, 'sale_date' => '2026-10-12',
             'items' => [['fuel_type_id' => $fuel, 'quantity_liters' => 10, 'unit_price' => 100]],
-            'payment_terms' => 'cod', 'status' => 'confirmed',
+            'payment_terms' => 'installment', 'status' => 'confirmed',
         ];
 
         $this->actingAs($user)->from(route($prefix.'.sales'))->post(route($prefix.'.sales.store'), $base + [

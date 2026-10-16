@@ -188,16 +188,22 @@
                     <div class="sales-items" data-sales-items>
                         @foreach ($saleItemOldRows as $itemIndex => $item)
                             <div class="sales-item-row" data-sales-item>
+                                {{-- Part 8 #8: sold from one stock lot (purchase record); fuel and cost come from the lot. --}}
                                 <div class="form-row">
-                                    <label for="sale_fuel_type_id_{{ $itemIndex }}">Fuel Type</label>
-                                    <select id="sale_fuel_type_id_{{ $itemIndex }}" name="items[{{ $itemIndex }}][fuel_type_id]" required>
-                                        <option value="">Select Fuel Type</option>
-                                        @foreach ($fuelTypes as $fuel)
-                                            <option value="{{ $fuel->id }}" @selected((string) ($item['fuel_type_id'] ?? '') === (string) $fuel->id)>{{ $fuel->name }} (Garage: {{ number_format((float) $fuel->available_liters, 2) }} L)</option>
+                                    <label for="sale_stock_lot_id_{{ $itemIndex }}">Stock Source</label>
+                                    <select id="sale_stock_lot_id_{{ $itemIndex }}" name="items[{{ $itemIndex }}][stock_lot_id]" data-stock-lot required @error("items.$itemIndex.stock_lot_id") aria-invalid="true" @enderror>
+                                        <option value="">{{ $stockLotOptions->isEmpty() ? 'No stock available' : 'Select stock source' }}</option>
+                                        @foreach ($stockLotOptions->groupBy('fuel_name') as $fuelName => $lots)
+                                            <optgroup label="{{ $fuelName }}">
+                                                @foreach ($lots as $lot)
+                                                    <option value="{{ $lot->id }}" data-available="{{ $lot->available }}" @selected((string) ($item['stock_lot_id'] ?? '') === (string) $lot->id)>{{ $lot->label }}</option>
+                                                @endforeach
+                                            </optgroup>
                                         @endforeach
                                     </select>
+                                    @error("items.$itemIndex.stock_lot_id")<p class="field-error form-row-message">{{ $message }}</p>@enderror
                                 </div>
-                                <div class="form-row"><label for="sale_quantity_liters_{{ $itemIndex }}">Quantity</label><input id="sale_quantity_liters_{{ $itemIndex }}" name="items[{{ $itemIndex }}][quantity_liters]" type="number" min="0.01" step="0.01" placeholder="Enter Quantity" value="{{ $item['quantity_liters'] ?? '' }}" required></div>
+                                <div class="form-row"><label for="sale_quantity_liters_{{ $itemIndex }}">Quantity</label><input id="sale_quantity_liters_{{ $itemIndex }}" name="items[{{ $itemIndex }}][quantity_liters]" type="number" min="0.01" step="0.01" placeholder="Enter Quantity" value="{{ $item['quantity_liters'] ?? '' }}" required>@if (old('form_context') === 'record-sale')@error("items.$itemIndex.quantity_liters")<p class="field-error form-row-message">{{ $message }}</p>@enderror @endif</div>
                                 <div class="form-row"><label for="sale_unit_price_{{ $itemIndex }}">Price / Liter</label><input id="sale_unit_price_{{ $itemIndex }}" name="items[{{ $itemIndex }}][unit_price]" type="number" min="0.01" step="0.01" placeholder="Enter Price / Liter" value="{{ $item['unit_price'] ?? '' }}" required></div>
                                 <div class="form-row sale-line-total"><label>Line Total</label><output data-sales-line-total>0.00</output></div>
                                 <button class="btn btn-secondary sales-item-remove" type="button" data-sales-item-remove @disabled($loop->first && count($saleItemOldRows) === 1)>Remove Item</button>
@@ -247,7 +253,7 @@
                         <label for="sale_payment_terms">Payment Terms</label>
                         <select id="sale_payment_terms" name="payment_terms">
                             @foreach ($paymentTerms as $term)
-                                <option value="{{ $term }}" @selected(old('payment_terms', 'cod') === $term)>{{ ucwords($term) }}</option>
+                                <option value="{{ $term }}" @selected(old('payment_terms', 'installment') === $term)>{{ ucwords($term) }}</option>
                             @endforeach
                         </select>
                     </div>
@@ -303,10 +309,10 @@
                 </div>
                 <div class="table-wrap sales-items-table">
                     <table class="admin-table">
-                        <thead><tr><th>Fuel</th><th>QTY</th><th>Price / Liter</th><th>Subtotal</th><th>Fulfilled</th></tr></thead>
+                        <thead><tr><th>Fuel</th><th>Stock Source</th><th>QTY</th><th>Price / Liter</th><th>Subtotal</th><th>Fulfilled</th></tr></thead>
                         <tbody>
                             @foreach ($row['items'] as $item)
-                                <tr><td>{{ $item['fuel_name'] }}</td><td>{{ number_format((float) $item['quantity_liters'], 2) }}</td><td>{{ number_format((float) $item['unit_price'], 2) }}</td><td>{{ number_format((float) $item['line_total'], 2) }}</td><td>{{ number_format((float) $item['fulfilled_quantity_liters'], 2) }}</td></tr>
+                                <tr><td>{{ $item['fuel_name'] }}</td><td>{{ $item['source'] }}</td><td>{{ number_format((float) $item['quantity_liters'], 2) }}</td><td>{{ number_format((float) $item['unit_price'], 2) }}</td><td>{{ number_format((float) $item['line_total'], 2) }}</td><td>{{ number_format((float) $item['fulfilled_quantity_liters'], 2) }}</td></tr>
                             @endforeach
                         </tbody>
                     </table>
@@ -338,15 +344,35 @@
                     <div class="sales-items" data-sales-items>
                         @foreach ($row['items'] as $itemIndex => $item)
                             <div class="sales-item-row" data-sales-item>
-                                <div class="form-row">
-                                    <label for="sale_fuel_{{ $row['id'] }}_{{ $itemIndex }}">Fuel Type</label>
-                                    <select form="sale-update-{{ $row['id'] }}" id="sale_fuel_{{ $row['id'] }}_{{ $itemIndex }}" name="items[{{ $itemIndex }}][fuel_type_id]" required>
-                                        @foreach ($fuelTypes as $fuel)
-                                            <option value="{{ $fuel->id }}" @selected((int) $editOld("items.$itemIndex.fuel_type_id", $item['fuel_type_id']) === (int) $fuel->id)>{{ $fuel->name }} (Garage: {{ number_format((float) $fuel->available_liters, 2) }} L)</option>
-                                        @endforeach
-                                    </select>
-                                </div>
-                                <div class="form-row"><label for="sale_qty_{{ $row['id'] }}_{{ $itemIndex }}">Quantity</label><input form="sale-update-{{ $row['id'] }}" id="sale_qty_{{ $row['id'] }}_{{ $itemIndex }}" name="items[{{ $itemIndex }}][quantity_liters]" type="number" min="0.01" step="0.01" value="{{ $editOld("items.$itemIndex.quantity_liters", $item['quantity_liters']) }}" required></div>
+                                @if ($item['stock_lot_id'])
+                                    {{-- Lot-based line: its own lot stays selectable even when nothing more is available. --}}
+                                    <div class="form-row">
+                                        <label for="sale_lot_{{ $row['id'] }}_{{ $itemIndex }}">Stock Source</label>
+                                        <select form="sale-update-{{ $row['id'] }}" id="sale_lot_{{ $row['id'] }}_{{ $itemIndex }}" name="items[{{ $itemIndex }}][stock_lot_id]" data-stock-lot required>
+                                            @if (! $stockLotOptions->contains('id', $item['stock_lot_id']))
+                                                <option value="{{ $item['stock_lot_id'] }}" selected>{{ $item['source'] }}</option>
+                                            @endif
+                                            @foreach ($stockLotOptions->groupBy('fuel_name') as $fuelName => $lots)
+                                                <optgroup label="{{ $fuelName }}">
+                                                    @foreach ($lots as $lot)
+                                                        <option value="{{ $lot->id }}" @selected((int) $editOld("items.$itemIndex.stock_lot_id", $item['stock_lot_id']) === (int) $lot->id)>{{ $lot->label }}</option>
+                                                    @endforeach
+                                                </optgroup>
+                                            @endforeach
+                                        </select>
+                                    </div>
+                                @else
+                                    {{-- Sale recorded before stock lots: keeps its fuel type and releases from pooled garage stock. --}}
+                                    <div class="form-row">
+                                        <label for="sale_fuel_{{ $row['id'] }}_{{ $itemIndex }}">Fuel Type</label>
+                                        <select form="sale-update-{{ $row['id'] }}" id="sale_fuel_{{ $row['id'] }}_{{ $itemIndex }}" name="items[{{ $itemIndex }}][fuel_type_id]" required>
+                                            @foreach ($fuelTypes as $fuel)
+                                                <option value="{{ $fuel->id }}" @selected((int) $editOld("items.$itemIndex.fuel_type_id", $item['fuel_type_id']) === (int) $fuel->id)>{{ $fuel->name }} (Garage: {{ number_format((float) $fuel->available_liters, 2) }} L)</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+                                @endif
+                                <div class="form-row"><label for="sale_qty_{{ $row['id'] }}_{{ $itemIndex }}">Quantity</label><input form="sale-update-{{ $row['id'] }}" id="sale_qty_{{ $row['id'] }}_{{ $itemIndex }}" name="items[{{ $itemIndex }}][quantity_liters]" type="number" min="0.01" step="0.01" value="{{ $editOld("items.$itemIndex.quantity_liters", $item['quantity_liters']) }}" required>@if ((int) old('edit_sale_id') === (int) $row['id'])@error("items.$itemIndex.quantity_liters")<p class="field-error form-row-message">{{ $message }}</p>@enderror @endif</div>
                                 <div class="form-row"><label for="sale_price_{{ $row['id'] }}_{{ $itemIndex }}">Price / Liter</label><input form="sale-update-{{ $row['id'] }}" id="sale_price_{{ $row['id'] }}_{{ $itemIndex }}" name="items[{{ $itemIndex }}][unit_price]" type="number" min="0.01" step="0.01" value="{{ $editOld("items.$itemIndex.unit_price", $item['unit_price']) }}" required></div>
                                 <div class="form-row sale-line-total"><label>Line Total</label><output data-sales-line-total>0.00</output></div>
                                 <button class="btn btn-secondary sales-item-remove" type="button" data-sales-item-remove @disabled($loop->first && count($row['items']) === 1)>Remove Item</button>
@@ -360,6 +386,10 @@
                     <div class="form-row">
                         <label for="sale_method_{{ $row['id'] }}">Payment Method</label>
                         <select form="sale-update-{{ $row['id'] }}" id="sale_method_{{ $row['id'] }}" name="payment_method" required>
+                            {{-- A retired method (e.g. Advance Payment) stays selectable only on the sale that already uses it. --}}
+                            @if (! in_array($row['payment_method'], $paymentMethods, true))
+                                <option value="{{ $row['payment_method'] }}" @selected($editOld('payment_method', $row['payment_method']) === $row['payment_method'])>{{ ($paymentMethodLabels[$row['payment_method']] ?? ucwords(str_replace('_', ' ', (string) $row['payment_method']))).' (legacy)' }}</option>
+                            @endif
                             @foreach ($paymentMethods as $method)
                                 <option value="{{ $method }}" @selected($editOld('payment_method', $row['payment_method']) === $method)>{{ $paymentMethodLabels[$method] ?? ucwords(str_replace('_', ' ', $method)) }}</option>
                             @endforeach
@@ -368,6 +398,9 @@
                     <div class="form-row">
                         <label for="sale_terms_{{ $row['id'] }}">Payment Terms</label>
                         <select form="sale-update-{{ $row['id'] }}" id="sale_terms_{{ $row['id'] }}" name="payment_terms">
+                            @if ($row['payment_terms'] && ! in_array($row['payment_terms'], $paymentTerms, true))
+                                <option value="{{ $row['payment_terms'] }}" @selected($editOld('payment_terms', $row['payment_terms']) === $row['payment_terms'])>{{ ($row['payment_terms'] === 'cod' ? 'COD' : ucwords($row['payment_terms'])).' (legacy)' }}</option>
+                            @endif
                             @foreach ($paymentTerms as $term)
                                 <option value="{{ $term }}" @selected($editOld('payment_terms', $row['payment_terms']) === $term)>{{ ucwords($term) }}</option>
                             @endforeach

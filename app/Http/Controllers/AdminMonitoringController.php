@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\AlertBellService;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -20,28 +21,25 @@ class AdminMonitoringController extends Controller
 
     public function inventoryOfficerAlerts(Request $request): View
     {
-        return $this->alertsPage($request, 'inventory-officer.alerts', ['inventory', 'purchase', 'haul', 'discrepancy']);
+        return $this->alertsPage($request, 'inventory-officer.alerts', AlertBellService::ROLE_ALERTS['inventory_officer']['types']);
     }
 
     public function salesOfficerAlerts(Request $request): View
     {
-        return $this->alertsPage($request, 'sales-officer.alerts', ['payment', 'receivable']);
+        return $this->alertsPage($request, 'sales-officer.alerts', AlertBellService::ROLE_ALERTS['sales_officer']['types']);
     }
 
     public function dispatchAlerts(Request $request): View
     {
-        return $this->alertsPage($request, 'dispatch.alerts', ['haul', 'delivery']);
+        return $this->alertsPage($request, 'dispatch.alerts', AlertBellService::ROLE_ALERTS['dispatch_officer']['types']);
     }
 
     public function markAlertRead(Request $request, int $alert): RedirectResponse
     {
-        $allowedTypes = match ($request->user()->role) {
-            'inventory_officer' => ['inventory', 'purchase', 'haul', 'discrepancy'],
-            'dispatch_officer' => ['haul', 'delivery'],
-            'sales_officer' => ['payment', 'receivable'],
-            'admin' => null,
-            default => [],
-        };
+        // The same role → alert types map drives the pages, Mark Read and the header bell.
+        // null = every type (Admin); a role without an Alerts page may mark nothing.
+        $role = (string) $request->user()->role;
+        $allowedTypes = array_key_exists($role, AlertBellService::ROLE_ALERTS) ? AlertBellService::ROLE_ALERTS[$role]['types'] : [];
         $query = DB::table('alerts')->where('id', $alert);
         if (is_array($allowedTypes)) {
             $query->whereIn('type', $allowedTypes);

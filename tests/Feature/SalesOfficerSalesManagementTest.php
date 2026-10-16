@@ -181,7 +181,7 @@ class SalesOfficerSalesManagementTest extends TestCase
             ->post(route('sales-officer.sales.store'), $this->salePayload($records, [
                 'sale_code' => 'SLS-SO-DUP',
                 'sales_order_number' => 'SO-CJP-DUP',
-                'payment_method' => 'advance_payment',
+                'payment_method' => 'cheque',
             ]))
             ->assertRedirect(route('sales-officer.sales'))
             ->assertSessionHasErrors('sales_order_number');
@@ -190,13 +190,13 @@ class SalesOfficerSalesManagementTest extends TestCase
             ->post(route('sales-officer.sales.store'), $this->salePayload($records, [
                 'sale_code' => 'SLS-SO-METHOD',
                 'sales_order_number' => 'SO-CJP-1002',
-                'payment_method' => 'advance_payment',
+                'payment_method' => 'cheque',
             ]))
             ->assertRedirect(route('sales-officer.sales'));
 
         $sale = DB::table('sales')->where('sales_order_number', 'SO-CJP-1002')->first();
         $this->assertNotNull($sale);
-        $this->assertSame('advance_payment', $sale->payment_method);
+        $this->assertSame('cheque', $sale->payment_method);
         $this->assertSame(0, DB::table('payments')->where('sale_id', $sale->id)->count());
         $this->assertDatabaseHas('receivables', [
             'sale_id' => $sale->id,
@@ -604,7 +604,7 @@ class SalesOfficerSalesManagementTest extends TestCase
             'quantity_liters' => '1000',
             'unit_price' => '60',
             'payment_method' => 'cash_on_delivery',
-            'payment_terms' => 'cod',
+            'payment_terms' => 'installment',
             'status' => 'confirmed',
         ];
 

@@ -287,7 +287,7 @@ class Phase3OperationalAcceptanceTest extends TestCase
                 'customer_id' => $customer->id,
                 'sale_date' => '2026-09-15',
                 'payment_method' => 'bank_transfer',
-                'payment_terms' => 'cod',
+                'payment_terms' => 'installment',
                 'status' => 'confirmed',
                 'items' => [
                     [

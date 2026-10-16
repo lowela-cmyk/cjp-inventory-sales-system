@@ -10,7 +10,8 @@ class StockOutReleaseService
 {
     public function __construct(
         private readonly IdempotencyService $idempotencyService,
-        private readonly InventoryCostService $inventoryCost
+        private readonly InventoryCostService $inventoryCost,
+        private readonly StockLotService $stockLots
     ) {}
 
     public function releaseSaleItemFromGarage(int $saleItemId, float $quantity, string $stockOutAt, int $createdBy, ?int $preferredGarageId = null, ?string $remarks = null, bool $allowPreparation = true): ?string
@@ -49,6 +50,22 @@ class StockOutReleaseService
         $directResult = $this->releaseFromDirectDepotAllocations($saleItem, $quantity, $stockOutAt, $createdBy);
         if ($directResult['handled']) {
             return $directResult['error'];
+        }
+
+        // Part 8 #8: a line sold from a lot is released from that lot's tank, at that lot's cost.
+        if ($saleItem->stock_in_movement_id) {
+            $lot = $this->stockLots->lockedLot((int) $saleItem->stock_in_movement_id);
+            if (! $lot || $lot->on_hand < $quantity) {
+                return 'Stock source '.($lot->source_code ?? '#'.$saleItem->stock_in_movement_id).' has only '.number_format($lot->on_hand ?? 0, 2).' L in stock.';
+            }
+
+            DB::table('stock_outs')
+                ->where('sale_item_id', $saleItem->id)
+                ->where('status', 'prepared')
+                ->update(['status' => 'cancelled', 'updated_at' => now()]);
+            $this->insertGarageRelease($saleItem, (int) $lot->storage_location_id, $quantity, $stockOutAt, $createdBy, $remarks, (float) $lot->unit_cost);
+
+            return null;
         }
 
         $garages = DB::table('storage_locations')
@@ -124,6 +141,7 @@ class StockOutReleaseService
                 'sale_items.id',
                 'sale_items.sale_id',
                 'sale_items.fuel_type_id',
+                'sale_items.stock_in_movement_id',
                 'sale_items.quantity_liters',
                 'sale_items.fulfilled_quantity_liters',
                 'sales.customer_id',
@@ -139,9 +157,10 @@ class StockOutReleaseService
             ->exists();
     }
 
-    private function insertGarageRelease(object $saleItem, int $garageId, float $quantity, string $stockOutAt, int $createdBy, ?string $remarks): void
+    private function insertGarageRelease(object $saleItem, int $garageId, float $quantity, string $stockOutAt, int $createdBy, ?string $remarks, ?float $lotUnitCost = null): void
     {
-        $unitCost = $this->inventoryCost->currentUnitCostForUpdate($garageId, (int) $saleItem->fuel_type_id);
+        // A lot release carries its own purchase cost; a pooled release takes the tank's average cost.
+        $unitCost = $lotUnitCost ?? $this->inventoryCost->currentUnitCostForUpdate($garageId, (int) $saleItem->fuel_type_id);
 
         if ($unitCost === null) {
             throw new \RuntimeException('The selected garage inventory has no verifiable cost basis.');

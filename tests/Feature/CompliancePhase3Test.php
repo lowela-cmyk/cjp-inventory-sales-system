@@ -66,27 +66,35 @@ class CompliancePhase3Test extends TestCase
         }
     }
 
-    public function test_purchases_sales_and_stock_out_stack_related_values_without_dropping_any(): void
+    public function test_purchases_sales_and_stock_out_keep_every_requested_value_visible(): void
     {
         $admin = User::factory()->create(['role' => 'admin', 'status' => 'active', 'approval_status' => 'approved']);
+        // Part 8: Purchases drops Hauled/Received and un-stacks ID/Date and Cost/Total; Stock-Out is one value per column.
         $headers = [
-            'admin.inventory' => ['Purchase-ID', 'Date', 'Fuel', 'Depot', 'Purchased (L)', 'Hauled (L)', 'Received (L)', 'Cost / Liter', 'Total Cost', 'Receipt', 'Inventory Status', 'Purchase Status', 'Payment Status', 'Actions'],
+            'admin.inventory' => ['Purchase-ID', 'Date', 'Fuel', 'Depot', 'Purchased (L)', 'Cost / Liter', 'Total Cost', 'Receipt', 'Inventory Status', 'Purchase Status', 'Payment Status', 'Actions'],
             'admin.sales' => ['Order-ID', 'Sales Order No.', 'Transaction Date', 'Customer Name', 'Company Name', 'Fuel', 'QTY', 'Price / Liter', 'Total', 'Total Paid', 'Balance', 'Due Date', 'Latest Payment', 'Delivery Status', 'Status', 'Actions'],
             'admin.inventory.stock-out' => ['Order-ID', 'Transaction Date', 'Customer Name', 'Company Name', 'Fuel', 'QTY Released', 'Cost / Unit', 'Total Cost', 'Price / Unit', 'Total Price', 'Total Paid', 'Source', 'Status', 'Margin', 'Realized Profit'],
         ];
 
         foreach ($headers as $route => $expected) {
             $html = $this->actingAs($admin)->get(route($route))->assertOk()->getContent();
-            $this->assertStringContainsString('table-stacked', $html, $route);
             $this->assertSeeInOrderText($html, $expected, $route);
         }
 
-        // Each stacked header line is its own export column.
+        $purchases = $this->get(route('admin.inventory'))->getContent();
+        $purchasesTable = substr($purchases, strpos($purchases, 'data-tab-panel="purchases"'), 4000);
+        $this->assertStringNotContainsString('Hauled (L)', $purchasesTable);
+        $this->assertStringContainsString('<th>Purchase-ID</th><th>Date</th>', $purchasesTable);
+        $this->assertStringContainsString('<th>Cost / Liter</th><th>Total Cost</th>', $purchasesTable);
+
         $stockOut = $this->get(route('admin.inventory.stock-out'))->getContent();
-        $this->assertStringContainsString('<span class="th-line" data-export-part>Cost / Unit</span><span class="th-line" data-export-part>Total Cost</span>', $stockOut);
+        $this->assertStringContainsString('<th>Cost / Unit</th><th>Total Cost</th>', $stockOut);
+        $this->assertStringNotContainsString('stock-out-table table-stacked', $stockOut);
 
         $styles = File::get(resource_path('css/app.css'));
         $this->assertMatchesRegularExpression('/\.cell-line \{\s*white-space: nowrap;/', $styles);
+        $this->assertMatchesRegularExpression('/\.admin-table td\.cell-id \{\s*white-space: nowrap;/', $styles);
+        $this->assertMatchesRegularExpression('/\.stock-out-table th,\s*\.stock-out-table td \{\s*padding-right: 14px;\s*padding-left: 14px;/', $styles);
         $this->assertStringContainsString("parts.length > 0 ? [...parts].map(csvValue) : [csvValue(cell)]", File::get(resource_path('js/app.js')));
     }
 

@@ -44,9 +44,10 @@
             <div class="table-wrap inventory-table-wrap">
                 <table class="admin-table inventory-table inventory-table-actions table-stacked">
                     <thead><tr>
-                        <th><span class="th-line" data-export-part>Purchase-ID</span><span class="th-line" data-export-part>Date</span></th><th>Fuel</th><th>Depot</th>
-                        <th><span class="th-line" data-export-part>Purchased (L)</span><span class="th-line" data-export-part>Hauled (L)</span><span class="th-line" data-export-part>Received (L)</span></th>
-                        <th><span class="th-line" data-export-part>Cost / Liter</span><span class="th-line" data-export-part>Total Cost</span></th>
+                        <th>Purchase-ID</th><th>Date</th><th>Fuel</th><th>Depot</th>
+                        <th>Purchased (L)</th>
+                        <th>Cost / Liter</th><th>Total Cost</th>
+                        <th><span class="th-line" data-export-part>Payment Mode</span><span class="th-line" data-export-part>Bank</span></th>
                         <th>Receipt</th>
                         <th class="inventory-status-column"><span class="th-line" data-export-part>Inventory Status</span><span class="th-line" data-export-part>Purchase Status</span><span class="th-line" data-export-part>Payment Status</span></th>
                         <th>Actions</th>
@@ -55,11 +56,15 @@
                         @forelse ($purchases as $row)
                             @php $c = $row['cells']; @endphp
                             <tr class="{{ $row['class'] }}">
-                                <td><x-table.stack :lines="[['value' => $c[0]], ['value' => $c[1], 'class' => 'is-secondary']]" /></td>
+                                {{-- Hauled / Received ($c[5], $c[6]) stay in the data and the Edit modal; the table shows Purchased only (Part 8 #1). --}}
+                                <td class="cell-id">{{ $c[0] }}</td>
+                                <td>{{ $c[1] }}</td>
                                 <td>{{ $c[2] }}</td>
                                 <td class="cell-wrap">{{ $c[3] }}</td>
-                                <td><x-table.stack :lines="[['label' => 'Purchased', 'value' => $c[4]], ['label' => 'Hauled', 'value' => $c[5]], ['label' => 'Received', 'value' => $c[6]]]" /></td>
-                                <td><x-table.stack :lines="[['label' => '/L', 'value' => $c[8]], ['label' => 'Total', 'value' => $c[9]]]" /></td>
+                                <td class="inventory-number">{{ $c[4] }}</td>
+                                <td class="inventory-number">{{ $c[8] }}</td>
+                                <td class="inventory-number">{{ $c[9] }}</td>
+                                <td><x-table.stack :lines="[['value' => $c[13]], ['value' => $c[14], 'class' => 'is-secondary']]" /></td>
                                 {{-- Withdrawal receipts the driver uploaded for this purchase's lifts. --}}
                                 <td class="inventory-receipt-cell">
                                     @if (count($row['withdrawals']) > 0)
@@ -85,7 +90,7 @@
                                 </td>
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="8">No records found.</td></tr>
+                            <tr><td class="empty-cell" colspan="11">No records found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -137,16 +142,14 @@
             </x-filter.bar>
             <p class="table-help">Stock-Out is posted automatically when a sale's Delivery Status becomes Delivered.</p>
             <div class="table-wrap inventory-table-wrap">
-                <table class="admin-table inventory-table table-stacked stock-out-table">
+                {{-- Part 8 #4: one value per column with room to read; the frame scrolls sideways when narrower. --}}
+                <table class="admin-table inventory-table stock-out-table">
                     <thead><tr>
-                        <th><span class="th-line" data-export-part>Order-ID</span><span class="th-line" data-export-part>Transaction Date</span></th>
-                        <th><span class="th-line" data-export-part>Customer Name</span><span class="th-line" data-export-part>Company Name</span></th>
-                        <th><span class="th-line" data-export-part>Fuel</span><span class="th-line" data-export-part>QTY Released</span></th>
-                        <th><span class="th-line" data-export-part>Cost / Unit</span><span class="th-line" data-export-part>Total Cost</span></th>
-                        <th><span class="th-line" data-export-part>Price / Unit</span><span class="th-line" data-export-part>Total Price</span><span class="th-line" data-export-part>Total Paid</span></th>
-                        <th>Source</th>
-                        <th class="inventory-status-column">Status</th>
-                        <th><span class="th-line th-hint" tabindex="0" data-export-part title="Margin = Total Price − Total Cost (expected profit once fully paid)">Margin</span><span class="th-line th-hint" tabindex="0" data-export-part title="Realized Profit = Total Paid − Total Cost (negative until payments cover the cost)">Realized Profit</span></th>
+                        <th>Order-ID</th><th>Transaction Date</th><th>Customer Name</th><th>Company Name</th><th>Fuel</th>
+                        <th>QTY Released</th><th>Cost / Unit</th><th>Total Cost</th><th>Price / Unit</th><th>Total Price</th><th>Total Paid</th>
+                        <th>Source</th><th class="inventory-status-column">Status</th>
+                        <th><span class="th-hint" tabindex="0" title="Margin = Total Price − Total Cost (expected profit once fully paid)">Margin</span></th>
+                        <th><span class="th-hint" tabindex="0" title="Realized Profit = Total Paid − Total Cost (negative until payments cover the cost)">Realized Profit</span></th>
                     </tr></thead>
                     <tbody>
                         @forelse ($stockOut as $row)
@@ -155,20 +158,21 @@
                                 $negative = fn (mixed $value): bool => is_numeric($value) && $value < 0;
                             @endphp
                             <tr class="{{ $row['class'] }}">
-                                <td><x-table.stack :lines="[['value' => $c[0]], ['value' => $c[1], 'class' => 'is-secondary']]" /></td>
-                                <td class="cell-wrap"><x-table.stack :lines="[['value' => $c[2]], ['value' => $c[3], 'class' => 'is-secondary']]" /></td>
-                                <td><x-table.stack :lines="[['value' => $c[4]], ['label' => 'Qty', 'value' => $c[5]]]" /></td>
-                                <td class="inventory-number"><x-table.stack :lines="[['label' => '/Unit', 'value' => $c[6]], ['label' => 'Total', 'value' => $c[7]]]" /></td>
-                                <td class="inventory-number"><x-table.stack :lines="[['label' => '/Unit', 'value' => $c[8]], ['label' => 'Total', 'value' => $c[9]], ['label' => 'Paid', 'value' => $c[10]]]" /></td>
-                                <td class="cell-wrap">{{ $c[11] }}</td>
+                                <td class="cell-id">{{ $c[0] }}</td>
+                                <td>{{ $c[1] }}</td>
+                                <td class="cell-name">{{ $c[2] }}</td>
+                                <td class="cell-name">{{ $c[3] }}</td>
+                                <td>{{ $c[4] }}</td>
+                                @foreach ([5, 6, 7, 8, 9, 10] as $i)
+                                    <td class="inventory-number">{{ $c[$i] }}</td>
+                                @endforeach
+                                <td class="cell-name">{{ $c[11] }}</td>
                                 <td><x-admin.status-badge :status="$c[12]" /></td>
-                                <td class="inventory-number inventory-profit"><x-table.stack :lines="[
-                                    ['label' => 'Margin', 'value' => $c[13], 'class' => $negative($row['margin']) ? 'is-negative' : null],
-                                    ['label' => 'Realized', 'value' => $c[14], 'class' => $negative($row['profit']) ? 'is-negative' : null],
-                                ]" /></td>
+                                <td @class(['inventory-number', 'inventory-profit', 'is-negative' => $negative($row['margin'])])>{{ $c[13] }}</td>
+                                <td @class(['inventory-number', 'inventory-profit', 'is-negative' => $negative($row['profit'])])>{{ $c[14] }}</td>
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="8">No records found.</td></tr>
+                            <tr><td class="empty-cell" colspan="15">No records found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -226,6 +230,7 @@
                     <div class="form-row"><label for="quantity_ordered_liters">Quantity (Liters)</label><input id="quantity_ordered_liters" name="quantity_ordered_liters" type="number" min="0.01" step="0.01" placeholder="Enter Quantity (Liters)" value="{{ old('quantity_ordered_liters') }}" required></div>
                     <div class="form-row"><label for="unit_cost">Cost / Liter</label><input id="unit_cost" name="unit_cost" type="number" min="0" step="0.01" placeholder="Enter Cost / Liter" value="{{ old('unit_cost') }}" required></div>
                     <div class="form-row"><label for="payment_status">Payment Status</label><select id="payment_status" name="payment_status" required>@foreach ($paymentStatuses as $status)<option value="{{ $status }}" @selected(old('payment_status', 'unpaid') === $status)>{{ ucwords($status) }}</option>@endforeach</select></div>
+                    @include('inventory-officer.partials.purchase-payment-mode', ['idSuffix' => '', 'formId' => null, 'mode' => old('payment_mode'), 'bank' => old('bank_name')])
                     <div class="form-row"><label>Purchase Status</label><x-admin.status-badge status="Pending" /></div>
                 </div>
             </div>
@@ -303,6 +308,7 @@
                     <div class="form-row"><label for="quantity_ordered_liters_{{ $row['id'] }}">Quantity (Liters)</label><input form="purchase-update-{{ $row['id'] }}" id="quantity_ordered_liters_{{ $row['id'] }}" name="quantity_ordered_liters" type="number" min="0.01" step="0.01" value="{{ old('quantity_ordered_liters', $row['quantity_ordered_liters']) }}" required></div>
                     <div class="form-row"><label for="unit_cost_{{ $row['id'] }}">Cost / Liter</label><input form="purchase-update-{{ $row['id'] }}" id="unit_cost_{{ $row['id'] }}" name="unit_cost" type="number" min="0" step="0.01" value="{{ old('unit_cost', $row['unit_cost']) }}" required></div>
                     <div class="form-row"><label for="payment_status_{{ $row['id'] }}">Payment Status</label><select form="purchase-update-{{ $row['id'] }}" id="payment_status_{{ $row['id'] }}" name="payment_status" required>@foreach ($paymentStatuses as $status)<option value="{{ $status }}" @selected(old('payment_status', $row['payment_status']) === $status)>{{ ucwords($status) }}</option>@endforeach</select></div>
+                    @include('inventory-officer.partials.purchase-payment-mode', ['idSuffix' => '_'.$row['id'], 'formId' => 'purchase-update-'.$row['id'], 'mode' => old('payment_mode', $row['payment_mode']), 'bank' => old('bank_name', $row['bank_name'])])
                     <div class="form-row"><label>Purchase Status</label><x-admin.status-badge :status="ucwords(str_replace('_', ' ', $row['purchase_status']))" /></div>
                 </div>
             </div>

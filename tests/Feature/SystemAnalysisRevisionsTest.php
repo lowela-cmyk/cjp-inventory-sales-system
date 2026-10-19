@@ -414,7 +414,7 @@ class SystemAnalysisRevisionsTest extends TestCase
             'items' => [['fuel_type_id' => $records['fuelTypeId'], 'quantity_liters' => '1000', 'unit_price' => '10.00']],
             'amount_paid' => '0.00',
             'payment_method' => 'cash_on_delivery',
-            'payment_terms' => 'cod',
+            'payment_terms' => 'installment',
             'status' => 'confirmed',
         ], $overrides);
     }

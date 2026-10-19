@@ -167,6 +167,9 @@ Compliance check of the CJP Southern Star OPC system against the "System Analysi
 | After Phase 3 | 453 passed, **4 failed** (same four) |
 | After Phase 4 | 455 passed, **4 failed** (same four) |
 | After security phase | **464 passed, 0 failed** (SQLite), and **464 passed, 0 failed** on MariaDB (`cjp_audit_testing`) |
+| Part 8 baseline (2026-10-16) | 463 passed, 1 failed: a date bomb (a payment schedule due `2026-10-15` turned overdue). Test clock pinned in its own commit. |
+| After Part 8 | **474 passed, 0 failed** (SQLite) and **474 passed, 0 failed** (MariaDB) |
+| After Part 8 follow-ups | **476 passed, 0 failed** on SQLite and MariaDB, also with the system clock faked to 2027-06-01 and 2028-01-01 (libfaketime) |
 
 **Fixed in Phase 1:**
 - `AdminUserManagementTest` duplicate…, `FormValidationTest` ×2 and `RoleBasedAccessControlTest` registration… failed because of a regression from 9fa4d4b (red dots). `ModuleActivityService` now treats a missing or unknown role as "no modules", via `modulesFor()`. Regression test: `CompliancePhase1Test::test_red_dots_tolerate_users_without_a_known_role`.
@@ -345,3 +348,66 @@ Each phase can ship and be tested on its own. Verification after every phase:
   - Rename the column to **"Realized Profit"**, with a tooltip "Total Paid − Total Cost".
   - Add a **"Margin (Price − Cost)"** column, so the expected profit is visible before payment.
 - **Needs your choice:** rename only, or rename plus the margin column.
+
+
+---
+
+## Part 8 (October 15, 2026)
+
+**Branch:** `fix/part-8-revisions`.
+
+**Browser checks:** every item as the relevant role and as Admin, at 375/768/1366/1920 in Chrome and WebKit. Results:
+- `items.js`: **148/148 per engine**.
+- End-to-end flow `flow8.js`: **25/25 per engine**.
+- First-login red dots: 10/10 for the roles without legitimate updates; see A.
+
+Screenshots are in `docs/screenshots/part-8/` (not committed).
+
+| # | Item | Status | Evidence | Notes |
+|---|---|---|---|---|
+| 1 | Purchases: no Hauled/Received in the table | ✅ DONE | `items/*-1-3-purchases-*.png`; `CompliancePhase3Test::test_purchases_sales_and_stock_out_keep_every_requested_value_visible` | Shows **Purchased (L)** only. Hauled and Received stay in the data and in the Edit modal. The export follows the table. |
+| 2 | Purchase-ID / Date and Cost/Liter / Total Cost un-stacked; IDs never wrap | ✅ DONE | same; `items-*.json` (2, 2-ids, 2-fit) | Separate columns, with Date next to Purchase-ID. IDs use `white-space: nowrap`. Still **0px sideways scroll at 1366/1920**, using narrower status pills that grow in height, a compact View Receipt button, and wrapping header text. |
+| 3 | Purchase rows white; red only when Unpaid | ✅ DONE | `Part8RevisionsTest::test_purchase_and_sale_rows_are_white_unless_money_is_owed`; items check 3 | The green and amber tints are gone. Status pills keep their colors. |
+| 4 | Stock-Out un-stacked, comfortable, nothing wraps | ✅ DONE | `items/*-4-stock-out-*.png`; items check 4 | 15 columns with 14px side padding and per-column minimum widths. IDs and amounts don't wrap; names wrap between words. Margin and Realized Profit keep their tooltips. The frame may scroll sideways, as allowed. |
+| 5 | Schedule Lift: no Depot (Direct) allocation; whole amount to the tank | ✅ DONE | `Part7RevisionsTest::test_schedule_lift_sends_the_whole_amount_to_the_garage_tank`, `::test_a_historical_garage_and_depot_split_still_settles_both_parts`, `::test_tank_errors_show_under_the_right_field`; flow check 5 | See "Direct allocation" below. |
+| 6 | Compact purchase-line grid; fixed header and footer, scrolling body | ✅ DONE | `items/*-5-6-schedule-modal-*.png`; items check 6 | Purchase ID, Fuel/Remaining, Amount to Lift, Garage Tank and Remove in **one row at ≥1024px**, 2 columns on tablet, 1 on phone. Line height under 120px on desktop. |
+| 7 | Automatic truck code | ✅ DONE | `Part8RevisionsTest::test_truck_codes_are_generated_and_cannot_be_typed_or_edited`; flow check 7 (TRK-004) | Next `TRK-NNN` after the highest existing number, shown read-only in Add Truck. Typed codes are ignored on create and edit. The unique index plus `retryOnCollision` handles two trucks created at once. |
+| 8 | Record Sales "Stock Source" (per purchase lot) | ✅ DONE | `Part8RevisionsTest` (lot listing, over-quantity, delivery from the lot, blocked delivery, legacy "—"); flow checks 8 | See "Stock lots" below. |
+| 9 | Sales rows white; red only while a balance is owed | ✅ DONE | `Part8RevisionsTest::test_purchase_and_sale_rows_are_white_unless_money_is_owed`; flow check 9 (red before, white after full payment) | Cancelled sales are white with their status pill. |
+| 10 | No Advance Payment method | ✅ DONE | `Part8RevisionsTest::test_advance_payment_and_cod_are_retired_but_existing_records_still_show_them`; flow check 10 | Removed from Record Sales, Add Payment and Edit. Existing payments still read "Advance Payment"; a sale that uses it shows "Advance Payment (legacy)" in Edit. |
+| 11 | No COD payment terms | ✅ DONE | same | Only Installment and Advance (new default: Installment). A sale with COD shows "COD (legacy)" in Edit and keeps it. |
+| 12 | No Customers tab in User Management | ✅ DONE | `CompliancePhase2Test::test_admin_manages_customers_in_sales_and_user_management_has_no_customers_tab` | Tab, modals, customer export and the redirect-back removed. Admin adds, edits and deactivates customers in Sales > Customers. |
+| A | Sidebar red dots still right; none on first login | ✅ DONE | first-login script; flow check A | New approved users of every role: no dots, except a test admin created *before* four other users, whose User Management dot is legitimate (new users appeared). A lone new admin: no dots. Dispatch gets a Ledger dot after a new purchase. **Known limit:** timestamps have one-second resolution, so a change saved in the same second as a visit doesn't raise a dot. |
+| B | Header notification bell | ✅ DONE | `Part8RevisionsTest::test_header_bell_counts_unread_alerts_each_role_can_see`; `items/*-B-bell-*.png`; flow checks B (50 → 54 after the flow → 53 after Mark Read) | Next to the username for Admin, Inventory, Sales and Dispatch. Counts unread alerts of the types that role sees (one COUNT query per page); hidden at 0, "99+" above 99; links to the role's Alerts page. **Drivers have no Alerts module, so they get no bell.** The dead avatar CSS was removed. |
+
+### Stock lots (item 8)
+
+- **What a lot is:** an incoming inventory movement. That is a stock-in from a completed lift (one purchase in one tank), or the opening balance. The Stock-In tab already lists these, and its Stock Out column now shows what has left each lot.
+- **On hand:** received − releases of sale lines that named this lot − its share of older releases that named no lot. Those older releases are charged oldest-first, so the lots in a tank always add up to the tank balance.
+- **Available:** on hand − undelivered sale lines that name this lot. Record Sales may only promise what is available.
+- **Recording a sale:** the dropdown shows `PUR-… · Fuel · N L in stock · ₱cost/L`, grouped by fuel, oldest first, available > 0 only. On save, the lot is **row-locked** and quantity is checked against what is available. The error appears under Quantity, and a client-sent fuel is ignored.
+- **Delivered:** releases from that lot's tank **at the lot's cost**. Margin and Realized Profit use that cost, and Source shows the purchase code. If the lot no longer has the stock, delivery is refused with "Stock source … has only N L in stock."
+- **Existing sales:** lines with no lot keep the pooled release and show "—".
+- **Migration:** `2026_10_18_000001_add_stock_lot_to_sale_items` (nullable `sale_items.stock_in_movement_id`). Real foreign key on MySQL/MariaDB; plain indexed column on SQLite, where adding a foreign key would rebuild the table and drop its integrity triggers. Up/down/up tested on `cjp_audit_ui`. Run on `cjp_inventory_sales_db` after the backup `storage/backups/cjp_inventory_sales_db-pre-part8-20261016-074043.sql`.
+- ~~Decision for you: the server still accepts a fuel-only line.~~ **Enforced in the follow-ups (below).**
+
+### Direct allocation (item 5)
+
+- **Removed:** the Depot (Direct) and Client Sale inputs; the garage + depot = amount check and its hints; the direct-sale dropdown data (`directSaleOptions`); the open-sale helpers; the direct-allocation validation in Schedule Lift.
+- **How scheduling works now:** the whole Amount to Lift goes to the chosen tank. Tank fuel and capacity checks stay. Direct fields from an old client are ignored.
+- **Kept, so history stays intact and working:**
+  - lift completion still settles existing customer (direct) allocations and posts their "Depot" stock-out;
+  - delivery of a sale still uses an existing planned direct allocation first;
+  - Stock-Out still labels those rows "Depot — …";
+  - the driver's Destination filter and the "Garage received with direct" status still show for old lifts.
+- **Data:** no rows were deleted or changed.
+
+
+### Part 8 follow-ups (2026-10-16, branch `fix/part-8-followups`)
+
+| # | Item | Status | Evidence | Notes |
+|---|---|---|---|---|
+| F1 | Stock Source required on the server for every new sale line | ✅ DONE | `Part8RevisionsTest::test_every_new_sale_line_needs_a_stock_source_for_sales_officer_and_admin`, `::test_a_sale_recorded_before_lots_stays_editable_but_added_lines_need_a_lot`; `followups/*.png` (Chrome + WebKit, 375/1366) | **Record Sales** (Sales Officer and Admin) needs at least one line, and every line a Stock Source; the error "Select a stock source for this line." shows under the field. **Edit:** a sale recorded before lots keeps its lot-less lines editable (as many as it already has); any added line needs a lot. Add Item in Edit now adds a Stock Source line, from a template. **Bug found and fixed:** with mixed lines, validated data could reorder them (a lot line before a lot-less one), which saved lines out of order and put errors under the wrong line. Lines are now restored to their submitted order. |
+| F1-tests | One shared test helper | ✅ DONE | `tests/Concerns/CreatesStockLots.php`, `tests/TestCase.php` | `stockLot()` records a purchase whose lift was received into a tank (one lot). `withStockLots()` gives each new sale line a lot: the test's own stock first, oldest first, otherwise a new lot. TestCase applies it to every POST to Record Sales and gives Edit posts each existing line's lot (as the Edit form does), so the ~50 call sites needed no hand edits. Deliberately invalid lines are left alone, so validation tests still see their errors; `withoutStockLots()` turns it off. **Tests changed individually (8):** 3 "no stock moved" checks now count outgoing movements; the integration flow records its garage sale after the stock arrives, and its direct-to-client sale is a pre-lot sale; the insufficient-inventory test sells from a lot that then loses stock; the Stock-Out source label now includes the lot; 2 Part 8 tests. |
+| F2 | Date-independent test suite | ✅ DONE | `tests/TestCase.php` | Every test runs at **2026-10-01 09:00 Asia/Manila** (Carbon test clock, set before the app boots so migration rows carry it too; `TEST_NOW` overrides). The app reads time only through Carbon. **Proof:** the full suite passes on SQLite and MariaDB with the system clock faked by libfaketime to **2027-06-01** and **2028-01-01**. Control: with the pin itself moved to 2028-01-01 it also passes, so no test depends on the date any more. (libfaketime fakes the PHP clock only; the app writes its timestamps from PHP.) |
+| F3 | No bell for drivers | ✅ DONE | `followups` check 3 | The driver header no longer includes the bell. The red-dot timestamp resolution is left as is, as agreed. |

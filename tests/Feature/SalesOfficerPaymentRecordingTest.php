@@ -31,7 +31,7 @@ class SalesOfficerPaymentRecordingTest extends TestCase
         $this->actingAs($records['salesOfficer'])
             ->post(route('sales-officer.sales.payments.store', $saleId), $this->paymentPayload([
                 'amount' => 70000,
-                'method' => 'advance_payment',
+                'method' => 'cash_on_delivery',
                 'remarks' => 'Final collection',
             ]))
             ->assertRedirect(route('sales-officer.sales'));
@@ -209,7 +209,7 @@ class SalesOfficerPaymentRecordingTest extends TestCase
         $records = $this->baseRecords();
         $saleId = $this->sale($records, [
             'line_total' => 40000,
-            'payment_method' => 'advance_payment',
+            'payment_method' => 'cheque',
             'payment_terms' => 'advance',
         ]);
 
@@ -221,7 +221,7 @@ class SalesOfficerPaymentRecordingTest extends TestCase
         $this->actingAs($records['salesOfficer'])
             ->post(route('sales-officer.sales.payments.store', $saleId), $this->paymentPayload([
                 'amount' => 40000,
-                'method' => 'advance_payment',
+                'method' => 'cash_on_delivery',
             ]))
             ->assertRedirect(route('sales-officer.sales'));
 
@@ -280,6 +280,8 @@ class SalesOfficerPaymentRecordingTest extends TestCase
 
     public function test_selected_payment_schedule_tracks_partial_and_final_installments(): void
     {
+        // The schedules below fall due on fixed dates; pin the clock before them so "pending" never turns "overdue".
+        $this->travelTo('2026-09-01 09:00:00');
         $records = $this->baseRecords();
         $saleId = $this->sale($records, [
             'line_total' => 60000,
@@ -309,7 +311,7 @@ class SalesOfficerPaymentRecordingTest extends TestCase
             ->post(route('sales-officer.sales.payments.store', $saleId), $this->paymentPayload([
                 'payment_schedule_id' => $firstScheduleId,
                 'amount' => 20000,
-                'method' => 'advance_payment',
+                'method' => 'cash_on_delivery',
             ]))
             ->assertRedirect(route('sales-officer.sales'));
 

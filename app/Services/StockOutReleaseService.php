@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\F1Split;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -10,7 +11,8 @@ class StockOutReleaseService
 {
     public function __construct(
         private readonly IdempotencyService $idempotencyService,
-        private readonly InventoryCostService $inventoryCost
+        private readonly InventoryCostService $inventoryCost,
+        private readonly StockLotService $stockLots
     ) {}
 
     public function releaseSaleItemFromGarage(int $saleItemId, float $quantity, string $stockOutAt, int $createdBy, ?int $preferredGarageId = null, ?string $remarks = null, bool $allowPreparation = true): ?string
@@ -46,17 +48,138 @@ class StockOutReleaseService
             return 'Quantity released cannot exceed the remaining sale quantity.';
         }
 
+        // Part 9: the F1 portion of an Unleaded/Premium line leaves the F1 tanks; the rest follows the line's own source.
+        $f1Quantity = 0.0;
+        $f1FuelId = F1Split::f1FuelId();
+        if ((float) $saleItem->f1_quantity_liters > 0 && $f1FuelId !== null) {
+            $f1Released = round((float) DB::table('stock_outs')
+                ->where('sale_item_id', $saleItem->id)
+                ->where('fuel_type_id', $f1FuelId)
+                ->where('status', 'released')
+                ->sum('quantity_liters'), 2);
+            $f1Remaining = round(max(0, (float) $saleItem->f1_quantity_liters - $f1Released), 2);
+            $f1Quantity = $quantity >= $remaining ? $f1Remaining : round($quantity * $f1Remaining / $remaining, 2);
+        }
+        $mainQuantity = round($quantity - $f1Quantity, 2);
+
+        if ($mainQuantity > 0) {
+            $error = $this->releaseMainPortion($saleItem, $mainQuantity, $stockOutAt, $createdBy, $preferredGarageId, $remarks, $allowPreparation);
+            if ($error !== null) {
+                return $error;
+            }
+        }
+
+        if ($f1Quantity > 0) {
+            return $this->releasePooled($saleItem, (int) $f1FuelId, $f1Quantity, $stockOutAt, $createdBy, null, $remarks, false)
+                ? null
+                : 'Insufficient F1 stock in the garage tanks for the F1 portion ('.number_format($f1Quantity, 2).' L).';
+        }
+
+        return null;
+    }
+
+    /**
+     * Part 9: a Depot to Client lift row whose order has an F1 portion loads that F1 at the garage onto the same truck.
+     * Completing the lift deducts it from the F1 tank chosen in Schedule Lift. Safe to run twice: only F1 not yet
+     * released for the sale line is deducted. Returns a note for the user when the tank is short (nothing is deducted;
+     * the F1 is then released from the F1 tanks when the sale is delivered).
+     */
+    public function releaseF1ForAllocation(object $allocation, int $createdBy): ?string
+    {
+        $f1FuelId = F1Split::f1FuelId();
+        $saleItem = DB::table('sale_items')
+            ->join('sales', 'sales.id', '=', 'sale_items.sale_id')
+            ->where('sale_items.sale_id', $allocation->sale_id)
+            ->where('sale_items.f1_quantity_liters', '>', 0)
+            ->whereNull('sales.deleted_at')
+            ->where('sales.status', '!=', 'cancelled')
+            ->orderBy('sale_items.id')
+            ->lockForUpdate()
+            ->first(['sale_items.id', 'sale_items.sale_id', 'sale_items.f1_quantity_liters', 'sales.customer_id', 'sales.sale_code']);
+
+        if (! $saleItem || $f1FuelId === null || ! $allocation->f1_storage_location_id) {
+            return null;
+        }
+
+        $released = round((float) DB::table('stock_outs')
+            ->where('sale_item_id', $saleItem->id)
+            ->where('fuel_type_id', $f1FuelId)
+            ->where('status', 'released')
+            ->lockForUpdate()
+            ->sum('quantity_liters'), 2);
+        $quantity = round(min((float) $allocation->f1_quantity_liters, (float) $saleItem->f1_quantity_liters - $released), 2);
+        if ($quantity <= 0) {
+            return null;
+        }
+
+        $available = $this->availableGarageStockForUpdate((int) $allocation->f1_storage_location_id, $f1FuelId);
+        if ($available < $quantity) {
+            return 'F1 for '.$saleItem->sale_code.' was not deducted: the F1 tank has only '.number_format($available, 2).' L for the '.number_format($quantity, 2).' L loaded.';
+        }
+
+        $this->insertGarageRelease($saleItem, $f1FuelId, (int) $allocation->f1_storage_location_id, $quantity, now()->toDateTimeString(), $createdBy, 'F1 loaded at the garage for Depot to Client sale '.$saleItem->sale_code);
+
+        return null;
+    }
+
+    /**
+     * Releases liters of the line's own fuel: from a linked direct depot lift, the line's stock lot, or pooled garage stock.
+     */
+    private function releaseMainPortion(object $saleItem, float $quantity, string $stockOutAt, int $createdBy, ?int $preferredGarageId, ?string $remarks, bool $allowPreparation): ?string
+    {
         $directResult = $this->releaseFromDirectDepotAllocations($saleItem, $quantity, $stockOutAt, $createdBy);
         if ($directResult['handled']) {
             return $directResult['error'];
         }
 
+        // Depot to Client fuel never sits in garage stock: it is released only through its lift.
+        if ($saleItem->delivery_type === 'depot_to_client') {
+            return 'This Depot to Client sale is released through its lift. Schedule a Depot to Client lift for it in Fuel Lifting first.';
+        }
+
+        // Part 8 #8: a line sold from a lot is released from that lot's tank, at that lot's cost.
+        if ($saleItem->stock_in_movement_id) {
+            $lot = $this->stockLots->lockedLot((int) $saleItem->stock_in_movement_id);
+            if (! $lot || $lot->on_hand < $quantity) {
+                return 'Stock source '.($lot->source_code ?? '#'.$saleItem->stock_in_movement_id).' has only '.number_format($lot->on_hand ?? 0, 2).' L in stock.';
+            }
+
+            DB::table('stock_outs')
+                ->where('sale_item_id', $saleItem->id)
+                ->where('status', 'prepared')
+                ->update(['status' => 'cancelled', 'updated_at' => now()]);
+            $this->insertGarageRelease($saleItem, (int) $saleItem->fuel_type_id, (int) $lot->storage_location_id, $quantity, $stockOutAt, $createdBy, $remarks, (float) $lot->unit_cost);
+
+            return null;
+        }
+
+        if ($this->releasePooled($saleItem, (int) $saleItem->fuel_type_id, $quantity, $stockOutAt, $createdBy, $preferredGarageId, $remarks)) {
+            return null;
+        }
+
+        if (! $allowPreparation) {
+            return 'Insufficient available garage inventory to complete delivery.';
+        }
+
+        if (! $this->preparedStockOutExistsForSaleItem((int) $saleItem->id)) {
+            $this->insertPreparedGarageRelease($saleItem, $quantity, $stockOutAt, $createdBy);
+        }
+
+        return null;
+    }
+
+    /**
+     * Releases liters of a fuel from pooled garage stock (its tanks, preferred tank first). Returns false, and
+     * releases nothing, when the tanks do not hold enough.
+     */
+    private function releasePooled(object $saleItem, int $fuelTypeId, float $quantity, string $stockOutAt, int $createdBy, ?int $preferredGarageId, ?string $remarks, bool $cancelPrepared = true): bool
+    {
         $garages = DB::table('storage_locations')
             ->where('type', 'garage')
             ->where('status', 'active')
-            ->where(function (Builder $query) use ($saleItem): void {
+            ->where(function (Builder $query) use ($fuelTypeId): void {
                 $query->whereNull('fuel_type_id')
-                    ->orWhere('fuel_type_id', $saleItem->fuel_type_id);
+                    ->orWhere('fuel_type_id', $fuelTypeId);
             })
             ->when($preferredGarageId, fn (Builder $query): Builder => $query->orderByRaw('CASE WHEN id = ? THEN 0 ELSE 1 END', [$preferredGarageId]))
             ->orderBy('tank_number')
@@ -68,27 +191,21 @@ class StockOutReleaseService
         $totalAvailable = 0.0;
 
         foreach ($garages as $garage) {
-            $available = $this->availableGarageStockForUpdate((int) $garage->id, (int) $saleItem->fuel_type_id);
+            $available = $this->availableGarageStockForUpdate((int) $garage->id, $fuelTypeId);
             $availableByGarage[(int) $garage->id] = $available;
             $totalAvailable = round($totalAvailable + $available, 2);
         }
 
         if ($totalAvailable < $quantity) {
-            if (! $allowPreparation) {
-                return 'Insufficient available garage inventory to complete delivery.';
-            }
-
-            if (! $this->preparedStockOutExistsForSaleItem((int) $saleItem->id)) {
-                $this->insertPreparedGarageRelease($saleItem, $quantity, $stockOutAt, $createdBy);
-            }
-
-            return null;
+            return false;
         }
 
-        DB::table('stock_outs')
-            ->where('sale_item_id', $saleItem->id)
-            ->where('status', 'prepared')
-            ->update(['status' => 'cancelled', 'updated_at' => now()]);
+        if ($cancelPrepared) {
+            DB::table('stock_outs')
+                ->where('sale_item_id', $saleItem->id)
+                ->where('status', 'prepared')
+                ->update(['status' => 'cancelled', 'updated_at' => now()]);
+        }
 
         $toRelease = $quantity;
 
@@ -100,7 +217,7 @@ class StockOutReleaseService
             }
 
             $releaseQuantity = round(min($available, $toRelease), 2);
-            $this->insertGarageRelease($saleItem, (int) $garage->id, $releaseQuantity, $stockOutAt, $createdBy, $remarks);
+            $this->insertGarageRelease($saleItem, $fuelTypeId, (int) $garage->id, $releaseQuantity, $stockOutAt, $createdBy, $remarks);
             $toRelease = round($toRelease - $releaseQuantity, 2);
 
             if ($toRelease <= 0) {
@@ -108,7 +225,7 @@ class StockOutReleaseService
             }
         }
 
-        return null;
+        return true;
     }
 
     private function saleItemForStockOut(int $saleItemId): ?object
@@ -124,9 +241,12 @@ class StockOutReleaseService
                 'sale_items.id',
                 'sale_items.sale_id',
                 'sale_items.fuel_type_id',
+                'sale_items.stock_in_movement_id',
                 'sale_items.quantity_liters',
+                'sale_items.f1_quantity_liters',
                 'sale_items.fulfilled_quantity_liters',
                 'sales.customer_id',
+                'sales.delivery_type',
             ]);
     }
 
@@ -139,9 +259,10 @@ class StockOutReleaseService
             ->exists();
     }
 
-    private function insertGarageRelease(object $saleItem, int $garageId, float $quantity, string $stockOutAt, int $createdBy, ?string $remarks): void
+    private function insertGarageRelease(object $saleItem, int $fuelTypeId, int $garageId, float $quantity, string $stockOutAt, int $createdBy, ?string $remarks, ?float $lotUnitCost = null): void
     {
-        $unitCost = $this->inventoryCost->currentUnitCostForUpdate($garageId, (int) $saleItem->fuel_type_id);
+        // A lot release carries its own purchase cost; a pooled release takes the tank's average cost.
+        $unitCost = $lotUnitCost ?? $this->inventoryCost->currentUnitCostForUpdate($garageId, $fuelTypeId);
 
         if ($unitCost === null) {
             throw new \RuntimeException('The selected garage inventory has no verifiable cost basis.');
@@ -154,13 +275,13 @@ class StockOutReleaseService
                 'updated_at' => now(),
             ]);
 
-        $stockOutId = $this->idempotencyService->retryOnCollision('stock_out_code', function () use ($saleItem, $garageId, $quantity, $unitCost, $stockOutAt, $createdBy): int {
+        $stockOutId = $this->idempotencyService->retryOnCollision('stock_out_code', function () use ($saleItem, $fuelTypeId, $garageId, $quantity, $unitCost, $stockOutAt, $createdBy): int {
             return (int) DB::table('stock_outs')->insertGetId([
                 'stock_out_code' => $this->nextCode('stock_outs', 'stock_out_code', 'STO'),
                 'sale_id' => $saleItem->sale_id,
                 'sale_item_id' => $saleItem->id,
                 'customer_id' => $saleItem->customer_id,
-                'fuel_type_id' => $saleItem->fuel_type_id,
+                'fuel_type_id' => $fuelTypeId,
                 'storage_location_id' => $garageId,
                 'source_type' => 'garage',
                 'quantity_liters' => $quantity,
@@ -173,11 +294,11 @@ class StockOutReleaseService
             ]);
         });
 
-        $movementId = $this->idempotencyService->retryOnCollision('movement_code', function () use ($garageId, $saleItem, $quantity, $unitCost, $stockOutId, $stockOutAt, $remarks, $createdBy): int {
+        $movementId = $this->idempotencyService->retryOnCollision('movement_code', function () use ($garageId, $fuelTypeId, $quantity, $unitCost, $stockOutId, $stockOutAt, $remarks, $createdBy): int {
             return (int) DB::table('inventory_movements')->insertGetId([
                 'movement_code' => $this->nextCode('inventory_movements', 'movement_code', 'MOV'),
                 'storage_location_id' => $garageId,
-                'fuel_type_id' => $saleItem->fuel_type_id,
+                'fuel_type_id' => $fuelTypeId,
                 'movement_type' => 'stock_out',
                 'direction' => 'out',
                 'quantity_liters' => $quantity,

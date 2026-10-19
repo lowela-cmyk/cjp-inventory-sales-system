@@ -140,16 +140,18 @@ class SalesOfficerSalesManagementTest extends TestCase
     public function test_delivery_stays_pending_and_creates_no_stock_out_when_inventory_is_insufficient(): void
     {
         $records = $this->baseRecords();
-        $beforeInventory = DB::table('inventory_movements')->count();
+        // Sold from a 15,000 L lot; before delivery 5,000 L of it leaves the tank another way, so 15,000 L
+        // can no longer be delivered from it.
+        $lotId = $this->stockLot((int) $records['fuelTypeId'], 15000);
 
         $this->actingAs($records['salesOfficer'])
-            ->post(route('sales-officer.sales.store'), $this->salePayload($records, [
+            ->post(route('sales-officer.sales.store'), ['items' => [['stock_lot_id' => $lotId, 'quantity_liters' => '15000', 'unit_price' => '62.50']]] + $this->salePayload($records, [
                 'sale_code' => 'SLS-PREPARED-STOCK-OUT',
                 'sales_order_number' => 'SO-PREPARED-STOCK-OUT',
-                'quantity_liters' => '15000',
-                'unit_price' => '62.50',
             ]))
             ->assertRedirect(route('sales-officer.sales'));
+        DB::table('inventory_movements')->where('id', $lotId)->update(['quantity_liters' => 10000]);
+        $beforeInventory = DB::table('inventory_movements')->count();
 
         $sale = DB::table('sales')->where('sales_order_number', 'SO-PREPARED-STOCK-OUT')->first();
         $saleItem = DB::table('sale_items')->where('sale_id', $sale->id)->first();
@@ -181,7 +183,7 @@ class SalesOfficerSalesManagementTest extends TestCase
             ->post(route('sales-officer.sales.store'), $this->salePayload($records, [
                 'sale_code' => 'SLS-SO-DUP',
                 'sales_order_number' => 'SO-CJP-DUP',
-                'payment_method' => 'advance_payment',
+                'payment_method' => 'cheque',
             ]))
             ->assertRedirect(route('sales-officer.sales'))
             ->assertSessionHasErrors('sales_order_number');
@@ -190,13 +192,13 @@ class SalesOfficerSalesManagementTest extends TestCase
             ->post(route('sales-officer.sales.store'), $this->salePayload($records, [
                 'sale_code' => 'SLS-SO-METHOD',
                 'sales_order_number' => 'SO-CJP-1002',
-                'payment_method' => 'advance_payment',
+                'payment_method' => 'cheque',
             ]))
             ->assertRedirect(route('sales-officer.sales'));
 
         $sale = DB::table('sales')->where('sales_order_number', 'SO-CJP-1002')->first();
         $this->assertNotNull($sale);
-        $this->assertSame('advance_payment', $sale->payment_method);
+        $this->assertSame('cheque', $sale->payment_method);
         $this->assertSame(0, DB::table('payments')->where('sale_id', $sale->id)->count());
         $this->assertDatabaseHas('receivables', [
             'sale_id' => $sale->id,
@@ -604,7 +606,7 @@ class SalesOfficerSalesManagementTest extends TestCase
             'quantity_liters' => '1000',
             'unit_price' => '60',
             'payment_method' => 'cash_on_delivery',
-            'payment_terms' => 'cod',
+            'payment_terms' => 'installment',
             'status' => 'confirmed',
         ];
 

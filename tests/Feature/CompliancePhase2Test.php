@@ -14,54 +14,31 @@ class CompliancePhase2Test extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_admin_manages_customers_from_user_management_with_their_real_codes(): void
+    public function test_admin_manages_customers_in_sales_and_user_management_has_no_customers_tab(): void
     {
+        // Part 8 #12 replaced the Phase 2 customer forms in User Management: customers aren't system users.
         $admin = User::factory()->create(['role' => 'admin', 'status' => 'active', 'approval_status' => 'approved']);
-        // Row id and code deliberately differ: the screen must show the stored code, never one derived from the id.
         DB::table('customers')->insert(['id' => 157, 'customer_code' => 'CSM-000001', 'name' => 'Juan Dela Cruz', 'company_name' => 'Dela Cruz Hauling', 'payment_status' => 'clear', 'status' => 'active', 'created_at' => now(), 'updated_at' => now()]);
-        $tab = route('admin.user-management', ['tab' => 'customers']);
 
-        $this->actingAs($admin)->get($tab)->assertOk()
-            ->assertSee('CSM-000001')
-            ->assertDontSee('CSM-000157')
-            ->assertDontSee('managed in the customer/sales workflow')
-            ->assertSee('action="'.route('admin.sales.customers.store').'"', false)
-            ->assertSee('action="'.route('admin.sales.customers.update', 157).'"', false);
+        $this->actingAs($admin)->get(route('admin.user-management', ['tab' => 'customers']))->assertOk()
+            ->assertDontSee('data-tab-target="customers"', false)
+            ->assertDontSee('Dela Cruz Hauling')
+            ->assertDontSee('customer-add', false);
 
-        // Add from User Management: saved with a generated code, and the admin lands back on the Customers tab.
-        $this->actingAs($admin)->from($tab)->post(route('admin.sales.customers.store'), [
-            'form_context' => 'um-add-customer', 'return_to' => 'user-management',
-            'name' => 'Maria Santos', 'company_name' => 'Santos Fuel Trading', 'location' => 'Subic', 'email' => 'maria@example.com',
-            'phone' => '09171234567', 'bank_name' => 'BDO', 'payment_status' => 'clear', 'status' => 'active',
-        ])->assertRedirect($tab)->assertSessionHasNoErrors();
-        $created = DB::table('customers')->where('company_name', 'Santos Fuel Trading')->first();
-        $this->assertStringStartsWith('CSM-', $created->customer_code);
-        $this->assertSame('BDO', $created->bank_name);
+        // Sales > Customers: Admin sees the stored code, adds and edits customers.
+        $this->get(route('admin.sales.customers'))->assertOk()->assertSee('CSM-000001')->assertDontSee('CSM-000157');
+        $this->post(route('admin.sales.customers.store'), [
+            'name' => 'Maria Santos', 'company_name' => 'Santos Fuel Trading', 'bank_name' => 'BDO', 'payment_status' => 'clear', 'status' => 'active',
+        ])->assertRedirect(route('admin.sales.customers'))->assertSessionHasNoErrors();
+        $this->assertStringStartsWith('CSM-', (string) DB::table('customers')->where('company_name', 'Santos Fuel Trading')->value('customer_code'));
 
-        // Edit from User Management.
-        $this->actingAs($admin)->from($tab)->patch(route('admin.sales.customers.update', 157), [
-            'edit_customer_id' => 157, 'return_to' => 'user-management',
-            'name' => 'Juan Dela Cruz', 'company_name' => 'Dela Cruz Hauling Inc.', 'bank_name' => 'BPI', 'payment_status' => 'clear', 'status' => 'active',
-        ])->assertRedirect($tab)->assertSessionHasNoErrors();
+        $this->patch(route('admin.sales.customers.update', 157), [
+            'edit_customer_id' => 157, 'name' => 'Juan Dela Cruz', 'company_name' => 'Dela Cruz Hauling Inc.', 'bank_name' => 'BPI', 'payment_status' => 'clear', 'status' => 'active',
+        ])->assertRedirect(route('admin.sales.customers'))->assertSessionHasNoErrors();
         $this->assertDatabaseHas('customers', ['id' => 157, 'company_name' => 'Dela Cruz Hauling Inc.', 'bank_name' => 'BPI', 'customer_code' => 'CSM-000001']);
 
-        // A validation error comes back to User Management and reopens the same modal.
-        $this->actingAs($admin)->from($tab)->post(route('admin.sales.customers.store'), [
-            'form_context' => 'um-add-customer', 'return_to' => 'user-management',
-            'name' => 'Duplicate', 'company_name' => 'Santos Fuel Trading', 'payment_status' => 'clear', 'status' => 'active',
-        ])->assertRedirect($tab)->assertSessionHasErrors('company_name');
-        $this->get($tab)->assertSee('data-open-modal-on-load="customer-add"', false);
-
-        // Search and the CSV export use the stored code too.
-        $this->get(route('admin.user-management', ['tab' => 'customers', 'search' => 'CSM-000001']))->assertSee('<td>Dela Cruz Hauling Inc.</td>', false)->assertDontSee('<td>Santos Fuel Trading</td>', false);
-        $csv = $this->get(route('admin.user-management.export', ['tab' => 'customers']))->assertOk()->getContent();
-        $this->assertStringContainsString('CSM-000001', $csv);
-        $this->assertStringNotContainsString('CSM-000157', $csv);
-
-        // Without return_to the Sales page keeps its own redirect.
-        $this->actingAs($admin)->post(route('admin.sales.customers.store'), [
-            'name' => 'Other', 'company_name' => 'Other Co.', 'payment_status' => 'clear', 'status' => 'active',
-        ])->assertRedirect(route('admin.sales.customers'));
+        $this->patch(route('admin.sales.customers.deactivate', 157))->assertRedirect(route('admin.sales.customers'));
+        $this->assertDatabaseHas('customers', ['id' => 157, 'status' => 'inactive']);
     }
 
     public function test_reports_period_filter_shows_only_the_needed_inputs_and_has_no_generate_button(): void

@@ -48,7 +48,7 @@ class H02PaidSaleEditTest extends AuditTestCase
         $this->actingAs($a['sales'])->post(route('sales-officer.sales.store'), [
             'idempotency_key' => $this->uuid(), 'sales_order_number' => 'SO-AUD-1', 'customer_id' => $a['customer'], 'sale_date' => '2026-10-10',
             'items' => [['fuel_type_id' => $a['fuel'], 'quantity_liters' => 100, 'unit_price' => 50]],
-            'amount_paid' => 5000, 'payment_method' => 'cash_on_delivery', 'payment_terms' => 'cod', 'status' => 'confirmed',
+            'amount_paid' => 5000, 'payment_method' => 'cash_on_delivery', 'payment_terms' => 'installment', 'status' => 'confirmed',
         ])->assertSessionHasNoErrors();
 
         $saleId = (int) DB::table('sales')->value('id');
@@ -62,7 +62,7 @@ class H02PaidSaleEditTest extends AuditTestCase
         return array_filter([
             'sales_order_number' => 'SO-AUD-EDITED', 'customer_id' => $a['customer'], 'sale_date' => '2026-10-10',
             'items' => [['fuel_type_id' => $a['fuel'], 'quantity_liters' => '100.00', 'unit_price' => '50.00']],
-            'payment_method' => 'cash_on_delivery', 'payment_terms' => 'cod', 'status' => $status,
+            'payment_method' => 'cash_on_delivery', 'payment_terms' => 'installment', 'status' => $status,
         ], fn ($value): bool => $value !== null);
     }
 

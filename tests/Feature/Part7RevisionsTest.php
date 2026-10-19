@@ -14,61 +14,86 @@ use Tests\Feature\Audit\AuditTestCase;
  */
 class Part7RevisionsTest extends AuditTestCase
 {
-    public function test_schedule_lift_saves_a_garage_and_depot_split_and_completing_it_posts_both(): void
+    public function test_schedule_lift_sends_the_whole_amount_to_the_garage_tank(): void
+    {
+        $a = $this->actors();
+        [$itemId, $tank] = $this->purchase($a, 10000);
+
+        // The Part 7 direct_liters / sale_id fields are not read any more: Depot to Client rows come as lifts[] (Part 9).
+        $this->schedule($a, [['purchase_item_id' => $itemId, 'quantity_liters' => 10000, 'storage_location_id' => $tank, 'direct_liters' => 4000, 'sale_id' => 999]])
+            ->assertSessionHasNoErrors();
+        $haulId = (int) DB::table('hauls')->value('id');
+
+        $this->assertDatabaseHas('haul_allocations', ['haul_id' => $haulId, 'destination_type' => 'garage', 'storage_location_id' => $tank, 'quantity_liters' => 10000, 'status' => 'planned', 'receive_on_completion' => true]);
+        $this->assertSame(0, DB::table('haul_allocations')->where('destination_type', 'customer')->count());
+
+        foreach (['in_transit', 'lifted'] as $status) {
+            $this->actingAs($a['driver'])->patch(route('driver.fuel-lifting.hauls.status', $haulId), ['idempotency_key' => $this->uuid(), 'lifting_status' => $status])
+                ->assertSessionHasNoErrors();
+        }
+
+        $this->assertSame(10000.0, $this->tankBalance($tank, $a['fuel']));
+        $this->assertDatabaseHas('haul_allocations', ['haul_id' => $haulId, 'destination_type' => 'garage', 'status' => 'received']);
+    }
+
+    public function test_a_historical_garage_and_depot_split_still_settles_both_parts(): void
     {
         $a = $this->actors();
         [$itemId, $tank] = $this->purchase($a, 10000);
         [$saleId, $saleItemId] = $this->openSale($a, 4000);
-
-        $this->schedule($a, [['purchase_item_id' => $itemId, 'quantity_liters' => 10000, 'garage_liters' => 6000, 'storage_location_id' => $tank, 'direct_liters' => 4000, 'sale_id' => $saleId]])
-            ->assertSessionHasNoErrors();
+        $this->schedule($a, [['purchase_item_id' => $itemId, 'quantity_liters' => 10000, 'storage_location_id' => $tank]])->assertSessionHasNoErrors();
         $haulId = (int) DB::table('hauls')->value('id');
 
-        $this->assertDatabaseHas('haul_allocations', ['haul_id' => $haulId, 'destination_type' => 'garage', 'storage_location_id' => $tank, 'quantity_liters' => 6000, 'status' => 'planned', 'receive_on_completion' => true]);
-        $this->assertDatabaseHas('haul_allocations', ['haul_id' => $haulId, 'destination_type' => 'customer', 'sale_id' => $saleId, 'customer_id' => $a['customer'], 'quantity_liters' => 4000, 'status' => 'planned']);
+        // Reshape it the way lifts scheduled before Part 8 look in the data: 6,000 L garage + 4,000 L direct to a sale.
+        DB::table('haul_allocations')->where('haul_id', $haulId)->update(['quantity_liters' => 6000]);
+        DB::table('haul_allocations')->insert([
+            'haul_id' => $haulId, 'fuel_type_id' => $a['fuel'], 'destination_type' => 'customer', 'customer_id' => $a['customer'], 'sale_id' => $saleId,
+            'quantity_liters' => 4000, 'receive_on_completion' => true, 'status' => 'planned', 'allocated_at' => now(), 'created_at' => now(), 'updated_at' => now(),
+        ]);
 
-        // The driver finishes the lift: garage portion stocked into the chosen tank, direct portion released to the sale.
         foreach (['in_transit', 'lifted'] as $status) {
             $this->actingAs($a['driver'])->patch(route('driver.fuel-lifting.hauls.status', $haulId), ['idempotency_key' => $this->uuid(), 'lifting_status' => $status])
                 ->assertSessionHasNoErrors();
         }
 
         $this->assertSame(6000.0, $this->tankBalance($tank, $a['fuel']));
-        $this->assertDatabaseHas('haul_allocations', ['haul_id' => $haulId, 'destination_type' => 'garage', 'status' => 'received']);
         $this->assertDatabaseHas('haul_allocations', ['haul_id' => $haulId, 'destination_type' => 'customer', 'status' => 'delivered']);
         $this->assertDatabaseHas('stock_outs', ['sale_id' => $saleId, 'source_type' => 'depot', 'quantity_liters' => 4000, 'status' => 'released']);
         $this->assertDatabaseHas('sale_items', ['id' => $saleItemId, 'fulfilled_quantity_liters' => 4000]);
         $this->assertDatabaseHas('sales', ['id' => $saleId, 'delivery_status' => 'delivered']);
 
-        // Dispatch confirming afterwards changes nothing (settlement is idempotent).
-        $this->actingAs($a['dispatch'])->patch(route('dispatch.fuel-lifting.hauls.status', $haulId), ['idempotency_key' => $this->uuid(), 'status' => 'completed'])->assertSessionHasNoErrors();
-        $this->assertSame(6000.0, $this->tankBalance($tank, $a['fuel']));
-        $this->assertSame(1, DB::table('stock_outs')->where('sale_id', $saleId)->count());
+        // The historical depot release is still shown on Stock-Out.
+        $this->actingAs($a['admin'])->get(route('admin.inventory.stock-out'))->assertOk()->assertSee('Depot — Audit Terminal');
     }
 
-    public function test_allocation_errors_show_under_the_right_field(): void
+    public function test_tank_errors_show_under_the_right_field(): void
     {
         $a = $this->actors();
         [$itemId, $tank] = $this->purchase($a, 10000);
-        $otherFuelTank = (int) DB::table('storage_locations')->where('type', 'garage')->where('fuel_type_id', '!=', $a['fuel'])->value('id');
+        $otherFuelTank = (int) DB::table('storage_locations')->where('type', 'garage')->where('status', 'active')->where('fuel_type_id', '!=', $a['fuel'])->value('id');
         DB::table('storage_locations')->where('id', $tank)->update(['capacity_liters' => 5000]);
 
         $line = ['purchase_item_id' => $itemId, 'quantity_liters' => 8000];
-        $this->schedule($a, [$line + ['garage_liters' => 5000, 'storage_location_id' => $tank, 'direct_liters' => 0]])
-            ->assertSessionHasErrors(['items.0.garage_liters' => 'Garage + Depot allocation must equal the Amount to Lift (8,000.00 L).']);
-        $this->schedule($a, [$line + ['garage_liters' => 8000, 'storage_location_id' => $otherFuelTank, 'direct_liters' => 0]])
-            ->assertSessionHasErrors('items.0.storage_location_id');
-        $this->schedule($a, [$line + ['garage_liters' => 8000, 'storage_location_id' => $tank, 'direct_liters' => 0]])
-            ->assertSessionHasErrors('items.0.garage_liters');
-        $this->schedule($a, [$line + ['garage_liters' => 3000, 'storage_location_id' => $tank, 'direct_liters' => 5000]])
-            ->assertSessionHasErrors('items.0.sale_id');
+        $this->schedule($a, [$line + ['storage_location_id' => $otherFuelTank]])
+            ->assertSessionHasErrors(['items.0.storage_location_id' => 'The tank must hold the same fuel type as the purchase.']);
+        $this->schedule($a, [$line + ['storage_location_id' => $tank]])
+            ->assertSessionHasErrors('items.0.quantity_liters');
         $this->assertSame(0, DB::table('hauls')->count());
 
+        // Part 9 lift rows: the same errors show under the row's own field.
+        $this->schedule($a, [$line + ['lifts' => [['type' => 'garage', 'storage_location_id' => $otherFuelTank, 'quantity_liters' => 8000]]]])
+            ->assertSessionHasErrors(['items.0.lifts.0.storage_location_id' => 'The tank must hold the same fuel type as the purchase.']);
+        $this->schedule($a, [$line + ['lifts' => [['type' => 'garage', 'storage_location_id' => $tank, 'quantity_liters' => 8000]]]])
+            ->assertSessionHasErrors('items.0.lifts.0.quantity_liters');
+        $this->assertSame(0, DB::table('hauls')->count());
+
+        // Part 9 restores Depot to Client: each lift row offers a tank or a sales order.
         $html = $this->actingAs($a['dispatch'])->get(route('dispatch.fuel-lifting'))->assertOk()->getContent();
-        $this->assertStringContainsString('name="items[0][garage_liters]"', $html);
-        $this->assertStringContainsString('name="items[0][storage_location_id]"', $html);
-        $this->assertStringContainsString('name="items[0][direct_liters]"', $html);
-        $this->assertStringContainsString('name="items[0][sale_id]"', $html);
+        $this->assertMatchesRegularExpression('/name="items\[0\]\[lifts\]\[0\]\[storage_location_id\]" data-lift-field="storage_location_id" data-allocation-tank/', $html);
+        $this->assertStringContainsString('name="items[0][lifts][0][sale_id]"', $html);
+        $this->assertStringContainsString('<option value="client" >Depot to Client</option>', $html);
+        $this->assertStringNotContainsString('direct_liters', $html);
+        $this->assertStringNotContainsString('garage_liters', $html);
         $this->assertStringContainsString('free 5,000.00 L', $html);
     }
 

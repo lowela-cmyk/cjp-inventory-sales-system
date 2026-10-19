@@ -54,11 +54,16 @@ class CompliancePhase1Test extends AuditTestCase
             ->assertSessionHasNoErrors();
         $this->assertDatabaseHas('stock_outs', ['sale_id' => $saleId, 'source_type' => 'garage', 'quantity_liters' => 2000, 'status' => 'released']);
 
-        // Direct-depot path: the allocation chosen at scheduling posts when the driver marks the lift Lifted.
+        // Direct-depot path (lifts scheduled before Part 8 #5 removed it): the direct allocation posts when the
+        // driver marks the lift Lifted. New lifts are garage-only, so the historical shape is seeded here.
         $directSaleId = $this->recordSale($a, 3000, 65, 0);
         $directItemId = $this->purchase($a, 3000);
-        $this->schedule($a, [['purchase_item_id' => $directItemId, 'quantity_liters' => 3000, 'garage_liters' => 0, 'direct_liters' => 3000, 'sale_id' => $directSaleId]])
+        $this->schedule($a, [['purchase_item_id' => $directItemId, 'quantity_liters' => 3000, 'storage_location_id' => $this->tank($a)]])
             ->assertSessionHasNoErrors();
+        $directHaulId = (int) DB::table('hauls')->orderByDesc('id')->value('id');
+        DB::table('haul_allocations')->where('haul_id', $directHaulId)->update([
+            'destination_type' => 'customer', 'storage_location_id' => null, 'customer_id' => $a['customer'], 'sale_id' => $directSaleId,
+        ]);
         $this->assertSame(0, DB::table('stock_outs')->where('sale_id', $directSaleId)->count(), 'Scheduling alone must not post a stock-out.');
 
         $this->driverLifts($a, (int) DB::table('hauls')->orderByDesc('id')->value('id'));
@@ -217,7 +222,7 @@ class CompliancePhase1Test extends AuditTestCase
         $this->actingAs($a['sales'])->post(route('sales-officer.sales.store'), [
             'idempotency_key' => $this->uuid(), 'customer_id' => $a['customer'], 'sale_date' => '2026-10-14',
             'items' => [['fuel_type_id' => $a['fuel'], 'quantity_liters' => $liters, 'unit_price' => $price]],
-            'payment_method' => 'cash_on_delivery', 'payment_terms' => 'cod', 'amount_paid' => $amountPaid,
+            'payment_method' => 'cash_on_delivery', 'payment_terms' => 'installment', 'amount_paid' => $amountPaid,
         ])->assertSessionHasNoErrors();
 
         return (int) DB::table('sales')->orderByDesc('id')->value('id');

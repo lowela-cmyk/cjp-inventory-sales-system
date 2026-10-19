@@ -10,7 +10,7 @@ use Illuminate\Support\Str;
 
 class StockInService
 {
-    private const STOCK_IN_REFERENCE_TYPE = 'haul_allocation';
+    public const STOCK_IN_REFERENCE_TYPE = 'haul_allocation';
 
     public function __construct(
         private readonly IdempotencyService $idempotencyService,
@@ -254,6 +254,8 @@ class StockInService
         $movements = collect($paginator->items());
 
         $references = $this->stockInReferenceLabels($movements);
+        // Each stock-in row is a stock lot: show what has been released from it (Part 8 #8).
+        $lots = app(StockLotService::class)->lots($movements->pluck('id')->map(fn (mixed $id): int => (int) $id)->all())->keyBy('id');
 
         $transformed = $movements->map(fn (object $row): array => [
             'modal_id' => 'io-stockin-detail-'.$row->id,
@@ -267,7 +269,7 @@ class StockInService
                 $this->formatNumber($row->unit_cost),
                 $this->formatNumber(((float) $row->quantity_liters) * ((float) ($row->unit_cost ?? 0))),
                 $this->formatNumber($row->quantity_liters),
-                '0.00',
+                $this->formatNumber($lots->get((int) $row->id)->released ?? 0),
                 'Confirmed',
             ],
             'details' => [
@@ -276,6 +278,8 @@ class StockInService
                 'Fuel' => $row->fuel_name,
                 'Garage' => $row->location_name,
                 'Quantity Received' => $this->formatLiters($row->quantity_liters),
+                'In Stock (lot)' => $this->formatLiters($lots->get((int) $row->id)->on_hand ?? 0),
+                'Reserved by Undelivered Sales' => $this->formatLiters($lots->get((int) $row->id)->reserved ?? 0),
                 'Cost / Liter' => $this->formatNumber($row->unit_cost),
                 'Source' => $references[$this->referenceKey($row->reference_type, (int) $row->reference_id)] ?? $this->label($row->reference_type).' #'.$row->reference_id,
                 'Received By' => $row->created_by_name ?: 'N/A',

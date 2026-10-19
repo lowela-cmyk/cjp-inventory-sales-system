@@ -58,7 +58,8 @@ class AdminUserManagementTest extends TestCase
             ->assertSee('Real Driver')
             ->assertSee('DRV-000123')
             ->assertSee('N01-22-123456')
-            ->assertSee('Real Customer Company')
+            // Customers aren't system users (Part 8 #12); they are listed in Sales > Customers.
+            ->assertDontSee('Real Customer Company')
             ->assertDontSee('Manuel P. Ligaya')
             ->assertDontSee('Maria C. Pilar');
     }
@@ -366,12 +367,10 @@ class AdminUserManagementTest extends TestCase
             ->assertSee('LIC-EXPORT')
             ->assertSee('Export Driver');
 
+        // Customers are not system users (Part 8 #12): they are exported from Sales > Customers instead.
         $this->actingAs($admin)
             ->get(route('admin.user-management.export', ['tab' => 'customers']))
-            ->assertOk()
-            ->assertSee('Export Customer')
-            ->assertSee('Export Company')
-            ->assertSee('Batangas');
+            ->assertSessionHasErrors('tab');
     }
 
     public function test_user_management_export_is_admin_only(): void

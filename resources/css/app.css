@@ -190,10 +190,44 @@ select {
     min-width: 0;
 }
 
-.header-profile::before,
-.header-profile::after {
-    content: none !important;
-    display: none !important;
+/* Notification bell next to the username (Part 8). */
+.header-profile {
+    gap: 16px;
+}
+
+.header-bell {
+    position: relative;
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border: 1px solid var(--admin-soft-line);
+    border-radius: 8px;
+    color: var(--admin-ink);
+    background: #fff;
+}
+
+.header-bell:hover,
+.header-bell:focus-visible {
+    border-color: var(--admin-ink);
+}
+
+.header-bell-badge {
+    position: absolute;
+    top: -7px;
+    right: -9px;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 5px;
+    border-radius: 10px;
+    background: var(--danger);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 20px;
+    text-align: center;
 }
 
 .admin-content {
@@ -278,7 +312,9 @@ select {
 .admin-table.ledger-table {
     width: 100%;
     min-width: 960px;
-    table-layout: fixed;
+    /* Auto, not fixed: equal fixed columns were narrower than a purchase ID at 1366px, so IDs and
+       status pills overflowed into the next column and sat off-center. */
+    table-layout: auto;
 }
 
 .admin-table.ledger-table th,
@@ -510,7 +546,8 @@ form[aria-busy="true"] {
     width: max-content;
     min-width: 100%;
     border-collapse: collapse;
-    text-align: left;
+    /* Every header and cell is centered, so each header sits over its column (as on the Ledger). */
+    text-align: center;
 }
 
 .admin-table-fixed {
@@ -546,7 +583,9 @@ form[aria-busy="true"] {
     font-size: 14px;
     line-height: 1.3;
     vertical-align: middle;
-    text-align: left;
+    text-align: center;
+    /* Digits line up vertically down a column. */
+    font-variant-numeric: tabular-nums;
     /* Keep all cell text on one line - overrides the global 'anywhere' rule */
     white-space: nowrap;
     overflow-wrap: normal;
@@ -635,14 +674,6 @@ table td:has(.status-badge) {
     padding-left: 18px;
 }
 
-.depot-table th {
-    text-align: left;
-}
-
-.depot-table td {
-    text-align: left;
-}
-
 .admin-table-fit th:last-child,
 .admin-table-fit td:last-child,
 .depot-table th:last-child,
@@ -652,14 +683,9 @@ table td:has(.status-badge) {
     text-align: center;
 }
 
-.depot-table th:first-child {
-    padding-left: 14px;
-    text-align: left;
-}
-
+.depot-table th:first-child,
 .depot-table td:first-child {
     padding-left: 14px;
-    text-align: left;
 }
 
 .depot-table th:last-child,
@@ -697,7 +723,6 @@ table td:has(.status-badge) {
     width: auto;
     height: 44px;
     padding: 9px 12px;
-    text-align: left;
     line-height: 1.2;
 }
 
@@ -765,7 +790,6 @@ table td:has(.status-badge) {
 }
 
 .inventory-table .inventory-number {
-    text-align: right;
     font-variant-numeric: tabular-nums;
 }
 
@@ -1123,10 +1147,6 @@ table td:has(.status-badge) {
 .status-pending {
     background: #eceff3;
     border-color: #555;
-}
-
-.account-request-table td:first-child {
-    text-align: left;
 }
 
 .account-request-table td:first-child strong,
@@ -1685,7 +1705,8 @@ table td:has(.status-badge) {
 }
 
 .dashboard-mini-table td {
-    text-align: left;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
 }
 
 .dashboard-kpi-strip {
@@ -3632,9 +3653,9 @@ body.login-page {
 
 .lift-form-section {
     display: grid;
-    gap: 14px;
+    gap: 10px;
     min-width: 0;
-    padding: 16px;
+    padding: 12px 14px;
     border: 1px solid var(--admin-soft-line);
     border-radius: 8px;
 }
@@ -3648,7 +3669,7 @@ body.login-page {
 .lift-fields {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 14px 20px;
+    gap: 10px 16px;
 }
 
 .lift-field {
@@ -3704,15 +3725,16 @@ body.login-page {
 
 .lift-lines {
     display: grid;
-    gap: 12px;
+    gap: 8px;
 }
 
+/* One compact row per purchase line (Part 8 #6): Purchase ID | Fuel / Remaining | Amount | Garage Tank | Remove. */
 .lift-line {
     display: grid;
-    grid-template-columns: minmax(220px, 2fr) minmax(160px, 1.5fr) minmax(160px, 1.5fr) auto;
-    gap: 14px;
+    grid-template-columns: minmax(0, 1.7fr) minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1.8fr) auto;
+    gap: 10px;
     align-items: start;
-    padding: 14px;
+    padding: 10px;
     border: 1px solid #d8dee9;
     border-radius: 10px;
     background: #f8fafc;
@@ -3828,39 +3850,13 @@ body.login-page {
     font-size: 13px;
 }
 
-/* Allocation row of a purchase line: Garage liters + tank, Depot (direct) liters + client sale. */
-.lift-allocation {
-    display: grid;
-    grid-column: 1 / -1;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1.6fr);
-    gap: 14px;
-    min-width: 0;
-    margin: 0;
-    padding: 12px 0 0;
-    border: 0;
-    border-top: 1px dashed #c8d0dc;
-}
-
-.lift-allocation legend {
-    float: left;
-    width: 100%;
-    margin: 0 0 2px;
-    padding: 0;
-    grid-column: 1 / -1;
-    font-size: 13px;
-    font-weight: 800;
-    text-transform: uppercase;
-    color: var(--admin-muted);
-}
-
-.lift-allocation .input-suffix {
+.lift-line .input-suffix {
     min-width: 0;
 }
 
-/* Tablet: two columns per purchase line (Purchase + Fuel, then Amount + Remove). */
+/* Tablet: two columns per purchase line. */
 @media (max-width: 1023px) {
-    .lift-line,
-    .lift-allocation {
+    .lift-line {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
@@ -3881,7 +3877,6 @@ body.login-page {
 
     .lift-fields,
     .lift-line,
-    .lift-allocation,
     .lift-info-row {
         grid-template-columns: minmax(0, 1fr);
     }
@@ -3926,14 +3921,14 @@ body.login-page {
 }
 
 .table-stacked td.cell-wrap {
-    min-width: 96px;
+    min-width: 88px;
     white-space: normal;
 }
 
 .cell-stack {
     display: inline-grid;
     gap: 3px;
-    justify-items: start;
+    justify-items: center;
 }
 
 .cell-line {
@@ -4027,4 +4022,87 @@ body.login-page {
         border-right: 0;
         border-bottom: 1px solid var(--admin-line);
     }
+}
+
+/* Record IDs (PUR-…, SLS-…, TRK-… / plate) never wrap (Part 8). */
+.admin-table td.cell-id {
+    white-space: nowrap;
+}
+
+/* Stock-Out (Part 8 #4): comfortable cells; names wrap between words, IDs and amounts never wrap. */
+.stock-out-table th,
+.stock-out-table td {
+    padding-right: 14px;
+    padding-left: 14px;
+}
+
+.stock-out-table td {
+    min-width: 96px;
+}
+
+.stock-out-table td.cell-name {
+    min-width: 150px;
+    max-width: 220px;
+    white-space: normal;
+}
+
+.stock-out-table td.cell-id,
+.stock-out-table td.inventory-number {
+    white-space: nowrap;
+}
+
+/* Server-generated values shown in a form (e.g. the next truck code). */
+.form-row input.input-readonly {
+    background: #eef1f5;
+    color: #475467;
+    cursor: not-allowed;
+}
+
+/* Purchases at 1366px (Part 8 #2 un-stacked ID/Date and Cost/Total): narrower status pills (two-line
+   labels), a compact View Receipt button and wrapping headers keep the table inside its frame.
+   Values and IDs still never wrap. */
+.inventory-table.table-stacked .status-badge {
+    width: 118px;
+    min-width: 118px;
+    max-width: 118px;
+    height: auto;
+    padding-top: 4px;
+    padding-bottom: 4px;
+}
+
+.table-stacked .inventory-receipt-cell .btn {
+    min-width: 0;
+    padding: 0 10px;
+    font-size: 12px;
+}
+
+.inventory-table.table-stacked thead th {
+    white-space: normal;
+}
+
+/* -- Table alignment ----------------------------------------------------------
+   Every data table centers each header over its column (see .admin-table): action
+   buttons and stacked lines inside a cell are centered too. */
+.admin-table .sales-row-actions,
+.admin-table .driver-row-actions,
+.admin-table .account-request-actions,
+.admin-table .inventory-row-actions {
+    justify-content: center;
+}
+
+.admin-table .row-actions-stack {
+    justify-items: center;
+}
+
+/* Purchases: Edit and Assign Tank stack, so the sticky Actions column stays narrow and the table
+   still fits 1366px when a lift is waiting for a tank. */
+.inventory-table-actions .inventory-row-actions {
+    flex-direction: column;
+    gap: 6px;
+}
+
+.inventory-table-actions .inventory-row-actions .btn {
+    min-width: 0;
+    padding-right: 10px;
+    padding-left: 10px;
 }

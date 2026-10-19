@@ -117,6 +117,8 @@ class InventoryOfficerPurchaseController extends Controller
                 ->get(['id', 'name', 'fuel_type_id', 'tank_number']),
             'garageAllocations' => $this->garageAllocationOptions(),
             'paymentStatuses' => self::PAYMENT_STATUSES,
+            'paymentModes' => PurchaseService::PAYMENT_MODES,
+            'banks' => PurchaseService::BANKS,
             'purchaseIdempotencyKey' => (string) Str::uuid(),
         ]);
     }
@@ -254,7 +256,7 @@ class InventoryOfficerPurchaseController extends Controller
      */
     private function validatedPurchaseData(Request $request): array
     {
-        return $request->validate([
+        $data = $request->validate([
             'purchase_date' => ['required', 'date'],
             'idempotency_key' => ['nullable', 'uuid'],
             'depot_id' => ['required', 'integer', Rule::exists('depots', 'id')->where(fn (Builder $query): Builder => $query->where('status', 'active'))],
@@ -269,8 +271,17 @@ class InventoryOfficerPurchaseController extends Controller
             'receipt_file' => ['prohibited'],
             'receipt_status' => ['prohibited'],
             'payment_status' => ['required', Rule::in(self::PAYMENT_STATUSES)],
+            // Part 9: Bank Selection is required for Bank Transfer and Cheque, and cleared for Cash.
+            'payment_mode' => ['required', Rule::in(array_keys(PurchaseService::PAYMENT_MODES))],
+            'bank_name' => ['exclude_if:payment_mode,cash', 'nullable', 'required_if:payment_mode,bank_transfer,cheque', Rule::in(PurchaseService::BANKS)],
             'status' => ['nullable', Rule::in(self::PURCHASE_STATUSES)],
+        ], [
+            'payment_mode.required' => 'Select the payment mode.',
+            'bank_name.required_if' => 'Select the bank for a Bank Transfer or Cheque payment.',
         ]);
+        $data['bank_name'] = $data['bank_name'] ?? null;
+
+        return $data;
     }
 
     private function purchaseRows(?string $search, array $filters = []): LengthAwarePaginator
@@ -576,7 +587,9 @@ class InventoryOfficerPurchaseController extends Controller
             return 'Depot'.($row->depot_name ? ' — '.$row->depot_name : '');
         }
 
-        return 'Garage'.($row->garage_name ? ' — '.$row->garage_name : '');
+        $lot = $row->lot_id ? ' · '.($row->lot_code ?: 'Opening stock') : '';
+
+        return 'Garage'.($row->garage_name ? ' — '.$row->garage_name : '').$lot;
     }
 
     private function rowClass(?string $status): string

@@ -28,6 +28,18 @@ class StockOutFinancialService
             ->leftJoin('purchase_items as source_purchase_item', 'source_purchase_item.id', '=', 'hauls.purchase_item_id')
             // Where the fuel physically left from: a garage tank, or the depot of a direct release.
             ->leftJoin('storage_locations as source_garage', 'source_garage.id', '=', 'stock_outs.storage_location_id')
+            // The stock lot a sale line was sold from (Part 8 #8): its purchase code names the source. The lot covers
+            // releases of the line's own fuel only; the F1 portion of a line (Part 9) is a pooled F1 release.
+            ->leftJoin('inventory_movements as lot_movement', function ($join): void {
+                $join->on('lot_movement.id', '=', 'sale_items.stock_in_movement_id')
+                    ->whereColumn('stock_outs.fuel_type_id', 'sale_items.fuel_type_id');
+            })
+            ->leftJoin('haul_allocations as lot_allocation', function ($join): void {
+                $join->on('lot_allocation.id', '=', 'lot_movement.reference_id')
+                    ->where('lot_movement.reference_type', '=', StockInService::STOCK_IN_REFERENCE_TYPE);
+            })
+            ->leftJoin('hauls as lot_haul', 'lot_haul.id', '=', 'lot_allocation.haul_id')
+            ->leftJoin('purchases as lot_purchase', 'lot_purchase.id', '=', 'lot_haul.purchase_id')
             ->leftJoin('depots as source_depot', 'source_depot.id', '=', DB::raw('COALESCE(stock_outs.depot_id, hauls.depot_id)'))
             ->leftJoinSub($payments, 'payments_total', 'payments_total.sale_id', '=', 'sales.id')
             ->leftJoinSub($saleTotals, 'sale_totals', 'sale_totals.sale_id', '=', 'sales.id')
@@ -52,6 +64,8 @@ class StockOutFinancialService
                 'stock_outs.status',
                 'stock_outs.source_type',
                 'source_garage.name as garage_name',
+                'lot_purchase.purchase_code as lot_code',
+                'lot_movement.id as lot_id',
                 'source_depot.id as source_depot_id',
                 'source_depot.name as depot_name',
                 'sales.sale_code',

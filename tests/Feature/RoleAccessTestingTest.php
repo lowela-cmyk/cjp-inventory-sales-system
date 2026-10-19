@@ -544,7 +544,7 @@ class RoleAccessTestingTest extends TestCase
             'quantity_liters' => 100,
             'unit_price' => 50,
             'payment_method' => 'cash_on_delivery',
-            'payment_terms' => 'cod',
+            'payment_terms' => 'installment',
         ];
     }
 

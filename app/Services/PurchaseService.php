@@ -13,6 +13,11 @@ class PurchaseService
 {
     private const STOCK_IN_REFERENCE_TYPE = 'haul_allocation';
 
+    /** Part 9: how a purchase was paid. A bank is chosen for Bank Transfer and Cheque only. */
+    public const PAYMENT_MODES = ['bank_transfer' => 'Bank Transfer', 'cash' => 'Cash', 'cheque' => 'Cheque'];
+
+    public const BANKS = ['BPI', 'BDO', 'RCBC'];
+
     public function __construct(
         private readonly IdempotencyService $idempotencyService,
         private readonly WorkflowAlertService $alerts,
@@ -39,6 +44,8 @@ class PurchaseService
                     'purchase_date' => $data['purchase_date'],
                     'receipt_reference' => null,
                     'payment_status' => $data['payment_status'],
+                    'payment_mode' => $data['payment_mode'] ?? null,
+                    'bank_name' => $data['bank_name'] ?? null,
                     'status' => 'ordered',
                     'workflow_status' => 'pending',
                     'created_by' => $userId,
@@ -105,6 +112,8 @@ class PurchaseService
                     'depot_id' => $data['depot_id'],
                     'purchase_date' => $data['purchase_date'],
                     'payment_status' => $data['payment_status'],
+                    'payment_mode' => $data['payment_mode'] ?? null,
+                    'bank_name' => $data['bank_name'] ?? null,
                     'updated_at' => now(),
                 ]);
 
@@ -244,6 +253,8 @@ class PurchaseService
                 'purchases.purchase_date',
                 'purchases.receipt_reference',
                 'purchases.payment_status',
+                'purchases.payment_mode',
+                'purchases.bank_name',
                 'purchases.status as legacy_purchase_status',
                 'purchases.workflow_status as purchase_status',
                 'purchases.created_at',
@@ -284,6 +295,8 @@ class PurchaseService
                 'receipt_url' => null,
                 'withdrawals' => $withdrawalsMap[(int) $row->id] ?? [],
                 'payment_status' => $row->payment_status,
+                'payment_mode' => $row->payment_mode,
+                'bank_name' => $row->bank_name,
                 'purchase_status' => $row->purchase_status,
                 'has_dependencies' => $dependencyMap[(int) $row->id] ?? false,
                 'class' => $this->rowClass($row->payment_status),
@@ -302,6 +315,8 @@ class PurchaseService
                     $this->withdrawalStatus((int) $row->withdrawal_count),
                     $this->label($row->purchase_status),
                     $this->label($row->payment_status),
+                    self::PAYMENT_MODES[$row->payment_mode] ?? 'N/A',
+                    $row->bank_name ?: 'N/A',
                 ],
                 'details' => [
                     'Date' => $this->formatDate($row->purchase_date),
@@ -315,6 +330,8 @@ class PurchaseService
                     'Inventory Status' => $this->label($inventoryStatus),
                     'Cost/Liter' => $this->formatNumber($row->unit_cost),
                     'Total Cost' => $this->formatNumber($row->line_total),
+                    'Payment Mode' => self::PAYMENT_MODES[$row->payment_mode] ?? 'N/A',
+                    'Bank' => $row->bank_name ?: 'N/A',
                     'Withdrawal Receipts' => $this->withdrawalStatus((int) $row->withdrawal_count),
                     'Latest Withdrawal Upload' => $this->formatDateTime($row->latest_withdrawal_at),
                     'Purchase Status' => $this->label($row->purchase_status),
@@ -475,14 +492,10 @@ class PurchaseService
         return $code;
     }
 
-    private function rowClass(?string $status): string
+    /** Purchases rows are white; only an Unpaid purchase is tinted red (Part 8 #3). */
+    private function rowClass(?string $paymentStatus): string
     {
-        return match ($status) {
-            'unpaid', 'cancelled' => 'row-danger',
-            'partial' => 'row-warning',
-            'paid' => 'row-success',
-            default => '',
-        };
+        return $paymentStatus === 'unpaid' ? 'row-danger' : '';
     }
 
     private function label(?string $value): string

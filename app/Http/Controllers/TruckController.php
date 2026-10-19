@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\IdempotencyService;
 use App\Services\TruckAvailabilityService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -14,15 +15,19 @@ use Illuminate\Validation\Rule;
  */
 class TruckController extends Controller
 {
-    public function __construct(private readonly TruckAvailabilityService $availability) {}
+    public function __construct(
+        private readonly TruckAvailabilityService $availability,
+        private readonly IdempotencyService $idempotency
+    ) {}
 
     public function store(Request $request): RedirectResponse
     {
         $this->normalizeIdentifiers($request);
         $data = $request->validate($this->rules());
 
-        DB::table('trucks')->insert([
-            'truck_code' => $data['truck_code'],
+        // The code is generated, never typed (Part 8 #7); a colliding concurrent create retries with the next number.
+        $this->idempotency->retryOnCollision('truck_code', fn () => DB::table('trucks')->insert([
+            'truck_code' => $this->availability->nextTruckCode(),
             'plate_number' => $data['plate_number'],
             'name' => $data['name'],
             'description' => $data['description'] ?? null,
@@ -31,7 +36,7 @@ class TruckController extends Controller
             'status' => $data['status'],
             'created_at' => now(),
             'updated_at' => now(),
-        ]);
+        ]), 5);
 
         return redirect()->route($this->routeName($request))->with('status', 'Truck added successfully.');
     }
@@ -47,7 +52,6 @@ class TruckController extends Controller
         }
 
         DB::table('trucks')->where('id', $truck)->update([
-            'truck_code' => $data['truck_code'],
             'plate_number' => $data['plate_number'],
             'name' => $data['name'],
             'description' => $data['description'] ?? null,
@@ -81,7 +85,6 @@ class TruckController extends Controller
     private function rules(?int $truckId = null): array
     {
         return [
-            'truck_code' => ['required', 'string', 'max:30', Rule::unique('trucks', 'truck_code')->ignore($truckId)],
             'plate_number' => ['required', 'string', 'max:50', Rule::unique('trucks', 'plate_number')->ignore($truckId)],
             'name' => ['required', 'string', 'max:100'],
             'description' => ['nullable', 'string', 'max:255'],
@@ -94,7 +97,6 @@ class TruckController extends Controller
     private function normalizeIdentifiers(Request $request): void
     {
         $request->merge([
-            'truck_code' => Str::upper(trim((string) $request->input('truck_code'))),
             'plate_number' => Str::upper(trim((string) $request->input('plate_number'))),
         ]);
     }

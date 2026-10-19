@@ -1,5 +1,20 @@
 import './bootstrap';
 import Chart from 'chart.js/auto';
+import '../css/part9.css';
+import '../css/select-picker.css';
+import './select-picker';
+
+// True while a dropdown list rendered in-page (appearance: base-select) is open. Browsers without the :open
+// selector keep the native list, which never passes Escape to the page.
+const isOpenSelectList = (target) => {
+    const select = target?.closest?.('select');
+    if (select?.dataset.pickerOpen === 'true') return true;
+    try {
+        return Boolean(select?.matches(':open'));
+    } catch {
+        return false;
+    }
+};
 
 const closeModal = (modal) => {
     modal?.classList.remove('is-open');
@@ -34,6 +49,8 @@ const openModal = (modal) => {
 
     modal.classList.add('is-open');
     modal.setAttribute('aria-hidden', 'false');
+
+    modal.querySelectorAll('[data-sales-items]').forEach(updateSalesTotals);
 };
 
 let pendingConfirmForm = null;
@@ -211,13 +228,43 @@ document.addEventListener('click', (event) => {
         const source = items?.querySelector('[data-lifting-item]:last-child');
         if (items && source) {
             const clone = source.cloneNode(true);
+            // A new purchase starts with one Depot to Garage lift row.
+            clone.querySelectorAll('[data-lift-row]').forEach((liftRow, index) => { if (index > 0) liftRow.remove(); });
             clone.querySelectorAll('select').forEach((select) => { select.selectedIndex = 0; });
-            clone.querySelectorAll('input').forEach((input) => { input.value = ''; });
-            clone.querySelectorAll('.field-error').forEach((message) => message.remove());
+            clone.querySelectorAll('input').forEach((input) => { input.value = ''; delete input.dataset.mirror; });
+            clone.querySelectorAll('.field-error:not([data-lift-rows-warning])').forEach((message) => message.remove());
+            clone.querySelectorAll('[aria-invalid]').forEach((field) => field.removeAttribute('aria-invalid'));
             const summary = clone.querySelector('[data-purchase-summary]');
-            if (summary) summary.textContent = 'Select a purchase';
+            if (summary) summary.textContent = 'Select Purchase ID';
             items.appendChild(clone);
             updateLiftingSchedule(form);
+        }
+    }
+
+    // Part 9: lift rows (Depot to Garage / Depot to Client) under each purchase.
+    const addLiftRowButton = event.target.closest('[data-lift-row-add]');
+    if (addLiftRowButton) {
+        const container = addLiftRowButton.closest('[data-lift-rows]');
+        const source = [...(container?.querySelectorAll('[data-lift-row]') || [])].pop();
+        if (container && source) {
+            const clone = source.cloneNode(true);
+            clone.querySelectorAll('select').forEach((select) => { select.selectedIndex = 0; });
+            clone.querySelectorAll('input').forEach((input) => { input.value = ''; input.dataset.mirror = '0'; });
+            clone.querySelectorAll('.field-error').forEach((message) => message.remove());
+            clone.querySelectorAll('[aria-invalid]').forEach((field) => field.removeAttribute('aria-invalid'));
+            source.after(clone);
+            // Once there are several rows, none of them follows the Amount to Lift automatically.
+            container.querySelectorAll('[data-lift-amount]').forEach((input) => { input.dataset.mirror = '0'; });
+            updateLiftingSchedule(addLiftRowButton.closest('[data-lifting-schedule-form]'));
+        }
+    }
+
+    const removeLiftRowButton = event.target.closest('[data-lift-row-remove]');
+    if (removeLiftRowButton) {
+        const container = removeLiftRowButton.closest('[data-lift-rows]');
+        if (container?.querySelectorAll('[data-lift-row]').length > 1) {
+            removeLiftRowButton.closest('[data-lift-row]')?.remove();
+            updateLiftingSchedule(container.closest('[data-lifting-schedule-form]'));
         }
     }
 
@@ -232,10 +279,20 @@ document.addEventListener('click', (event) => {
     }
 });
 
-// Only tanks of the selected purchase's fuel type can be chosen; the whole Amount to Lift goes there (Part 8 #5).
-const filterAllocationOptions = (row) => {
-    const fuel = row.querySelector('[data-lifting-purchase]')?.selectedOptions?.[0]?.dataset.fuelTypeId || '';
-    row.querySelectorAll('[data-allocation-tank]').forEach((select) => {
+const formatLitersText = (value) => `${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} L`;
+
+// Part 9: a lift row is Depot to Garage (tank + its stock) or Depot to Client (an open sales order). Only tanks and
+// orders of the purchase's fuel type can be chosen; the fields of the other kind are hidden and not submitted.
+const syncLiftRow = (liftRow, fuel) => {
+    const isClient = liftRow.querySelector('[data-lift-type]')?.value === 'client';
+    liftRow.querySelectorAll('[data-lift-garage]').forEach((field) => { field.hidden = isClient; });
+    liftRow.querySelectorAll('[data-lift-client]').forEach((field) => { field.hidden = !isClient; });
+    const tank = liftRow.querySelector('[data-allocation-tank]');
+    const sale = liftRow.querySelector('[data-lift-sale]');
+    [[tank, !isClient], [sale, isClient]].forEach(([select, active]) => {
+        if (!select) return;
+        select.disabled = !active;
+        select.required = active;
         [...select.options].forEach((option) => {
             if (!option.value) return;
             const matches = fuel !== '' && option.dataset.fuelTypeId === fuel;
@@ -243,11 +300,19 @@ const filterAllocationOptions = (row) => {
             option.disabled = !matches;
         });
         if (select.selectedOptions[0]?.disabled) select.value = '';
-        if (select.matches('[data-allocation-tank]') && !select.value) {
-            const first = [...select.options].find((option) => option.value && !option.disabled);
-            if (first) select.value = first.value;
-        }
     });
+    if (tank && !isClient && !tank.value) {
+        const first = [...tank.options].find((option) => option.value && !option.disabled);
+        if (first) tank.value = first.value;
+    }
+    const stock = liftRow.querySelector('[data-tank-stock]');
+    const tankOption = tank?.selectedOptions?.[0];
+    if (stock) stock.textContent = tankOption?.value ? formatLitersText(tankOption.dataset.stock) : 'Select a Tank';
+};
+
+const filterAllocationOptions = (row) => {
+    const fuel = row.querySelector('[data-lifting-purchase]')?.selectedOptions?.[0]?.dataset.fuelTypeId || '';
+    row.querySelectorAll('[data-lift-row]').forEach((liftRow) => syncLiftRow(liftRow, fuel));
 };
 
 document.addEventListener('input', (event) => {
@@ -260,11 +325,30 @@ document.addEventListener('input', (event) => {
         updateSalesTotals(modal?.querySelector('[data-sales-items]'));
     }
 
+    // A lift amount typed by hand no longer follows the Amount to Lift.
+    if (event.target.matches('[data-lift-amount]')) event.target.dataset.mirror = '0';
+
     const liftingForm = event.target.closest('[data-lifting-schedule-form]');
     if (liftingForm) updateLiftingSchedule(liftingForm);
 });
 
 document.addEventListener('change', (event) => {
+    // Part 9 Purchases: Bank Selection is required for Bank Transfer / Cheque, and disabled and cleared for Cash.
+    if (event.target.matches('[data-payment-mode]')) syncBankSelect(event.target);
+
+    // Part 9 Record Sales: the delivery type switches each line between Stock Source and Fuel Type.
+    if (event.target.matches('[data-delivery-type]')) {
+        const items = event.target.closest('[data-sale-form]')?.querySelector('[data-sales-items]');
+        if (items) {
+            items.dataset.deliveryTypeValue = event.target.value;
+            updateSalesTotals(items);
+        }
+    }
+
+    if (event.target.matches('[data-stock-lot], [data-f1-percentage], select[name$="[fuel_type_id]"]') && event.target.closest('[data-sales-item]')) {
+        updateSalesTotals(event.target.closest('[data-sales-items]'));
+    }
+
     // Record Sales: a stock lot caps the line's quantity at what the lot has available (the server re-checks).
     if (event.target.matches('[data-stock-lot]')) {
         const available = event.target.selectedOptions?.[0]?.dataset.available;
@@ -298,12 +382,15 @@ const updateLiftingSchedule = (form) => {
     let depotId = null;
     let depotLabel = '';
     let error = '';
+    // Part 9: an order's F1 is loaded at the garage with its first lift row only; F1 tanks are shared across rows.
+    const f1SalesSeen = new Set();
+    const f1ByTank = {};
 
     rows.forEach((row, index) => {
-        row.querySelectorAll('[name]').forEach((field) => {
+        row.querySelectorAll('[name]:not([data-lift-field])').forEach((field) => {
             field.name = field.name.replace(/items\[\d+\]/, `items[${index}]`);
         });
-        row.querySelectorAll('[id]').forEach((field) => {
+        row.querySelectorAll('[id]:not([data-lift-field])').forEach((field) => {
             const label = row.querySelector(`label[for="${field.id}"]`);
             field.id = field.id.replace(/_\d+$/, `_${index}`);
             label?.setAttribute('for', field.id);
@@ -328,8 +415,68 @@ const updateLiftingSchedule = (form) => {
             if (quantityInput) quantityInput.max = String(remaining);
             if (summary) summary.textContent = `${option.dataset.fuel} \u00b7 ${remaining.toLocaleString()} L remaining`;
         } else if (summary) {
-            summary.textContent = 'Select a purchase';
+            summary.textContent = 'Select Purchase ID';
         }
+
+        // Part 9: the lift rows must add up exactly to the Amount to Lift.
+        const liftRows = [...row.querySelectorAll('[data-lift-row]')];
+        let liftTotal = 0;
+        let rowError = '';
+        liftRows.forEach((liftRow, liftIndex) => {
+            liftRow.querySelectorAll('[data-lift-field]').forEach((field) => {
+                const label = liftRow.querySelector(`label[for="${field.id}"]`);
+                field.name = `items[${index}][lifts][${liftIndex}][${field.dataset.liftField}]`;
+                field.id = field.id.replace(/_\d+_\d+$/, `_${index}_${liftIndex}`);
+                label?.setAttribute('for', field.id);
+            });
+            syncLiftRow(liftRow, option?.dataset.fuelTypeId || '');
+            const amountInput = liftRow.querySelector('[data-lift-amount]');
+            // A single row follows the Amount to Lift until the user types its amount.
+            if (amountInput && liftRows.length === 1 && (amountInput.value === '' || amountInput.dataset.mirror === '1') && quantityInput?.value) {
+                amountInput.value = quantityInput.value;
+                amountInput.dataset.mirror = '1';
+            }
+            const amount = Number(amountInput?.value || 0);
+            liftTotal += Number.isFinite(amount) ? amount : 0;
+            const saleOption = liftRow.querySelector('[data-lift-sale]:not(:disabled)')?.selectedOptions?.[0];
+            if (saleOption?.value && amount > Number(saleOption.dataset.open || 0)) {
+                rowError ||= `A Depot to Client amount is more than the ${formatLitersText(saleOption.dataset.open)} left on its sales order.`;
+            }
+
+            const f1Liters = saleOption?.value && !f1SalesSeen.has(saleOption.value) ? Number(saleOption.dataset.f1 || 0) : 0;
+            if (saleOption?.value) f1SalesSeen.add(saleOption.value);
+            const f1Block = liftRow.querySelector('[data-lift-f1]');
+            const f1Tank = liftRow.querySelector('[data-lift-f1-tank]');
+            if (f1Block) f1Block.hidden = f1Liters <= 0;
+            if (f1Tank) {
+                f1Tank.disabled = f1Liters <= 0;
+                f1Tank.required = f1Liters > 0;
+                if (f1Liters > 0 && !f1Tank.value) {
+                    const first = [...f1Tank.options].find((option) => option.value);
+                    if (first) f1Tank.value = first.value;
+                }
+                const f1Option = f1Tank.selectedOptions?.[0];
+                const setF1Text = (selector, value) => { const element = liftRow.querySelector(selector); if (element) element.textContent = value; };
+                setF1Text('[data-lift-f1-liters]', formatLitersText(f1Liters));
+                setF1Text('[data-lift-f1-stock]', f1Option?.value ? formatLitersText(f1Option.dataset.stock) : 'Select an F1 tank');
+                if (f1Liters > 0 && f1Option?.value) {
+                    f1ByTank[f1Option.value] = (f1ByTank[f1Option.value] || 0) + f1Liters;
+                    if (f1ByTank[f1Option.value] > Number(f1Option.dataset.stock || 0)) {
+                        rowError ||= `${f1Option.textContent.trim()} has only ${formatLitersText(f1Option.dataset.stock)} of F1 for the ${formatLitersText(f1ByTank[f1Option.value])} to load at the garage.`;
+                    }
+                }
+            }
+            const removeButton = liftRow.querySelector('[data-lift-row-remove]');
+            if (removeButton) removeButton.disabled = liftRows.length === 1;
+        });
+        if (liftRows.length > 0 && Math.round(liftTotal * 100) !== Math.round(quantity * 100)) {
+            rowError ||= `The lift rows add up to ${formatLitersText(liftTotal)} but the Amount to Lift is ${formatLitersText(quantity)}. They must be equal.`;
+        }
+        const setRowText = (selector, value) => { const element = row.querySelector(selector); if (element) element.textContent = value; };
+        setRowText('[data-lift-rows-total]', formatLitersText(liftTotal));
+        setRowText('[data-lift-rows-target]', formatLitersText(quantity));
+        setRowText('[data-lift-rows-warning]', rowError);
+        if (rowError) error ||= 'Fix the lift rows of each purchase before scheduling.';
     });
 
     if (capacity > 0 && total > capacity) error ||= 'Combined quantity exceeds the selected truck capacity.';
@@ -386,6 +533,7 @@ const updateSalesTotals = (items) => {
     let total = 0;
 
     items.querySelectorAll('[data-sales-item]').forEach((row) => {
+        syncSaleItemRow(row, items);
         const quantity = Number(row.querySelector('input[name*="[quantity_liters]"]')?.value || 0);
         const unitPrice = Number(row.querySelector('input[name*="[unit_price]"]')?.value || 0);
         const lineTotal = Number.isFinite(quantity * unitPrice) ? quantity * unitPrice : 0;
@@ -434,13 +582,106 @@ const updateSalesTotals = (items) => {
     if (paymentStatusOutput) {
         let paymentStatus = 'Unpaid';
         if (normalizedAmountPaid > 0) {
-            paymentStatus = total > 0 && normalizedAmountPaid >= total ? 'Paid' : 'Partially Paid';
+            paymentStatus = total > 0 && normalizedAmountPaid >= total ? 'Fully Paid' : 'Partially Paid';
         }
         paymentStatusOutput.textContent = paymentStatus;
     }
 };
 
 document.querySelectorAll('[data-sales-items]').forEach(updateSalesTotals);
+
+// Part 9: Bank Selection only shows for Bank Transfer / Cheque; otherwise it is hidden and cleared.
+function syncBankSelect(modeSelect) {
+    const bank = document.getElementById(modeSelect.dataset.paymentMode);
+    if (!bank) return;
+    const needsBank = ['bank_transfer', 'cheque'].includes(modeSelect.value);
+    const row = bank.closest('[data-bank-row]');
+    if (row) row.hidden = !needsBank;
+    bank.disabled = !needsBank;
+    bank.required = needsBank;
+    if (!needsBank) bank.value = '';
+}
+
+document.querySelectorAll('[data-payment-mode]').forEach(syncBankSelect);
+
+// Part 9 Record Sales: a line shows Stock Source (Garage to Client) or Fuel Type (Depot to Client). F1 Percentage
+// applies to Unleaded / Premium lines only (for Depot to Client the F1 is loaded at the garage); otherwise it is
+// completely hidden, cleared, and counts as 0%.
+function syncSaleItemRow(row, items) {
+    const isDepot = items.dataset.deliveryTypeValue === 'depot_to_client';
+    row.querySelectorAll('[data-garage-only]').forEach((field) => {
+        field.hidden = isDepot;
+        field.querySelectorAll('select, input').forEach((input) => { input.disabled = isDepot; });
+    });
+    row.querySelectorAll('[data-depot-only]').forEach((field) => {
+        field.hidden = !isDepot;
+        field.querySelectorAll('select, input').forEach((input) => { input.disabled = !isDepot; });
+    });
+
+    const activeFuelSelect = [...row.querySelectorAll('select[name$="[stock_lot_id]"], select[name$="[fuel_type_id]"]')]
+        .find((select) => !select.disabled);
+    const fuelOption = activeFuelSelect?.selectedOptions?.[0];
+
+    const fuelTypeValue = (fuelOption?.dataset?.fuelType || fuelOption?.dataset?.fuelName || '').trim().toLowerCase();
+    const fuelCodeValue = (fuelOption?.dataset?.fuelCode || '').trim().toUpperCase();
+    const eligible = Boolean(fuelOption?.value) && (
+        fuelTypeValue === 'unleaded' ||
+        fuelTypeValue === 'premium' ||
+        fuelCodeValue === 'UNL' ||
+        fuelCodeValue === 'PREM'
+    );
+
+    const f1Field = row.querySelector('[data-f1-field]');
+    const f1Select = row.querySelector('[data-f1-percentage]');
+    const pricePair = f1Field?.closest('.sale-pair') || row.querySelector('.sale-pair');
+
+    if (f1Field) {
+        f1Field.hidden = !eligible;
+    }
+    if (pricePair) {
+        pricePair.classList.toggle('has-no-f1', !eligible);
+    }
+    if (f1Select) {
+        if (!eligible) {
+            f1Select.value = '0';
+        }
+        f1Select.disabled = !eligible;
+    }
+
+    const breakdown = row.querySelector('[data-f1-breakdown]');
+    if (!breakdown) return;
+
+    const percent = eligible ? Number(f1Select?.value || 0) : 0;
+    const showBreakdown = eligible && percent > 0;
+    breakdown.hidden = !showBreakdown;
+
+    const quantity = Number(row.querySelector('input[name*="[quantity_liters]"]')?.value || 0);
+    const ordered = (showBreakdown && Number.isFinite(quantity)) ? quantity : 0;
+    const f1Amount = showBreakdown ? Math.round(ordered * percent) / 100 : 0;
+    const mainAmount = showBreakdown ? Math.round((ordered - f1Amount) * 100) / 100 : 0;
+    const format = (value) => value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const set = (selector, value) => {
+        const element = breakdown.querySelector(selector);
+        if (element) element.textContent = value;
+    };
+
+    if (showBreakdown) {
+        set('[data-f1-ordered]', format(ordered));
+        set('[data-f1-percent]', `${percent}%`);
+        set('[data-f1-amount]', format(f1Amount));
+        const fuelName = fuelOption?.dataset?.fuelType || fuelOption?.dataset?.fuelName || 'Fuel';
+        set('[data-f1-main-label]', `${fuelName} Amount`);
+        set('[data-f1-main]', format(mainAmount));
+        set('[data-f1-total]', format(mainAmount + f1Amount));
+    } else {
+        set('[data-f1-ordered]', '0.00');
+        set('[data-f1-percent]', '0%');
+        set('[data-f1-amount]', '0.00');
+        set('[data-f1-main-label]', 'Fuel Amount');
+        set('[data-f1-main]', '0.00');
+        set('[data-f1-total]', '0.00');
+    }
+}
 
 const visibleTableFor = (trigger) => {
     const scope = trigger.closest('[data-tabs]') || trigger.closest('section') || document;
@@ -636,7 +877,8 @@ document.addEventListener('keydown', (event) => {
         showReceiptSlide(openLightbox, Number(openLightbox.dataset.receiptIndex || 0) + (event.key === 'ArrowRight' ? 1 : -1));
     }
 
-    if (event.key === 'Escape') {
+    // Escape on an open dropdown list only closes that list (see select-picker.css), not the modal around it.
+    if (event.key === 'Escape' && !isOpenSelectList(event.target)) {
         document.querySelectorAll('.modal-backdrop.is-open').forEach(closeModal);
         document.body.classList.remove('sidebar-open');
     }

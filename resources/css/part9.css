@@ -1,0 +1,313 @@
+/* Part 9 (October 19, 2026): Schedule Lift rows, Record Sales sections and the F1 breakdown.
+   Imported from app.js; uses the tokens defined in app.css. */
+
+/* ===== Schedule Lift (System Analysis mockup) =====
+   Header card: Truck ID | Driver | Lift Date. Purchase card: Purchase ID | Fuel / Remaining | Amount to Lift, then
+   Authority to Load | + Add Purchase | Remove Purchase. Lift Details: one card per row, then a full-width + Add Lift. */
+.lift-fields.lift-fields-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: end;
+}
+
+.lift-span-2 {
+    grid-column: span 2;
+}
+
+.lift-info.lift-info-inline {
+    grid-column: span 2;
+    align-self: center;
+    font-size: 13px;
+}
+
+.lift-info.lift-info-inline .lift-info-row {
+    grid-template-columns: 120px minmax(0, 1fr);
+}
+
+/* As on the mockup, Truck ID | Driver | Lift Date and the first purchase sit in one card. */
+.lift-form .lift-header-card {
+    border-bottom: 0;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    padding-bottom: 4px;
+}
+
+.lift-form .lift-header-card + .lift-lines {
+    margin-top: -18px;
+}
+
+.lift-form .lift-lines > .lift-line:first-child .lift-purchase-card {
+    border-top: 0;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+    padding-top: 6px;
+}
+
+/* Each purchase: its card, then its Lift Details (the old one-row grid of Part 8 no longer applies). */
+.lift-lines .lift-line {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+}
+
+.lift-lines {
+    gap: 18px;
+}
+
+.lift-purchase-buttons {
+    display: flex;
+    gap: 10px;
+    align-items: end;
+}
+
+.lift-purchase-buttons .btn {
+    flex: 1 1 0;
+    min-height: 42px;
+    white-space: nowrap;
+}
+
+.lift-line .lift-details {
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+}
+
+.lift-row {
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+    padding: 12px 14px;
+    border: 1px solid var(--admin-soft-line);
+    border-radius: 8px;
+    background: #fff;
+}
+
+.lift-row-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: end;
+}
+
+.lift-row-remove {
+    min-height: 42px;
+    white-space: nowrap;
+}
+
+.lift-row-body {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    align-items: start;
+}
+
+.lift-row-body > * {
+    min-width: 0;
+}
+
+/* F1 loaded at the garage for a Depot to Client order. */
+.lift-row .lift-row-f1 {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    align-items: end;
+    padding: 10px;
+    border-radius: 8px;
+    background: #fff7e6;
+}
+
+.lift-row-f1-note {
+    align-self: center;
+    margin: 0;
+}
+
+.lift-row [hidden] {
+    display: none;
+}
+
+.lift-add-row {
+    width: 100%;
+    min-height: 40px;
+    border: 1px solid var(--admin-line);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--admin-ink);
+    font-weight: 700;
+}
+
+.lift-details-total {
+    margin: 0;
+    font-weight: 800;
+}
+
+.lift-details [data-lift-rows-warning]:empty {
+    display: none;
+}
+
+@media (max-width: 1023px) {
+    .lift-fields.lift-fields-3,
+    .lift-row-body,
+    .lift-row .lift-row-f1 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .lift-info.lift-info-inline {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 767px) {
+    .lift-fields.lift-fields-3,
+    .lift-row-body,
+    .lift-row .lift-row-f1,
+    .lift-row-head {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .lift-span-2 {
+        grid-column: auto;
+    }
+
+    .lift-purchase-buttons {
+        flex-direction: column;
+        align-items: stretch;
+    }
+}
+
+/* ===== Record Sales (System Analysis mockup): Order Details card, then Order Payment Details card ===== */
+.sale-form {
+    display: grid;
+    gap: 10px;
+}
+
+.sale-form-section-title {
+    margin: 6px 0 0;
+    font-size: 15px;
+    font-weight: 800;
+}
+
+.sale-form-card {
+    border-color: var(--admin-soft-line);
+    border-radius: 8px;
+}
+
+/* Fuel Type | Quantity Ordered, and Price | F1 Percentage, side by side. The first field lines up with the
+   full-width fields above it (same label column as .form-row). */
+.sale-pair {
+    display: grid;
+    grid-template-columns: minmax(150px, 190px) minmax(0, 1fr) auto minmax(0, 1fr);
+    gap: 12px;
+    align-items: center;
+}
+
+.sale-pair.has-no-f1,
+.sale-pair:has([data-f1-field][hidden]) {
+    grid-template-columns: minmax(150px, 190px) minmax(0, 1fr);
+}
+
+.sale-pair > .form-row {
+    display: contents;
+}
+
+.sale-pair .form-row-message {
+    grid-column: 2 / -1;
+}
+
+.sales-item-row [hidden],
+.sale-pair > [hidden],
+.sale-pair > .form-row[hidden],
+[data-f1-field][hidden] {
+    display: none !important;
+}
+
+/* A single order line has nothing to remove (the mockup shows no Remove button). */
+.sale-form .sales-item-remove:disabled {
+    display: none;
+}
+
+/* Line Total: a bordered read-only box across the card. */
+.sale-form .sale-line-total output {
+    display: flex;
+    width: 100%;
+    color: var(--admin-ink);
+}
+
+.sale-readonly-field {
+    display: flex;
+    width: 100%;
+    min-height: 42px;
+    align-items: center;
+    border-radius: 8px;
+    padding: 0 16px;
+    background: #ececec;
+    color: #333;
+    font-weight: 800;
+}
+
+.sale-form .form-hint output {
+    font-weight: 800;
+}
+
+/* Ordered Amount | F1 Percentage | Premium Amount | F1 Amount | Total Amount, as one bordered row of cells. */
+.f1-breakdown {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    border: 1px solid var(--admin-line);
+    border-radius: 6px;
+    overflow: hidden;
+    background: #fff;
+}
+
+.f1-breakdown[hidden] {
+    display: none;
+}
+
+.f1-breakdown-cell {
+    display: grid;
+    gap: 6px;
+    justify-items: center;
+    padding: 10px 6px;
+    border-left: 1px solid var(--admin-soft-line);
+    text-align: center;
+}
+
+.f1-breakdown-cell:first-child {
+    border-left: 0;
+}
+
+.f1-breakdown-cell span {
+    color: var(--admin-muted);
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.f1-breakdown-cell output {
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 720px) {
+    .sale-pair {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .sale-pair .form-row-message {
+        grid-column: auto;
+    }
+
+    .f1-breakdown {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .f1-breakdown-cell {
+        border-left: 0;
+        border-top: 1px solid var(--admin-soft-line);
+    }
+}
+
+/* ===== Purchases: Bank Selection only shows for Bank Transfer / Cheque ===== */
+.form-row[data-bank-row][hidden] {
+    display: none;
+}

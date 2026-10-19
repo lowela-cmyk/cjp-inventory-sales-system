@@ -47,6 +47,7 @@
                         <th>Purchase-ID</th><th>Date</th><th>Fuel</th><th>Depot</th>
                         <th>Purchased (L)</th>
                         <th>Cost / Liter</th><th>Total Cost</th>
+                        <th><span class="th-line" data-export-part>Payment Mode</span><span class="th-line" data-export-part>Bank</span></th>
                         <th>Receipt</th>
                         <th class="inventory-status-column"><span class="th-line" data-export-part>Inventory Status</span><span class="th-line" data-export-part>Purchase Status</span><span class="th-line" data-export-part>Payment Status</span></th>
                         <th>Actions</th>
@@ -63,6 +64,7 @@
                                 <td class="inventory-number">{{ $c[4] }}</td>
                                 <td class="inventory-number">{{ $c[8] }}</td>
                                 <td class="inventory-number">{{ $c[9] }}</td>
+                                <td><x-table.stack :lines="[['value' => $c[13]], ['value' => $c[14], 'class' => 'is-secondary']]" /></td>
                                 {{-- Withdrawal receipts the driver uploaded for this purchase's lifts. --}}
                                 <td class="inventory-receipt-cell">
                                     @if (count($row['withdrawals']) > 0)
@@ -88,7 +90,7 @@
                                 </td>
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="10">No records found.</td></tr>
+                            <tr><td class="empty-cell" colspan="11">No records found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -228,6 +230,7 @@
                     <div class="form-row"><label for="quantity_ordered_liters">Quantity (Liters)</label><input id="quantity_ordered_liters" name="quantity_ordered_liters" type="number" min="0.01" step="0.01" placeholder="Enter Quantity (Liters)" value="{{ old('quantity_ordered_liters') }}" required></div>
                     <div class="form-row"><label for="unit_cost">Cost / Liter</label><input id="unit_cost" name="unit_cost" type="number" min="0" step="0.01" placeholder="Enter Cost / Liter" value="{{ old('unit_cost') }}" required></div>
                     <div class="form-row"><label for="payment_status">Payment Status</label><select id="payment_status" name="payment_status" required>@foreach ($paymentStatuses as $status)<option value="{{ $status }}" @selected(old('payment_status', 'unpaid') === $status)>{{ ucwords($status) }}</option>@endforeach</select></div>
+                    @include('inventory-officer.partials.purchase-payment-mode', ['idSuffix' => '', 'formId' => null, 'mode' => old('payment_mode'), 'bank' => old('bank_name')])
                     <div class="form-row"><label>Purchase Status</label><x-admin.status-badge status="Pending" /></div>
                 </div>
             </div>
@@ -305,6 +308,7 @@
                     <div class="form-row"><label for="quantity_ordered_liters_{{ $row['id'] }}">Quantity (Liters)</label><input form="purchase-update-{{ $row['id'] }}" id="quantity_ordered_liters_{{ $row['id'] }}" name="quantity_ordered_liters" type="number" min="0.01" step="0.01" value="{{ old('quantity_ordered_liters', $row['quantity_ordered_liters']) }}" required></div>
                     <div class="form-row"><label for="unit_cost_{{ $row['id'] }}">Cost / Liter</label><input form="purchase-update-{{ $row['id'] }}" id="unit_cost_{{ $row['id'] }}" name="unit_cost" type="number" min="0" step="0.01" value="{{ old('unit_cost', $row['unit_cost']) }}" required></div>
                     <div class="form-row"><label for="payment_status_{{ $row['id'] }}">Payment Status</label><select form="purchase-update-{{ $row['id'] }}" id="payment_status_{{ $row['id'] }}" name="payment_status" required>@foreach ($paymentStatuses as $status)<option value="{{ $status }}" @selected(old('payment_status', $row['payment_status']) === $status)>{{ ucwords($status) }}</option>@endforeach</select></div>
+                    @include('inventory-officer.partials.purchase-payment-mode', ['idSuffix' => '_'.$row['id'], 'formId' => 'purchase-update-'.$row['id'], 'mode' => old('payment_mode', $row['payment_mode']), 'bank' => old('bank_name', $row['bank_name'])])
                     <div class="form-row"><label>Purchase Status</label><x-admin.status-badge :status="ucwords(str_replace('_', ' ', $row['purchase_status']))" /></div>
                 </div>
             </div>

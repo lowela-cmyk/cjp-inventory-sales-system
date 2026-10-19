@@ -28,7 +28,7 @@ class LiftSchedulingFlowTest extends TestCase
 
             $this->assertStringContainsString('class="admin-modal admin-modal-xl"', $html);
             $this->assertStringContainsString('<div class="modal-footer">', $html);
-            $this->assertStringContainsString('form="lift-schedule-form">Schedule Lift</button>', $html);
+            $this->assertStringContainsString('form="lift-schedule-form">Add Schedule</button>', $html);
             $this->assertStringContainsString('class="lift-line" data-lifting-item', $html);
             $this->assertStringContainsString('<option value="'.$r['driver']->id.'"', $html);
             $this->assertStringNotContainsString('Inactive Driver', $html);

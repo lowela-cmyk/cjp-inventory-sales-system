@@ -28,8 +28,12 @@ class StockOutFinancialService
             ->leftJoin('purchase_items as source_purchase_item', 'source_purchase_item.id', '=', 'hauls.purchase_item_id')
             // Where the fuel physically left from: a garage tank, or the depot of a direct release.
             ->leftJoin('storage_locations as source_garage', 'source_garage.id', '=', 'stock_outs.storage_location_id')
-            // The stock lot a sale line was sold from (Part 8 #8): its purchase code names the source.
-            ->leftJoin('inventory_movements as lot_movement', 'lot_movement.id', '=', 'sale_items.stock_in_movement_id')
+            // The stock lot a sale line was sold from (Part 8 #8): its purchase code names the source. The lot covers
+            // releases of the line's own fuel only; the F1 portion of a line (Part 9) is a pooled F1 release.
+            ->leftJoin('inventory_movements as lot_movement', function ($join): void {
+                $join->on('lot_movement.id', '=', 'sale_items.stock_in_movement_id')
+                    ->whereColumn('stock_outs.fuel_type_id', 'sale_items.fuel_type_id');
+            })
             ->leftJoin('haul_allocations as lot_allocation', function ($join): void {
                 $join->on('lot_allocation.id', '=', 'lot_movement.reference_id')
                     ->where('lot_movement.reference_type', '=', StockInService::STOCK_IN_REFERENCE_TYPE);
@@ -61,7 +65,7 @@ class StockOutFinancialService
                 'stock_outs.source_type',
                 'source_garage.name as garage_name',
                 'lot_purchase.purchase_code as lot_code',
-                'sale_items.stock_in_movement_id as lot_id',
+                'lot_movement.id as lot_id',
                 'source_depot.id as source_depot_id',
                 'source_depot.name as depot_name',
                 'sales.sale_code',

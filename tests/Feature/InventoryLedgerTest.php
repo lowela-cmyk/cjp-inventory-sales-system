@@ -162,10 +162,11 @@ class InventoryLedgerTest extends TestCase
         $this->actingAs($records['dispatchOfficer'])
             ->get(route('dispatch.fuel-lifting'))
             ->assertOk()
-            ->assertSee('data-pickup-depot', false)
+            // Part 9 mockup: the depot shows on each Purchase ID option (derived, never typed).
+            ->assertSee('data-pickup="CJP Depot', false)
             ->assertSee('lifting-schedule-form', false)
             ->assertSee('+ Add Purchase')
-            ->assertSee('>Remove<', false)
+            ->assertSee('>Remove Purchase<', false)
             ->assertSee('CJP Depot')
             ->assertDontSee('name="source_location"', false)
             ->assertDontSee('name="location"', false);

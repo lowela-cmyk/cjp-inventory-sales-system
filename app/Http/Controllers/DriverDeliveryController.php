@@ -135,7 +135,7 @@ class DriverDeliveryController extends Controller
             ")
             ->groupBy('haul_allocations.haul_id');
 
-        return DB::table('hauls')
+        $rows = DB::table('hauls')
             ->join('purchases', 'purchases.id', '=', 'hauls.purchase_id')
             ->join('depots', 'depots.id', '=', 'hauls.depot_id')
             ->join('fuel_types', 'fuel_types.id', '=', 'hauls.fuel_type_id')
@@ -172,6 +172,7 @@ class DriverDeliveryController extends Controller
                 'hauls.id',
                 'hauls.lifting_schedule_id',
                 'hauls.haul_code',
+                'hauls.atl_number',
                 'hauls.scheduled_at',
                 'hauls.hauled_at',
                 'hauls.source_location',
@@ -192,8 +193,11 @@ class DriverDeliveryController extends Controller
                 'allocations.sale_codes',
                 'allocations.destination_types',
                 'allocations.allocation_statuses',
-            ])
-            ->map(function (object $row): array {
+            ]);
+        $f1Loads = $this->f1LoadsByHaul($rows->pluck('id')->all());
+
+        return $rows
+            ->map(function (object $row) use ($f1Loads): array {
                 $truck = $row->truck_code
                     ? trim($row->truck_code.($row->plate_number ? ' / '.$row->plate_number : ''))
                     : 'N/A';
@@ -231,6 +235,9 @@ class DriverDeliveryController extends Controller
                         'Destination' => $destination,
                         'Destination Type' => $row->destination_types ? $this->label(str_replace(',', ', ', $row->destination_types)) : 'N/A',
                         'Fuel Type' => $row->fuel_name,
+                        'ATL' => $row->atl_number ?: 'N/A',
+                        // Part 9: F1 of a Depot to Client order is loaded at the garage onto this truck first.
+                        'Load F1 at Garage' => $f1Loads[(int) $row->id] ?? 'None',
                         'Truck-ID' => $truck,
                         'Capacity' => $this->formatLiters($row->capacity_liters),
                         'Scheduled Quantity' => $this->formatLiters($row->quantity_liters),
@@ -249,6 +256,31 @@ class DriverDeliveryController extends Controller
                 ];
             })
             ->values();
+    }
+
+    /**
+     * "400.00 L from F1 Tank 1 (SLS-...)" per haul, for lifts that carry a Depot to Client order's F1 portion.
+     *
+     * @param  array<int, int>  $haulIds
+     * @return array<int, string>
+     */
+    private function f1LoadsByHaul(array $haulIds): array
+    {
+        if ($haulIds === []) {
+            return [];
+        }
+
+        return DB::table('haul_allocations')
+            ->leftJoin('storage_locations', 'storage_locations.id', '=', 'haul_allocations.f1_storage_location_id')
+            ->leftJoin('sales', 'sales.id', '=', 'haul_allocations.sale_id')
+            ->whereIn('haul_allocations.haul_id', $haulIds)
+            ->where('haul_allocations.f1_quantity_liters', '>', 0)
+            ->where('haul_allocations.status', '!=', 'cancelled')
+            ->orderBy('haul_allocations.id')
+            ->get(['haul_allocations.haul_id', 'haul_allocations.f1_quantity_liters', 'storage_locations.name as tank_name', 'sales.sale_code'])
+            ->groupBy('haul_id')
+            ->map(fn ($group): string => $group->map(fn (object $row): string => $this->formatLiters($row->f1_quantity_liters).' from '.($row->tank_name ?: 'N/A').' ('.$row->sale_code.')')->implode('; '))
+            ->all();
     }
 
     private function filterOptions(int $driverId): array

@@ -312,7 +312,9 @@ select {
 .admin-table.ledger-table {
     width: 100%;
     min-width: 960px;
-    table-layout: fixed;
+    /* Auto, not fixed: equal fixed columns were narrower than a purchase ID at 1366px, so IDs and
+       status pills overflowed into the next column and sat off-center. */
+    table-layout: auto;
 }
 
 .admin-table.ledger-table th,
@@ -544,7 +546,8 @@ form[aria-busy="true"] {
     width: max-content;
     min-width: 100%;
     border-collapse: collapse;
-    text-align: left;
+    /* Every header and cell is centered, so each header sits over its column (as on the Ledger). */
+    text-align: center;
 }
 
 .admin-table-fixed {
@@ -580,7 +583,9 @@ form[aria-busy="true"] {
     font-size: 14px;
     line-height: 1.3;
     vertical-align: middle;
-    text-align: left;
+    text-align: center;
+    /* Digits line up vertically down a column. */
+    font-variant-numeric: tabular-nums;
     /* Keep all cell text on one line - overrides the global 'anywhere' rule */
     white-space: nowrap;
     overflow-wrap: normal;
@@ -669,14 +674,6 @@ table td:has(.status-badge) {
     padding-left: 18px;
 }
 
-.depot-table th {
-    text-align: left;
-}
-
-.depot-table td {
-    text-align: left;
-}
-
 .admin-table-fit th:last-child,
 .admin-table-fit td:last-child,
 .depot-table th:last-child,
@@ -686,14 +683,9 @@ table td:has(.status-badge) {
     text-align: center;
 }
 
-.depot-table th:first-child {
-    padding-left: 14px;
-    text-align: left;
-}
-
+.depot-table th:first-child,
 .depot-table td:first-child {
     padding-left: 14px;
-    text-align: left;
 }
 
 .depot-table th:last-child,
@@ -731,7 +723,6 @@ table td:has(.status-badge) {
     width: auto;
     height: 44px;
     padding: 9px 12px;
-    text-align: left;
     line-height: 1.2;
 }
 
@@ -799,7 +790,6 @@ table td:has(.status-badge) {
 }
 
 .inventory-table .inventory-number {
-    text-align: right;
     font-variant-numeric: tabular-nums;
 }
 
@@ -1157,10 +1147,6 @@ table td:has(.status-badge) {
 .status-pending {
     background: #eceff3;
     border-color: #555;
-}
-
-.account-request-table td:first-child {
-    text-align: left;
 }
 
 .account-request-table td:first-child strong,
@@ -1719,7 +1705,8 @@ table td:has(.status-badge) {
 }
 
 .dashboard-mini-table td {
-    text-align: left;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
 }
 
 .dashboard-kpi-strip {
@@ -3934,14 +3921,14 @@ body.login-page {
 }
 
 .table-stacked td.cell-wrap {
-    min-width: 96px;
+    min-width: 88px;
     white-space: normal;
 }
 
 .cell-stack {
     display: inline-grid;
     gap: 3px;
-    justify-items: start;
+    justify-items: center;
 }
 
 .cell-line {
@@ -4091,4 +4078,31 @@ body.login-page {
 
 .inventory-table.table-stacked thead th {
     white-space: normal;
+}
+
+/* -- Table alignment ----------------------------------------------------------
+   Every data table centers each header over its column (see .admin-table): action
+   buttons and stacked lines inside a cell are centered too. */
+.admin-table .sales-row-actions,
+.admin-table .driver-row-actions,
+.admin-table .account-request-actions,
+.admin-table .inventory-row-actions {
+    justify-content: center;
+}
+
+.admin-table .row-actions-stack {
+    justify-items: center;
+}
+
+/* Purchases: Edit and Assign Tank stack, so the sticky Actions column stays narrow and the table
+   still fits 1366px when a lift is waiting for a tank. */
+.inventory-table-actions .inventory-row-actions {
+    flex-direction: column;
+    gap: 6px;
+}
+
+.inventory-table-actions .inventory-row-actions .btn {
+    min-width: 0;
+    padding-right: 10px;
+    padding-left: 10px;
 }

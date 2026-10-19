@@ -39,8 +39,26 @@ abstract class TestCase extends BaseTestCase
             $data = $this->withStockLots($data);
         }
 
+        if (in_array(rtrim($uri, '/'), [route('inventory-officer.inventory.purchases.store'), route('admin.inventory.purchases.store')], true)) {
+            $data = $this->withPaymentMode($data);
+        }
+
         return parent::post($uri, $data, $headers);
     }
+
+    /**
+     * Part 9: purchases need a Payment Mode. Posts written before it existed get Cash; tests that check the rule
+     * itself send their own payment_mode (or set $defaultPaymentMode = false).
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    protected function withPaymentMode(array $data): array
+    {
+        return $this->defaultPaymentMode && ! array_key_exists('payment_mode', $data) ? $data + ['payment_mode' => 'cash'] : $data;
+    }
+
+    protected bool $defaultPaymentMode = true;
 
     /**
      * Edits resubmit each existing line's lot, as the Edit form does (see CreatesStockLots).
@@ -54,6 +72,13 @@ abstract class TestCase extends BaseTestCase
             $route = app('router')->getRoutes()->match(\Illuminate\Http\Request::create($uri, 'PATCH'));
             if (str_ends_with((string) $route->getName(), '.sales.update')) {
                 $data = $this->withExistingStockLots((int) $route->parameter('sale'), $data);
+            }
+        }
+
+        if (isset($data['purchase_date'])) {
+            $route = app('router')->getRoutes()->match(\Illuminate\Http\Request::create($uri, 'PATCH'));
+            if (str_ends_with((string) $route->getName(), '.inventory.purchases.update')) {
+                $data = $this->withPaymentMode($data);
             }
         }
 

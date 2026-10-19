@@ -26,7 +26,8 @@ class Part8RevisionsTest extends AuditTestCase
         $this->assertStringContainsString('<optgroup label="Diesel">', $html);
         $this->assertStringContainsString('6,000 L in stock · ₱50.00/L', $html);
         $this->assertStringContainsString('4,000 L in stock · ₱60.00/L', $html);
-        $this->assertStringNotContainsString('name="items[0][fuel_type_id]"', $this->between($html, 'id="record-sale-form"', '</form>'));
+        // Part 9: the Fuel Type select belongs to Depot to Client lines; for Garage to Client it is hidden and disabled.
+        $this->assertMatchesRegularExpression('/<div class="form-row" data-depot-only\s+hidden\s*>.*?name="items\[0\]\[fuel_type_id\]" required disabled/s', $this->between($html, 'id="record-sale-form"', '</form>'));
 
         // A lot with nothing left is not offered.
         $this->sell($a, $newer, 4000);

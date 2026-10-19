@@ -89,9 +89,12 @@
                                     <td>@if ($loop->last)<x-admin.status-badge :status="$cell" />@else{{ $cell }}@endif</td>
                                 @endforeach
                                 <td><span class="receipt-status {{ $row['withdrawal_uploaded'] ? 'is-uploaded' : '' }}">{{ $row['withdrawal_uploaded'] ? 'Uploaded' : 'Not uploaded' }}</span></td>
-                                <td class="driver-row-actions">
-                                    <button class="btn btn-secondary" type="button" data-modal-open="{{ $row['id'] }}">View</button>
-                                    <button class="btn btn-primary" type="button" data-modal-open="{{ $row['id'] }}" @disabled(! $row['can_upload_withdrawal']) title="{{ $row['can_upload_withdrawal'] ? 'Upload withdrawal receipt' : 'Available after this lift is marked Lifted' }}">Upload Withdrawal Receipt</button>
+                                <td>
+                                    {{-- The flex wrapper sits inside the cell: a flex <td> stops being a table cell. --}}
+                                    <div class="driver-row-actions">
+                                        <button class="btn btn-secondary" type="button" data-modal-open="{{ $row['id'] }}">View</button>
+                                        <button class="btn btn-primary" type="button" data-modal-open="{{ $row['id'] }}" @disabled(! $row['can_upload_withdrawal']) title="{{ $row['can_upload_withdrawal'] ? 'Upload withdrawal receipt' : 'Available after this lift is marked Lifted' }}">Upload Withdrawal Receipt</button>
+                                    </div>
                                 </td>
                             </tr>
                         @empty
@@ -140,11 +143,13 @@
                                     <td>@if ($loop->last)<x-admin.status-badge :status="$cell" />@else{{ $cell }}@endif</td>
                                 @endforeach
                                 <td><span class="receipt-status {{ $row['withdrawal_uploaded'] ? 'is-uploaded' : '' }}">{{ $row['withdrawal_uploaded'] ? 'Uploaded' : 'Not uploaded' }}</span></td>
-                                <td class="driver-row-actions">
-                                    <button class="btn btn-secondary" type="button" data-modal-open="{{ $row['id'] }}">View</button>
-                                    @if ($row['can_upload_withdrawal'])
-                                        <button class="btn btn-primary" type="button" data-modal-open="{{ $row['id'] }}">{{ $row['withdrawal_uploaded'] ? 'Replace Withdrawal Receipt' : 'Upload Withdrawal Receipt' }}</button>
-                                    @endif
+                                <td>
+                                    <div class="driver-row-actions">
+                                        <button class="btn btn-secondary" type="button" data-modal-open="{{ $row['id'] }}">View</button>
+                                        @if ($row['can_upload_withdrawal'])
+                                            <button class="btn btn-primary" type="button" data-modal-open="{{ $row['id'] }}">{{ $row['withdrawal_uploaded'] ? 'Replace Withdrawal Receipt' : 'Upload Withdrawal Receipt' }}</button>
+                                        @endif
+                                    </div>
                                 </td>
                             </tr>
                         @empty

@@ -8,6 +8,7 @@ use App\Services\LiftAllocationService;
 use App\Services\PurchaseWorkflowService;
 use App\Services\TruckAvailabilityService;
 use App\Support\DepotLabel;
+use App\Support\F1Split;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -81,6 +82,9 @@ class DispatchDeliveryController extends Controller
             'trucks' => $this->haulTruckOptions(),
             'purchaseItems' => $this->availablePurchaseItemOptions(),
             'tankOptions' => $this->liftAllocations->tankOptions(),
+            // Part 9: open Depot to Client sales a lift row can be released to.
+            'directSaleOptions' => $this->liftAllocations->directSaleOptions(),
+            'f1FuelId' => F1Split::f1FuelId(),
             'createIdempotencyKey' => (string) Str::uuid(),
             'statusIdempotencyKey' => (string) Str::uuid(),
             'truckAssignmentIdempotencyKey' => (string) Str::uuid(),
@@ -94,7 +98,17 @@ class DispatchDeliveryController extends Controller
             'items' => ['sometimes', 'array', 'min:1', 'max:20'],
             'items.*.purchase_item_id' => ['required_with:items', 'integer', 'distinct', Rule::exists('purchase_items', 'id')],
             'items.*.quantity_liters' => ['required_with:items', 'numeric', 'gt:0', 'max:1000000'],
-            // The garage tank that receives the whole line (Part 8 #5). Omitted = default tank, confirmed later.
+            // Authority to Load for this purchase (Part 9).
+            'items.*.atl_number' => ['nullable', 'string', 'max:100'],
+            // Lift rows (Part 9): Depot to Garage (tank) or Depot to Client (sale), adding up to the Amount to Lift.
+            'items.*.lifts' => ['sometimes', 'array', 'min:1', 'max:20'],
+            'items.*.lifts.*.type' => ['required', Rule::in(['garage', 'client'])],
+            'items.*.lifts.*.storage_location_id' => ['nullable', 'integer', Rule::exists('storage_locations', 'id')],
+            'items.*.lifts.*.sale_id' => ['nullable', 'integer', Rule::exists('sales', 'id')],
+            'items.*.lifts.*.quantity_liters' => ['required', 'numeric', 'gt:0', 'max:1000000'],
+            // F1 of a Depot to Client order, loaded at the garage from this tank onto the same truck.
+            'items.*.lifts.*.f1_storage_location_id' => ['nullable', 'integer', Rule::exists('storage_locations', 'id')],
+            // Older clients: the garage tank that receives the whole line. Omitted = default tank, confirmed later.
             'items.*.storage_location_id' => ['nullable', 'integer', Rule::exists('storage_locations', 'id')],
             'purchase_item_id' => ['required_without:items', 'integer', Rule::exists('purchase_items', 'id')],
             'driver_user_id' => ['required', 'integer', Rule::exists('users', 'id')->where(fn (Builder $query): Builder => $query->where('role', 'driver'))],
@@ -109,6 +123,12 @@ class DispatchDeliveryController extends Controller
             'dr_number' => 'DR number',
             'items.*.purchase_item_id' => 'purchase',
             'items.*.quantity_liters' => 'amount to lift',
+            'items.*.atl_number' => 'ATL',
+            'items.*.lifts.*.type' => 'allocation / delivery',
+            'items.*.lifts.*.storage_location_id' => 'tank',
+            'items.*.lifts.*.sale_id' => 'sales order',
+            'items.*.lifts.*.quantity_liters' => 'amount',
+            'items.*.lifts.*.f1_storage_location_id' => 'F1 tank',
             'items.*.storage_location_id' => 'garage tank',
         ]);
         $items = collect($data['items'] ?? [[
@@ -117,6 +137,8 @@ class DispatchDeliveryController extends Controller
         ]])->map(fn (array $item): array => [
             'purchase_item_id' => (int) $item['purchase_item_id'],
             'quantity_liters' => round((float) $item['quantity_liters'], 2),
+            'atl_number' => trim((string) ($item['atl_number'] ?? '')) ?: null,
+            'lifts' => array_values($item['lifts'] ?? []),
             'storage_location_id' => $item['storage_location_id'] ?? null,
         ])->values();
         $fuelTypeByItem = DB::table('purchase_items')->whereIn('id', $items->pluck('purchase_item_id'))->pluck('fuel_type_id', 'id')->map(fn (mixed $id): int => (int) $id)->all();
@@ -155,6 +177,7 @@ class DispatchDeliveryController extends Controller
                             throw new \RuntimeException('One or more selected purchases are not eligible for lifting.');
                         }
                         $purchaseItem->scheduled_quantity_liters = $item['quantity_liters'];
+                        $purchaseItem->atl_number = $item['atl_number'];
                         $purchaseItem->allocation = $allocations[$index];
 
                         return $purchaseItem;
@@ -202,6 +225,7 @@ class DispatchDeliveryController extends Controller
                             'truck_id' => $truck->id,
                             'driver_user_id' => $driver->id,
                             'dr_number' => $data['dr_number'] ?? null,
+                            'atl_number' => $purchaseItem->atl_number,
                             'scheduled_at' => $scheduledAt->toDateTimeString(),
                             'source_location' => null,
                             'quantity_liters' => $purchaseItem->scheduled_quantity_liters,
@@ -247,7 +271,7 @@ class DispatchDeliveryController extends Controller
             ->selectRaw('schedule_hauls.lifting_schedule_id, GROUP_CONCAT(DISTINCT schedule_purchases.purchase_code) as purchase_codes, GROUP_CONCAT(DISTINCT schedule_fuels.name) as fuel_names, SUM(schedule_hauls.quantity_liters) as scheduled_quantity_liters')
             ->groupBy('schedule_hauls.lifting_schedule_id');
 
-        return DB::table('hauls')
+        $rows = DB::table('hauls')
             ->join('purchases', 'purchases.id', '=', 'hauls.purchase_id')
             ->join('depots', 'depots.id', '=', 'hauls.depot_id')
             ->join('fuel_types', 'fuel_types.id', '=', 'hauls.fuel_type_id')
@@ -287,6 +311,7 @@ class DispatchDeliveryController extends Controller
                 'hauls.lifting_schedule_id',
                 'hauls.haul_code',
                 'hauls.dr_number',
+                'hauls.atl_number',
                 'hauls.scheduled_at',
                 'hauls.hauled_at',
                 'hauls.source_location',
@@ -313,8 +338,11 @@ class DispatchDeliveryController extends Controller
                 'drivers.name as driver_name',
                 'drivers.phone as driver_phone',
                 'driver_profiles.driver_code',
-            ])
-            ->map(function (object $row): array {
+            ]);
+        $liftRows = $this->liftRowsByHaul($rows->pluck('id')->all());
+
+        return $rows
+            ->map(function (object $row) use ($liftRows): array {
                 $truck = trim($row->truck_code.($row->plate_number ? ' / '.$row->plate_number : ''));
 
                 return [
@@ -362,6 +390,10 @@ class DispatchDeliveryController extends Controller
                         'id' => (int) $row->id,
                         'code' => $row->haul_code,
                         'purchase_code' => $row->purchase_code,
+                        'fuel_name' => $row->fuel_name,
+                        'quantity' => $this->formatLiters($row->quantity_liters),
+                        'atl_number' => $row->atl_number ?: 'N/A',
+                        'lifts' => $liftRows[(int) $row->id] ?? [],
                         'can_upload_withdrawal' => in_array($row->status, ['lifted', 'completed'], true),
                         'withdrawal_uploaded' => (bool) $row->withdrawal_receipt_path,
                         'withdrawal_uploaded_label' => $row->withdrawal_receipt_path
@@ -379,6 +411,39 @@ class DispatchDeliveryController extends Controller
                 return $row;
             })
             ->values();
+    }
+
+    /**
+     * Lift rows of each haul for the View modal: "Depot to Garage" (tank) or "Depot to Client" (customer / sales order).
+     *
+     * @param  array<int, int>  $haulIds
+     * @return array<int, array<int, array{type: string, destination: string, quantity: string, status: string, f1: ?string}>>
+     */
+    private function liftRowsByHaul(array $haulIds): array
+    {
+        if ($haulIds === []) {
+            return [];
+        }
+
+        return DB::table('haul_allocations')
+            ->leftJoin('storage_locations', 'storage_locations.id', '=', 'haul_allocations.storage_location_id')
+            ->leftJoin('storage_locations as f1_tanks', 'f1_tanks.id', '=', 'haul_allocations.f1_storage_location_id')
+            ->leftJoin('sales', 'sales.id', '=', 'haul_allocations.sale_id')
+            ->leftJoin('customers', 'customers.id', '=', 'haul_allocations.customer_id')
+            ->whereIn('haul_allocations.haul_id', $haulIds)
+            ->orderBy('haul_allocations.id')
+            ->get(['haul_allocations.haul_id', 'haul_allocations.destination_type', 'haul_allocations.quantity_liters', 'haul_allocations.f1_quantity_liters', 'haul_allocations.status', 'storage_locations.name as tank_name', 'f1_tanks.name as f1_tank_name', 'sales.sale_code', 'sales.sales_order_number', 'customers.name as customer_name', 'customers.company_name'])
+            ->groupBy('haul_id')
+            ->map(fn ($group): array => $group->map(fn (object $row): array => [
+                'type' => $row->destination_type === 'customer' ? 'Depot to Client' : 'Depot to Garage',
+                'destination' => $row->destination_type === 'customer'
+                    ? ($row->company_name ?: $row->customer_name ?: 'N/A').' / '.($row->sales_order_number ?: $row->sale_code ?: 'N/A')
+                    : ($row->tank_name ?: 'N/A'),
+                'quantity' => $this->formatLiters($row->quantity_liters),
+                'status' => $this->label($row->status),
+                'f1' => (float) $row->f1_quantity_liters > 0 ? 'Load F1 at the garage: '.$this->formatLiters($row->f1_quantity_liters).' from '.($row->f1_tank_name ?: 'N/A') : null,
+            ])->values()->all())
+            ->all();
     }
 
     private function liftingRedirectRoute(Request $request): string

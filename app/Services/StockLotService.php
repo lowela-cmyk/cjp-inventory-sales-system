@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\F1Split;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -14,38 +15,59 @@ use Illuminate\Support\Facades\DB;
  * A lot's stock is worked out from the ledger, so it always agrees with the tank balances:
  * - on hand = received − releases of sale lines that name this lot − its FIFO share of older releases
  *   that named no lot (the pooled garage releases made before lots existed are charged oldest-first);
- * - reserved = undelivered sale lines that name this lot;
+ * - reserved = undelivered sale lines that name this lot, plus its FIFO share of undelivered F1 portions
+ *   (Part 9: the F1 part of an Unleaded/Premium line is released from F1 tanks, oldest lot first);
  * - available = on hand − reserved (what Record Sales may still promise).
+ *
+ * A line's lot only covers releases of the line's own fuel; its F1 releases are pooled F1 releases.
  */
 class StockLotService
 {
+    /** The lot a release is charged to: the sale line's lot, but only for releases of the line's own fuel. */
+    private const RELEASE_LOT = 'CASE WHEN stock_outs.fuel_type_id = sale_items.fuel_type_id THEN sale_items.stock_in_movement_id END';
+
     /**
-     * Lots with their stock figures, optionally limited to some lot ids (their tank groups are still
-     * fully computed, so FIFO shares are right). With $lock the incoming movements are row-locked.
+     * Lots with their stock figures, optionally limited to some lot ids (every lot of their fuel is still
+     * computed, so FIFO shares are right). With $lock the incoming movements are row-locked.
      *
      * @param  array<int, int>|null  $onlyIds
      * @return Collection<int, \stdClass>
      */
     public function lots(?array $onlyIds = null, bool $lock = false): Collection
     {
-        $groups = null;
+        $fuelIds = null;
         if ($onlyIds !== null) {
-            $groups = DB::table('inventory_movements')->whereIn('id', $onlyIds)->get(['storage_location_id', 'fuel_type_id']);
-            if ($groups->isEmpty()) {
+            // Every lot of the same fuel is computed: FIFO shares run across all of that fuel's lots.
+            $fuelIds = DB::table('inventory_movements')->whereIn('id', $onlyIds)->distinct()->pluck('fuel_type_id')->map(fn (mixed $id): int => (int) $id)->all();
+            if ($fuelIds === []) {
                 return collect();
             }
         }
 
-        $scope = function (Builder $query) use ($groups): void {
-            if ($groups === null) {
-                return;
+        $lots = $this->compute($fuelIds, $lock);
+
+        return $onlyIds === null ? $lots : $lots->whereIn('id', $onlyIds)->values();
+    }
+
+    /**
+     * Liters of a fuel that Record Sales may still promise, across all its lots. With $lock the incoming
+     * movements of that fuel are row-locked (used when an F1 portion is reserved).
+     */
+    public function availableForFuel(int $fuelTypeId, bool $lock = false): float
+    {
+        return round((float) $this->compute([$fuelTypeId], $lock)->sum('available'), 2);
+    }
+
+    /**
+     * @param  array<int, int>|null  $fuelIds  null = every fuel
+     * @return Collection<int, \stdClass>
+     */
+    private function compute(?array $fuelIds, bool $lock): Collection
+    {
+        $scope = function (Builder $query) use ($fuelIds): void {
+            if ($fuelIds !== null) {
+                $query->whereIn('inventory_movements.fuel_type_id', $fuelIds);
             }
-            $query->where(function (Builder $query) use ($groups): void {
-                foreach ($groups->unique(fn (object $group): string => $group->storage_location_id.'|'.$group->fuel_type_id) as $group) {
-                    $query->orWhere(fn (Builder $query) => $query->where('inventory_movements.storage_location_id', $group->storage_location_id)
-                        ->where('inventory_movements.fuel_type_id', $group->fuel_type_id));
-                }
-            });
         };
 
         $incoming = DB::table('inventory_movements')
@@ -86,19 +108,39 @@ class StockLotService
             ->where('inventory_movements.direction', 'out')
             ->where(fn (Builder $query) => $query->whereNull('stock_outs.id')->orWhere('stock_outs.status', '!=', 'cancelled'))
             ->where($scope)
-            ->groupBy('inventory_movements.storage_location_id', 'inventory_movements.fuel_type_id', 'sale_items.stock_in_movement_id')
-            ->selectRaw('inventory_movements.storage_location_id, inventory_movements.fuel_type_id, sale_items.stock_in_movement_id as lot_id, SUM(inventory_movements.quantity_liters) as liters')
+            ->groupByRaw('inventory_movements.storage_location_id, inventory_movements.fuel_type_id, '.self::RELEASE_LOT)
+            ->selectRaw('inventory_movements.storage_location_id, inventory_movements.fuel_type_id, '.self::RELEASE_LOT.' as lot_id, SUM(inventory_movements.quantity_liters) as liters')
             ->get();
 
-        $reserved = DB::table('sale_items')
+        $open = fn (): Builder => DB::table('sale_items')
             ->join('sales', 'sales.id', '=', 'sale_items.sale_id')
-            ->whereNotNull('sale_items.stock_in_movement_id')
             ->whereNull('sales.deleted_at')
             ->where('sales.status', '!=', 'cancelled')
-            ->whereNotIn('sales.delivery_status', ['delivered', 'cancelled'])
+            ->whereNotIn('sales.delivery_status', ['delivered', 'cancelled']);
+
+        // The lot covers the line's own fuel only (ordered liters less the F1 portion).
+        $reserved = $open()
+            ->whereNotNull('sale_items.stock_in_movement_id')
             ->groupBy('sale_items.stock_in_movement_id')
-            ->selectRaw('sale_items.stock_in_movement_id as lot_id, SUM(sale_items.quantity_liters - sale_items.fulfilled_quantity_liters) as liters')
+            ->selectRaw('sale_items.stock_in_movement_id as lot_id, SUM(CASE WHEN sale_items.quantity_liters - sale_items.f1_quantity_liters - sale_items.fulfilled_quantity_liters > 0 THEN sale_items.quantity_liters - sale_items.f1_quantity_liters - sale_items.fulfilled_quantity_liters ELSE 0 END) as liters')
             ->pluck('liters', 'lot_id');
+
+        $f1FuelId = F1Split::f1FuelId();
+        // Net of F1 already released: a Depot to Client order's F1 leaves the garage when its lift completes,
+        // before the order is delivered.
+        $f1Reserved = 0.0;
+        if ($f1FuelId !== null && ($fuelIds === null || in_array($f1FuelId, $fuelIds, true))) {
+            $f1Released = DB::table('stock_outs')
+                ->where('fuel_type_id', $f1FuelId)
+                ->where('status', 'released')
+                ->whereNotNull('sale_item_id')
+                ->groupBy('sale_item_id')
+                ->selectRaw('sale_item_id, SUM(quantity_liters) as liters');
+            $f1Reserved = round((float) $open()
+                ->leftJoinSub($f1Released, 'f1_released', 'f1_released.sale_item_id', '=', 'sale_items.id')
+                ->where('sale_items.f1_quantity_liters', '>', 0)
+                ->sum(DB::raw('CASE WHEN sale_items.f1_quantity_liters - COALESCE(f1_released.liters, 0) > 0 THEN sale_items.f1_quantity_liters - COALESCE(f1_released.liters, 0) ELSE 0 END')), 2);
+        }
 
         $lots = collect();
         foreach ($incoming->groupBy(fn (object $lot): string => $lot->storage_location_id.'|'.$lot->fuel_type_id) as $key => $group) {
@@ -121,7 +163,21 @@ class StockLotService
             }
         }
 
-        return $onlyIds === null ? $lots : $lots->whereIn('id', $onlyIds)->values();
+        // Undelivered F1 portions are pooled: they hold back F1 stock oldest lot first.
+        if ($f1Reserved > 0) {
+            foreach ($lots->where('fuel_type_id', $f1FuelId)->sortBy([['movement_date', 'asc'], ['id', 'asc']]) as $lot) {
+                $take = min($lot->available, $f1Reserved);
+                $lot->reserved = round($lot->reserved + $take, 2);
+                $lot->available = round($lot->available - $take, 2);
+                $lot->label = $lot->source_code.' · '.$lot->fuel_name.' · '.number_format($lot->available, 0).' L in stock · ₱'.number_format((float) $lot->unit_cost, 2).'/L';
+                $f1Reserved = round($f1Reserved - $take, 2);
+                if ($f1Reserved <= 0) {
+                    break;
+                }
+            }
+        }
+
+        return $lots;
     }
 
     /** One lot with its figures, row-locked for a sale or a release. */

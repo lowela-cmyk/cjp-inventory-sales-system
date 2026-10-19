@@ -1,0 +1,157 @@
+/* Dropdowns open directly under their box, at the box's width (system-wide).
+   The native macOS list is drawn over the field with the checked option on top of it, so it never lines up with
+   the box. Browsers with customizable selects (Chrome / Edge 135+) render the list as an in-page panel instead; the
+   <select> elements, their values and every script that reads or filters them are unchanged. Other browsers keep
+   their native list. */
+@supports (appearance: base-select) {
+    select:not([multiple]):not([size]),
+    select:not([multiple]):not([size])::picker(select) {
+        appearance: base-select;
+    }
+
+    select:not([multiple]):not([size]) {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        text-align: left;
+        cursor: pointer;
+    }
+
+    /* The closed box: one line, cut off with an ellipsis (the face is added by select-picker.js). */
+    select > button.select-face {
+        display: flex;
+        flex: 1 1 auto;
+        align-items: center;
+        min-width: 0;
+        margin: 0;
+        padding: 0;
+        border: 0;
+        background: none;
+        color: inherit;
+        font: inherit;
+        text-align: left;
+    }
+
+    select > button.select-face selectedcontent {
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    select:not([multiple]):not([size])::picker-icon {
+        flex: none;
+        margin-left: auto;
+        transition: rotate 0.15s;
+    }
+
+    select:not([multiple]):not([size]):open::picker-icon {
+        rotate: 180deg;
+    }
+
+    /* The list: under the box, left edges aligned, at least as wide as the box. */
+    ::picker(select) {
+        position-area: block-end span-inline-end;
+        /* Open below; flip above only when the list does not fit underneath. */
+        position-try-order: normal;
+        position-try-fallbacks: flip-block;
+        min-inline-size: anchor-size(self-inline);
+        max-block-size: min(320px, 50vh);
+        margin-block: 4px;
+        border: 1px solid var(--admin-soft-line);
+        border-radius: 8px;
+        padding: 4px;
+        background: #fff;
+        color: var(--admin-ink);
+        box-shadow: 0 12px 28px rgba(13, 20, 36, 0.18);
+        font-size: 14px;
+        overflow-y: auto;
+    }
+
+    select option {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-block-size: 36px;
+        padding: 6px 10px;
+        border-radius: 6px;
+        color: var(--admin-ink);
+        white-space: normal;
+    }
+
+    select option:hover,
+    select option:focus-visible {
+        background: #eef1f5;
+        outline: none;
+    }
+
+    select option:checked {
+        font-weight: 700;
+    }
+
+    select option:disabled {
+        color: #9aa0a8;
+    }
+
+    select optgroup {
+        padding-block: 4px;
+        font-weight: 800;
+        color: var(--admin-muted);
+    }
+
+    /* The register form draws its own arrow. */
+    .login-field select::picker-icon {
+        display: none;
+    }
+}
+
+/* Browsers without customizable selects: select-picker.js draws the same list under the box. */
+.select-panel {
+    position: fixed;
+    z-index: 10000;
+    max-height: min(320px, 50vh);
+    overflow-y: auto;
+    border: 1px solid var(--admin-soft-line);
+    border-radius: 8px;
+    padding: 4px;
+    background: #fff;
+    color: var(--admin-ink);
+    box-shadow: 0 12px 28px rgba(13, 20, 36, 0.18);
+    font-size: 14px;
+}
+
+.select-panel-option {
+    display: flex;
+    align-items: center;
+    min-height: 36px;
+    padding: 6px 10px 6px 28px;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.select-panel-option[aria-selected="true"] {
+    font-weight: 700;
+}
+
+.select-panel-option[aria-selected="true"]::before {
+    content: "\2713";
+    margin-left: -18px;
+    width: 18px;
+}
+
+.select-panel-option.is-active,
+.select-panel-option:hover {
+    background: #eef1f5;
+}
+
+.select-panel-option[aria-disabled="true"] {
+    color: #9aa0a8;
+    cursor: default;
+}
+
+.select-panel-group {
+    padding: 8px 10px 4px;
+    color: var(--admin-muted);
+    font-weight: 800;
+}

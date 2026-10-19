@@ -97,10 +97,9 @@ class SalesInitialPaymentTest extends TestCase
                 ->get($route)
                 ->assertOk()
                 ->assertSee('Amount Payment')
-                ->assertSee('Remaining Balance')
+                // Part 9 mockup: the computed Payment Status replaces the old total / balance preview in Record Sales.
                 ->assertSee('data-sales-payment-status-preview', false)
-                ->assertSee('data-sales-total-preview', false)
-                ->assertSee('data-sales-balance-preview', false)
+                ->assertDontSee('data-sales-balance-preview', false)
                 ->assertSee('name="amount_paid"', false)
                 ->assertSee('name="payment_method"', false)
                 ->assertSee('name="sales_order_number"', false)

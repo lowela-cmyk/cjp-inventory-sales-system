@@ -19,7 +19,7 @@ class Part7RevisionsTest extends AuditTestCase
         $a = $this->actors();
         [$itemId, $tank] = $this->purchase($a, 10000);
 
-        // Part 8 #5: no depot (direct) split any more. Direct fields from an older client are ignored.
+        // The Part 7 direct_liters / sale_id fields are not read any more: Depot to Client rows come as lifts[] (Part 9).
         $this->schedule($a, [['purchase_item_id' => $itemId, 'quantity_liters' => 10000, 'storage_location_id' => $tank, 'direct_liters' => 4000, 'sale_id' => 999]])
             ->assertSessionHasNoErrors();
         $haulId = (int) DB::table('hauls')->value('id');
@@ -80,10 +80,19 @@ class Part7RevisionsTest extends AuditTestCase
             ->assertSessionHasErrors('items.0.quantity_liters');
         $this->assertSame(0, DB::table('hauls')->count());
 
+        // Part 9 lift rows: the same errors show under the row's own field.
+        $this->schedule($a, [$line + ['lifts' => [['type' => 'garage', 'storage_location_id' => $otherFuelTank, 'quantity_liters' => 8000]]]])
+            ->assertSessionHasErrors(['items.0.lifts.0.storage_location_id' => 'The tank must hold the same fuel type as the purchase.']);
+        $this->schedule($a, [$line + ['lifts' => [['type' => 'garage', 'storage_location_id' => $tank, 'quantity_liters' => 8000]]]])
+            ->assertSessionHasErrors('items.0.lifts.0.quantity_liters');
+        $this->assertSame(0, DB::table('hauls')->count());
+
+        // Part 9 restores Depot to Client: each lift row offers a tank or a sales order.
         $html = $this->actingAs($a['dispatch'])->get(route('dispatch.fuel-lifting'))->assertOk()->getContent();
-        $this->assertMatchesRegularExpression('/name="items\[0\]\[storage_location_id\]" data-allocation-tank required/', $html);
+        $this->assertMatchesRegularExpression('/name="items\[0\]\[lifts\]\[0\]\[storage_location_id\]" data-lift-field="storage_location_id" data-allocation-tank/', $html);
+        $this->assertStringContainsString('name="items[0][lifts][0][sale_id]"', $html);
+        $this->assertStringContainsString('<option value="client" >Depot to Client</option>', $html);
         $this->assertStringNotContainsString('direct_liters', $html);
-        $this->assertStringNotContainsString('name="items[0][sale_id]"', $html);
         $this->assertStringNotContainsString('garage_liters', $html);
         $this->assertStringContainsString('free 5,000.00 L', $html);
     }

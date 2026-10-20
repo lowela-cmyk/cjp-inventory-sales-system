@@ -340,9 +340,10 @@ class DispatchDeliveryController extends Controller
                 'driver_profiles.driver_code',
             ]);
         $liftRows = $this->liftRowsByHaul($rows->pluck('id')->all());
+        $loads = $this->liftAllocations->loadSummaryByHaul($rows->pluck('id')->map(fn (mixed $id): int => (int) $id)->all());
 
         return $rows
-            ->map(function (object $row) use ($liftRows): array {
+            ->map(function (object $row) use ($liftRows, $loads): array {
                 $truck = trim($row->truck_code.($row->plate_number ? ' / '.$row->plate_number : ''));
 
                 return [
@@ -394,6 +395,7 @@ class DispatchDeliveryController extends Controller
                         'quantity' => $this->formatLiters($row->quantity_liters),
                         'atl_number' => $row->atl_number ?: 'N/A',
                         'lifts' => $liftRows[(int) $row->id] ?? [],
+                        'load' => $loads[(int) $row->id] ?? ['allocated' => 0.0, 'delivered' => 0.0, 'remaining' => round((float) $row->quantity_liters, 2)],
                         'can_upload_withdrawal' => in_array($row->status, ['lifted', 'completed'], true),
                         'withdrawal_uploaded' => (bool) $row->withdrawal_receipt_path,
                         'withdrawal_uploaded_label' => $row->withdrawal_receipt_path
@@ -407,6 +409,24 @@ class DispatchDeliveryController extends Controller
             ->map(function ($group): array {
                 $row = $group->first();
                 $row['hauls'] = $group->pluck('haul')->values()->all();
+                // Part 9: Allocated (into garage tanks) / Delivered (to clients) for the whole schedule; the rest stays on the truck.
+                $load = collect($row['hauls'])->pluck('load');
+                $row['load'] = [
+                    'allocated' => $this->formatLiters($load->sum('allocated')),
+                    'delivered' => $this->formatLiters($load->sum('delivered')),
+                    'remaining' => $this->formatLiters($load->sum('remaining')),
+                ];
+                $row['details'] = array_merge($row['details'], [
+                    'Allocated Quantity' => $row['load']['allocated'],
+                    'Delivered Quantity' => $row['load']['delivered'],
+                    'Remaining on Truck' => $row['load']['remaining'],
+                ]);
+                // Keep Status and Last Status Update at the end of the details.
+                foreach (['Status', 'Last Status Update'] as $label) {
+                    $value = $row['details'][$label];
+                    unset($row['details'][$label]);
+                    $row['details'][$label] = $value;
+                }
 
                 return $row;
             })

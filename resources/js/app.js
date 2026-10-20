@@ -249,12 +249,10 @@ document.addEventListener('click', (event) => {
         if (container && source) {
             const clone = source.cloneNode(true);
             clone.querySelectorAll('select').forEach((select) => { select.selectedIndex = 0; });
-            clone.querySelectorAll('input').forEach((input) => { input.value = ''; input.dataset.mirror = '0'; });
+            clone.querySelectorAll('input').forEach((input) => { input.value = ''; });
             clone.querySelectorAll('.field-error').forEach((message) => message.remove());
             clone.querySelectorAll('[aria-invalid]').forEach((field) => field.removeAttribute('aria-invalid'));
             source.after(clone);
-            // Once there are several rows, none of them follows the Amount to Lift automatically.
-            container.querySelectorAll('[data-lift-amount]').forEach((input) => { input.dataset.mirror = '0'; });
             updateLiftingSchedule(addLiftRowButton.closest('[data-lifting-schedule-form]'));
         }
     }
@@ -307,7 +305,11 @@ const syncLiftRow = (liftRow, fuel) => {
     }
     const stock = liftRow.querySelector('[data-tank-stock]');
     const tankOption = tank?.selectedOptions?.[0];
-    if (stock) stock.textContent = tankOption?.value ? formatLitersText(tankOption.dataset.stock) : 'Select a Tank';
+    if (stock) {
+        stock.textContent = tankOption?.value
+            ? `${formatLitersText(tankOption.dataset.stock)} \u00b7 free ${formatLitersText(tankOption.dataset.free)}`
+            : 'Select a Tank';
+    }
 };
 
 const filterAllocationOptions = (row) => {
@@ -324,9 +326,6 @@ document.addEventListener('input', (event) => {
         const modal = event.target.closest('.modal-backdrop');
         updateSalesTotals(modal?.querySelector('[data-sales-items]'));
     }
-
-    // A lift amount typed by hand no longer follows the Amount to Lift.
-    if (event.target.matches('[data-lift-amount]')) event.target.dataset.mirror = '0';
 
     const liftingForm = event.target.closest('[data-lifting-schedule-form]');
     if (liftingForm) updateLiftingSchedule(liftingForm);
@@ -385,6 +384,8 @@ const updateLiftingSchedule = (form) => {
     // Part 9: an order's F1 is loaded at the garage with its first lift row only; F1 tanks are shared across rows.
     const f1SalesSeen = new Set();
     const f1ByTank = {};
+    // Part 9: Depot to Garage liters per tank across the whole schedule, checked against the tank's free space (24KL).
+    const garageByTank = {};
 
     rows.forEach((row, index) => {
         row.querySelectorAll('[name]:not([data-lift-field])').forEach((field) => {
@@ -418,7 +419,7 @@ const updateLiftingSchedule = (form) => {
             summary.textContent = 'Select Purchase ID';
         }
 
-        // Part 9: the lift rows must add up exactly to the Amount to Lift.
+        // Part 9: the lift rows add up to at most the Amount to Lift; the rest stays on the truck.
         const liftRows = [...row.querySelectorAll('[data-lift-row]')];
         let liftTotal = 0;
         let rowError = '';
@@ -431,13 +432,17 @@ const updateLiftingSchedule = (form) => {
             });
             syncLiftRow(liftRow, option?.dataset.fuelTypeId || '');
             const amountInput = liftRow.querySelector('[data-lift-amount]');
-            // A single row follows the Amount to Lift until the user types its amount.
-            if (amountInput && liftRows.length === 1 && (amountInput.value === '' || amountInput.dataset.mirror === '1') && quantityInput?.value) {
-                amountInput.value = quantityInput.value;
-                amountInput.dataset.mirror = '1';
-            }
             const amount = Number(amountInput?.value || 0);
             liftTotal += Number.isFinite(amount) ? amount : 0;
+            const tankOption = liftRow.querySelector('[data-allocation-tank]:not(:disabled)')?.selectedOptions?.[0];
+            if (tankOption?.value && amount > 0) {
+                garageByTank[tankOption.value] = (garageByTank[tankOption.value] || 0) + amount;
+                const free = Number(tankOption.dataset.free || 0);
+                if (Math.round(garageByTank[tankOption.value] * 100) > Math.round(free * 100)) {
+                    const incoming = Number(tankOption.dataset.incoming || 0);
+                    rowError ||= `${tankOption.dataset.name} has only ${formatLitersText(free)} of free space (stock ${formatLitersText(tankOption.dataset.stock)}${incoming > 0 ? ` + ${formatLitersText(incoming)} already scheduled` : ''} of ${formatLitersText(tankOption.dataset.capacity)}).`;
+                }
+            }
             const saleOption = liftRow.querySelector('[data-lift-sale]:not(:disabled)')?.selectedOptions?.[0];
             if (saleOption?.value && amount > Number(saleOption.dataset.open || 0)) {
                 rowError ||= `A Depot to Client amount is more than the ${formatLitersText(saleOption.dataset.open)} left on its sales order.`;
@@ -469,12 +474,16 @@ const updateLiftingSchedule = (form) => {
             const removeButton = liftRow.querySelector('[data-lift-row-remove]');
             if (removeButton) removeButton.disabled = liftRows.length === 1;
         });
-        if (liftRows.length > 0 && Math.round(liftTotal * 100) !== Math.round(quantity * 100)) {
-            rowError ||= `The lift rows add up to ${formatLitersText(liftTotal)} but the Amount to Lift is ${formatLitersText(quantity)}. They must be equal.`;
+        const overAllocated = Math.round(liftTotal * 100) > Math.round(quantity * 100);
+        if (overAllocated) {
+            rowError ||= `The lift rows add up to ${formatLitersText(liftTotal)}, more than the Amount to Lift of ${formatLitersText(quantity)}.`;
         }
         const setRowText = (selector, value) => { const element = row.querySelector(selector); if (element) element.textContent = value; };
         setRowText('[data-lift-rows-total]', formatLitersText(liftTotal));
         setRowText('[data-lift-rows-target]', formatLitersText(quantity));
+        // Over-allocation shows the (negative) balance in red and blocks Add Schedule.
+        setRowText('[data-lift-rows-remaining]', overAllocated ? `\u2212${formatLitersText(liftTotal - quantity)}` : formatLitersText(quantity - liftTotal));
+        row.querySelector('[data-lift-balance]')?.classList.toggle('is-over', overAllocated);
         setRowText('[data-lift-rows-warning]', rowError);
         if (rowError) error ||= 'Fix the lift rows of each purchase before scheduling.';
     });

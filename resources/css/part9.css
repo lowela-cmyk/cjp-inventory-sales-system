@@ -142,6 +142,27 @@
     font-weight: 800;
 }
 
+/* Part 9: running balance of the lift rows (Amount to Lift | Allocated | Remaining on truck). */
+.lift-balance {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+    margin: 0;
+    border: 1px solid var(--admin-soft-line);
+    border-radius: 8px;
+    padding: 10px 14px;
+    background: #fff;
+    font-weight: 800;
+}
+
+.lift-balance output {
+    font-weight: 900;
+}
+
+.lift-balance.is-over [data-lift-rows-remaining] {
+    color: var(--admin-red);
+}
+
 .lift-details [data-lift-rows-warning]:empty {
     display: none;
 }

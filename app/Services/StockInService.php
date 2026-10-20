@@ -15,7 +15,8 @@ class StockInService
     public function __construct(
         private readonly IdempotencyService $idempotencyService,
         private readonly WorkflowAlertService $alerts,
-        private readonly PurchaseWorkflowService $purchaseWorkflow
+        private readonly PurchaseWorkflowService $purchaseWorkflow,
+        private readonly GarageTankService $garageTanks
     ) {}
 
     /**
@@ -38,7 +39,7 @@ class StockInService
                     $query->whereNull('fuel_type_id')->orWhere('fuel_type_id', $allocation->fuel_type_id);
                 })
                 ->lockForUpdate()
-                ->first(['id']);
+                ->first(['id', 'name', 'capacity_liters']);
 
             if (! $tank) {
                 return 'The selected destination tank is not active or does not match the fuel type.';
@@ -57,6 +58,13 @@ class StockInService
 
             if ($quantity > $remaining) {
                 return 'Quantity received cannot exceed the remaining garage allocation.';
+            }
+
+            // Part 9: a tank never goes past its 24,000 L capacity, even if its stock changed since the lift was scheduled.
+            $capacity = GarageTankService::capacity($tank->capacity_liters);
+            $stock = (float) ($this->garageTanks->balances([(int) $tank->id])[(int) $tank->id] ?? 0);
+            if (round($stock + $quantity, 2) > $capacity) {
+                return $tank->name.' has only '.number_format(max(0, $capacity - $stock), 2).' L of free space (stock '.number_format($stock, 2).' L of '.number_format($capacity, 2).' L); '.number_format($quantity, 2).' L cannot be received.';
             }
 
             if ($this->duplicateStockInExists($allocation, (int) $data['storage_location_id'], $quantity, (string) $data['movement_date'])) {

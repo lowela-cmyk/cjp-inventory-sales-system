@@ -115,6 +115,8 @@
                             <th>Truck-ID</th>
                             <th>Capacity</th>
                             <th>Lifted</th>
+                            <th>Allocated Quantity</th>
+                            <th>Delivered Quantity</th>
                             <th>Status</th>
                             <th>Actions</th>
                         </tr>
@@ -125,11 +127,14 @@
                                 @foreach ($row['cells'] as $cell)
                                     <td>{{ $cell }}</td>
                                 @endforeach
+                                {{-- Part 9: liters put into garage tanks / released to clients from this lift. --}}
+                                <td>{{ $row['load']['allocated'] }}</td>
+                                <td>{{ $row['load']['delivered'] }}</td>
                                 <td><x-admin.status-badge :status="$row['status']" /></td>
                                 <td><button class="btn btn-secondary" type="button" data-modal-open="{{ $row['id'] }}">View</button></td>
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="12">No records found.</td></tr>
+                            <tr><td class="empty-cell" colspan="14">No records found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -236,7 +241,7 @@
                             </div>
                         </section>
 
-                        {{-- Part 9: lift rows (Depot to Garage / Depot to Client) must add up exactly to the Amount to Lift. --}}
+                        {{-- Part 9: lift rows (Depot to Garage / Depot to Client) add up to at most the Amount to Lift; the rest stays on the truck. --}}
                         <div class="lift-details" data-lift-rows>
                             <h3 class="lift-section-title">Lift Details</h3>
                             @foreach (array_values($oldItem['lifts'] ?? [['type' => 'garage']]) as $liftIndex => $lift)
@@ -261,7 +266,7 @@
                                             <select id="dispatch_lift_tank_{{ $index }}_{{ $liftIndex }}" name="items[{{ $index }}][lifts][{{ $liftIndex }}][storage_location_id]" data-lift-field="storage_location_id" data-allocation-tank @disabled($isClient) @error("items.$index.lifts.$liftIndex.storage_location_id") aria-invalid="true" @enderror>
                                                 <option value="">Select Tank</option>
                                                 @foreach ($tankOptions as $tank)
-                                                    <option value="{{ $tank->id }}" data-fuel-type-id="{{ $tank->fuel_type_id }}" data-stock="{{ $tank->balance_liters }}" @selected((string) ($lift['storage_location_id'] ?? '') === (string) $tank->id)>{{ $tank->label }}</option>
+                                                    <option value="{{ $tank->id }}" data-fuel-type-id="{{ $tank->fuel_type_id }}" data-stock="{{ $tank->balance_liters }}" data-free="{{ $tank->free_liters }}" data-capacity="{{ $tank->capacity_liters }}" data-incoming="{{ $tank->incoming_liters }}" data-name="{{ $tank->name }}" @selected((string) ($lift['storage_location_id'] ?? '') === (string) $tank->id)>{{ $tank->label }}</option>
                                                 @endforeach
                                             </select>
                                             @error("items.$index.lifts.$liftIndex.storage_location_id")<p class="field-error">{{ $message }}</p>@enderror
@@ -310,6 +315,11 @@
                                 </div>
                             @endforeach
                             <button class="btn lift-add-row" type="button" data-lift-row-add>+ Add Lift</button>
+                            <p class="lift-balance" data-lift-balance aria-live="polite">
+                                <span>Amount to Lift: <output data-lift-rows-target>0.00 L</output></span>
+                                <span>Allocated: <output data-lift-rows-total>0.00 L</output></span>
+                                <span>Remaining on truck: <output data-lift-rows-remaining>0.00 L</output></span>
+                            </p>
                             @error("items.$index.lifts")<p class="field-error" role="alert">{{ $message }}</p>@enderror
                             <p class="field-error" data-lift-rows-warning role="alert"></p>
                         </div>
@@ -340,6 +350,7 @@
                 @foreach ($row['hauls'] as $haul)
                     <div class="receipt-line">
                         <p class="receipt-line-title"><strong>{{ $haul['purchase_code'] }}</strong> &middot; {{ $haul['fuel_name'] }} &middot; {{ $haul['quantity'] }} &middot; ATL: {{ $haul['atl_number'] }}</p>
+                        <p class="receipt-line-note">Allocated: {{ number_format($haul['load']['allocated'], 2) }} L &middot; Delivered: {{ number_format($haul['load']['delivered'], 2) }} L &middot; Remaining on truck: {{ number_format($haul['load']['remaining'], 2) }} L</p>
                         @forelse ($haul['lifts'] as $lift)
                             <p class="receipt-line-note">{{ $lift['type'] }}: {{ $lift['destination'] }} &middot; {{ $lift['quantity'] }} &middot; {{ $lift['status'] }}</p>
                             @if ($lift['f1'])

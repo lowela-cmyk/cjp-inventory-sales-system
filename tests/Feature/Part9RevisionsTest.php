@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Services\LiftAllocationService;
 use App\Services\StockLotService;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -460,20 +461,137 @@ class Part9RevisionsTest extends AuditTestCase
 
     // ----- Schedule Lift rows ---------------------------------------------------------------------------
 
-    public function test_lift_rows_must_add_up_exactly_to_the_amount_to_lift(): void
+    // Part 9 (October 20): the lift rows add up to at most the Amount to Lift; the rest stays on the truck.
+    public function test_lift_rows_cannot_add_up_to_more_than_the_amount_to_lift(): void
     {
         $a = $this->actors();
         [$itemId, $tank] = $this->purchase($a, 10000);
         $rows = fn (float ...$liters): array => array_map(fn (float $l): array => ['type' => 'garage', 'storage_location_id' => $tank, 'quantity_liters' => $l], $liters);
 
-        $this->schedule($a, [['purchase_item_id' => $itemId, 'quantity_liters' => 10000, 'lifts' => $rows(6000, 3000)]])
-            ->assertSessionHasErrors(['items.0.lifts' => 'The lift rows add up to 9,000.00 L but the Amount to Lift is 10,000.00 L. They must be equal.']);
         $this->schedule($a, [['purchase_item_id' => $itemId, 'quantity_liters' => 10000, 'lifts' => $rows(6000, 4500)]])
-            ->assertSessionHasErrors(['items.0.lifts' => 'The lift rows add up to 10,500.00 L but the Amount to Lift is 10,000.00 L. They must be equal.']);
-        $this->assertSame(0, DB::table('hauls')->count(), 'Nothing is scheduled and no leftover goes to a default tank.');
+            ->assertSessionHasErrors(['items.0.lifts' => 'The lift rows add up to 10,500.00 L, more than the Amount to Lift of 10,000.00 L.']);
+        $this->assertSame(0, DB::table('hauls')->count());
 
+        // Exactly the Amount to Lift is still fine.
         $this->schedule($a, [['purchase_item_id' => $itemId, 'quantity_liters' => 10000, 'lifts' => $rows(6000, 4000)]])->assertSessionHasNoErrors();
         $this->assertSame(2, DB::table('haul_allocations')->where('destination_type', 'garage')->where('receive_on_completion', true)->count());
+    }
+
+    public function test_lift_rows_below_the_amount_to_lift_save_and_the_rest_stays_on_the_truck(): void
+    {
+        $a = $this->actors();
+        DB::table('trucks')->where('id', $a['truck'])->update(['capacity_liters' => 40000]);
+        [$itemId, $tank] = $this->purchase($a, 40000);
+        $this->stockLot($a['fuel'], 12000); // the tank already holds 12,000 L
+
+        $this->schedule($a, [['purchase_item_id' => $itemId, 'quantity_liters' => 40000, 'lifts' => [
+            ['type' => 'garage', 'storage_location_id' => $tank, 'quantity_liters' => 12000],
+        ]]])->assertSessionHasNoErrors();
+
+        $haulId = $this->scheduledHaulId();
+        $this->assertDatabaseHas('hauls', ['id' => $haulId, 'quantity_liters' => 40000]);
+        // Only the allocated row is stored: no leftover goes to a default tank.
+        $this->assertSame(1, DB::table('haul_allocations')->where('haul_id', $haulId)->count());
+        $this->assertSame(['allocated' => 12000.0, 'delivered' => 0.0, 'remaining' => 28000.0], app(LiftAllocationService::class)->loadSummaryByHaul([$haulId])[$haulId]);
+        $this->actingAs($a['dispatch'])->get(route('dispatch.fuel-lifting'))->assertOk()
+            ->assertSee('Remaining on truck: 28,000.00 L', false);
+    }
+
+    public function test_a_garage_row_cannot_exceed_the_tanks_free_space_of_its_24kl_capacity(): void
+    {
+        $a = $this->actors();
+        [$itemId, $tank] = $this->purchase($a, 30000);
+        $this->stockLot($a['fuel'], 12000);
+
+        // The dropdown shows stock, capacity and free space.
+        $this->actingAs($a['dispatch'])->get(route('dispatch.fuel-lifting'))->assertOk()
+            ->assertSee('Diesel Tank 1 | stock 12,000.00 L | capacity 24,000.00 L | free 12,000.00 L')
+            ->assertDontSee('capacity not set');
+
+        $line = fn (array ...$lifts): array => [['purchase_item_id' => $itemId, 'quantity_liters' => 30000, 'lifts' => $lifts]];
+        $garage = fn (int $tankId, float $liters): array => ['type' => 'garage', 'storage_location_id' => $tankId, 'quantity_liters' => $liters];
+        $full = 'Diesel Tank 1 has only 12,000.00 L of free space (stock 12,000.00 L of 24,000.00 L).';
+
+        $this->schedule($a, $line($garage($tank, 12000.01)))->assertSessionHasErrors(['items.0.lifts.0.quantity_liters' => $full]);
+        // Two rows to the same tank count together.
+        $this->schedule($a, $line($garage($tank, 6000), $garage($tank, 6001)))->assertSessionHasErrors(['items.0.lifts.1.quantity_liters' => $full]);
+        $this->assertSame(0, DB::table('hauls')->whereNotNull('lifting_schedule_id')->count());
+
+        // Rows to the same tank up to its free space, the rest to another tank, are fine.
+        $tank2 = (int) DB::table('storage_locations')->where('type', 'garage')->where('fuel_type_id', $a['fuel'])->where('tank_number', 2)->value('id');
+        $this->schedule($a, $line($garage($tank, 6000), $garage($tank, 6000), $garage($tank2, 18000)))->assertSessionHasNoErrors();
+
+        // A scheduled lift reserves its space: Tank 1 has none left for the next lift.
+        $html = $this->actingAs($a['dispatch'])->get(route('dispatch.fuel-lifting'))->assertOk()->getContent();
+        $this->assertStringContainsString('Diesel Tank 1 | stock 12,000.00 L | capacity 24,000.00 L | incoming 12,000.00 L | free 0.00 L', $html);
+    }
+
+    public function test_lift_completion_adds_only_the_allocated_liters_and_never_fills_a_tank_past_24kl(): void
+    {
+        $a = $this->actors();
+        DB::table('trucks')->where('id', $a['truck'])->update(['capacity_liters' => 40000]);
+        [$itemId, $tank] = $this->purchase($a, 40000);
+        $this->stockLot($a['fuel'], 12000);
+
+        $this->schedule($a, [['purchase_item_id' => $itemId, 'quantity_liters' => 40000, 'lifts' => [
+            ['type' => 'garage', 'storage_location_id' => $tank, 'quantity_liters' => 12000],
+        ]]])->assertSessionHasNoErrors();
+        $this->completeLift($a, $this->scheduledHaulId());
+
+        // 12,000 + 12,000 = 24,000 L: the 28,000 L left on the truck never reach the tank.
+        $this->assertSame(24000.0, $this->tankBalance($tank, $a['fuel']));
+
+        // Stock that changed after scheduling is re-checked on completion.
+        [$itemId2] = $this->purchase($a, 5000);
+        $tank2 = (int) DB::table('storage_locations')->where('type', 'garage')->where('fuel_type_id', $a['fuel'])->where('tank_number', 2)->value('id');
+        $this->schedule($a, [['purchase_item_id' => $itemId2, 'quantity_liters' => 5000, 'lifts' => [
+            ['type' => 'garage', 'storage_location_id' => $tank2, 'quantity_liters' => 5000],
+        ]]])->assertSessionHasNoErrors();
+        $haul2 = $this->scheduledHaulId();
+        $this->fillTank($tank2, $a['fuel'], 20000);
+
+        $this->completeLift($a, $haul2);
+        $this->assertSame(20000.0, $this->tankBalance($tank2, $a['fuel']), 'The 5,000 L would pass 24,000 L, so nothing is posted.');
+        $this->assertDatabaseHas('haul_allocations', ['haul_id' => $haul2, 'destination_type' => 'garage', 'status' => 'planned']);
+        $this->assertSame('lifted', DB::table('hauls')->where('id', $haul2)->value('status'), 'The lift itself still completes.');
+    }
+
+    public function test_hauled_tab_shows_allocated_and_delivered_quantities(): void
+    {
+        $a = $this->actors();
+        [$itemId, $tank] = $this->purchase($a, 10000);
+        $this->withoutStockLots();
+        $this->recordSale($a, [['fuel_type_id' => $a['fuel'], 'quantity_liters' => 3000, 'unit_price' => 70]], ['delivery_type' => 'depot_to_client', 'sales_order_number' => 'SH0957143'])
+            ->assertSessionHasNoErrors();
+        $saleId = (int) DB::table('sales')->value('id');
+
+        $this->schedule($a, [['purchase_item_id' => $itemId, 'quantity_liters' => 10000, 'lifts' => [
+            ['type' => 'garage', 'storage_location_id' => $tank, 'quantity_liters' => 6000],
+            ['type' => 'client', 'sale_id' => $saleId, 'quantity_liters' => 3000],
+        ]]])->assertSessionHasNoErrors();
+        $haulId = (int) DB::table('hauls')->value('id');
+        $this->completeLift($a, $haulId);
+        $this->actingAs($a['dispatch'])->patch(route('dispatch.fuel-lifting.hauls.status', $haulId), ['idempotency_key' => $this->uuid(), 'status' => 'completed'])
+            ->assertSessionHasNoErrors();
+
+        // An old lift without rows shows 0.00 L.
+        $old = DB::table('hauls')->where('id', $haulId)->first();
+        $oldScheduleId = DB::table('lifting_schedules')->insertGetId(['schedule_code' => 'LFT-OLD-1', 'depot_id' => $old->depot_id, 'truck_id' => $old->truck_id, 'driver_user_id' => $old->driver_user_id, 'scheduled_at' => '2026-09-01 08:00:00', 'status' => 'completed', 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('hauls')->insert(['lifting_schedule_id' => $oldScheduleId, 'haul_code' => 'LFT-OLD-1-01', 'purchase_id' => $old->purchase_id, 'purchase_item_id' => $old->purchase_item_id, 'depot_id' => $old->depot_id, 'fuel_type_id' => $old->fuel_type_id, 'truck_id' => $old->truck_id, 'driver_user_id' => $old->driver_user_id, 'scheduled_at' => '2026-09-01 08:00:00', 'quantity_liters' => 500, 'status' => 'completed', 'created_at' => now(), 'updated_at' => now()]);
+
+        $html = $this->actingAs($a['dispatch'])->get(route('dispatch.fuel-lifting.hauled'))->assertOk()->getContent();
+        $table = $this->between($html, 'data-tab-panel="hauled"', '</table>');
+        $this->assertStringContainsString('<th>Lifted</th>
+                            <th>Allocated Quantity</th>
+                            <th>Delivered Quantity</th>', $table);
+        $this->assertMatchesRegularExpression('/10,000\.00 L<\/td>\s*<td>6,000\.00 L<\/td>\s*<td>3,000\.00 L<\/td>/', $table);
+        $this->assertMatchesRegularExpression('/500\.00 L<\/td>\s*<td>0\.00 L<\/td>\s*<td>0\.00 L<\/td>/', $table);
+
+        // The View modal shows both figures and what was left on the truck.
+        $modal = $this->between($html, 'id="dispatch-haul-'.$haulId.'"', 'Lift Details');
+        $this->assertStringContainsString('<div class="detail-label">Allocated Quantity</div><div class="detail-value">6,000.00 L</div>', $modal);
+        $this->assertStringContainsString('<div class="detail-label">Delivered Quantity</div><div class="detail-value">3,000.00 L</div>', $modal);
+        $this->assertStringContainsString('<div class="detail-label">Remaining on Truck</div><div class="detail-value">1,000.00 L</div>', $modal);
     }
 
     public function test_a_client_row_needs_an_open_depot_to_client_order_of_the_same_fuel_with_enough_liters(): void
@@ -626,6 +744,35 @@ class Part9RevisionsTest extends AuditTestCase
         return $this->actingAs($a['dispatch'])->from(route('dispatch.fuel-lifting'))->post(route('dispatch.fuel-lifting.hauls.store'), [
             'idempotency_key' => $this->uuid(), 'items' => $items, 'driver_user_id' => $a['driver']->id, 'truck_id' => $a['truck'],
             'scheduled_at' => '2026-10-14 08:00:00', 'form_context' => 'schedule-lift',
+        ]);
+    }
+
+    /**
+     * The driver takes a lift In Transit, then Lifted (which settles its rows).
+     *
+     * @param  array<string, mixed>  $a
+     */
+    private function completeLift(array $a, int $haulId): void
+    {
+        foreach (['in_transit', 'lifted'] as $status) {
+            $this->actingAs($a['driver'])->patch(route('driver.fuel-lifting.hauls.status', $haulId), ['idempotency_key' => $this->uuid(), 'lifting_status' => $status])
+                ->assertSessionHasNoErrors();
+        }
+    }
+
+    /** The newest lift scheduled through Schedule Lift (stock lots made by the tests have no schedule). */
+    private function scheduledHaulId(): int
+    {
+        return (int) DB::table('hauls')->whereNotNull('lifting_schedule_id')->orderByDesc('id')->value('id');
+    }
+
+    /** Stock that reaches a tank outside the lift being tested (e.g. another receipt after it was scheduled). */
+    private function fillTank(int $tankId, int $fuelTypeId, float $liters): void
+    {
+        DB::table('inventory_movements')->insert([
+            'movement_code' => 'MOV-FILL-'.$tankId.'-'.(int) $liters, 'storage_location_id' => $tankId, 'fuel_type_id' => $fuelTypeId, 'movement_type' => 'adjustment',
+            'direction' => 'in', 'quantity_liters' => $liters, 'unit_cost' => 50, 'reference_type' => 'adjustment', 'reference_id' => 0,
+            'movement_date' => now(), 'created_at' => now(), 'updated_at' => now(),
         ]);
     }
 

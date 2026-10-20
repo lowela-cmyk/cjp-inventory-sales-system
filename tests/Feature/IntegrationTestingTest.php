@@ -294,6 +294,8 @@ class IntegrationTestingTest extends TestCase
             'updated_at' => now(),
         ]);
         $garageId = DB::table('storage_locations')->insertGetId([
+            // A bulk fixture garage, larger than a standard 24KL tank (tank capacity is covered in Part9RevisionsTest).
+            'capacity_liters' => 100000,
             'location_code' => 'GAR-INT',
             'name' => 'Integration Garage',
             'type' => 'garage',

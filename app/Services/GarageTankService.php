@@ -3,10 +3,41 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class GarageTankService
 {
+    /** Part 9 (October 20): every garage tank holds at most 24,000 L (24KL). */
+    public const TANK_CAPACITY_LITERS = 24000.0;
+
+    /** A tank's capacity; a tank without one recorded is a standard 24KL tank. */
+    public static function capacity(mixed $capacityLiters): float
+    {
+        return $capacityLiters === null ? self::TANK_CAPACITY_LITERS : round((float) $capacityLiters, 2);
+    }
+
+    /**
+     * Current stock of garage tanks (stock-ins less releases; a cancelled release no longer counts).
+     *
+     * @param  array<int, int>|null  $tankIds  null = every tank
+     * @return array<int, float> storage_location_id => liters
+     */
+    public function balances(?array $tankIds = null): array
+    {
+        return DB::table('inventory_movements')
+            ->when($tankIds !== null, fn ($query) => $query->whereIn('storage_location_id', $tankIds ?: [0]))
+            ->whereNotExists(fn ($query) => $query->selectRaw('1')->from('stock_outs')
+                ->whereColumn('stock_outs.id', 'inventory_movements.reference_id')
+                ->where('inventory_movements.reference_type', 'stock_out')
+                ->where('stock_outs.status', 'cancelled'))
+            ->selectRaw("storage_location_id, COALESCE(SUM(CASE WHEN direction = 'in' THEN quantity_liters ELSE -quantity_liters END), 0) as balance")
+            ->groupBy('storage_location_id')
+            ->pluck('balance', 'storage_location_id')
+            ->map(fn (mixed $balance): float => round((float) $balance, 2))
+            ->all();
+    }
+
     public function ensureForActiveFuelTypes(): void
     {
         $fuelTypes = DB::table('fuel_types')
@@ -59,6 +90,8 @@ class GarageTankService
                     continue;
                 }
 
+                // Older migrations run this before storage_locations has a capacity column.
+                $capacity = Schema::hasColumn('storage_locations', 'capacity_liters') ? ['capacity_liters' => self::TANK_CAPACITY_LITERS] : [];
                 DB::table('storage_locations')->insert([
                     'location_code' => $this->nextLocationCode((int) $fuelType->id, $tankNumber),
                     'fuel_type_id' => $fuelType->id,
@@ -68,7 +101,7 @@ class GarageTankService
                     'status' => 'active',
                     'created_at' => now(),
                     'updated_at' => now(),
-                ]);
+                ] + $capacity);
             }
         }
     }

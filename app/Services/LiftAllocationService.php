@@ -13,7 +13,10 @@ use Illuminate\Validation\ValidationException;
  * - Depot to Garage: liters going into a chosen garage tank. Completing the lift posts the stock-in.
  * - Depot to Client (restored in Part 9): liters released straight from the depot to a Depot to Client sale.
  *   Completing the lift marks it delivered and releases it against the sale (see settle()).
- * The lift rows of a purchase must add up exactly to its Amount to Lift.
+ * The lift rows of a purchase add up to at most its Amount to Lift (Part 9, October 20). Liters not allocated stay on
+ * the truck as remaining load: Amount to Lift - Depot to Garage - Depot to Client (see loadSummaryByHaul()).
+ * Every garage tank holds at most 24,000 L: a Depot to Garage row can't exceed the tank's free space, counting the
+ * other rows of the schedule and lifts already scheduled to it, and completing the lift re-checks it (StockInService).
  * A Depot to Client order with an F1 portion (Part 9) loads that F1 at the garage onto the same truck: the first
  * lift row for the order carries the F1 liters and the garage F1 tank, and completing the lift deducts them.
  * A lift scheduled without any rows or tank (older clients) gets its full quantity on the fuel's default tank
@@ -33,21 +36,14 @@ class LiftAllocationService
     ) {}
 
     /**
-     * Active garage tanks with their stock and free capacity (free is null when the capacity is not set).
+     * Active garage tanks with their stock, capacity (24,000 L) and free space: capacity - stock - liters already
+     * scheduled to the tank but not received yet.
      *
      * @return Collection<int, \stdClass>
      */
     public function tankOptions(): Collection
     {
-        $balances = DB::table('inventory_movements')
-            ->whereNotExists(fn (Builder $query) => $query->selectRaw('1')->from('stock_outs')
-                ->whereColumn('stock_outs.id', 'inventory_movements.reference_id')
-                ->where('inventory_movements.reference_type', 'stock_out')
-                ->where('stock_outs.status', 'cancelled'))
-            ->selectRaw("storage_location_id, COALESCE(SUM(CASE WHEN direction = 'in' THEN quantity_liters ELSE -quantity_liters END), 0) as balance")
-            ->groupBy('storage_location_id')
-            ->pluck('balance', 'storage_location_id');
-
+        $balances = $this->garageTanks->balances();
         $incoming = $this->incomingByTank();
 
         return DB::table('storage_locations')
@@ -58,16 +54,49 @@ class LiftAllocationService
             ->orderBy('tank_number')
             ->get(['id', 'name', 'fuel_type_id', 'tank_number', 'capacity_liters'])
             ->map(function (object $tank) use ($balances, $incoming): object {
+                $tank->capacity_liters = GarageTankService::capacity($tank->capacity_liters);
                 $tank->balance_liters = round((float) ($balances[$tank->id] ?? 0), 2);
                 $tank->incoming_liters = round((float) ($incoming[$tank->id] ?? 0), 2);
-                $tank->free_liters = $tank->capacity_liters === null
-                    ? null
-                    : round(max(0, (float) $tank->capacity_liters - $tank->balance_liters - $tank->incoming_liters), 2);
-                $tank->label = $tank->name.' | stock '.number_format($tank->balance_liters, 2).' L | '
-                    .($tank->free_liters === null ? 'capacity not set' : 'free '.number_format($tank->free_liters, 2).' L');
+                $tank->free_liters = round(max(0, $tank->capacity_liters - $tank->balance_liters - $tank->incoming_liters), 2);
+                $tank->label = $tank->name.' | stock '.number_format($tank->balance_liters, 2).' L | capacity '.number_format($tank->capacity_liters, 2).' L'
+                    .($tank->incoming_liters > 0 ? ' | incoming '.number_format($tank->incoming_liters, 2).' L' : '')
+                    .' | free '.number_format($tank->free_liters, 2).' L';
 
                 return $tank;
             });
+    }
+
+    /**
+     * Load of each lift: liters allocated to garage tanks (Depot to Garage), released to clients (Depot to Client)
+     * and the rest, which stays on the truck. Cancelled rows count for nothing; a lift without rows has 0 / 0.
+     *
+     * @param  array<int, int>  $haulIds
+     * @return array<int, array{allocated: float, delivered: float, remaining: float}>
+     */
+    public function loadSummaryByHaul(array $haulIds): array
+    {
+        if ($haulIds === []) {
+            return [];
+        }
+
+        $totals = DB::table('haul_allocations')
+            ->whereIn('haul_id', $haulIds)
+            ->where('status', '!=', 'cancelled')
+            ->selectRaw("haul_id, COALESCE(SUM(CASE WHEN destination_type = 'garage' THEN quantity_liters ELSE 0 END), 0) as allocated, COALESCE(SUM(CASE WHEN destination_type = 'customer' THEN quantity_liters ELSE 0 END), 0) as delivered")
+            ->groupBy('haul_id')
+            ->get()
+            ->keyBy('haul_id');
+
+        return DB::table('hauls')
+            ->whereIn('id', $haulIds)
+            ->pluck('quantity_liters', 'id')
+            ->map(function (mixed $quantity, int $haulId) use ($totals): array {
+                $allocated = round((float) ($totals[$haulId]->allocated ?? 0), 2);
+                $delivered = round((float) ($totals[$haulId]->delivered ?? 0), 2);
+
+                return ['allocated' => $allocated, 'delivered' => $delivered, 'remaining' => round(max(0, (float) $quantity - $allocated - $delivered), 2)];
+            })
+            ->all();
     }
 
     /**
@@ -106,7 +135,7 @@ class LiftAllocationService
     /**
      * Normalizes each Schedule Lift line into its lift rows and validates them. A line sends either:
      * - lifts[]: rows of type "garage" (storage_location_id) or "client" (sale_id), each with quantity_liters,
-     *   adding up exactly to the line's Amount to Lift (Part 9);
+     *   adding up to at most the line's Amount to Lift; the rest stays on the truck (Part 9);
      * - storage_location_id only: the whole Amount to Lift goes to that tank (Part 8 clients);
      * - neither: the whole Amount to Lift waits on the fuel's default tank for the Inventory Officer.
      * Field errors are keyed per row (items.N.lifts.M.storage_location_id, items.N.lifts.M.quantity_liters, ...).
@@ -140,8 +169,8 @@ class LiftAllocationService
             } else {
                 $prefix = null;
                 $sum = round((float) collect($rows)->sum(fn (array $row): float => round((float) ($row['quantity_liters'] ?? 0), 2)), 2);
-                if ($sum !== $quantity) {
-                    $errors["items.$index.lifts"] = 'The lift rows add up to '.number_format($sum, 2).' L but the Amount to Lift is '.number_format($quantity, 2).' L. They must be equal.';
+                if ($sum > $quantity) {
+                    $errors["items.$index.lifts"] = 'The lift rows add up to '.number_format($sum, 2).' L, more than the Amount to Lift of '.number_format($quantity, 2).' L.';
                 }
             }
 
@@ -205,8 +234,8 @@ class LiftAllocationService
                     $errors["$key.storage_location_id"] = 'The tank must hold the same fuel type as the purchase.';
                 } else {
                     $requestedByTank[$tankId] = round(($requestedByTank[$tankId] ?? 0) + $liters, 2);
-                    if ($tank->free_liters !== null && $requestedByTank[$tankId] > $tank->free_liters) {
-                        $errors["$key.quantity_liters"] = $tank->name.' has only '.number_format($tank->free_liters, 2).' L of free capacity.';
+                    if ($requestedByTank[$tankId] > $tank->free_liters) {
+                        $errors["$key.quantity_liters"] = $this->tankFullMessage($tank);
                     }
                 }
 
@@ -376,6 +405,14 @@ class LiftAllocationService
 
             return $created;
         });
+    }
+
+    /** "Premium Tank 1 has only 12,000.00 L of free space (stock 12,000.00 L of 24,000.00 L)." */
+    public function tankFullMessage(object $tank): string
+    {
+        return $tank->name.' has only '.number_format($tank->free_liters, 2).' L of free space (stock '.number_format($tank->balance_liters, 2).' L'
+            .($tank->incoming_liters > 0 ? ' + '.number_format($tank->incoming_liters, 2).' L already scheduled' : '')
+            .' of '.number_format($tank->capacity_liters, 2).' L).';
     }
 
     public function defaultTankId(int $fuelTypeId): ?int

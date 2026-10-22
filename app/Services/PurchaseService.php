@@ -21,7 +21,8 @@ class PurchaseService
     public function __construct(
         private readonly IdempotencyService $idempotencyService,
         private readonly WorkflowAlertService $alerts,
-        private readonly PurchaseWorkflowService $workflow
+        private readonly PurchaseWorkflowService $workflow,
+        private readonly PurchaseStockService $purchaseStock
     ) {}
 
     /**
@@ -186,30 +187,6 @@ class PurchaseService
             ->selectRaw('purchase_item_id, COALESCE(SUM(quantity_liters), 0) as hauled_liters')
             ->groupBy('purchase_item_id');
 
-        $allocationTotals = DB::table('haul_allocations')
-            ->join('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')
-            ->where('haul_allocations.status', '!=', 'cancelled')
-            ->where('hauls.status', '!=', 'cancelled')
-            ->selectRaw("
-                hauls.purchase_item_id,
-                COALESCE(SUM(CASE WHEN haul_allocations.destination_type = 'garage' THEN haul_allocations.quantity_liters ELSE 0 END), 0) as garage_allocated_liters,
-                COALESCE(SUM(CASE WHEN haul_allocations.destination_type = 'customer' THEN haul_allocations.quantity_liters ELSE 0 END), 0) as direct_allocated_liters
-            ")
-            ->groupBy('hauls.purchase_item_id');
-
-        $receivedTotals = DB::table('inventory_movements')
-            ->join('haul_allocations', function ($join): void {
-                $join->on('haul_allocations.id', '=', 'inventory_movements.reference_id')
-                    ->where('inventory_movements.reference_type', self::STOCK_IN_REFERENCE_TYPE);
-            })
-            ->join('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')
-            ->where('inventory_movements.direction', 'in')
-            ->where('inventory_movements.movement_type', 'stock_in')
-            ->where('haul_allocations.status', '!=', 'cancelled')
-            ->where('hauls.status', '!=', 'cancelled')
-            ->selectRaw('hauls.purchase_item_id, COALESCE(SUM(inventory_movements.quantity_liters), 0) as received_liters')
-            ->groupBy('hauls.purchase_item_id');
-
         $withdrawalTotals = DB::table('hauls')
             ->whereNotNull('withdrawal_receipt_path')
             ->selectRaw('purchase_item_id, COUNT(*) as withdrawal_count, MAX(withdrawal_receipt_uploaded_at) as latest_withdrawal_at')
@@ -221,8 +198,6 @@ class PurchaseService
             ->join('fuel_types', 'fuel_types.id', '=', 'purchase_items.fuel_type_id')
             ->leftJoin('users', 'users.id', '=', 'purchases.created_by')
             ->leftJoinSub($haulTotals, 'haul_totals', 'haul_totals.purchase_item_id', '=', 'purchase_items.id')
-            ->leftJoinSub($allocationTotals, 'allocation_totals', 'allocation_totals.purchase_item_id', '=', 'purchase_items.id')
-            ->leftJoinSub($receivedTotals, 'received_totals', 'received_totals.purchase_item_id', '=', 'purchase_items.id')
             ->leftJoinSub($withdrawalTotals, 'withdrawal_totals', 'withdrawal_totals.purchase_item_id', '=', 'purchase_items.id')
             ->whereNull('purchases.deleted_at')
             ->when($search, fn (Builder $q): Builder => $this->applySearch($q, $search, [
@@ -263,9 +238,6 @@ class PurchaseService
                 'fuel_types.name as fuel_name',
                 'users.name as created_by_name',
                 DB::raw('COALESCE(haul_totals.hauled_liters, 0) as hauled_liters'),
-                DB::raw('COALESCE(allocation_totals.garage_allocated_liters, 0) as garage_allocated_liters'),
-                DB::raw('COALESCE(allocation_totals.direct_allocated_liters, 0) as direct_allocated_liters'),
-                DB::raw('COALESCE(received_totals.received_liters, 0) as received_liters'),
                 DB::raw('COALESCE(withdrawal_totals.withdrawal_count, 0) as withdrawal_count'),
                 'withdrawal_totals.latest_withdrawal_at',
             ]);
@@ -275,13 +247,18 @@ class PurchaseService
 
         $dependencyMap = $this->purchaseDependencyMap($rawRows);
         $withdrawalsMap = $this->batchWithdrawalsForPurchaseItems($rawRows);
+        // Part 2 revisions: the purchase is the stock (ordered - delivered).
+        $stock = $this->purchaseStock->lines($rawRows->pluck('id')->map(fn (mixed $id): int => (int) $id)->all(), false, true);
 
-        $transformed = $rawRows->map(function (object $row) use ($dependencyMap, $withdrawalsMap): array {
-            $inventoryStatus = $this->inventoryLinkStatus(
-                (float) $row->garage_allocated_liters,
-                (float) $row->received_liters,
-                (float) $row->direct_allocated_liters
-            );
+        $transformed = $rawRows->map(function (object $row) use ($dependencyMap, $withdrawalsMap, $stock): array {
+            $line = $stock->get((int) $row->id);
+            $released = (float) ($line->released ?? 0);
+            $onHand = (float) ($line->on_hand ?? $row->quantity_ordered_liters);
+            $inventoryStatus = match (true) {
+                $onHand <= 0 => 'depleted',
+                $released > 0 => 'partially_delivered',
+                default => 'in_stock',
+            };
 
             return [
                 'id' => $row->id,
@@ -308,7 +285,7 @@ class PurchaseService
                     $this->formatNumber($row->quantity_ordered_liters),
                     $this->formatNumber($row->hauled_liters),
                     // Garage / direct allocation stay in the details and the lifting logic; the table hides them.
-                    $this->formatNumber($row->received_liters),
+                    $this->formatNumber($released),
                     $this->label($inventoryStatus),
                     $this->formatNumber($row->unit_cost),
                     $this->formatNumber($row->line_total),
@@ -317,6 +294,7 @@ class PurchaseService
                     $this->label($row->payment_status),
                     self::PAYMENT_MODES[$row->payment_mode] ?? 'N/A',
                     $row->bank_name ?: 'N/A',
+                    $this->formatNumber($onHand),
                 ],
                 'details' => [
                     'Date' => $this->formatDate($row->purchase_date),
@@ -324,9 +302,10 @@ class PurchaseService
                     'Depot' => $row->depot_name,
                     'Quantity Purchased' => $this->formatLiters($row->quantity_ordered_liters),
                     'Quantity Hauled' => $this->formatLiters($row->hauled_liters),
-                    'Garage Allocation' => $this->formatLiters($row->garage_allocated_liters),
-                    'Direct Client Allocation' => $this->formatLiters($row->direct_allocated_liters),
-                    'Received Into Garage' => $this->formatLiters($row->received_liters),
+                    'Quantity Delivered' => $this->formatLiters($released),
+                    'Remaining (Stock)' => $this->formatLiters($onHand),
+                    'Reserved for Orders' => $this->formatLiters($line->reserved ?? 0),
+                    'Remaining in Depot' => $this->formatLiters($line->remaining_in_depot ?? 0),
                     'Inventory Status' => $this->label($inventoryStatus),
                     'Cost/Liter' => $this->formatNumber($row->unit_cost),
                     'Total Cost' => $this->formatNumber($row->line_total),
@@ -411,6 +390,9 @@ class PurchaseService
             ->filter(fn (object $row): bool => (float) ($row->quantity_hauled_liters ?? 0) > 0)
             ->pluck('id')
             ->merge(DB::table('hauls')->whereIn('purchase_item_id', $ids->all())->pluck('purchase_item_id'))
+            // Part 2 revisions: orders sell from the purchase (its own fuel or an F1 portion).
+            ->merge(DB::table('sale_items')->whereIn('purchase_item_id', $ids->all())->pluck('purchase_item_id'))
+            ->merge(DB::table('sale_items')->whereIn('f1_purchase_item_id', $ids->all())->pluck('f1_purchase_item_id'))
             ->merge(DB::table('inventory_movements')
                 ->where('reference_type', 'purchase_item')
                 ->whereIn('reference_id', $ids->all())
@@ -430,6 +412,7 @@ class PurchaseService
     {
         return (float) ($row->quantity_hauled_liters ?? 0) > 0
             || DB::table('hauls')->where('purchase_item_id', $row->id)->exists()
+            || DB::table('sale_items')->where('purchase_item_id', $row->id)->orWhere('f1_purchase_item_id', $row->id)->exists()
             || DB::table('inventory_movements')
                 ->where('reference_type', 'purchase_item')
                 ->where('reference_id', $row->id)
@@ -460,27 +443,6 @@ class PurchaseService
             $hauled >= $ordered => 'lifted',
             default => 'partial',
         };
-    }
-
-    private function inventoryLinkStatus(float $garageAllocated, float $received, float $directAllocated): string
-    {
-        if ($garageAllocated <= 0 && $directAllocated <= 0) {
-            return 'not_allocated';
-        }
-
-        if ($garageAllocated <= 0 && $directAllocated > 0) {
-            return 'direct_to_client';
-        }
-
-        if ($received <= 0) {
-            return 'awaiting_garage_receipt';
-        }
-
-        if (round($received, 2) < round($garageAllocated, 2)) {
-            return 'partially_received';
-        }
-
-        return $directAllocated > 0 ? 'garage_received_with_direct' : 'garage_received';
     }
 
     private function nextCode(string $table, string $column, string $prefix): string

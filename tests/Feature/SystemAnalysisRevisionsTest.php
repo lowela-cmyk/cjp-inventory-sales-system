@@ -117,9 +117,11 @@ class SystemAnalysisRevisionsTest extends TestCase
 
         $this->actingAs($records['dispatch'])->get(route('dispatch.fuel-lifting'))
             ->assertOk()
-            ->assertSee($item->purchase_code.' | 12,000.00 L remaining | Diesel | Southern Terminal')
+            // Part 2 revisions: "Fuel / Remaining in Depot" shows the liters still at the depot.
+            ->assertSee($item->purchase_code.' | Diesel | Southern Terminal')
             ->assertSee('data-remaining="12000"', false)
-            ->assertDontSee('No purchases have remaining unlifted quantity');
+            ->assertSee('data-remaining-label="DIESEL - 12,000.00 L"', false)
+            ->assertDontSee('No purchases have fuel remaining in the depot');
 
         $this->actingAs($records['dispatch'])->post(route('dispatch.fuel-lifting.hauls.store'), [
             'idempotency_key' => (string) Str::uuid(),
@@ -132,7 +134,7 @@ class SystemAnalysisRevisionsTest extends TestCase
         $this->assertDatabaseHas('hauls', ['purchase_item_id' => $item->id, 'quantity_liters' => '5000.00', 'status' => 'scheduled']);
         $this->actingAs($records['dispatch'])->get(route('dispatch.fuel-lifting'))
             ->assertOk()
-            ->assertSee('7,000.00 L remaining');
+            ->assertSee('data-remaining-label="DIESEL - 7,000.00 L"', false);
     }
 
     public function test_schedule_lift_dropdown_hides_purchases_that_cannot_be_saved(): void
@@ -144,8 +146,8 @@ class SystemAnalysisRevisionsTest extends TestCase
         $this->actingAs($records['dispatch'])->get(route('dispatch.fuel-lifting'))
             ->assertOk()
             ->assertDontSee('PUR-SA-CLOSED')
-            ->assertSee('No purchases have remaining unlifted quantity')
-            ->assertSee('No purchases available to lift');
+            ->assertSee('No purchases have fuel remaining in the depot')
+            ->assertSee('No purchases in the depot');
     }
 
     public function test_customer_bank_name_is_saved_validated_and_displayed(): void
@@ -276,50 +278,6 @@ class SystemAnalysisRevisionsTest extends TestCase
         $this->actingAs($admin)->get(route('admin.inventory.stock-in', ['date' => '2026-09-10', 'depot_id' => $otherDepot, 'fuel_type_id' => $records['fuel']]))->assertOk();
         $this->actingAs($admin)->from(route('admin.inventory.depots'))->get(route('admin.inventory.depots', ['status' => 'pending']))
             ->assertSessionHasErrors('status');
-    }
-
-    public function test_stock_in_tab_drops_pipeline_tables_and_tank_assignment_moves_to_purchase_edit(): void
-    {
-        $records = $this->liftingRecords();
-        $itemId = $this->purchaseItem($records, $records['depot'], 'PUR-SA-RECEIPT', 8000);
-        $purchaseId = (int) DB::table('purchase_items')->where('id', $itemId)->value('purchase_id');
-        $haulId = DB::table('hauls')->insertGetId([
-            'haul_code' => 'LFT-SA-RECEIPT', 'purchase_id' => $purchaseId, 'purchase_item_id' => $itemId, 'depot_id' => $records['depot'],
-            'fuel_type_id' => $records['fuel'], 'truck_id' => $records['truck'], 'driver_user_id' => $records['driver']->id,
-            'scheduled_at' => '2026-09-19 08:00:00', 'hauled_at' => '2026-09-19 10:00:00', 'quantity_liters' => 8000, 'status' => 'completed',
-            'created_at' => now(), 'updated_at' => now(),
-        ]);
-        $garageId = (int) DB::table('storage_locations')->where('type', 'garage')->where('fuel_type_id', $records['fuel'])->value('id')
-            ?: DB::table('storage_locations')->insertGetId(['location_code' => 'GAR-SA', 'name' => 'Diesel Tank SA', 'type' => 'garage', 'fuel_type_id' => $records['fuel'], 'status' => 'active', 'created_at' => now(), 'updated_at' => now()]);
-        $allocationId = DB::table('haul_allocations')->insertGetId([
-            'haul_id' => $haulId, 'fuel_type_id' => $records['fuel'], 'destination_type' => 'garage', 'storage_location_id' => $garageId, 'quantity_liters' => 8000,
-            'allocated_at' => '2026-09-19 10:00:00', 'status' => 'delivered', 'created_at' => now(), 'updated_at' => now(),
-        ]);
-
-        $stockIn = $this->actingAs($records['inventory'])->get(route('inventory-officer.inventory.stock-in'));
-        $stockIn->assertOk()
-            ->assertDontSee('Purchase Stock-In Pipeline')
-            ->assertDontSee('Pending receipts require tank assignment')
-            ->assertDontSee('No pending fuel receipts require tank assignment');
-
-        $purchases = $this->actingAs($records['inventory'])->get(route('inventory-officer.inventory'));
-        $purchases->assertOk()
-            ->assertSee('Pending Garage Receipts')
-            ->assertSee('data-modal-swap="io-receipt-assign-'.$allocationId.'"', false)
-            ->assertSee('id="io-receipt-assign-'.$allocationId.'"', false)
-            ->assertSee('>Assign Tank</button>', false);
-
-        $this->actingAs($records['inventory'])->post(route('inventory-officer.inventory.stock-in.store'), [
-            'idempotency_key' => (string) Str::uuid(),
-            'haul_allocation_id' => $allocationId,
-            'storage_location_id' => $garageId,
-            'quantity_liters' => 8000,
-            'movement_date' => '2026-09-19 11:00:00',
-        ])->assertRedirect(route('inventory-officer.inventory.stock-in'))->assertSessionHasNoErrors();
-
-        $this->assertDatabaseHas('inventory_movements', ['reference_type' => 'haul_allocation', 'reference_id' => $allocationId, 'quantity_liters' => '8000.00']);
-        $this->actingAs($records['inventory'])->get(route('inventory-officer.inventory'))
-            ->assertOk()->assertDontSee('Pending Garage Receipts');
     }
 
     public function test_admin_ledger_tables_use_centered_ledger_layout(): void

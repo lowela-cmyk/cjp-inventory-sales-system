@@ -332,3 +332,106 @@
 .form-row[data-bank-row][hidden] {
     display: none;
 }
+
+/* Part 2 revisions: Schedule Lift Delivery Details (Depot to Client orders) and Fuel Remaining in Truck. */
+.lift-deliveries {
+    display: grid;
+    gap: 10px;
+    margin-top: 14px;
+}
+
+.lift-delivery-rows {
+    display: grid;
+    gap: 10px;
+}
+
+.lift-delivery-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto;
+    align-items: end;
+    gap: 12px;
+}
+
+.lift-row-remove-cell {
+    display: flex;
+    align-items: end;
+}
+
+.lift-delivery-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.lift-delivery-footer .lift-add-row {
+    width: auto;
+    min-width: 260px;
+}
+
+.lift-truck-remaining {
+    margin: 0;
+    font-weight: 800;
+}
+
+.lift-truck-remaining.is-over output {
+    color: var(--admin-red);
+}
+
+.lift-deliveries [data-deliveries-warning]:empty {
+    display: none;
+}
+
+@media (max-width: 767px) {
+    .lift-delivery-row {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+/* Part 2 revisions Record Sales: F1 | F1 Price | F1 %, and the Premium / F1 / Line totals under the breakdown. */
+.sale-order-line {
+    display: grid;
+    gap: 12px;
+}
+
+.sale-f1-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 0.8fr);
+    gap: 12px;
+}
+
+.sale-f1-row[hidden] {
+    display: none;
+}
+
+.sale-line-totals {
+    display: grid;
+    gap: 6px;
+    max-width: 420px;
+}
+
+.sale-line-total-row {
+    display: grid;
+    grid-template-columns: 120px minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.sale-line-total-row output {
+    font-variant-numeric: tabular-nums;
+}
+
+.sale-line-total-row.sale-line-total output {
+    border: 1px solid var(--admin-soft-line);
+    border-radius: 6px;
+    padding: 6px 10px;
+}
+
+@media (max-width: 767px) {
+    .sale-f1-row {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}

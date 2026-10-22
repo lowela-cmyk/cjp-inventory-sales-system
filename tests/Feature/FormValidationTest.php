@@ -133,7 +133,6 @@ class FormValidationTest extends TestCase
     public function test_purchase_and_stock_in_forms_validate_related_records_numbers_dates_lengths_and_business_limits(): void
     {
         $records = $this->baseRecords();
-        $allocationId = $this->garageAllocation($records, 1000);
 
         $this->actingAs($records['inventoryOfficer'])
             ->from(route('inventory-officer.inventory'))
@@ -163,32 +162,11 @@ class FormValidationTest extends TestCase
             ->assertSessionHasInput('quantity_ordered_liters', 0)
             ->assertSessionHasInput('receipt_status', 'approved');
 
-        $this->assertSame(1, DB::table('purchases')->count());
+        // The invalid purchase was not saved.
+        $this->assertSame(0, DB::table('purchases')->count());
 
-        $this->actingAs($records['inventoryOfficer'])
-            ->from(route('inventory-officer.inventory.stock-in'))
-            ->post(route('inventory-officer.inventory.stock-in.store'), [
-                'haul_allocation_id' => $allocationId,
-                'storage_location_id' => $records['garageId'],
-                'quantity_liters' => 1500,
-                'movement_date' => '2026-09-04 08:00:00',
-                'remarks' => 'over allocation',
-            ])
-            ->assertRedirect(route('inventory-officer.inventory.stock-in'))
-            ->assertSessionHasErrors(['stock_in' => 'Quantity received cannot exceed the remaining garage allocation.'])
-            ->assertSessionHasInput('quantity_liters', 1500);
-
-        $this->actingAs($records['inventoryOfficer'])
-            ->from(route('inventory-officer.inventory.stock-in'))
-            ->post(route('inventory-officer.inventory.stock-in.store'), [
-                'haul_allocation_id' => 999999,
-                'storage_location_id' => 999999,
-                'quantity_liters' => -5,
-                'movement_date' => 'bad-date',
-                'remarks' => str_repeat('R', 1001),
-            ])
-            ->assertRedirect(route('inventory-officer.inventory.stock-in'))
-            ->assertSessionHasErrors(['haul_allocation_id', 'storage_location_id', 'quantity_liters', 'movement_date', 'remarks']);
+        // Part 2 revisions: Stock-In (tank receipts) is retired, so there is no stock-in form to post.
+        $this->assertFalse(\Illuminate\Support\Facades\Route::has('inventory-officer.inventory.stock-in.store'));
 
         $this->assertSame(0, DB::table('inventory_movements')->count());
     }
@@ -218,9 +196,8 @@ class FormValidationTest extends TestCase
             ->assertSessionHasErrors([
                 'idempotency_key',
                 'customer_id',
-                'fuel_type_id',
-                'quantity_liters',
-                'unit_price',
+                // Part 2 revisions: an order line names a purchase; the unsellable fuel leaves no line.
+                'items',
                 'payment_method',
                 'payment_terms',
                 'status',
@@ -228,6 +205,16 @@ class FormValidationTest extends TestCase
                 'line_total',
             ])
             ->assertSessionHasInput('payment_method', 'crypto');
+
+        // An order line with an unknown purchase, no quantity and a negative price.
+        $this->withoutStockLots();
+        $this->actingAs($records['salesOfficer'])
+            ->from(route('sales-officer.sales'))
+            ->post(route('sales-officer.sales.store'), [
+                'idempotency_key' => (string) \Illuminate\Support\Str::uuid(), 'customer_id' => $records['customerId'] ?? 1, 'sale_date' => '2026-09-04', 'payment_method' => 'cash_on_delivery',
+                'items' => [['purchase_item_id' => 999999, 'quantity_liters' => 0, 'unit_price' => -1, 'f1_percentage' => 12]],
+            ])
+            ->assertSessionHasErrors(['items.0.purchase_item_id', 'items.0.quantity_liters', 'items.0.unit_price', 'items.0.f1_percentage']);
 
         $this->actingAs($records['salesOfficer'])
             ->from(route('sales-officer.sales'))
@@ -308,21 +295,21 @@ class FormValidationTest extends TestCase
 
         $this->actingAs($records['admin'])
             ->get(route('admin.dashboard', [
-                'trend_period' => 'quarter',
-                'expected_year' => 2200,
-                'unlifted_date_from' => '2026-09-10',
-                'unlifted_date_to' => '2026-09-01',
-                'unlifted_lifting_status' => 'stuck',
-                'variance_fuel_type_id' => 999999,
-                'variance_status' => 'ignored',
+                'inv_fuel_type_id' => 999999,
+                'inv_depot_id' => 999999,
+                'inv_search' => str_repeat('P', 61),
+                'sales_date_from' => '2026-09-10',
+                'sales_date_to' => '2026-09-01',
+                'sales_fuel_type_id' => 999999,
+                'sales_customer_id' => 999999,
             ]))
             ->assertSessionHasErrors([
-                'trend_period',
-                'expected_year',
-                'unlifted_date_to',
-                'unlifted_lifting_status',
-                'variance_fuel_type_id',
-                'variance_status',
+                'inv_fuel_type_id',
+                'inv_depot_id',
+                'inv_search',
+                'sales_date_to',
+                'sales_fuel_type_id',
+                'sales_customer_id',
             ]);
 
         $this->actingAs($records['admin'])

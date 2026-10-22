@@ -93,34 +93,43 @@ class SaleConfirmationService
                         'updated_at' => now(),
                     ]);
 
+                // Part 2 revisions: a Depot to Client order is delivered through its lift; a Standard order by its own
+                // truck. Either way its liters are deducted from the order's purchases here, once.
+                $allocation = null;
+                if ($sale->delivery_type === 'depot_to_client') {
+                    $allocation = DB::table('haul_allocations')
+                        ->join('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')
+                        ->where('haul_allocations.sale_id', $saleId)
+                        ->where('haul_allocations.destination_type', 'customer')
+                        ->where('haul_allocations.status', '!=', 'cancelled')
+                        ->whereIn('hauls.status', ['lifted', 'completed'])
+                        ->orderBy('haul_allocations.id')
+                        ->lockForUpdate()
+                        ->first(['haul_allocations.id', 'haul_allocations.haul_id']);
+
+                    if (! $allocation) {
+                        throw new \RuntimeException('This Depot to Client sale is delivered through its lift. Add it to a lift in Fuel Lifting and complete the lift first.');
+                    }
+                }
+
                 $items = DB::table('sale_items')
                     ->where('sale_id', $saleId)
                     ->lockForUpdate()
-                    ->get();
+                    ->get(['id']);
 
                 if ($items->isEmpty()) {
                     throw new \RuntimeException('The sale has no items available for delivery.');
                 }
 
                 foreach ($items as $item) {
-                    $remaining = round((float) $item->quantity_liters - (float) $item->fulfilled_quantity_liters, 2);
-                    if ($remaining <= 0) {
-                        continue;
+                    $error = $this->stockOutRelease->releaseSaleItem((int) $item->id, now()->toDateTimeString(), $userId, $allocation);
+                    if ($error) {
+                        throw new \RuntimeException($error);
                     }
+                }
 
-                    $stockOutError = $this->stockOutRelease->releaseSaleItemFromGarage(
-                        (int) $item->id,
-                        $remaining,
-                        now()->toDateTimeString(),
-                        $userId,
-                        null,
-                        'Automatic stock-out on delivery of sale '.$sale->sale_code,
-                        false
-                    );
-
-                    if ($stockOutError) {
-                        throw new \RuntimeException($stockOutError);
-                    }
+                if ($allocation) {
+                    DB::table('haul_allocations')->where('id', $allocation->id)->update(['status' => 'delivered', 'updated_at' => now()]);
                 }
             }
 
@@ -132,7 +141,10 @@ class SaleConfirmationService
                     'delivery_status_updated_at' => now(),
                     'delivery_status_updated_by' => $userId,
                     'updated_at' => now(),
-                ]);
+                ] + ($deliveryStatus === 'delivered' && $sale->delivery_type !== 'depot_to_client' && ! $sale->delivery_date
+                    // A Standard order marked Delivered without a Delivery Date is dated now.
+                    ? ['delivery_date' => now()]
+                    : []));
         });
     }
 

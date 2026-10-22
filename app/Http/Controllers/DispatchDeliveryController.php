@@ -5,10 +5,10 @@ namespace App\Http\Controllers;
 use App\Rules\ApprovedFuelType;
 use App\Services\IdempotencyService;
 use App\Services\LiftAllocationService;
+use App\Services\PurchaseStockService;
 use App\Services\PurchaseWorkflowService;
 use App\Services\TruckAvailabilityService;
 use App\Support\DepotLabel;
-use App\Support\F1Split;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -24,7 +24,8 @@ class DispatchDeliveryController extends Controller
         private readonly IdempotencyService $idempotencyService,
         private readonly PurchaseWorkflowService $purchaseWorkflow,
         private readonly TruckAvailabilityService $truckAvailability,
-        private readonly LiftAllocationService $liftAllocations
+        private readonly LiftAllocationService $liftAllocations,
+        private readonly PurchaseStockService $purchaseStock
     ) {}
 
     private const ACTIVE_HAUL_STATUSES = ['scheduled', 'in_transit', 'lifted'];
@@ -81,10 +82,8 @@ class DispatchDeliveryController extends Controller
             'drivers' => $this->driverOptions(),
             'trucks' => $this->haulTruckOptions(),
             'purchaseItems' => $this->availablePurchaseItemOptions(),
-            'tankOptions' => $this->liftAllocations->tankOptions(),
-            // Part 9: open Depot to Client sales a lift row can be released to.
+            // Part 2 revisions: open Depot to Client orders a lift can deliver (Delivery Details).
             'directSaleOptions' => $this->liftAllocations->directSaleOptions(),
-            'f1FuelId' => F1Split::f1FuelId(),
             'createIdempotencyKey' => (string) Str::uuid(),
             'statusIdempotencyKey' => (string) Str::uuid(),
             'truckAssignmentIdempotencyKey' => (string) Str::uuid(),
@@ -100,16 +99,9 @@ class DispatchDeliveryController extends Controller
             'items.*.quantity_liters' => ['required_with:items', 'numeric', 'gt:0', 'max:1000000'],
             // Authority to Load for this purchase (Part 9).
             'items.*.atl_number' => ['nullable', 'string', 'max:100'],
-            // Lift rows (Part 9): Depot to Garage (tank) or Depot to Client (sale), adding up to the Amount to Lift.
-            'items.*.lifts' => ['sometimes', 'array', 'min:1', 'max:20'],
-            'items.*.lifts.*.type' => ['required', Rule::in(['garage', 'client'])],
-            'items.*.lifts.*.storage_location_id' => ['nullable', 'integer', Rule::exists('storage_locations', 'id')],
-            'items.*.lifts.*.sale_id' => ['nullable', 'integer', Rule::exists('sales', 'id')],
-            'items.*.lifts.*.quantity_liters' => ['required', 'numeric', 'gt:0', 'max:1000000'],
-            // F1 of a Depot to Client order, loaded at the garage from this tank onto the same truck.
-            'items.*.lifts.*.f1_storage_location_id' => ['nullable', 'integer', Rule::exists('storage_locations', 'id')],
-            // Older clients: the garage tank that receives the whole line. Omitted = default tank, confirmed later.
-            'items.*.storage_location_id' => ['nullable', 'integer', Rule::exists('storage_locations', 'id')],
+            // Part 2 revisions: Delivery Details, the open Depot to Client orders this lift delivers.
+            'deliveries' => ['sometimes', 'array', 'max:50'],
+            'deliveries.*.sale_id' => ['required', 'integer', Rule::exists('sales', 'id')],
             'purchase_item_id' => ['required_without:items', 'integer', Rule::exists('purchase_items', 'id')],
             'driver_user_id' => ['required', 'integer', Rule::exists('users', 'id')->where(fn (Builder $query): Builder => $query->where('role', 'driver'))],
             'truck_id' => ['required', 'integer', Rule::exists('trucks', 'id')],
@@ -124,12 +116,7 @@ class DispatchDeliveryController extends Controller
             'items.*.purchase_item_id' => 'purchase',
             'items.*.quantity_liters' => 'amount to lift',
             'items.*.atl_number' => 'ATL',
-            'items.*.lifts.*.type' => 'allocation / delivery',
-            'items.*.lifts.*.storage_location_id' => 'tank',
-            'items.*.lifts.*.sale_id' => 'sales order',
-            'items.*.lifts.*.quantity_liters' => 'amount',
-            'items.*.lifts.*.f1_storage_location_id' => 'F1 tank',
-            'items.*.storage_location_id' => 'garage tank',
+            'deliveries.*.sale_id' => 'order',
         ]);
         $items = collect($data['items'] ?? [[
             'purchase_item_id' => $data['purchase_item_id'],
@@ -138,12 +125,10 @@ class DispatchDeliveryController extends Controller
             'purchase_item_id' => (int) $item['purchase_item_id'],
             'quantity_liters' => round((float) $item['quantity_liters'], 2),
             'atl_number' => trim((string) ($item['atl_number'] ?? '')) ?: null,
-            'lifts' => array_values($item['lifts'] ?? []),
-            'storage_location_id' => $item['storage_location_id'] ?? null,
         ])->values();
         $fuelTypeByItem = DB::table('purchase_items')->whereIn('id', $items->pluck('purchase_item_id'))->pluck('fuel_type_id', 'id')->map(fn (mixed $id): int => (int) $id)->all();
-        // Field-level allocation errors (under the right input) before anything is written.
-        $allocations = $this->liftAllocations->resolveLines($items->all(), $fuelTypeByItem);
+        // Field-level delivery errors (under the right row) before anything is written.
+        $allocations = $this->liftAllocations->resolveDeliveries(array_values($data['deliveries'] ?? []), $items->all(), $fuelTypeByItem);
         $sessionKey = 'hauls.created.'.((string) $data['idempotency_key']);
 
         if ($request->session()->has($sessionKey)) {
@@ -178,7 +163,7 @@ class DispatchDeliveryController extends Controller
                         }
                         $purchaseItem->scheduled_quantity_liters = $item['quantity_liters'];
                         $purchaseItem->atl_number = $item['atl_number'];
-                        $purchaseItem->allocation = $allocations[$index];
+                        $purchaseItem->allocation = $allocations[$index] ?? [];
 
                         return $purchaseItem;
                     });
@@ -192,10 +177,12 @@ class DispatchDeliveryController extends Controller
                         throw new \RuntimeException('The combined lift quantity cannot exceed the selected truck capacity.');
                     }
 
+                    // Part 2 revisions: a lift takes at most the purchase's fuel still in the depot.
+                    $stock = $this->purchaseStock->lines($purchaseItems->pluck('id')->map(fn (mixed $id): int => (int) $id)->all(), true);
                     foreach ($purchaseItems as $purchaseItem) {
-                        $remaining = $this->remainingAssignablePurchaseItemQuantity((int) $purchaseItem->id, (float) $purchaseItem->quantity_ordered_liters);
+                        $remaining = (float) ($stock->get((int) $purchaseItem->id)?->remaining_in_depot ?? 0);
                         if ((float) $purchaseItem->scheduled_quantity_liters > $remaining) {
-                            throw new \RuntimeException('Lift quantity cannot exceed the remaining quantity for '.$purchaseItem->purchase_code.'.');
+                            throw new \RuntimeException('Lift quantity cannot exceed the '.number_format($remaining, 2).' L of '.$purchaseItem->purchase_code.' remaining in the depot.');
                         }
                     }
 
@@ -395,7 +382,7 @@ class DispatchDeliveryController extends Controller
                         'quantity' => $this->formatLiters($row->quantity_liters),
                         'atl_number' => $row->atl_number ?: 'N/A',
                         'lifts' => $liftRows[(int) $row->id] ?? [],
-                        'load' => $loads[(int) $row->id] ?? ['allocated' => 0.0, 'delivered' => 0.0, 'remaining' => round((float) $row->quantity_liters, 2)],
+                        'load' => $loads[(int) $row->id] ?? ['delivered' => 0.0, 'remaining' => round((float) $row->quantity_liters, 2)],
                         'can_upload_withdrawal' => in_array($row->status, ['lifted', 'completed'], true),
                         'withdrawal_uploaded' => (bool) $row->withdrawal_receipt_path,
                         'withdrawal_uploaded_label' => $row->withdrawal_receipt_path
@@ -409,15 +396,13 @@ class DispatchDeliveryController extends Controller
             ->map(function ($group): array {
                 $row = $group->first();
                 $row['hauls'] = $group->pluck('haul')->values()->all();
-                // Part 9: Allocated (into garage tanks) / Delivered (to clients) for the whole schedule; the rest stays on the truck.
+                // Delivered (to Depot to Client orders) for the whole schedule; the rest stays on the truck.
                 $load = collect($row['hauls'])->pluck('load');
                 $row['load'] = [
-                    'allocated' => $this->formatLiters($load->sum('allocated')),
                     'delivered' => $this->formatLiters($load->sum('delivered')),
                     'remaining' => $this->formatLiters($load->sum('remaining')),
                 ];
                 $row['details'] = array_merge($row['details'], [
-                    'Allocated Quantity' => $row['load']['allocated'],
                     'Delivered Quantity' => $row['load']['delivered'],
                     'Remaining on Truck' => $row['load']['remaining'],
                 ]);
@@ -434,10 +419,11 @@ class DispatchDeliveryController extends Controller
     }
 
     /**
-     * Lift rows of each haul for the View modal: "Depot to Garage" (tank) or "Depot to Client" (customer / sales order).
+     * Delivery rows of each haul for the View modal: "Depot to Client" (customer / sales order). Lifts scheduled before
+     * October 22, 2026 may also show their retired "Depot to Garage" (tank) rows.
      *
      * @param  array<int, int>  $haulIds
-     * @return array<int, array<int, array{type: string, destination: string, quantity: string, status: string, f1: ?string}>>
+     * @return array<int, array<int, array{type: string, destination: string, quantity: string, status: string}>>
      */
     private function liftRowsByHaul(array $haulIds): array
     {
@@ -447,21 +433,19 @@ class DispatchDeliveryController extends Controller
 
         return DB::table('haul_allocations')
             ->leftJoin('storage_locations', 'storage_locations.id', '=', 'haul_allocations.storage_location_id')
-            ->leftJoin('storage_locations as f1_tanks', 'f1_tanks.id', '=', 'haul_allocations.f1_storage_location_id')
             ->leftJoin('sales', 'sales.id', '=', 'haul_allocations.sale_id')
             ->leftJoin('customers', 'customers.id', '=', 'haul_allocations.customer_id')
             ->whereIn('haul_allocations.haul_id', $haulIds)
             ->orderBy('haul_allocations.id')
-            ->get(['haul_allocations.haul_id', 'haul_allocations.destination_type', 'haul_allocations.quantity_liters', 'haul_allocations.f1_quantity_liters', 'haul_allocations.status', 'storage_locations.name as tank_name', 'f1_tanks.name as f1_tank_name', 'sales.sale_code', 'sales.sales_order_number', 'customers.name as customer_name', 'customers.company_name'])
+            ->get(['haul_allocations.haul_id', 'haul_allocations.destination_type', 'haul_allocations.quantity_liters', 'haul_allocations.status', 'storage_locations.name as tank_name', 'sales.sale_code', 'sales.sales_order_number', 'customers.name as customer_name', 'customers.company_name'])
             ->groupBy('haul_id')
             ->map(fn ($group): array => $group->map(fn (object $row): array => [
-                'type' => $row->destination_type === 'customer' ? 'Depot to Client' : 'Depot to Garage',
+                'type' => $row->destination_type === 'customer' ? 'Depot to Client' : 'Depot to Garage (retired)',
                 'destination' => $row->destination_type === 'customer'
-                    ? ($row->company_name ?: $row->customer_name ?: 'N/A').' / '.($row->sales_order_number ?: $row->sale_code ?: 'N/A')
+                    ? ($row->customer_name ?: $row->company_name ?: 'N/A').' · '.($row->sales_order_number ?: $row->sale_code ?: 'N/A')
                     : ($row->tank_name ?: 'N/A'),
                 'quantity' => $this->formatLiters($row->quantity_liters),
                 'status' => $this->label($row->status),
-                'f1' => (float) $row->f1_quantity_liters > 0 ? 'Load F1 at the garage: '.$this->formatLiters($row->f1_quantity_liters).' from '.($row->f1_tank_name ?: 'N/A') : null,
             ])->values()->all())
             ->all();
     }
@@ -518,42 +502,23 @@ class DispatchDeliveryController extends Controller
             ->get(['users.id', 'users.name', 'users.phone', 'driver_profiles.driver_code']);
     }
 
+    /**
+     * Purchases a lift can take: "Fuel / Remaining in Depot" (e.g. "PREMIUM - 60,000.00 L"), the liters still at the depot.
+     */
     private function availablePurchaseItemOptions()
     {
-        $assignedLifts = DB::table('hauls')
-            ->where('status', '!=', 'cancelled')
-            ->selectRaw('purchase_item_id, COALESCE(SUM(quantity_liters), 0) as assigned_liters')
-            ->groupBy('purchase_item_id');
+        return $this->purchaseStock->lines()
+            ->filter(fn (object $line): bool => $line->remaining_in_depot > 0)
+            ->filter(fn (object $line): bool => DB::table('depots')->where('id', $line->depot_id)->where('status', 'active')->exists())
+            ->sortBy('purchase_code')
+            ->values()
+            ->map(function (object $line): object {
+                $line->remaining_liters = $line->remaining_in_depot;
+                $line->label = $line->purchase_code.' | '.$line->fuel_name.' | '.$line->depot_name;
+                $line->remaining_label = mb_strtoupper((string) $line->fuel_name).' - '.$this->formatLiters($line->remaining_in_depot);
+                $line->pickup_label = DepotLabel::make($line->depot_name, $line->depot_address);
 
-        return DB::table('purchase_items')
-            ->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
-            ->join('depots', 'depots.id', '=', 'purchases.depot_id')
-            ->join('fuel_types', 'fuel_types.id', '=', 'purchase_items.fuel_type_id')
-            ->leftJoinSub($assignedLifts, 'assigned_lifts', 'assigned_lifts.purchase_item_id', '=', 'purchase_items.id')
-            ->whereNull('purchases.deleted_at')
-            ->where('purchases.status', '!=', 'cancelled')
-            // Keep the dropdown in step with purchaseItemForAssignment() so every listed purchase can be saved.
-            ->where('depots.status', 'active')
-            ->where('fuel_types.status', 'active')
-            ->whereRaw('purchase_items.quantity_ordered_liters > COALESCE(assigned_lifts.assigned_liters, 0)')
-            ->orderBy('purchases.purchase_code')
-            ->get([
-                'purchase_items.id',
-                'purchases.purchase_code',
-                'purchases.depot_id',
-                'depots.name as depot_name',
-                'depots.address as depot_address',
-                'fuel_types.name as fuel_name',
-                'purchase_items.fuel_type_id',
-                'purchase_items.quantity_ordered_liters',
-                DB::raw('COALESCE(assigned_lifts.assigned_liters, 0) as assigned_liters'),
-            ])
-            ->map(function (object $row): object {
-                $row->remaining_liters = round((float) $row->quantity_ordered_liters - (float) $row->assigned_liters, 2);
-                $row->label = $row->purchase_code.' | '.$this->formatLiters($row->remaining_liters).' remaining | '.$row->fuel_name.' | '.$row->depot_name;
-                $row->pickup_label = DepotLabel::make($row->depot_name, $row->depot_address);
-
-                return $row;
+                return $line;
             });
     }
 
@@ -597,22 +562,6 @@ class DispatchDeliveryController extends Controller
     private function truckForAssignment(int $truckId): ?object
     {
         return $this->truckAvailability->lockAssignableTruck($truckId);
-    }
-
-    private function remainingAssignablePurchaseItemQuantity(int $purchaseItemId, float $orderedLiters): float
-    {
-        DB::table('hauls')
-            ->where('purchase_item_id', $purchaseItemId)
-            ->lockForUpdate()
-            ->get(['id']);
-
-        $assignedLiters = (float) DB::table('hauls')
-            ->where('purchase_item_id', $purchaseItemId)
-            ->where('status', '!=', 'cancelled')
-            ->selectRaw('COALESCE(SUM(quantity_liters), 0) as assigned_liters')
-            ->value('assigned_liters');
-
-        return round(max(0, $orderedLiters - $assignedLiters), 2);
     }
 
     private function duplicateHaulExists(object $purchaseItem, int $driverId, int $truckId, float $quantity, CarbonImmutable $scheduledAt): bool

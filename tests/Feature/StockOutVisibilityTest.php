@@ -3,300 +3,97 @@
 namespace Tests\Feature;
 
 use App\Models\User;
-use App\Services\StockOutReleaseService;
 use Carbon\Carbon;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
-use Tests\TestCase;
+use Tests\Concerns\PurchaseFlows;
+use Tests\Feature\Audit\AuditTestCase;
 
 /**
- * Every Stock-Out source must surface in Inventory > Stock Out with its reference, date, fuel,
- * source location, quantity and status, and keep the inventory cards consistent.
- *
- * Haul allocations are inserted directly: no current app flow creates them (see the report),
- * everything downstream of the allocation goes through the normal HTTP routes.
+ * Inventory > Stock Out (Part 2 Button Revisions, October 22, 2026): Standard and Depot to Client deliveries both
+ * appear with their Delivery Type, the purchase each release was deducted from (the F1 portion names its F1
+ * purchase) and their delivery details: the order's truck, driver and date (Standard), or the lift's truck, driver,
+ * lift date, ATL and DR Number (Depot to Client).
  */
-class StockOutVisibilityTest extends TestCase
+class StockOutVisibilityTest extends AuditTestCase
 {
-    use RefreshDatabase;
+    use PurchaseFlows;
 
     protected function setUp(): void
     {
         parent::setUp();
-        Carbon::setTestNow('2026-10-12 09:00:00');
+        Carbon::setTestNow('2026-10-22 09:00:00');
     }
 
-    protected function tearDown(): void
+    public function test_stock_out_shows_both_delivery_types_with_delivery_details_and_purchase_ids(): void
     {
-        Carbon::setTestNow();
-        parent::tearDown();
-    }
+        $a = $this->actors();
+        DB::table('trucks')->where('id', $a['truck'])->update(['plate_number' => 'ABC-123']);
+        $premium = $this->purchaseLine($a, 'PREM', 20000);
+        $f1 = $this->purchaseLine($a, 'F1', 5000);
+        $codes = DB::table('purchase_items')->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')->pluck('purchases.purchase_code', 'purchase_items.id');
 
-    public function test_sale_delivered_from_garage_appears_in_stock_out_and_reduces_inventory(): void
-    {
-        $records = $this->records();
-        $this->receiveIntoGarage($records, 20000);
-        $saleId = $this->confirmedSale($records, 'SO-GARAGE', 6000);
+        // Standard: delivered by its own truck and driver, with a 10% F1 portion.
+        $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 2000, 'unit_price' => 50, 'f1_percentage' => 10, 'f1_purchase_item_id' => $f1, 'f1_unit_price' => 40], [
+            'sales_order_number' => 'SO-STANDARD', 'delivery_truck_id' => $a['truck'], 'delivery_driver_user_id' => $a['driver']->id, 'delivery_date' => '2026-10-21 14:00', 'delivery_status' => 'delivered',
+        ])->assertSessionHasNoErrors();
+        $standard = (string) DB::table('sales')->where('sales_order_number', 'SO-STANDARD')->value('sale_code');
 
-        $before = $this->cards($records['inventory']);
-        $this->assertSame('20,000 L', $before['Total Inventory']);
-        $this->assertSame('0 L', $before['Stock-Out Today']);
+        // Depot to Client: delivered by its lift.
+        $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 3000, 'unit_price' => 50], ['delivery_type' => 'depot_to_client', 'sales_order_number' => 'SO-DEPOT'])->assertSessionHasNoErrors();
+        $depot = DB::table('sales')->where('sales_order_number', 'SO-DEPOT')->first(['id', 'sale_code']);
+        $this->scheduleLift($a, [['purchase_item_id' => $premium, 'quantity_liters' => 10000, 'atl_number' => 'ATL-7788']], [(int) $depot->id])->assertSessionHasNoErrors();
+        $this->completeLift($a, $this->lastHaulId());
 
-        $this->actingAs($records['sales'])
-            ->patch(route('sales-officer.sales.delivery-status.update', $saleId), ['delivery_status' => 'delivered'])
-            ->assertRedirect(route('sales-officer.sales'))
-            ->assertSessionHasNoErrors();
+        foreach ([[$a['admin'], 'admin.inventory.stock-out'], [$a['inventory'], 'inventory-officer.inventory.stock-out']] as [$user, $route]) {
+            $rows = $this->stockOutRows($user, $route);
 
-        $stockOut = DB::table('stock_outs')->where('sale_id', $saleId)->first();
-        $this->assertSame('garage', $stockOut->source_type);
-        $this->assertSame('released', $stockOut->status);
-        $this->assertDatabaseHas('inventory_movements', ['reference_type' => 'stock_out', 'reference_id' => $stockOut->id, 'direction' => 'out', 'quantity_liters' => '6000.00']);
+            $main = $rows->first(fn (array $row): bool => $row['cells'][0] === $standard && $row['cells'][5] === 'Premium');
+            $this->assertSame(['Standard', 'Premium', $codes[$premium], '1,800.00'], [$main['cells'][4], $main['cells'][5], $main['cells'][6], $main['cells'][7]]);
+            $this->assertSame(['TRK-AUD / ABC-123', $a['driver']->name, '10/21/2026 02:00 PM', 'Delivered'], [$main['delivery']['truck'], $main['delivery']['driver'], $main['delivery']['date'], $main['delivery']['status']]);
+            // The F1 portion names its F1 purchase and is priced at the F1 Price.
+            $f1Row = $rows->first(fn (array $row): bool => $row['cells'][0] === $standard && $row['cells'][5] === 'F1 (F1 portion)');
+            $this->assertSame([$codes[$f1], '200.00', '40.00', '8,000.00'], [$f1Row['cells'][6], $f1Row['cells'][7], $f1Row['cells'][10], $f1Row['cells'][11]]);
 
-        $saleCode = (string) DB::table('sales')->where('id', $saleId)->value('sale_code');
-        foreach ([[$records['admin'], 'admin.inventory.stock-out'], [$records['inventory'], 'inventory-officer.inventory.stock-out']] as [$user, $route]) {
-            $row = $this->stockOutRow($user, $route, [], $saleCode);
-            $this->assertSame('10/12/2026 09:00 AM', $row[1]);
-            $this->assertSame('Diesel', $row[4]);
-            $this->assertSame('6,000.00', $row[5]);
-            // Part 8: a release from a stock lot names the lot's purchase after the tank.
-            $this->assertStringStartsWith('Garage — '.$records['garageName'].' · PUR-', $row[11]);
-            $this->assertSame('Released', $row[12]);
+            $lifted = $rows->first(fn (array $row): bool => $row['cells'][0] === $depot->sale_code);
+            $this->assertSame(['Depot to Client', $codes[$premium], '3,000.00'], [$lifted['cells'][4], $lifted['cells'][6], $lifted['cells'][7]]);
+            $this->assertSame(['TRK-AUD / ABC-123', $a['driver']->name, 'ATL-7788', 'DR-2026-001', 'Delivered'], [$lifted['delivery']['truck'], $lifted['delivery']['driver'], $lifted['delivery']['atl'], $lifted['delivery']['dr'], $lifted['delivery']['status']]);
         }
 
-        $after = $this->cards($records['inventory']);
-        $this->assertSame('14,000 L', $after['Total Inventory']);
-        $this->assertSame('6,000 L', $after['Stock-Out Today']);
+        // The Delivery Type filter.
+        $rows = $this->stockOutRows($a['inventory'], 'inventory-officer.inventory.stock-out', ['delivery_type' => 'depot_to_client']);
+        $this->assertSame([$depot->sale_code], $rows->pluck('cells.0')->unique()->values()->all());
+        $this->actingAs($a['inventory'])->get(route('inventory-officer.inventory.stock-out'))->assertOk()
+            ->assertSee('<th>Delivery Type</th>', false)->assertSee('<th>Purchase ID</th>', false)->assertSee('Delivery / Lift Date');
 
-        // Filters: search, date and fuel include/exclude it; a depot filter cannot match a pooled garage release.
-        $this->assertNotNull($this->stockOutRow($records['admin'], 'admin.inventory.stock-out', ['search' => $saleCode], $saleCode));
-        $this->assertNotNull($this->stockOutRow($records['admin'], 'admin.inventory.stock-out', ['search' => $records['garageName']], $saleCode));
-        $this->assertNull($this->stockOutRow($records['admin'], 'admin.inventory.stock-out', ['search' => 'NO-SUCH-REF'], $saleCode));
-        $this->assertNotNull($this->stockOutRow($records['admin'], 'admin.inventory.stock-out', ['date' => '2026-10-12'], $saleCode));
-        $this->assertNull($this->stockOutRow($records['admin'], 'admin.inventory.stock-out', ['date' => '2026-10-11'], $saleCode));
-        $this->assertNotNull($this->stockOutRow($records['admin'], 'admin.inventory.stock-out', ['fuel_type_id' => $records['fuel']], $saleCode));
-        $this->assertNull($this->stockOutRow($records['admin'], 'admin.inventory.stock-out', ['fuel_type_id' => $records['otherFuel']], $saleCode));
-        $this->assertNull($this->stockOutRow($records['admin'], 'admin.inventory.stock-out', ['depot_id' => $records['depot']], $saleCode));
-        $this->assertNotNull($this->stockOutRow($records['admin'], 'admin.inventory.stock-out', ['status' => 'released'], $saleCode));
-    }
-
-    public function test_sale_delivered_from_direct_depot_allocation_appears_in_stock_out_without_touching_garage(): void
-    {
-        $records = $this->records();
-        $this->receiveIntoGarage($records, 20000);
-        $saleId = $this->confirmedSale($records, 'SO-DIRECT', 5000);
-        $this->completedHaul($records, 'LFT-DIRECT', 5000, ['destination_type' => 'customer', 'sale_id' => $saleId, 'customer_id' => $records['customer']]);
-
-        $this->actingAs($records['sales'])
-            ->patch(route('sales-officer.sales.delivery-status.update', $saleId), ['delivery_status' => 'delivered'])
-            ->assertSessionHasNoErrors();
-
-        $stockOut = DB::table('stock_outs')->where('sale_id', $saleId)->first();
-        $this->assertSame('depot', $stockOut->source_type);
-        $this->assertSame((int) $records['depot'], (int) $stockOut->depot_id);
-        $this->assertNull($stockOut->inventory_movement_id);
-
-        $saleCode = (string) DB::table('sales')->where('id', $saleId)->value('sale_code');
-        $row = $this->stockOutRow($records['inventory'], 'inventory-officer.inventory.stock-out', [], $saleCode);
-        $this->assertSame('5,000.00', $row[5]);
-        $this->assertSame('Depot — Southern Terminal', $row[11]);
-        $this->assertSame('Released', $row[12]);
-
-        // Direct releases never enter the garage, so the garage-based cards do not move.
-        $cards = $this->cards($records['inventory']);
+        // Summary cards follow the purchases: 25,000 L bought, 1,800 + 3,000 Premium and 200 F1 delivered.
+        $cards = $this->cards($a['inventory']);
         $this->assertSame('20,000 L', $cards['Total Inventory']);
-        $this->assertSame('0 L', $cards['Stock-Out Today']);
-
-        $this->assertNotNull($this->stockOutRow($records['admin'], 'admin.inventory.stock-out', ['depot_id' => $records['depot']], $saleCode));
-        $this->assertNotNull($this->stockOutRow($records['admin'], 'admin.inventory.stock-out', ['search' => 'Southern Terminal'], $saleCode));
-        $this->assertNull($this->stockOutRow($records['admin'], 'admin.inventory.stock-out', ['depot_id' => $records['otherDepot']], $saleCode));
-
-        // The lift behind the release is reflected in Ledger > Transaction.
-        $this->actingAs($records['admin'])->get(route('admin.ledger'))
-            ->assertOk()
-            ->assertViewHas('transactions', fn ($rows): bool => $rows->contains(fn (array $row): bool => $row['purchase_code'] === 'PUR-LFT-DIRECT' && $row['lifted_liters'] === '5,000 L'));
+        $this->assertSame('5,000 L', $cards['Stock-Out Today']);
     }
 
-    public function test_automatic_garage_stock_out_appears_in_stock_out_and_reduces_inventory(): void
+    public function test_a_cancelled_sale_keeps_its_stock_out_visible_as_cancelled_and_restores_the_purchase(): void
     {
-        $records = $this->records();
-        $this->receiveIntoGarage($records, 20000);
-        [$saleId, $saleItemId] = $this->deliveredUnfulfilledSale($records, 'SO-MANUAL-GARAGE', 3000);
+        $a = $this->actors();
+        $diesel = $this->purchaseLine($a, 'DSL', 10000);
+        $this->recordOrder($a, ['purchase_item_id' => $diesel, 'quantity_liters' => 4000, 'unit_price' => 60], ['sales_order_number' => 'SO-VOID', 'delivery_status' => 'delivered'])->assertSessionHasNoErrors();
+        $sale = DB::table('sales')->where('sales_order_number', 'SO-VOID')->first(['id', 'sale_code']);
+        $this->assertSame(6000.0, $this->remaining($diesel));
 
-        $this->assertNull($this->release($records, $saleItemId, 3000, '2026-10-12 08:30:00'));
+        $this->actingAs($a['sales'])->patch(route('sales-officer.sales.cancel', $sale->id), ['cancel_reason' => 'customer_cancelled'])->assertRedirect(route('sales-officer.sales'));
 
-        $row = $this->stockOutRow($records['admin'], 'admin.inventory.stock-out', [], 'SLS-SO-MANUAL-GARAGE');
-        $this->assertSame('10/12/2026 08:30 AM', $row[1]);
-        $this->assertSame('3,000.00', $row[5]);
-        $this->assertSame('Garage — '.$records['garageName'], $row[11]);
-        $this->assertSame('Released', $row[12]);
-
-        $cards = $this->cards($records['inventory']);
-        $this->assertSame('17,000 L', $cards['Total Inventory']);
-        $this->assertSame('3,000 L', $cards['Stock-Out Today']);
-    }
-
-    public function test_automatic_direct_depot_release_appears_in_stock_out(): void
-    {
-        $records = $this->records();
-        [$saleId, $saleItemId] = $this->deliveredUnfulfilledSale($records, 'SO-MANUAL-DEPOT', 4000);
-        $allocationId = $this->completedHaul($records, 'LFT-MANUAL', 4000, ['destination_type' => 'customer', 'sale_id' => $saleId, 'customer_id' => $records['customer']]);
-
-        $this->assertNull($this->release($records, $saleItemId, 4000, '2026-10-12 08:45:00'));
-
-        $row = $this->stockOutRow($records['inventory'], 'inventory-officer.inventory.stock-out', ['depot_id' => $records['depot']], 'SLS-SO-MANUAL-DEPOT');
-        $this->assertSame('4,000.00', $row[5]);
-        $this->assertSame('Depot — Southern Terminal', $row[11]);
-        $this->assertSame('Released', $row[12]);
-        $this->assertDatabaseHas('haul_allocations', ['id' => $allocationId, 'status' => 'delivered']);
-    }
-
-    public function test_cancelled_sale_keeps_its_stock_out_visible_as_cancelled_and_restores_inventory(): void
-    {
-        $records = $this->records();
-        $this->receiveIntoGarage($records, 20000);
-        $saleId = $this->confirmedSale($records, 'SO-CANCEL', 2000);
-        $this->actingAs($records['sales'])->patch(route('sales-officer.sales.delivery-status.update', $saleId), ['delivery_status' => 'delivered']);
-
-        $this->actingAs($records['sales'])
-            ->patch(route('sales-officer.sales.cancel', $saleId), ['cancel_reason' => 'other', 'cancel_note' => 'Customer returned order'])
-            ->assertSessionHasNoErrors();
-
-        $saleCode = (string) DB::table('sales')->where('id', $saleId)->value('sale_code');
-        $row = $this->stockOutRow($records['admin'], 'admin.inventory.stock-out', [], $saleCode);
-        $this->assertSame('2,000.00', $row[5]);
-        $this->assertSame('Cancelled', $row[12]);
-        $this->assertNull($this->stockOutRow($records['admin'], 'admin.inventory.stock-out', ['status' => 'released'], $saleCode));
-        $this->assertNotNull($this->stockOutRow($records['admin'], 'admin.inventory.stock-out', ['status' => 'cancelled'], $saleCode));
-
-        $cards = $this->cards($records['inventory']);
-        $this->assertSame('20,000 L', $cards['Total Inventory']);
-        $this->assertSame('0 L', $cards['Stock-Out Today']);
+        $row = $this->stockOutRows($a['inventory'], 'inventory-officer.inventory.stock-out')->first(fn (array $row): bool => $row['cells'][0] === $sale->sale_code);
+        $this->assertSame('Cancelled', $row['cells'][14]);
+        $this->assertSame('—', $row['cells'][15]);
+        $this->assertSame(10000.0, $this->remaining($diesel));
     }
 
     /**
-     * @return array<string, mixed>
-     */
-    private function records(): array
-    {
-        $admin = User::factory()->create(['role' => 'admin', 'status' => 'active', 'approval_status' => 'approved']);
-        $inventory = User::factory()->create(['role' => 'inventory_officer', 'status' => 'active', 'approval_status' => 'approved']);
-        $sales = User::factory()->create(['role' => 'sales_officer', 'status' => 'active', 'approval_status' => 'approved']);
-        $driver = User::factory()->create(['role' => 'driver', 'status' => 'active', 'approval_status' => 'approved']);
-        $depot = DB::table('depots')->insertGetId(['depot_code' => 'DEP-SO', 'name' => 'Southern Terminal', 'status' => 'active', 'created_at' => now(), 'updated_at' => now()]);
-        $otherDepot = DB::table('depots')->insertGetId(['depot_code' => 'DEP-SO-2', 'name' => 'Northern Terminal', 'status' => 'active', 'created_at' => now(), 'updated_at' => now()]);
-        $fuel = (int) DB::table('fuel_types')->where('code', 'DSL')->value('id');
-        $otherFuel = (int) DB::table('fuel_types')->where('code', 'UNL')->value('id');
-        $garage = (int) DB::table('storage_locations')->where('type', 'garage')->where('fuel_type_id', $fuel)->where('status', 'active')->value('id')
-            ?: DB::table('storage_locations')->insertGetId(['location_code' => 'GAR-SO', 'name' => 'Diesel Tank 1', 'type' => 'garage', 'fuel_type_id' => $fuel, 'status' => 'active', 'created_at' => now(), 'updated_at' => now()]);
-        $garageName = (string) DB::table('storage_locations')->where('id', $garage)->value('name');
-        $truck = DB::table('trucks')->insertGetId(['truck_code' => 'TRK-SO', 'capacity_liters' => 40000, 'truck_type' => 'hauling', 'status' => 'available', 'created_at' => now(), 'updated_at' => now()]);
-        $customer = DB::table('customers')->insertGetId(['customer_code' => 'CUS-SO', 'name' => 'Stock Out Customer', 'company_name' => 'Stock Out Co.', 'payment_status' => 'clear', 'status' => 'active', 'created_at' => now(), 'updated_at' => now()]);
-
-        $this->assertGreaterThan(0, $fuel);
-        $this->assertGreaterThan(0, $otherFuel);
-
-        return compact('admin', 'inventory', 'sales', 'driver', 'depot', 'otherDepot', 'fuel', 'otherFuel', 'garage', 'garageName', 'truck', 'customer');
-    }
-
-    /**
-     * Purchase + completed lift (+ allocation) at the Southern Terminal. Returns the allocation id.
-     *
-     * @param  array<string, mixed>  $records
-     * @param  array<string, mixed>  $allocation
-     */
-    private function completedHaul(array $records, string $code, float $quantity, array $allocation): int
-    {
-        $purchaseId = DB::table('purchases')->insertGetId([
-            'purchase_code' => 'PUR-'.$code, 'depot_id' => $records['depot'], 'purchase_date' => '2026-10-10', 'payment_status' => 'paid',
-            'status' => 'hauled', 'workflow_status' => 'completed', 'created_by' => $records['inventory']->id, 'created_at' => now(), 'updated_at' => now(),
-        ]);
-        $itemId = DB::table('purchase_items')->insertGetId([
-            'purchase_id' => $purchaseId, 'fuel_type_id' => $records['fuel'], 'quantity_ordered_liters' => $quantity, 'unit_cost' => 50,
-            'line_total' => $quantity * 50, 'quantity_hauled_liters' => $quantity, 'status' => 'lifted', 'created_at' => now(), 'updated_at' => now(),
-        ]);
-        $haulId = DB::table('hauls')->insertGetId([
-            'haul_code' => $code, 'purchase_id' => $purchaseId, 'purchase_item_id' => $itemId, 'depot_id' => $records['depot'],
-            'fuel_type_id' => $records['fuel'], 'truck_id' => $records['truck'], 'driver_user_id' => $records['driver']->id,
-            'scheduled_at' => '2026-10-11 07:00:00', 'hauled_at' => '2026-10-11 10:00:00', 'quantity_liters' => $quantity,
-            'status' => 'completed', 'created_at' => now(), 'updated_at' => now(),
-        ]);
-
-        return DB::table('haul_allocations')->insertGetId(array_merge([
-            'haul_id' => $haulId, 'fuel_type_id' => $records['fuel'], 'quantity_liters' => $quantity,
-            'allocated_at' => '2026-10-11 10:00:00', 'status' => 'planned', 'created_at' => now(), 'updated_at' => now(),
-        ], $allocation));
-    }
-
-    /**
-     * @param  array<string, mixed>  $records
-     */
-    private function receiveIntoGarage(array $records, float $quantity): void
-    {
-        $allocationId = $this->completedHaul($records, 'LFT-GARAGE-'.Str::upper(Str::random(4)), $quantity, [
-            'destination_type' => 'garage', 'storage_location_id' => $records['garage'],
-        ]);
-
-        $this->actingAs($records['inventory'])->post(route('inventory-officer.inventory.stock-in.store'), [
-            'idempotency_key' => (string) Str::uuid(),
-            'haul_allocation_id' => $allocationId,
-            'storage_location_id' => $records['garage'],
-            'quantity_liters' => $quantity,
-            'movement_date' => '2026-10-11 12:00:00',
-        ])->assertSessionHasNoErrors();
-    }
-
-    /**
-     * @param  array<string, mixed>  $records
-     */
-    private function confirmedSale(array $records, string $orderNumber, float $quantity): int
-    {
-        $this->actingAs($records['sales'])->post(route('sales-officer.sales.store'), [
-            'idempotency_key' => (string) Str::uuid(),
-            'sales_order_number' => $orderNumber,
-            'customer_id' => $records['customer'],
-            'sale_date' => '2026-10-12',
-            'items' => [['fuel_type_id' => $records['fuel'], 'quantity_liters' => $quantity, 'unit_price' => 60]],
-            'amount_paid' => 0,
-            'payment_method' => 'cash_on_delivery',
-            'payment_terms' => 'installment',
-            'status' => 'confirmed',
-        ])->assertSessionHasNoErrors();
-
-        return (int) DB::table('sales')->where('sales_order_number', $orderNumber)->value('id');
-    }
-
-    /**
-     * A delivered sale that still has quantity to release, the state the manual Stock-Out form serves.
-     *
-     * @param  array<string, mixed>  $records
-     * @return array{0: int, 1: int}
-     */
-    private function deliveredUnfulfilledSale(array $records, string $orderNumber, float $quantity): array
-    {
-        $saleId = DB::table('sales')->insertGetId([
-            'sale_code' => 'SLS-'.$orderNumber, 'sales_order_number' => $orderNumber, 'customer_id' => $records['customer'], 'sale_date' => '2026-10-12',
-            'payment_method' => 'cash_on_delivery', 'payment_terms' => 'cod', 'status' => 'confirmed', 'delivery_status' => 'delivered',
-            'created_by' => $records['sales']->id, 'created_at' => now(), 'updated_at' => now(),
-        ]);
-        $saleItemId = DB::table('sale_items')->insertGetId([
-            'sale_id' => $saleId, 'fuel_type_id' => $records['fuel'], 'quantity_liters' => $quantity, 'unit_price' => 60,
-            'line_total' => $quantity * 60, 'fulfilled_quantity_liters' => 0, 'created_at' => now(), 'updated_at' => now(),
-        ]);
-        DB::table('receivables')->insert(['sale_id' => $saleId, 'status' => 'pending', 'created_at' => now(), 'updated_at' => now()]);
-
-        return [$saleId, $saleItemId];
-    }
-
-    /**
-     * Returns the Stock Out row cells whose reference matches, or null when the row is not listed.
-     *
      * @param  array<string, mixed>  $query
-     * @return array<int, string>|null
+     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
      */
-    private function stockOutRow(User $user, string $route, array $query, string $reference): ?array
+    private function stockOutRows(User $user, string $route, array $query = [])
     {
-        $rows = null;
+        $rows = collect();
         $this->actingAs($user)->get(route($route, $query))
             ->assertOk()
             ->assertViewHas('stockOut', function ($paginator) use (&$rows): bool {
@@ -305,7 +102,7 @@ class StockOutVisibilityTest extends TestCase
                 return true;
             });
 
-        return $rows->first(fn (array $row): bool => $row['cells'][0] === $reference)['cells'] ?? null;
+        return $rows;
     }
 
     /**
@@ -323,17 +120,5 @@ class StockOutVisibilityTest extends TestCase
             });
 
         return $cards;
-    }
-
-    /**
-     * Stock-out is automatic on delivery: release through the same service the sale flow uses.
-     *
-     * @param  array<string, mixed>  $records
-     */
-    private function release(array $records, int $saleItemId, float $quantity, string $stockOutAt): ?string
-    {
-        return DB::transaction(fn (): ?string => app(StockOutReleaseService::class)->releaseSaleItemFromGarage(
-            $saleItemId, $quantity, $stockOutAt, (int) $records['inventory']->id, allowPreparation: false,
-        ));
     }
 }

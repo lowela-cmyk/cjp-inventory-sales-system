@@ -59,15 +59,11 @@ class WorkflowSmokeTestService
             $records = $this->createMasterData($prefix);
             $purchase = $this->createPurchase($records, $prefix, 20000.0);
             $haul = $this->createCompletedHaul($records, $purchase, $prefix, 20000.0);
-            $allocationId = $this->createGarageAllocation($records, $haul, 20000.0);
 
-            $initialBalance = $this->garageBalance($records);
-
-            $this->recordStockIn($records, $allocationId, 20000.0);
-            $this->assertSame(round($initialBalance + 20000.0, 2), $this->garageBalance($records), 'garage balance after stock-in');
-
-            $sale = $this->createSaleWithAutomaticGarageRelease($records, $prefix, 12000.0, 6.25);
-            $this->assertSame(round($initialBalance + 8000.0, 2), $this->garageBalance($records), 'garage balance after automatic stock-out');
+            // Part 2 revisions: stock is the purchase's remaining liters; a delivered sale deducts from it once.
+            $initialRemaining = $this->purchaseRemaining($purchase);
+            $sale = $this->createSaleWithAutomaticGarageRelease($records, $prefix, 12000.0, 6.25, $purchase);
+            $this->assertSame(round($initialRemaining - 12000.0, 2), $this->purchaseRemaining($purchase), 'purchase remaining after delivery');
 
             $this->recordPayment($records, $sale, 75000.0, $prefix);
 
@@ -75,19 +71,11 @@ class WorkflowSmokeTestService
                 'purchase_code' => $purchase['code'],
                 'haul_code' => $haul['code'],
                 'sale_code' => $sale['code'],
-                'stock_in_movements' => DB::table('inventory_movements')
-                    ->where('reference_type', 'haul_allocation')
-                    ->where('reference_id', $allocationId)
-                    ->count(),
                 'stock_outs' => DB::table('stock_outs')
                     ->where('sale_id', $sale['id'])
                     ->where('status', 'released')
                     ->count(),
-                'stock_out_movements' => DB::table('inventory_movements')
-                    ->where('reference_type', 'stock_out')
-                    ->whereIn('reference_id', DB::table('stock_outs')->where('sale_id', $sale['id'])->pluck('id'))
-                    ->count(),
-                'garage_balance_liters' => $this->garageBalance($records),
+                'purchase_remaining_liters' => $this->purchaseRemaining($purchase),
                 'sale_total' => $this->saleTotal($sale['id']),
                 'paid_total' => $this->paidTotal($sale['id']),
                 'receivable_status' => DB::table('receivables')->where('sale_id', $sale['id'])->value('status'),
@@ -95,9 +83,8 @@ class WorkflowSmokeTestService
                 'overpaid_sales' => $this->overpaidSales(),
             ];
 
-            $this->assertSame(1, (int) $checks['stock_in_movements'], 'stock-in movement count');
             $this->assertSame(1, (int) $checks['stock_outs'], 'stock-out count');
-            $this->assertSame(1, (int) $checks['stock_out_movements'], 'stock-out movement count');
+            $this->assertSame(8000.0, (float) $checks['purchase_remaining_liters'], 'purchase remaining liters');
             $this->assertSame(75000.0, (float) $checks['sale_total'], 'sale total');
             $this->assertSame(75000.0, (float) $checks['paid_total'], 'paid total');
             $this->assertSame('clear', (string) $checks['receivable_status'], 'receivable status');
@@ -311,58 +298,9 @@ class WorkflowSmokeTestService
 
     /**
      * @param  array<string, mixed>  $records
-     * @param  array{id: int, code: string}  $haul
+     * @param  array<string, mixed>  $purchase
      */
-    private function createGarageAllocation(array $records, array $haul, float $quantity): int
-    {
-        return DB::table('haul_allocations')->insertGetId([
-            'haul_id' => $haul['id'],
-            'fuel_type_id' => $records['fuel_type_id'],
-            'destination_type' => 'garage',
-            'storage_location_id' => $records['garage_id'],
-            'customer_id' => null,
-            'sale_id' => null,
-            'quantity_liters' => $quantity,
-            'allocated_at' => now(),
-            'status' => 'delivered',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-    }
-
-    /**
-     * @param  array<string, mixed>  $records
-     */
-    private function recordStockIn(array $records, int $allocationId, float $quantity): void
-    {
-        DB::table('inventory_movements')->insert([
-            'movement_code' => $this->code('MOV'),
-            'storage_location_id' => $records['garage_id'],
-            'fuel_type_id' => $records['fuel_type_id'],
-            'movement_type' => 'stock_in',
-            'direction' => 'in',
-            'quantity_liters' => $quantity,
-            'unit_cost' => 50,
-            'reference_type' => 'haul_allocation',
-            'reference_id' => $allocationId,
-            'movement_date' => now(),
-            'remarks' => 'Rollback smoke stock-in',
-            'created_by' => $records['inventory_officer_id'],
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
-        DB::table('haul_allocations')->where('id', $allocationId)->update([
-            'status' => 'received',
-            'updated_at' => now(),
-        ]);
-    }
-
-    /**
-     * @param  array<string, mixed>  $records
-     * @return array{id: int, item_id: int, code: string}
-     */
-    private function createSaleWithAutomaticGarageRelease(array $records, string $prefix, float $quantity, float $unitPrice): array
+    private function createSaleWithAutomaticGarageRelease(array $records, string $prefix, float $quantity, float $unitPrice, array $purchase): array
     {
         $saleCode = $prefix.'-SLS';
         $saleId = DB::table('sales')->insertGetId([
@@ -374,6 +312,7 @@ class WorkflowSmokeTestService
             'payment_terms' => 'cod',
             'status' => 'confirmed',
             'delivery_status' => 'pending',
+            'delivery_type' => 'standard',
             'created_by' => $records['sales_officer_id'],
             'created_at' => now(),
             'updated_at' => now(),
@@ -382,7 +321,9 @@ class WorkflowSmokeTestService
         $saleItemId = DB::table('sale_items')->insertGetId([
             'sale_id' => $saleId,
             'fuel_type_id' => $records['fuel_type_id'],
+            'purchase_item_id' => $purchase['item_id'],
             'quantity_liters' => $quantity,
+            'main_quantity_liters' => $quantity,
             'unit_price' => $unitPrice,
             'line_total' => round($quantity * $unitPrice, 2),
             'fulfilled_quantity_liters' => 0,
@@ -439,15 +380,11 @@ class WorkflowSmokeTestService
     }
 
     /**
-     * @param  array<string, mixed>  $records
+     * @param  array<string, mixed>  $purchase
      */
-    private function garageBalance(array $records): float
+    private function purchaseRemaining(array $purchase): float
     {
-        return round((float) DB::table('inventory_movements')
-            ->where('storage_location_id', $records['garage_id'])
-            ->where('fuel_type_id', $records['fuel_type_id'])
-            ->selectRaw("COALESCE(SUM(CASE WHEN direction = 'in' THEN quantity_liters ELSE -quantity_liters END), 0) as balance")
-            ->value('balance'), 2);
+        return (float) (app(PurchaseStockService::class)->line((int) $purchase['item_id'])->on_hand ?? 0);
     }
 
     private function saleTotal(int $saleId): float

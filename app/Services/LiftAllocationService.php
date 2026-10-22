@@ -2,245 +2,118 @@
 
 namespace App\Services;
 
-use App\Support\F1Split;
-use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Allocation of each lift, entered when the lift is scheduled (audit C01). One haul_allocations row per lift row:
- * - Depot to Garage: liters going into a chosen garage tank. Completing the lift posts the stock-in.
- * - Depot to Client (restored in Part 9): liters released straight from the depot to a Depot to Client sale.
- *   Completing the lift marks it delivered and releases it against the sale (see settle()).
- * The lift rows of a purchase add up to at most its Amount to Lift (Part 9, October 20). Liters not allocated stay on
- * the truck as remaining load: Amount to Lift - Depot to Garage - Depot to Client (see loadSummaryByHaul()).
- * Every garage tank holds at most 24,000 L: a Depot to Garage row can't exceed the tank's free space, counting the
- * other rows of the schedule and lifts already scheduled to it, and completing the lift re-checks it (StockInService).
- * A Depot to Client order with an F1 portion (Part 9) loads that F1 at the garage onto the same truck: the first
- * lift row for the order carries the F1 liters and the garage F1 tank, and completing the lift deducts them.
- * A lift scheduled without any rows or tank (older clients) gets its full quantity on the fuel's default tank
- * with receive_on_completion = false, so it waits under Pending Garage Receipts for the Inventory Officer to
- * confirm the tank ("Assign Tank").
+ * Depot to Client deliveries of a lift (Part 2 Button Revisions, October 22, 2026). Tanks and garage allocation are
+ * retired: a lift carries the fuel of its purchases, and each "Delivery Details" row hands one open Depot to Client
+ * order to the truck (one haul_allocations row, destination "customer", for the order's whole open quantity).
+ *
+ * - An order may ride on one lift only, and only on a lift that carries its purchase (or, for an order recorded
+ *   before purchases were chosen, a purchase of its fuel).
+ * - Deliveries add up to at most the Amount to Lift; what is left stays on the truck
+ *   (Fuel Remaining in Truck = Amount to Lift - deliveries).
+ * - Completing the lift delivers the orders: SaleConfirmationService deducts each order's liters from its purchases
+ *   exactly once (its own fuel from its purchase, its F1 portion from its F1 purchase). The lift itself deducts nothing.
  */
 class LiftAllocationService
 {
-    /** Sale statuses that can still take a direct depot delivery. */
+    /** Sale statuses that can still take a delivery. */
     private const OPEN_SALE_STATUSES = ['confirmed', 'partially_paid', 'paid', 'unpaid'];
 
     public function __construct(
-        private readonly StockInService $stockIn,
-        private readonly SaleConfirmationService $saleConfirmation,
-        private readonly GarageTankService $garageTanks,
-        private readonly StockOutReleaseService $stockOutRelease
+        private readonly SaleConfirmationService $saleConfirmation
     ) {}
 
     /**
-     * Active garage tanks with their stock, capacity (24,000 L) and free space: capacity - stock - liters already
-     * scheduled to the tank but not received yet.
-     *
-     * @return Collection<int, \stdClass>
-     */
-    public function tankOptions(): Collection
-    {
-        $balances = $this->garageTanks->balances();
-        $incoming = $this->incomingByTank();
-
-        return DB::table('storage_locations')
-            ->where('type', 'garage')
-            ->where('status', 'active')
-            ->whereNotNull('fuel_type_id')
-            ->orderBy('fuel_type_id')
-            ->orderBy('tank_number')
-            ->get(['id', 'name', 'fuel_type_id', 'tank_number', 'capacity_liters'])
-            ->map(function (object $tank) use ($balances, $incoming): object {
-                $tank->capacity_liters = GarageTankService::capacity($tank->capacity_liters);
-                $tank->balance_liters = round((float) ($balances[$tank->id] ?? 0), 2);
-                $tank->incoming_liters = round((float) ($incoming[$tank->id] ?? 0), 2);
-                $tank->free_liters = round(max(0, $tank->capacity_liters - $tank->balance_liters - $tank->incoming_liters), 2);
-                $tank->label = $tank->name.' | stock '.number_format($tank->balance_liters, 2).' L | capacity '.number_format($tank->capacity_liters, 2).' L'
-                    .($tank->incoming_liters > 0 ? ' | incoming '.number_format($tank->incoming_liters, 2).' L' : '')
-                    .' | free '.number_format($tank->free_liters, 2).' L';
-
-                return $tank;
-            });
-    }
-
-    /**
-     * Load of each lift: liters allocated to garage tanks (Depot to Garage), released to clients (Depot to Client)
-     * and the rest, which stays on the truck. Cancelled rows count for nothing; a lift without rows has 0 / 0.
-     *
-     * @param  array<int, int>  $haulIds
-     * @return array<int, array{allocated: float, delivered: float, remaining: float}>
-     */
-    public function loadSummaryByHaul(array $haulIds): array
-    {
-        if ($haulIds === []) {
-            return [];
-        }
-
-        $totals = DB::table('haul_allocations')
-            ->whereIn('haul_id', $haulIds)
-            ->where('status', '!=', 'cancelled')
-            ->selectRaw("haul_id, COALESCE(SUM(CASE WHEN destination_type = 'garage' THEN quantity_liters ELSE 0 END), 0) as allocated, COALESCE(SUM(CASE WHEN destination_type = 'customer' THEN quantity_liters ELSE 0 END), 0) as delivered")
-            ->groupBy('haul_id')
-            ->get()
-            ->keyBy('haul_id');
-
-        return DB::table('hauls')
-            ->whereIn('id', $haulIds)
-            ->pluck('quantity_liters', 'id')
-            ->map(function (mixed $quantity, int $haulId) use ($totals): array {
-                $allocated = round((float) ($totals[$haulId]->allocated ?? 0), 2);
-                $delivered = round((float) ($totals[$haulId]->delivered ?? 0), 2);
-
-                return ['allocated' => $allocated, 'delivered' => $delivered, 'remaining' => round(max(0, (float) $quantity - $allocated - $delivered), 2)];
-            })
-            ->all();
-    }
-
-    /**
-     * Open Depot to Client sale lines a lift row can be released to, with the liters not yet lifted for them.
-     * Label: "Customer / Sales Order No." as on the System Analysis mockup.
+     * Open Depot to Client orders not on a lift yet: "Customer · Sales Order No.", with the purchase they come from
+     * and their Ordered Quantity ("PREMIUM - 4,000.00 L").
      *
      * @return Collection<int, \stdClass>
      */
     public function directSaleOptions(): Collection
     {
-        return DB::table('sale_items')
-            ->join('sales', 'sales.id', '=', 'sale_items.sale_id')
-            ->join('customers', 'customers.id', '=', 'sales.customer_id')
-            ->join('fuel_types', 'fuel_types.id', '=', 'sale_items.fuel_type_id')
-            ->where('sales.delivery_type', 'depot_to_client')
-            ->whereNull('sales.deleted_at')
-            ->whereIn('sales.status', self::OPEN_SALE_STATUSES)
-            ->whereNotIn('sales.delivery_status', ['delivered', 'cancelled'])
-            ->orderByDesc('sales.sale_date')
-            ->orderByDesc('sales.id')
-            ->get(['sales.id as sale_id', 'sales.sale_code', 'sales.sales_order_number', 'sale_items.fuel_type_id', 'fuel_types.name as fuel_name', 'customers.name as customer_name', 'customers.company_name'])
-            ->unique(fn (object $row): string => $row->sale_id.'|'.$row->fuel_type_id)
-            ->map(function (object $row): object {
-                $row->open_liters = $this->openDirectLiters((int) $row->sale_id, (int) $row->fuel_type_id);
-                $row->f1_liters = $this->unassignedF1Liters((int) $row->sale_id);
-                $row->label = ($row->company_name ?: $row->customer_name).' / '.($row->sales_order_number ?: $row->sale_code)
-                    .' | '.$row->fuel_name.' | '.number_format($row->open_liters, 2).' L open'
-                    .($row->f1_liters > 0 ? ' + F1 '.number_format($row->f1_liters, 2).' L at garage' : '');
+        return $this->openDirectSales()
+            ->map(function (object $sale): object {
+                $sale->label = ($sale->customer_name ?: $sale->company_name).' · '.($sale->sales_order_number ?: $sale->sale_code);
+                $sale->ordered_label = mb_strtoupper((string) $sale->fuel_name).' - '.number_format($sale->open_liters, 2).' L';
 
-                return $row;
+                return $sale;
             })
-            ->filter(fn (object $row): bool => $row->open_liters > 0)
             ->values();
     }
 
     /**
-     * Normalizes each Schedule Lift line into its lift rows and validates them. A line sends either:
-     * - lifts[]: rows of type "garage" (storage_location_id) or "client" (sale_id), each with quantity_liters,
-     *   adding up to at most the line's Amount to Lift; the rest stays on the truck (Part 9);
-     * - storage_location_id only: the whole Amount to Lift goes to that tank (Part 8 clients);
-     * - neither: the whole Amount to Lift waits on the fuel's default tank for the Inventory Officer.
-     * Field errors are keyed per row (items.N.lifts.M.storage_location_id, items.N.lifts.M.quantity_liters, ...).
+     * Validates the Delivery Details rows of a Schedule Lift and assigns each order to the lift line carrying its
+     * purchase. Field errors are keyed deliveries.N.sale_id; the total is keyed "deliveries".
      *
-     * @param  array<int, array<string, mixed>>  $lines  each with purchase_item_id, quantity_liters and lifts[] or storage_location_id
+     * @param  array<int, array<string, mixed>>  $deliveries  each with sale_id
+     * @param  array<int, array{purchase_item_id: int, quantity_liters: float}>  $lines  the lift's purchases
      * @param  array<int, int>  $fuelTypeByItem  purchase_item_id => fuel_type_id
-     * @return array<int, array<int, array{destination_type: string, storage_location_id: ?int, sale_id: ?int, customer_id: ?int, quantity_liters: float, receive_on_completion: bool, f1_storage_location_id?: ?int, f1_quantity_liters?: float}>>
+     * @return array<int, array<int, array{sale_id: int, customer_id: int, quantity_liters: float}>> line index => rows
      *
      * @throws ValidationException
      */
-    public function resolveLines(array $lines, array $fuelTypeByItem): array
+    public function resolveDeliveries(array $deliveries, array $lines, array $fuelTypeByItem): array
     {
         $errors = [];
         $resolved = [];
-        $tanks = $this->tankOptions()->keyBy('id');
-        $requestedByTank = [];
-        $requestedBySale = [];
-        $f1AssignedBySale = [];
-        $f1RequestedByTank = [];
+        $open = $this->openDirectSales(true)->keyBy('sale_id');
+        $seen = [];
+        $total = 0.0;
 
-        foreach ($lines as $index => $line) {
-            $quantity = round((float) $line['quantity_liters'], 2);
-            $fuelTypeId = (int) ($fuelTypeByItem[(int) $line['purchase_item_id']] ?? 0);
-            $rows = $line['lifts'] ?? null;
+        foreach (array_values($deliveries) as $index => $delivery) {
+            $saleId = (int) ($delivery['sale_id'] ?? 0);
+            $sale = $open->get($saleId);
+            $key = "deliveries.$index.sale_id";
 
-            if (! is_array($rows) || $rows === []) {
-                $tankId = ($line['storage_location_id'] ?? null) ? (int) $line['storage_location_id'] : null;
-                // Older clients send no tank: the whole lift goes to the fuel's default tank for confirmation.
-                $rows = [['type' => 'garage', 'storage_location_id' => $tankId, 'quantity_liters' => $quantity, 'default_tank' => $tankId === null]];
-                $prefix = "items.$index";
-            } else {
-                $prefix = null;
-                $sum = round((float) collect($rows)->sum(fn (array $row): float => round((float) ($row['quantity_liters'] ?? 0), 2)), 2);
-                if ($sum > $quantity) {
-                    $errors["items.$index.lifts"] = 'The lift rows add up to '.number_format($sum, 2).' L, more than the Amount to Lift of '.number_format($quantity, 2).' L.';
+            if (isset($seen[$saleId])) {
+                $errors[$key] = 'This order is already in this lift.';
+
+                continue;
+            }
+            $seen[$saleId] = true;
+
+            if (! $sale) {
+                $errors[$key] = DB::table('haul_allocations')->where('sale_id', $saleId)->where('destination_type', 'customer')->where('status', '!=', 'cancelled')->exists()
+                    ? 'This order is already on another lift.'
+                    : 'Select an open Depot to Client order.';
+
+                continue;
+            }
+
+            // The lift line that carries the order's purchase (or its fuel, for an order without a purchase).
+            $lineIndex = null;
+            foreach ($lines as $candidate => $line) {
+                $matches = $sale->purchase_item_id
+                    ? (int) $line['purchase_item_id'] === (int) $sale->purchase_item_id
+                    : ($fuelTypeByItem[(int) $line['purchase_item_id']] ?? null) === (int) $sale->fuel_type_id;
+                if ($matches) {
+                    $lineIndex = $candidate;
+                    break;
                 }
             }
 
-            $resolved[$index] = [];
-            foreach (array_values($rows) as $rowIndex => $row) {
-                $key = $prefix ?? "items.$index.lifts.$rowIndex";
-                $liters = round((float) ($row['quantity_liters'] ?? 0), 2);
+            if ($lineIndex === null) {
+                $errors[$key] = 'Add '.($sale->purchase_code ?: 'a '.$sale->fuel_name.' purchase').' to this lift first: the order is supplied from it.';
 
-                if (($row['type'] ?? 'garage') === 'client') {
-                    $saleId = ($row['sale_id'] ?? null) ? (int) $row['sale_id'] : null;
-                    $sale = $saleId ? $this->openDirectSale($saleId) : null;
-                    if (! $sale) {
-                        $errors["$key.sale_id"] = 'Select an open Depot to Client sales order.';
-                    } else {
-                        $open = $this->openDirectLiters($saleId, $fuelTypeId);
-                        $requestedBySale[$saleId] = round(($requestedBySale[$saleId] ?? 0) + $liters, 2);
-                        if ($open <= 0) {
-                            $errors["$key.sale_id"] = 'This sales order has no open liters of the purchase\'s fuel type.';
-                        } elseif ($requestedBySale[$saleId] > $open) {
-                            $errors["$key.quantity_liters"] = 'This sales order has only '.number_format($open, 2).' L left to lift.';
-                        }
-                    }
-
-                    // The order's F1 portion rides on its first lift row: loaded at the garage onto the same truck.
-                    $f1Liters = 0.0;
-                    $f1TankId = null;
-                    if ($sale && ! isset($f1AssignedBySale[$saleId])) {
-                        $f1Liters = $this->unassignedF1Liters($saleId);
-                        $f1AssignedBySale[$saleId] = true;
-                    }
-                    if ($f1Liters > 0) {
-                        $f1TankId = ($row['f1_storage_location_id'] ?? null) ? (int) $row['f1_storage_location_id'] : null;
-                        $f1Tank = $f1TankId ? $tanks->get($f1TankId) : null;
-                        if (! $f1Tank || (int) $f1Tank->fuel_type_id !== F1Split::f1FuelId()) {
-                            $errors["$key.f1_storage_location_id"] = 'Select the garage F1 tank to load '.number_format($f1Liters, 2).' L of F1 from.';
-                        } else {
-                            $f1RequestedByTank[$f1TankId] = round(($f1RequestedByTank[$f1TankId] ?? 0) + $f1Liters, 2);
-                            $f1Available = round($f1Tank->balance_liters - $this->plannedF1ByTank($f1TankId), 2);
-                            if ($f1RequestedByTank[$f1TankId] > $f1Available) {
-                                $errors["$key.f1_storage_location_id"] = $f1Tank->name.' has only '.number_format(max(0, $f1Available), 2).' L of F1 for the '.number_format($f1Liters, 2).' L to load.';
-                            }
-                        }
-                    }
-
-                    $resolved[$index][] = ['destination_type' => 'customer', 'storage_location_id' => null, 'sale_id' => $saleId, 'customer_id' => $sale ? (int) $sale->customer_id : null, 'quantity_liters' => $liters, 'receive_on_completion' => true, 'f1_storage_location_id' => $f1TankId, 'f1_quantity_liters' => $f1Liters];
-
-                    continue;
-                }
-
-                if ($row['default_tank'] ?? false) {
-                    $resolved[$index][] = ['destination_type' => 'garage', 'storage_location_id' => $this->defaultTankId($fuelTypeId), 'sale_id' => null, 'customer_id' => null, 'quantity_liters' => $liters, 'receive_on_completion' => false];
-
-                    continue;
-                }
-
-                $tankId = ($row['storage_location_id'] ?? null) ? (int) $row['storage_location_id'] : null;
-                $tank = $tankId ? $tanks->get($tankId) : null;
-                if (! $tank) {
-                    $errors["$key.storage_location_id"] = 'Select the garage tank that receives this lift.';
-                } elseif ((int) $tank->fuel_type_id !== $fuelTypeId) {
-                    $errors["$key.storage_location_id"] = 'The tank must hold the same fuel type as the purchase.';
-                } else {
-                    $requestedByTank[$tankId] = round(($requestedByTank[$tankId] ?? 0) + $liters, 2);
-                    if ($requestedByTank[$tankId] > $tank->free_liters) {
-                        $errors["$key.quantity_liters"] = $this->tankFullMessage($tank);
-                    }
-                }
-
-                $resolved[$index][] = ['destination_type' => 'garage', 'storage_location_id' => $tankId, 'sale_id' => null, 'customer_id' => null, 'quantity_liters' => $liters, 'receive_on_completion' => true];
+                continue;
             }
+
+            $total = round($total + $sale->open_liters, 2);
+            $resolved[$lineIndex][] = ['sale_id' => $saleId, 'customer_id' => (int) $sale->customer_id, 'quantity_liters' => $sale->open_liters];
+            // A purchase line can only deliver what it carries.
+            $onLine = round((float) collect($resolved[$lineIndex])->sum('quantity_liters'), 2);
+            if ($onLine > round((float) $lines[$lineIndex]['quantity_liters'], 2)) {
+                $errors[$key] = 'The orders from '.($sale->purchase_code ?: 'this purchase').' add up to '.number_format($onLine, 2).' L, more than its Amount to Lift of '.number_format((float) $lines[$lineIndex]['quantity_liters'], 2).' L.';
+            }
+        }
+
+        $amountToLift = round((float) collect($lines)->sum('quantity_liters'), 2);
+        if ($errors === [] && $total > $amountToLift) {
+            $errors['deliveries'] = 'The deliveries add up to '.number_format($total, 2).' L, more than the Amount to Lift of '.number_format($amountToLift, 2).' L.';
         }
 
         if ($errors !== []) {
@@ -251,283 +124,142 @@ class LiftAllocationService
     }
 
     /**
-     * @param  array<int, array{destination_type: string, storage_location_id: ?int, sale_id: ?int, customer_id: ?int, quantity_liters: float, receive_on_completion: bool, f1_storage_location_id?: ?int, f1_quantity_liters?: float}>  $rows
+     * @param  array<int, array{sale_id: int, customer_id: int, quantity_liters: float}>  $rows
      */
     public function createForHaul(int $haulId, int $fuelTypeId, array $rows): void
     {
-        $base = ['haul_id' => $haulId, 'fuel_type_id' => $fuelTypeId, 'allocated_at' => now(), 'status' => 'planned', 'created_at' => now(), 'updated_at' => now()];
-
         foreach ($rows as $row) {
-            if ($row['quantity_liters'] <= 0 || ($row['destination_type'] === 'garage' ? ! $row['storage_location_id'] : ! $row['customer_id'])) {
-                continue;
-            }
-
-            DB::table('haul_allocations')->insert($base + [
-                'destination_type' => $row['destination_type'],
-                'storage_location_id' => $row['storage_location_id'],
+            DB::table('haul_allocations')->insert([
+                'haul_id' => $haulId,
+                'fuel_type_id' => $fuelTypeId,
+                'destination_type' => 'customer',
                 'customer_id' => $row['customer_id'],
                 'sale_id' => $row['sale_id'],
                 'quantity_liters' => $row['quantity_liters'],
-                'receive_on_completion' => $row['receive_on_completion'],
-                'f1_storage_location_id' => $row['f1_storage_location_id'] ?? null,
-                'f1_quantity_liters' => $row['f1_quantity_liters'] ?? 0,
+                'allocated_at' => now(),
+                'status' => 'planned',
+                'receive_on_completion' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
             ]);
         }
     }
 
     /**
      * Runs when a lift is completed by the driver (lifted) or confirmed (completed). Safe to run twice.
-     * Posts the garage portion as stock-in to the chosen tank and releases the direct portion to its sale.
-     * Anything that cannot be posted stays visible (Pending Garage Receipts / undelivered sale) and is reported.
+     * Delivers each order on the lift, which deducts its liters from its purchases. An order that cannot be
+     * delivered yet (e.g. a purchase is short) stays undelivered and is reported.
      *
      * @return array<int, string> notes for the user
      */
     public function settle(int $haulId, int $actorId): array
     {
         $notes = [];
-        $allocations = DB::table('haul_allocations')->where('haul_id', $haulId)->where('status', '!=', 'cancelled')->lockForUpdate()->get();
+        $saleIds = DB::table('haul_allocations')
+            ->where('haul_id', $haulId)
+            ->where('destination_type', 'customer')
+            ->where('status', 'planned')
+            ->whereNotNull('sale_id')
+            ->lockForUpdate()
+            ->pluck('sale_id')
+            ->unique();
 
-        foreach ($allocations->where('destination_type', 'garage') as $allocation) {
-            if (! $allocation->receive_on_completion || $allocation->status === 'received') {
-                continue;
-            }
-
-            $remaining = $this->stockIn->remainingReceivableForAllocation($allocation);
-            if ($remaining <= 0) {
-                continue;
-            }
-
-            $error = $this->stockIn->recordStockIn([
-                'haul_allocation_id' => $allocation->id,
-                'storage_location_id' => $allocation->storage_location_id,
-                'quantity_liters' => $remaining,
-                'movement_date' => now()->toDateTimeString(),
-                'remarks' => 'Automatic stock-in on lift completion',
-            ], $actorId);
-
-            if ($error) {
-                $notes[] = 'Garage stock-in is waiting under Pending Garage Receipts: '.$error;
-            }
-        }
-
-        $direct = $allocations->where('destination_type', 'customer');
-
-        // F1 loaded at the garage for a Depot to Client order leaves its F1 tank when the lift is completed.
-        foreach ($direct->where('f1_quantity_liters', '>', 0) as $allocation) {
-            $error = DB::transaction(fn (): ?string => $this->stockOutRelease->releaseF1ForAllocation($allocation, $actorId));
-            if ($error) {
-                $notes[] = $error;
-            }
-        }
-
-        DB::table('haul_allocations')->whereIn('id', $direct->where('status', 'planned')->pluck('id'))->update(['status' => 'delivered', 'updated_at' => now()]);
-
-        foreach ($direct->pluck('sale_id')->filter()->unique() as $saleId) {
+        foreach ($saleIds as $saleId) {
             $sale = DB::table('sales')->where('id', $saleId)->first(['delivery_status', 'sale_code']);
             if (! $sale || in_array($sale->delivery_status, ['delivered', 'cancelled'], true)) {
                 continue;
             }
 
             try {
-                // Savepoint: a sale that cannot be fully released yet stays undelivered without undoing the lift.
+                // Savepoint: an order that cannot be delivered yet stays undelivered without undoing the lift.
                 DB::transaction(fn () => $this->saleConfirmation->updateDeliveryStatus((int) $saleId, 'delivered', $actorId));
             } catch (\RuntimeException $exception) {
-                $notes[] = 'Direct release for '.$sale->sale_code.' is recorded on the lift; the sale stays undelivered: '.$exception->getMessage();
+                $notes[] = 'Delivery of '.$sale->sale_code.' is on the lift but the order stays undelivered: '.$exception->getMessage();
             }
         }
 
         return $notes;
     }
 
-    /** Planned allocations of a cancelled lift no longer reserve tank space or sale liters. */
+    /** Planned deliveries of a cancelled lift no longer hold their orders: the orders can go on another lift. */
     public function cancelForHauls(array $haulIds): void
     {
         DB::table('haul_allocations')->whereIn('haul_id', $haulIds)->where('status', 'planned')->update(['status' => 'cancelled', 'updated_at' => now()]);
     }
 
     /**
-     * Audit C01 backfill: lifts (not cancelled) that have no allocation get one garage allocation for their
-     * full quantity on the fuel's default tank, unconfirmed, so they show under Pending Garage Receipts.
-     * Read-only: returns what would be created.
+     * Load of each lift: liters delivered to clients (Depot to Client rows) and the rest, which stays on the truck.
+     * Liters of retired garage rows (lifts before October 22, 2026) left the truck too. A lift without rows has 0.
      *
-     * @return Collection<int, array{haul_id: int, haul_code: string, haul_status: string, purchase_code: string, fuel_type_id: int, fuel: string, quantity_liters: float, storage_location_id: ?int, tank: string}>
+     * @param  array<int, int>  $haulIds
+     * @return array<int, array{delivered: float, remaining: float}>
      */
-    public function backfillPlan(): Collection
+    public function loadSummaryByHaul(array $haulIds): array
     {
-        $tanks = DB::table('storage_locations')->where('type', 'garage')->where('status', 'active')->whereNotNull('fuel_type_id')
-            ->orderBy('tank_number')->orderBy('id')->get(['id', 'name', 'fuel_type_id'])->unique('fuel_type_id')->keyBy('fuel_type_id');
-
-        return DB::table('hauls')
-            ->join('purchases', 'purchases.id', '=', 'hauls.purchase_id')
-            ->join('fuel_types', 'fuel_types.id', '=', 'hauls.fuel_type_id')
-            ->where('hauls.status', '!=', 'cancelled')
-            ->whereNotExists(fn (Builder $query) => $query->selectRaw('1')->from('haul_allocations')
-                ->whereColumn('haul_allocations.haul_id', 'hauls.id')
-                ->where('haul_allocations.status', '!=', 'cancelled'))
-            ->orderBy('hauls.id')
-            ->get(['hauls.id', 'hauls.haul_code', 'hauls.status', 'hauls.fuel_type_id', 'hauls.quantity_liters', 'purchases.purchase_code', 'fuel_types.name as fuel_name'])
-            ->map(fn (object $haul): array => [
-                'haul_id' => (int) $haul->id,
-                'haul_code' => (string) $haul->haul_code,
-                'haul_status' => (string) $haul->status,
-                'purchase_code' => (string) $haul->purchase_code,
-                'fuel_type_id' => (int) $haul->fuel_type_id,
-                'fuel' => (string) $haul->fuel_name,
-                'quantity_liters' => round((float) $haul->quantity_liters, 2),
-                'storage_location_id' => isset($tanks[$haul->fuel_type_id]) ? (int) $tanks[$haul->fuel_type_id]->id : null,
-                'tank' => isset($tanks[$haul->fuel_type_id]) ? (string) $tanks[$haul->fuel_type_id]->name : '(default tank will be created)',
-            ]);
-    }
-
-    /**
-     * Creates the allocations listed by backfillPlan(). Returns how many were created.
-     */
-    public function applyBackfill(): int
-    {
-        return DB::transaction(function (): int {
-            $created = 0;
-            foreach ($this->backfillPlan() as $row) {
-                $tankId = $row['storage_location_id'] ?? $this->defaultTankId($row['fuel_type_id']);
-                if (! $tankId) {
-                    continue;
-                }
-
-                $this->createForHaul($row['haul_id'], $row['fuel_type_id'], [[
-                    'destination_type' => 'garage',
-                    'storage_location_id' => $tankId,
-                    'sale_id' => null,
-                    'customer_id' => null,
-                    'quantity_liters' => $row['quantity_liters'],
-                    'receive_on_completion' => false,
-                ]]);
-                $created++;
-            }
-
-            return $created;
-        });
-    }
-
-    /** "Premium Tank 1 has only 12,000.00 L of free space (stock 12,000.00 L of 24,000.00 L)." */
-    public function tankFullMessage(object $tank): string
-    {
-        return $tank->name.' has only '.number_format($tank->free_liters, 2).' L of free space (stock '.number_format($tank->balance_liters, 2).' L'
-            .($tank->incoming_liters > 0 ? ' + '.number_format($tank->incoming_liters, 2).' L already scheduled' : '')
-            .' of '.number_format($tank->capacity_liters, 2).' L).';
-    }
-
-    public function defaultTankId(int $fuelTypeId): ?int
-    {
-        $find = fn (): mixed => DB::table('storage_locations')
-            ->where('type', 'garage')
-            ->where('status', 'active')
-            ->where('fuel_type_id', $fuelTypeId)
-            ->orderBy('tank_number')
-            ->orderBy('id')
-            ->value('id');
-
-        $id = $find();
-        if ($id === null) {
-            // Fresh installs only get their standard tanks once Inventory is opened; create them now.
-            $this->garageTanks->ensureForActiveFuelTypes();
-            $id = $find();
+        if ($haulIds === []) {
+            return [];
         }
 
-        return $id === null ? null : (int) $id;
-    }
+        $totals = DB::table('haul_allocations')
+            ->whereIn('haul_id', $haulIds)
+            ->where('status', '!=', 'cancelled')
+            ->selectRaw("haul_id, COALESCE(SUM(CASE WHEN destination_type = 'garage' THEN quantity_liters ELSE 0 END), 0) as garage, COALESCE(SUM(CASE WHEN destination_type = 'customer' THEN quantity_liters ELSE 0 END), 0) as delivered")
+            ->groupBy('haul_id')
+            ->get()
+            ->keyBy('haul_id');
 
-    /**
-     * Garage liters already promised to each tank by lifts that have not been received yet.
-     *
-     * @return array<int, float>
-     */
-    private function incomingByTank(): array
-    {
-        $received = DB::table('inventory_movements')
-            ->where('reference_type', 'haul_allocation')
-            ->where('direction', 'in')
-            ->where('movement_type', 'stock_in')
-            ->selectRaw('reference_id, COALESCE(SUM(quantity_liters), 0) as received_liters')
-            ->groupBy('reference_id');
+        return DB::table('hauls')
+            ->whereIn('id', $haulIds)
+            ->pluck('quantity_liters', 'id')
+            ->map(function (mixed $quantity, int $haulId) use ($totals): array {
+                $garage = round((float) ($totals[$haulId]->garage ?? 0), 2);
+                $delivered = round((float) ($totals[$haulId]->delivered ?? 0), 2);
 
-        return DB::table('haul_allocations')
-            ->leftJoinSub($received, 'received', 'received.reference_id', '=', 'haul_allocations.id')
-            ->where('destination_type', 'garage')
-            ->whereNotIn('status', ['cancelled', 'received'])
-            ->whereNotNull('storage_location_id')
-            ->selectRaw('storage_location_id, SUM(quantity_liters - COALESCE(received.received_liters, 0)) as incoming')
-            ->groupBy('storage_location_id')
-            ->pluck('incoming', 'storage_location_id')
-            ->map(fn (mixed $value): float => (float) $value)
+                return ['delivered' => $delivered, 'remaining' => round(max(0, (float) $quantity - $garage - $delivered), 2)];
+            })
             ->all();
     }
 
-    private function openDirectSale(int $saleId): ?object
-    {
-        return DB::table('sales')
-            ->where('id', $saleId)
-            ->where('delivery_type', 'depot_to_client')
-            ->whereNull('deleted_at')
-            ->whereIn('status', self::OPEN_SALE_STATUSES)
-            ->whereNotIn('delivery_status', ['delivered', 'cancelled'])
-            ->first(['id', 'customer_id']);
-    }
-
     /**
-     * Liters of a fuel on a sale that are neither fulfilled nor already promised to another direct lift.
+     * Open Depot to Client orders without a lift (planned or delivered), with their purchase and open liters.
+     *
+     * @return Collection<int, \stdClass>
      */
-    private function openDirectLiters(int $saleId, int $fuelTypeId): float
+    private function openDirectSales(bool $lock = false): Collection
     {
-        $item = DB::table('sale_items')
-            ->where('sale_id', $saleId)
-            ->where('fuel_type_id', $fuelTypeId)
-            ->selectRaw('COALESCE(SUM(quantity_liters - f1_quantity_liters), 0) as quantity, COALESCE(SUM(fulfilled_quantity_liters), 0) as fulfilled')
-            ->first();
-
-        $released = DB::table('stock_outs')
-            ->select('haul_allocation_id', DB::raw('SUM(quantity_liters) as released'))
-            ->where('source_type', 'depot')
-            ->where('status', '!=', 'cancelled')
-            ->groupBy('haul_allocation_id');
-
-        $promised = (float) DB::table('haul_allocations')
-            ->leftJoinSub($released, 'released', 'released.haul_allocation_id', '=', 'haul_allocations.id')
-            ->where('haul_allocations.destination_type', 'customer')
-            ->where('haul_allocations.sale_id', $saleId)
-            ->where('haul_allocations.fuel_type_id', $fuelTypeId)
-            ->where('haul_allocations.status', '!=', 'cancelled')
-            ->selectRaw('COALESCE(SUM(haul_allocations.quantity_liters - COALESCE(released.released, 0)), 0) as promised')
-            ->value('promised');
-
-        return round(max(0, (float) $item->quantity - (float) $item->fulfilled - $promised), 2);
-    }
-
-    /**
-     * F1 liters of a sale not yet put on a lift (Depot to Client orders load their F1 at the garage).
-     */
-    private function unassignedF1Liters(int $saleId): float
-    {
-        $f1 = (float) DB::table('sale_items')->where('sale_id', $saleId)->sum('f1_quantity_liters');
-        if ($f1 <= 0) {
-            return 0.0;
-        }
-
-        $assigned = (float) DB::table('haul_allocations')
-            ->where('sale_id', $saleId)
+        $onLift = DB::table('haul_allocations')
+            ->select('sale_id')
             ->where('destination_type', 'customer')
             ->where('status', '!=', 'cancelled')
-            ->sum('f1_quantity_liters');
+            ->whereNotNull('sale_id');
 
-        return round(max(0, $f1 - $assigned), 2);
-    }
+        return DB::table('sales')
+            ->join('customers', 'customers.id', '=', 'sales.customer_id')
+            ->join('sale_items', 'sale_items.sale_id', '=', 'sales.id')
+            ->join('fuel_types', 'fuel_types.id', '=', 'sale_items.fuel_type_id')
+            ->leftJoin('purchase_items', 'purchase_items.id', '=', 'sale_items.purchase_item_id')
+            ->leftJoin('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
+            ->where('sales.delivery_type', 'depot_to_client')
+            ->whereNull('sales.deleted_at')
+            ->whereIn('sales.status', self::OPEN_SALE_STATUSES)
+            ->whereNotIn('sales.delivery_status', ['delivered', 'cancelled'])
+            ->whereNotIn('sales.id', $onLift)
+            ->when($lock, fn ($query) => $query->lockForUpdate())
+            ->groupBy('sales.id', 'sales.sale_code', 'sales.sales_order_number', 'sales.customer_id', 'customers.name', 'customers.company_name', 'sales.sale_date')
+            ->orderByDesc('sales.sale_date')
+            ->orderByDesc('sales.id')
+            ->selectRaw('sales.id as sale_id, sales.sale_code, sales.sales_order_number, sales.customer_id, customers.name as customer_name, customers.company_name')
+            ->selectRaw('MIN(sale_items.purchase_item_id) as purchase_item_id, MIN(sale_items.fuel_type_id) as fuel_type_id, MIN(fuel_types.name) as fuel_name, MIN(purchases.purchase_code) as purchase_code')
+            ->selectRaw('COALESCE(SUM(sale_items.quantity_liters - sale_items.fulfilled_quantity_liters), 0) as open_liters')
+            ->get()
+            ->map(function (object $sale): object {
+                $sale->open_liters = round((float) $sale->open_liters, 2);
+                $sale->purchase_item_id = $sale->purchase_item_id ? (int) $sale->purchase_item_id : null;
+                $sale->fuel_type_id = (int) $sale->fuel_type_id;
 
-    /**
-     * F1 liters other planned lifts will load from a garage tank but that have not left it yet.
-     */
-    private function plannedF1ByTank(int $tankId): float
-    {
-        return round((float) DB::table('haul_allocations')
-            ->where('f1_storage_location_id', $tankId)
-            ->where('status', 'planned')
-            ->sum('f1_quantity_liters'), 2);
+                return $sale;
+            })
+            ->filter(fn (object $sale): bool => $sale->open_liters > 0)
+            ->values();
     }
 }

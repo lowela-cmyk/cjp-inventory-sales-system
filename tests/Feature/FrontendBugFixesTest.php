@@ -26,7 +26,8 @@ class FrontendBugFixesTest extends TestCase
 
     public function test_shared_frontend_assets_guard_charts_and_duplicate_submissions(): void
     {
-        $script = file_get_contents(resource_path('js/app.js')) ?: '';
+        // Dashboard charts live in dashboard.js (Part 10), imported by app.js.
+        $script = (file_get_contents(resource_path('js/app.js')) ?: '').(file_get_contents(resource_path('js/dashboard.js')) ?: '');
         $styles = file_get_contents(resource_path('css/app.css')) ?: '';
 
         $this->assertStringContainsString('dataset.confirmMessage', $script);
@@ -123,10 +124,11 @@ class FrontendBugFixesTest extends TestCase
         $this->actingAs($admin)
             ->get(route('admin.dashboard'))
             ->assertOk()
-            ->assertSee('data-sales-trend-chart', false)
-            ->assertSee('data-chart=', false)
-            ->assertSee('No data available')
-            ->assertSee('Generate an explanation from the current inventory variance values.');
+            ->assertSee('data-dashboard-revenue', false)
+            ->assertSee('data-series=', false)
+            ->assertSee('No data yet')
+            ->assertDontSee('data-dashboard-chart', false)
+            ->assertSee('Generate Insight and Reports');
     }
 
     public function test_ai_report_output_remains_escaped_in_frontend(): void

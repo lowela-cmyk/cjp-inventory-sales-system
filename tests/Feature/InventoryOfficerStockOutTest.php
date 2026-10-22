@@ -3,234 +3,136 @@
 namespace Tests\Feature;
 
 use App\Models\User;
-use App\Services\StockOutFinancialService;
+use App\Services\PurchaseStockService;
+use App\Services\SaleConfirmationService;
 use App\Services\StockOutReleaseService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
-use Illuminate\Support\Str;
 use Tests\TestCase;
 
 /**
  * Stock-out happens automatically when a sale is delivered (StockOutReleaseService); there is no manual
- * "+ Record Stock-Out" entry any more. These tests drive that automatic release directly.
+ * "+ Record Stock-Out" entry. Part 2 Button Revisions (October 22, 2026): a delivered line is deducted from its
+ * PURCHASE (tanks are retired), at the purchase's cost.
  */
 class InventoryOfficerStockOutTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_automatic_stock_out_uses_inventory_cost_and_actual_payments_for_profit(): void
+    public function test_automatic_stock_out_uses_the_purchase_cost_and_actual_payments_for_profit(): void
     {
         $records = $this->baseRecords();
-        $this->garageMovement($records, ['quantity_liters' => 100000, 'unit_cost' => 60]);
-        $sale = $this->sale($records, ['quantity_liters' => 100000, 'unit_price' => 65]);
+        $purchase = $this->purchase($records, 100000, 60);
+        $sale = $this->sale($records, [[$purchase, 100000, 65]]);
+        $this->pay($records, $sale['saleId'], 6500000);
 
-        DB::table('payments')->insert([
-            'payment_code' => 'PAY-STOCK-OUT-FULL',
-            'sale_id' => $sale['saleId'],
-            'payment_date' => '2026-08-30',
-            'amount' => 6500000,
-            'method' => 'cash_on_delivery',
-            'received_by' => $records['salesOfficer']->id,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
-        $this->assertNull($this->release($records, $sale, 100000));
+        $this->assertNull($this->deliver($records, $sale['saleId']));
 
         $stockOut = DB::table('stock_outs')->first();
         $this->assertSame(60.0, (float) $stockOut->unit_cost);
-        $this->assertDatabaseHas('inventory_movements', [
-            'id' => $stockOut->inventory_movement_id,
-            'unit_cost' => '60.00',
-        ]);
+        $this->assertSame($purchase, (int) $stockOut->purchase_item_id);
+        $this->assertSame('depot', $stockOut->source_type);
 
         $this->actingAs($records['inventoryOfficer'])
             ->get(route('inventory-officer.inventory.stock-out'))
             ->assertOk()
-            ->assertSeeTextInOrder([
-                'Cost / Unit',
-                'Total Cost',
-                'Price / Unit',
-                'Total Price',
-                'Total Paid',
-                'Source',
-                'Profit',
-            ])
+            ->assertSeeTextInOrder(['Cost / Unit', 'Total Cost', 'Price / Unit', 'Total Price', 'Total Paid', 'Source', 'Profit'])
             ->assertSeeText('6,000,000.00')
             ->assertSeeText('6,500,000.00')
             ->assertSeeText('500,000.00');
 
         $admin = User::factory()->create(['role' => 'admin', 'status' => 'active']);
-        $this->actingAs($admin)
-            ->get(route('admin.inventory'))
-            ->assertOk()
-            ->assertSeeText('Cost / Unit')
-            ->assertSeeText('6,000,000.00')
-            ->assertSeeText('500,000.00');
+        $this->actingAs($admin)->get(route('admin.inventory'))->assertOk()->assertSeeText('Cost / Unit');
     }
 
     public function test_partial_payment_is_allocated_across_releases_without_duplication(): void
     {
         $records = $this->baseRecords();
-        $this->garageMovement($records, ['quantity_liters' => 100000, 'unit_cost' => 60]);
-        $sale = $this->sale($records, ['quantity_liters' => 100000, 'unit_price' => 65]);
+        $first = $this->purchase($records, 60000, 60);
+        $second = $this->purchase($records, 40000, 60);
+        // Two lines: 60,000 L and 40,000 L at 65 = 6,500,000; 3,250,000 paid.
+        $sale = $this->sale($records, [[$first, 60000, 65], [$second, 40000, 65]]);
+        $this->pay($records, $sale['saleId'], 3250000);
 
-        DB::table('payments')->insert([
-            'payment_code' => 'PAY-STOCK-OUT-PARTIAL',
-            'sale_id' => $sale['saleId'],
-            'payment_date' => '2026-08-30',
-            'amount' => 3250000,
-            'method' => 'bank_transfer',
-            'received_by' => $records['salesOfficer']->id,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        $this->assertNull($this->deliver($records, $sale['saleId']));
 
-        foreach (['2026-08-30 11:00:00', '2026-08-30 12:00:00'] as $stockOutAt) {
-            $this->assertNull($this->release($records, $sale, 50000));
-        }
-
-        $financials = app(StockOutFinancialService::class);
-        $rows = $financials->query()->orderBy('stock_outs.id')->get()->map(fn (object $row): array => $financials->calculate($row));
-
-        $this->assertCount(2, $rows);
-        $this->assertSame(3250000.0, round((float) $rows->sum('total_paid'), 2));
-        $this->assertSame(6000000.0, round((float) $rows->sum('total_cost'), 2));
-        $this->assertSame(-2750000.0, round((float) $rows->sum('profit'), 2));
+        $html = $this->actingAs($records['inventoryOfficer'])->get(route('inventory-officer.inventory.stock-out'))->assertOk()->getContent();
+        // Each release carries its share of the payment: 1,950,000 and 1,300,000, never the whole amount twice.
+        $this->assertStringContainsString('1,950,000.00', $html);
+        $this->assertStringContainsString('1,300,000.00', $html);
+        $this->assertSame(2, DB::table('stock_outs')->where('status', 'released')->count());
     }
 
-    public function test_sale_release_records_garage_stock_out_and_deducts_inventory_once(): void
+    public function test_delivery_deducts_the_purchase_once_even_when_repeated(): void
     {
         $records = $this->baseRecords();
-        $this->garageMovement($records, ['quantity_liters' => 20000]);
-        $sale = $this->sale($records, ['quantity_liters' => 15000]);
+        $purchase = $this->purchase($records, 10000, 50);
+        $sale = $this->sale($records, [[$purchase, 4000, 65]]);
 
-        $this->assertNull($this->release($records, $sale, 12000));
+        $this->assertNull($this->deliver($records, $sale['saleId']));
+        $this->assertNull($this->deliver($records, $sale['saleId']));
+        // Releasing a fully released line again does nothing.
+        $this->assertNull(app(StockOutReleaseService::class)->releaseSaleItem($sale['itemId'], '2026-08-30 12:00:00', $records['salesOfficer']->id));
 
-        $stockOut = DB::table('stock_outs')->first();
-        $this->assertNotNull($stockOut);
-        $this->assertSame('released', $stockOut->status);
-        $this->assertNotNull($stockOut->inventory_movement_id);
-        $this->assertDatabaseHas('inventory_movements', [
-            'id' => $stockOut->inventory_movement_id,
-            'storage_location_id' => $records['garageId'],
-            'fuel_type_id' => $records['fuelTypeId'],
-            'movement_type' => 'stock_out',
-            'direction' => 'out',
-            'quantity_liters' => '12000.00',
-            'reference_type' => 'stock_out',
-            'reference_id' => $stockOut->id,
-        ]);
-        $this->assertSame('garage', $stockOut->source_type);
-        $this->assertSame(8000.0, $this->garageBalance($records));
-        $this->assertDatabaseHas('sale_items', [
-            'id' => $sale['saleItemId'],
-            'fulfilled_quantity_liters' => '12000.00',
-        ]);
-    }
-
-    public function test_garage_stock_out_allows_partial_then_rejects_release_beyond_remaining_sale_quantity(): void
-    {
-        $records = $this->baseRecords();
-        $this->garageMovement($records, ['quantity_liters' => 30000]);
-        $sale = $this->sale($records, ['quantity_liters' => 20000]);
-
-        $this->assertNull($this->release($records, $sale, 12000));
-
-        $this->assertNotNull($this->release($records, $sale, 9000));
-
-        $this->assertNull($this->release($records, $sale, 8000));
-
-        $this->assertSame(10000.0, $this->garageBalance($records));
-        $this->assertSame(2, DB::table('stock_outs')->count());
-        $this->assertDatabaseHas('sale_items', [
-            'id' => $sale['saleItemId'],
-            'fulfilled_quantity_liters' => '20000.00',
-        ]);
+        $this->assertSame(1, DB::table('stock_outs')->where('sale_id', $sale['saleId'])->count());
+        $this->assertSame(6000.0, $this->remaining($purchase));
+        $this->assertDatabaseHas('sale_items', ['id' => $sale['itemId'], 'fulfilled_quantity_liters' => '4000.00']);
     }
 
     public function test_cancelled_draft_or_undelivered_sales_are_not_eligible_for_stock_out(): void
     {
         $records = $this->baseRecords();
-        $this->garageMovement($records, ['quantity_liters' => 20000]);
-        $cancelledSale = $this->sale($records, ['status' => 'cancelled']);
-        $draftSale = $this->sale($records, ['sale_code' => 'SLS-DRAFT', 'status' => 'draft']);
-        $pendingSale = $this->sale($records, ['sale_code' => 'SLS-PENDING', 'delivery_status' => 'pending']);
+        $purchase = $this->purchase($records, 10000, 50);
 
-        foreach ([$cancelledSale, $draftSale, $pendingSale] as $sale) {
-            $this->assertNotNull($this->release($records, $sale, 5000));
+        foreach ([['status' => 'draft'], ['status' => 'cancelled'], ['delivery_status' => 'pending']] as $overrides) {
+            $sale = $this->sale($records, [[$purchase, 1000, 65]], $overrides + ['delivery_status' => 'delivered']);
+            $this->assertSame('The selected sale is not eligible for stock-out.', app(StockOutReleaseService::class)->releaseSaleItem($sale['itemId'], '2026-08-30 12:00:00', $records['salesOfficer']->id));
         }
 
-        $this->assertSame(20000.0, $this->garageBalance($records));
         $this->assertSame(0, DB::table('stock_outs')->count());
+        $this->assertSame(10000.0, $this->remaining($purchase));
     }
 
-    public function test_direct_depot_delivery_fulfills_sale_without_reducing_garage_inventory(): void
+    public function test_a_depot_to_client_sale_is_only_delivered_through_its_lift(): void
     {
         $records = $this->baseRecords();
-        $this->garageMovement($records, ['quantity_liters' => 9000]);
-        $sale = $this->sale($records, ['quantity_liters' => 10000]);
-        $allocationId = $this->directAllocation($records, $sale, ['quantity_liters' => 10000]);
+        $purchase = $this->purchase($records, 10000, 50);
+        $sale = $this->sale($records, [[$purchase, 3000, 65]], ['delivery_type' => 'depot_to_client']);
 
-        $this->assertNull($this->release($records, $sale, 10000));
-
-        $this->assertSame(9000.0, $this->garageBalance($records));
-        $this->assertSame(1, DB::table('stock_outs')->where('source_type', 'depot')->count());
-        $this->assertDatabaseHas('stock_outs', [
-            'sale_id' => $sale['saleId'],
-            'haul_allocation_id' => $allocationId,
-            'source_type' => 'depot',
-            'quantity_liters' => '10000.00',
-            'status' => 'released',
-        ]);
-        $this->assertSame(1, DB::table('inventory_movements')->count());
-        $this->assertDatabaseHas('sale_items', [
-            'id' => $sale['saleItemId'],
-            'fulfilled_quantity_liters' => '10000.00',
-        ]);
+        $this->assertSame('This Depot to Client sale is delivered through its lift. Add it to a lift in Fuel Lifting and complete the lift first.', $this->deliver($records, $sale['saleId']));
+        $this->assertSame(0, DB::table('stock_outs')->count());
+        $this->assertSame(10000.0, $this->remaining($purchase));
     }
 
-    public function test_cancelled_stock_in_source_is_not_available_for_garage_stock_out(): void
+    public function test_insufficient_purchase_stock_and_unknown_sale_items_are_rejected(): void
     {
         $records = $this->baseRecords();
-        $sale = $this->sale($records, ['quantity_liters' => 5000]);
-        $allocationId = $this->directAllocation($records, $sale, [
-            'destination_type' => 'garage',
-            'storage_location_id' => $records['garageId'],
-            'customer_id' => null,
-            'sale_id' => null,
-            'quantity_liters' => 10000,
-            'status' => 'received',
-        ]);
+        $purchase = $this->purchase($records, 10000, 50);
+        $sale = $this->sale($records, [[$purchase, 4000, 65]]);
+        // The purchase is corrected down to 3,000 L before delivery.
+        DB::table('purchase_items')->where('id', $purchase)->update(['quantity_ordered_liters' => 3000, 'line_total' => 150000]);
 
-        $this->garageMovement($records, [
-            'quantity_liters' => 10000,
-            'reference_type' => 'haul_allocation',
-            'reference_id' => $allocationId,
-        ]);
-        DB::table('haul_allocations')->where('id', $allocationId)->update(['status' => 'cancelled']);
-
-        $this->assertNotNull($this->release($records, $sale, 5000));
-
+        $this->assertStringContainsString('has only 3,000.00 L of Diesel left for the 4,000.00 L', (string) $this->deliver($records, $sale['saleId']));
+        $this->assertDatabaseHas('sales', ['id' => $sale['saleId'], 'delivery_status' => 'pending']);
         $this->assertSame(0, DB::table('stock_outs')->count());
-        $this->assertDatabaseHas('sale_items', [
-            'id' => $sale['saleItemId'],
-            'fulfilled_quantity_liters' => '0.00',
-        ]);
+
+        $this->assertSame('The selected sale is not eligible for stock-out.', app(StockOutReleaseService::class)->releaseSaleItem(999999, '2026-08-30 12:00:00', $records['salesOfficer']->id));
     }
 
-    public function test_insufficient_inventory_and_unknown_sale_items_are_rejected(): void
+    public function test_cancelling_a_delivered_sale_gives_the_liters_back_to_the_purchase(): void
     {
         $records = $this->baseRecords();
-        $this->garageMovement($records, ['quantity_liters' => 5000]);
-        $sale = $this->sale($records, ['quantity_liters' => 10000]);
+        $purchase = $this->purchase($records, 10000, 50);
+        $sale = $this->sale($records, [[$purchase, 2500, 65]]);
+        $this->assertNull($this->deliver($records, $sale['saleId']));
+        $this->assertSame(7500.0, $this->remaining($purchase));
 
-        $this->assertSame('Insufficient available garage inventory to complete delivery.', $this->release($records, $sale, 6000));
-        $this->assertSame('The selected sale is not eligible for stock-out.', $this->release($records, ['saleItemId' => 999999], 1000));
+        $this->actingAs($records['salesOfficer'])->patch(route('sales-officer.sales.cancel', $sale['saleId']), ['cancel_reason' => 'customer_cancelled'])
+            ->assertRedirect(route('sales-officer.sales'));
 
-        $this->assertSame(5000.0, $this->garageBalance($records));
-        $this->assertSame(0, DB::table('stock_outs')->count());
+        $this->assertDatabaseHas('stock_outs', ['sale_id' => $sale['saleId'], 'status' => 'cancelled']);
+        $this->assertSame(10000.0, $this->remaining($purchase));
     }
 
     public function test_manual_stock_out_entry_is_removed(): void
@@ -251,163 +153,74 @@ class InventoryOfficerStockOutTest extends TestCase
     }
 
     /**
-     * Release through the same service the sale delivery flow uses. Returns the error, or null on success.
+     * Marks the sale Delivered the way the Sales page does. Returns the error, or null on success.
      *
      * @param  array<string, mixed>  $records
-     * @param  array<string, mixed>  $sale
      */
-    private function release(array $records, array $sale, float $quantity, string $stockOutAt = '2026-08-30 11:00:00'): ?string
+    private function deliver(array $records, int $saleId): ?string
     {
-        return DB::transaction(fn (): ?string => app(StockOutReleaseService::class)->releaseSaleItemFromGarage(
-            (int) $sale['saleItemId'],
-            $quantity,
-            $stockOutAt,
-            (int) $records['inventoryOfficer']->id,
-            (int) $records['garageId'],
-            'Release to client',
-            allowPreparation: false,
-        ));
+        try {
+            app(SaleConfirmationService::class)->updateDeliveryStatus($saleId, 'delivered', $records['salesOfficer']->id);
+        } catch (\RuntimeException $exception) {
+            return $exception->getMessage();
+        }
+
+        return null;
     }
 
     /**
      * @param  array<string, mixed>  $records
-     * @param  array<string, mixed>  $overrides
      */
-    private function garageMovement(array $records, array $overrides = []): void
+    private function purchase(array $records, float $liters, float $unitCost): int
     {
-        DB::table('inventory_movements')->insert(array_merge([
-            'movement_code' => 'MOV-'.Str::upper(Str::random(8)),
-            'storage_location_id' => $records['garageId'],
-            'fuel_type_id' => $records['fuelTypeId'],
-            'movement_type' => 'stock_in',
-            'direction' => 'in',
-            'quantity_liters' => 10000,
-            'unit_cost' => 50,
-            'reference_type' => 'test',
-            'reference_id' => 1,
-            'movement_date' => '2026-08-30 08:00:00',
-            'created_by' => $records['inventoryOfficer']->id,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ], $overrides));
+        $code = 'PUR-SO-'.(DB::table('purchases')->count() + 1);
+        $purchaseId = DB::table('purchases')->insertGetId(['purchase_code' => $code, 'depot_id' => $records['depotId'], 'purchase_date' => '2026-08-29', 'payment_status' => 'paid', 'status' => 'ordered', 'workflow_status' => 'pending', 'created_at' => now(), 'updated_at' => now()]);
+
+        return (int) DB::table('purchase_items')->insertGetId(['purchase_id' => $purchaseId, 'fuel_type_id' => $records['fuelTypeId'], 'quantity_ordered_liters' => $liters, 'unit_cost' => $unitCost, 'line_total' => $liters * $unitCost, 'created_at' => now(), 'updated_at' => now()]);
     }
 
     /**
      * @param  array<string, mixed>  $records
+     * @param  array<int, array{0: int, 1: float, 2: float}>  $lines  purchase line, liters, price
      * @param  array<string, mixed>  $overrides
-     * @return array<string, int>
+     * @return array{saleId: int, itemId: int}
      */
-    private function sale(array $records, array $overrides = []): array
+    private function sale(array $records, array $lines, array $overrides = []): array
     {
         $saleId = DB::table('sales')->insertGetId(array_merge([
-            'sale_code' => 'SLS-'.Str::upper(Str::random(8)),
+            'sale_code' => 'SLS-SO-'.(DB::table('sales')->count() + 1),
             'customer_id' => $records['customerId'],
             'sale_date' => '2026-08-30',
             'payment_method' => 'cash_on_delivery',
-            'payment_terms' => 'cod',
+            'payment_terms' => 'installment',
             'status' => 'confirmed',
-            'delivery_status' => 'delivered',
+            'delivery_status' => 'pending',
+            'delivery_type' => 'standard',
             'created_by' => $records['salesOfficer']->id,
             'created_at' => now(),
             'updated_at' => now(),
-        ], collect($overrides)->only(['sale_code', 'status', 'delivery_status'])->all()));
+        ], $overrides));
 
-        $unitPrice = $overrides['unit_price'] ?? 62.50;
-        $saleItemId = DB::table('sale_items')->insertGetId([
-            'sale_id' => $saleId,
-            'fuel_type_id' => $records['fuelTypeId'],
-            'quantity_liters' => $overrides['quantity_liters'] ?? 10000,
-            'unit_price' => $unitPrice,
-            'line_total' => (($overrides['quantity_liters'] ?? 10000) * $unitPrice),
-            'fulfilled_quantity_liters' => $overrides['fulfilled_quantity_liters'] ?? 0,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        $itemId = 0;
+        foreach ($lines as [$purchase, $liters, $price]) {
+            $itemId = (int) DB::table('sale_items')->insertGetId(['sale_id' => $saleId, 'fuel_type_id' => $records['fuelTypeId'], 'purchase_item_id' => $purchase, 'quantity_liters' => $liters, 'main_quantity_liters' => $liters, 'unit_price' => $price, 'line_total' => $liters * $price, 'fulfilled_quantity_liters' => 0, 'created_at' => now(), 'updated_at' => now()]);
+        }
+        DB::table('receivables')->insert(['sale_id' => $saleId, 'status' => 'pending', 'created_at' => now(), 'updated_at' => now()]);
 
-        return compact('saleId', 'saleItemId');
-    }
-
-    /**
-     * @param  array<string, mixed>  $records
-     * @param  array<string, mixed>  $sale
-     * @param  array<string, mixed>  $overrides
-     */
-    private function directAllocation(array $records, array $sale, array $overrides = []): int
-    {
-        $driver = User::factory()->create(['role' => 'driver', 'status' => 'active']);
-        $truckId = DB::table('trucks')->insertGetId([
-            'truck_code' => 'TRK-'.Str::upper(Str::random(8)),
-            'capacity_liters' => 40000,
-            'truck_type' => 'hauling',
-            'status' => 'assigned',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-        $quantity = $overrides['quantity_liters'] ?? 10000;
-        $haulStatus = $overrides['haul_status'] ?? 'completed';
-        $isCompletedHaul = $haulStatus === 'completed';
-        $purchaseId = DB::table('purchases')->insertGetId([
-            'purchase_code' => 'PUR-'.Str::upper(Str::random(8)),
-            'depot_id' => $records['depotId'],
-            'purchase_date' => '2026-08-29',
-            'payment_status' => 'paid',
-            'status' => $isCompletedHaul ? 'hauled' : 'partially_hauled',
-            'created_by' => $records['inventoryOfficer']->id,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-        $purchaseItemId = DB::table('purchase_items')->insertGetId([
-            'purchase_id' => $purchaseId,
-            'fuel_type_id' => $records['fuelTypeId'],
-            'quantity_ordered_liters' => $quantity,
-            'unit_cost' => 50,
-            'line_total' => $quantity * 50,
-            'quantity_hauled_liters' => $isCompletedHaul ? $quantity : 0,
-            'status' => $isCompletedHaul ? 'lifted' : 'unlifted',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-        $haulId = DB::table('hauls')->insertGetId([
-            'haul_code' => 'LFT-'.Str::upper(Str::random(8)),
-            'purchase_id' => $purchaseId,
-            'purchase_item_id' => $purchaseItemId,
-            'depot_id' => $records['depotId'],
-            'fuel_type_id' => $records['fuelTypeId'],
-            'truck_id' => $truckId,
-            'driver_user_id' => $driver->id,
-            'scheduled_at' => '2026-08-30 07:00:00',
-            'quantity_liters' => $quantity,
-            'status' => $haulStatus,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
-        return DB::table('haul_allocations')->insertGetId(array_merge([
-            'haul_id' => $haulId,
-            'fuel_type_id' => $records['fuelTypeId'],
-            'destination_type' => 'customer',
-            'customer_id' => $records['customerId'],
-            'sale_id' => $sale['saleId'],
-            'quantity_liters' => 10000,
-            'allocated_at' => '2026-08-30 08:30:00',
-            'status' => 'delivered',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ], collect($overrides)->except('haul_status')->all()));
+        return ['saleId' => $saleId, 'itemId' => $itemId];
     }
 
     /**
      * @param  array<string, mixed>  $records
      */
-    private function garageBalance(array $records): float
+    private function pay(array $records, int $saleId, float $amount): void
     {
-        $balance = DB::table('inventory_movements')
-            ->where('storage_location_id', $records['garageId'])
-            ->where('fuel_type_id', $records['fuelTypeId'])
-            ->selectRaw("COALESCE(SUM(CASE WHEN direction = 'in' THEN quantity_liters ELSE -quantity_liters END), 0) as balance")
-            ->value('balance');
+        DB::table('payments')->insert(['payment_code' => 'PAY-SO-'.$saleId, 'sale_id' => $saleId, 'payment_date' => '2026-08-30', 'amount' => $amount, 'method' => 'cash_on_delivery', 'received_by' => $records['salesOfficer']->id, 'created_at' => now(), 'updated_at' => now()]);
+    }
 
-        return round((float) $balance, 2);
+    private function remaining(int $purchaseItemId): float
+    {
+        return (float) app(PurchaseStockService::class)->line($purchaseItemId)->on_hand;
     }
 
     /**
@@ -417,32 +230,10 @@ class InventoryOfficerStockOutTest extends TestCase
     {
         $inventoryOfficer = User::factory()->create(['role' => 'inventory_officer', 'status' => 'active']);
         $salesOfficer = User::factory()->create(['role' => 'sales_officer', 'status' => 'active']);
-        $depotId = DB::table('depots')->insertGetId([
-            'depot_code' => 'DEP-STOCK-OUT',
-            'name' => 'Source Depot',
-            'status' => 'active',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-        $fuelTypeId = DB::table('fuel_types')->where('code', 'DSL')->value('id');
-        $garageId = DB::table('storage_locations')->insertGetId([
-            'location_code' => 'GAR-STOCK-OUT',
-            'name' => 'CJP Garage',
-            'type' => 'garage',
-            'status' => 'active',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-        $customerId = DB::table('customers')->insertGetId([
-            'customer_code' => 'CUS-STOCK-OUT',
-            'name' => 'Stock Out Customer',
-            'company_name' => 'Stock Out Customer Co.',
-            'payment_status' => 'clear',
-            'status' => 'active',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        $depotId = DB::table('depots')->insertGetId(['depot_code' => 'DEP-STOCK-OUT', 'name' => 'Source Depot', 'status' => 'active', 'created_at' => now(), 'updated_at' => now()]);
+        $fuelTypeId = (int) DB::table('fuel_types')->where('code', 'DSL')->value('id');
+        $customerId = DB::table('customers')->insertGetId(['customer_code' => 'CUS-STOCK-OUT', 'name' => 'Stock Out Customer', 'company_name' => 'Stock Out Customer Co.', 'payment_status' => 'clear', 'status' => 'active', 'created_at' => now(), 'updated_at' => now()]);
 
-        return compact('inventoryOfficer', 'salesOfficer', 'depotId', 'fuelTypeId', 'garageId', 'customerId');
+        return compact('inventoryOfficer', 'salesOfficer', 'depotId', 'fuelTypeId', 'customerId');
     }
 }

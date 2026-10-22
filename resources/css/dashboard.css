@@ -1,0 +1,240 @@
+/* Part 10 (October 22, 2026): Dashboard and Analytics, laid out as the System Analysis mockup. */
+.dash {
+    --dash-red: #e8453c;
+    --dash-green: #3b9a35;
+    --dash-orange: #e28a22;
+    --dash-navy: #0d1424;
+    display: grid;
+    gap: 22px;
+    min-width: 0;
+}
+
+.dash-section {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+}
+
+.dash-section-title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 800;
+}
+
+.dash-panel {
+    display: grid;
+    gap: 14px;
+    min-width: 0;
+    border: 1px solid var(--admin-soft-line);
+    border-radius: 8px;
+    padding: 14px;
+    background: #fff;
+}
+
+/* Filters: the search takes the free width, the dropdowns keep a fixed width. */
+.dash-filters {
+    display: grid;
+    grid-template-columns: minmax(180px, 1fr) repeat(auto-fit, minmax(150px, 190px));
+    gap: 10px;
+}
+
+.dash-filters-sales {
+    grid-template-columns: minmax(180px, 1fr) repeat(3, minmax(150px, 190px));
+}
+
+.dash-filters input,
+.dash-filters select {
+    min-width: 0;
+    height: 36px;
+    border: 1px solid var(--admin-soft-line);
+    border-radius: 6px;
+    padding: 0 10px;
+    background: #fff;
+    color: #111;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.dash-kpis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+}
+
+/* Sales Trend's seven cards fit one row on a desktop, as in the mockup. */
+.dash-kpis-7 {
+    grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+}
+
+.dash-kpi {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+    border: 1px solid var(--admin-soft-line);
+    border-radius: 6px;
+    padding: 8px 12px 10px;
+}
+
+.dash-kpi span {
+    color: #555;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.dash-kpi strong {
+    font-size: 16px;
+    text-align: center;
+    overflow-wrap: anywhere;
+    font-variant-numeric: tabular-nums;
+}
+
+.dash-charts {
+    display: grid;
+    gap: 14px;
+}
+
+.dash-charts-3 {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+}
+
+.dash-charts-2 {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+}
+
+.dash-chart {
+    display: grid;
+    align-content: start;
+    gap: 8px;
+    min-width: 0;
+    margin: 0;
+    border: 1px solid var(--admin-soft-line);
+    border-radius: 6px;
+    padding: 10px 12px 12px;
+}
+
+/* Chart title above its box (mockup), e.g. "Fuel Lifting Status". */
+.dash-chart-block {
+    display: grid;
+    align-content: start;
+    gap: 6px;
+    min-width: 0;
+}
+
+.dash-chart-title {
+    margin: 0;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+/* Expected Sales Revenue / Stock Out vs Receivables: the box sits right under the section title. */
+.dash-chart-panel {
+    padding: 14px;
+}
+
+.dash-notes-stack {
+    display: grid;
+    gap: 4px;
+}
+
+.dash-chart-canvas {
+    position: relative;
+    height: 220px;
+    min-width: 0;
+}
+
+.dash-chart-canvas-tall {
+    height: 280px;
+}
+
+.dash-chart-canvas .dashboard-empty-state {
+    height: 100%;
+    min-height: 0;
+}
+
+.dash-note {
+    margin: 0;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.dash-red {
+    color: var(--dash-red);
+}
+
+/* Expected Sales Revenue (wide) beside Stock Out vs Receivables. */
+.dash-revenue-row {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    gap: 18px;
+}
+
+.dash-chart-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.dash-toggle {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.dash-toggle .btn {
+    min-width: 76px;
+    min-height: 30px;
+    border: 1px solid var(--dash-navy);
+    border-radius: 6px;
+    background: #fff;
+    color: var(--dash-navy);
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.dash-toggle .btn.is-selected {
+    background: var(--dash-navy);
+    color: #fff;
+}
+
+.dash-peak-notes {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: start;
+    gap: 6px 18px;
+}
+
+.dash-note-end {
+    text-align: right;
+}
+
+.dash-insight-head {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.dash-insight-note {
+    margin: 0 0 10px;
+    border-left: 3px solid var(--dash-orange);
+    padding: 6px 10px;
+    background: #fdf4e8;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.dash .ai-insight-body {
+    padding: 0;
+}
+
+@media (max-width: 1023px) {
+    .dash-revenue-row {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .dash-filters,
+    .dash-filters-sales {
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
+    }
+}

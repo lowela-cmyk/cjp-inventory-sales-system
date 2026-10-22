@@ -85,56 +85,11 @@ class DatabaseIntegrityTest extends TestCase
         $this->assertDatabaseHas('driver_profiles', ['user_id' => $driver->id]);
     }
 
-    public function test_purchase_stock_in_and_inventory_links_stay_consistent(): void
-    {
-        $records = $this->baseRecords();
-        $purchase = $this->createPurchaseViaRoute($records, 30000);
-        $haulId = $this->completedGarageHaul($records, $purchase, 30000);
-        $allocationId = DB::table('haul_allocations')->insertGetId([
-            'haul_id' => $haulId,
-            'fuel_type_id' => $records['fuelTypeId'],
-            'destination_type' => 'garage',
-            'storage_location_id' => $records['garageId'],
-            'quantity_liters' => 30000,
-            'allocated_at' => '2026-09-04 09:00:00',
-            'status' => 'delivered',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
-        $this->actingAs($records['inventoryOfficer'])
-            ->post(route('inventory-officer.inventory.stock-in.store'), [
-                'haul_allocation_id' => $allocationId,
-                'storage_location_id' => $records['garageId'],
-                'quantity_liters' => 30000,
-                'movement_date' => '2026-09-04 10:00:00',
-                'remarks' => 'Database integrity stock-in',
-            ])
-            ->assertRedirect(route('inventory-officer.inventory.stock-in'));
-
-        $this->assertDatabaseHas('purchase_items', [
-            'id' => $purchase['purchaseItemId'],
-            'purchase_id' => $purchase['purchaseId'],
-            'quantity_hauled_liters' => '30000.00',
-            'status' => 'lifted',
-        ]);
-        $this->assertDatabaseHas('inventory_movements', [
-            'reference_type' => 'haul_allocation',
-            'reference_id' => $allocationId,
-            'storage_location_id' => $records['garageId'],
-            'fuel_type_id' => $records['fuelTypeId'],
-            'movement_type' => 'stock_in',
-            'direction' => 'in',
-            'quantity_liters' => '30000.00',
-        ]);
-        $this->assertSame(30000.0, $this->garageBalance($records));
-        $this->assertNoBrokenOperationalLinks();
-    }
-
     public function test_sales_stock_out_payment_and_receivable_links_stay_consistent(): void
     {
         $records = $this->baseRecords();
-        $this->seedGarageStock($records, 22000);
+        // Part 2 revisions: the stock is a purchase (22,000 L).
+        $purchaseItemId = $this->stockLot((int) $records['fuelTypeId'], 22000);
         $sale = $this->createSaleViaRoute($records, [
             'sale_code' => 'SLS-DB-LINKS',
             'quantity_liters' => 12000,
@@ -150,16 +105,10 @@ class DatabaseIntegrityTest extends TestCase
 
         $stockOut = DB::table('stock_outs')->where('sale_id', $sale['saleId'])->first();
 
-        $this->assertNotNull($stockOut->inventory_movement_id);
+        $this->assertSame($purchaseItemId, (int) $stockOut->purchase_item_id);
         $this->assertSame((int) $sale['saleItemId'], (int) $stockOut->sale_item_id);
-        $this->assertSame('garage', $stockOut->source_type);
-        $this->assertDatabaseHas('inventory_movements', [
-            'id' => $stockOut->inventory_movement_id,
-            'reference_type' => 'stock_out',
-            'reference_id' => $stockOut->id,
-            'direction' => 'out',
-            'quantity_liters' => '12000.00',
-        ]);
+        $this->assertSame('depot', $stockOut->source_type);
+        $this->assertEquals(12000.0, (float) $stockOut->quantity_liters);
         $this->assertDatabaseHas('sale_items', [
             'id' => $sale['saleItemId'],
             'fulfilled_quantity_liters' => '12000.00',
@@ -183,7 +132,7 @@ class DatabaseIntegrityTest extends TestCase
         ]);
         $this->assertDatabaseHas('sales', ['id' => $sale['saleId'], 'status' => 'paid']);
         $this->assertDatabaseHas('receivables', ['sale_id' => $sale['saleId'], 'status' => 'clear']);
-        $this->assertSame(10000.0, $this->garageBalance($records));
+        $this->assertSame(10000.0, (float) app(\App\Services\PurchaseStockService::class)->line($purchaseItemId)->on_hand);
         $this->assertNoBrokenOperationalLinks();
     }
 
@@ -571,9 +520,11 @@ class DatabaseIntegrityTest extends TestCase
             ->leftJoin('inventory_movements', 'inventory_movements.id', '=', 'stock_outs.inventory_movement_id')
             ->where(function ($query): void {
                 $query->whereNull('sales.id')
+                    // A released row names where it came from: a tank movement (before October 22, 2026) or a purchase.
                     ->orWhere(function ($query): void {
                         $query->where('stock_outs.status', 'released')
-                            ->whereNull('inventory_movements.id');
+                            ->whereNull('inventory_movements.id')
+                            ->whereNull('stock_outs.purchase_item_id');
                     });
             })
             ->count());

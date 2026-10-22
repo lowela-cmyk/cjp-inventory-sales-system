@@ -70,8 +70,9 @@ class DashboardSummaryService
     {
         return $this->remember('inventoryCards', fn (): array => [
             ['label' => 'Total Inventory', 'value' => $this->formatLiters($this->totalInventoryLiters()), 'caption' => 'Current stock'],
-            ['label' => 'Stock-In Today', 'value' => $this->formatLiters($this->stockMovementLiters('in', CarbonImmutable::now())), 'caption' => 'Received today'],
-            ['label' => 'Stock-Out Today', 'value' => $this->formatLiters($this->stockMovementLiters('out', CarbonImmutable::now())), 'caption' => 'Released today'],
+            // Part 2 revisions: stock is kept per purchase (tanks are retired).
+            ['label' => 'Purchased Today', 'value' => $this->formatLiters($this->stockMovementLiters('in', CarbonImmutable::now())), 'caption' => 'Purchases dated today'],
+            ['label' => 'Stock-Out Today', 'value' => $this->formatLiters($this->stockMovementLiters('out', CarbonImmutable::now())), 'caption' => 'Delivered today'],
             ['label' => 'Unlifted Fuel', 'value' => $this->formatLiters($this->unliftedFuelLiters()), 'caption' => 'Pending lifting'],
             ['label' => 'Open Purchases', 'value' => number_format($this->openPurchases()), 'caption' => 'Not cancelled'],
         ]);
@@ -699,13 +700,18 @@ class DashboardSummaryService
     {
         $key = 'stockMovementLiters:'.$direction.':'.$date->toDateString();
 
-        return $this->remember($key, fn (): float => (float) DB::table('inventory_movements')
-            ->where('direction', $direction)
-            ->whereNotExists($this->cancelledStockOutExists())
-            ->whereNotExists($this->cancelledHaulAllocationExists())
-            ->whereDate('movement_date', $date->toDateString())
-            ->selectRaw('COALESCE(SUM(quantity_liters), 0) as total')
-            ->value('total'));
+        // In: liters purchased that day. Out: liters delivered (released from purchases) that day.
+        return $this->remember($key, fn (): float => $direction === 'in'
+            ? (float) DB::table('purchase_items')
+                ->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
+                ->whereNull('purchases.deleted_at')
+                ->where('purchases.status', '!=', 'cancelled')
+                ->whereDate('purchases.purchase_date', $date->toDateString())
+                ->sum('purchase_items.quantity_ordered_liters')
+            : (float) DB::table('stock_outs')
+                ->where('status', 'released')
+                ->whereDate('stock_out_at', $date->toDateString())
+                ->sum('quantity_liters'));
     }
 
     private function outstandingReceivableRowsQuery(): Builder
@@ -846,14 +852,24 @@ class DashboardSummaryService
         };
     }
 
+    /**
+     * Stock per fuel (Part 2 revisions): the remaining liters of its purchases, ordered - delivered (as PurchaseStockService).
+     */
     private function inventoryBalancesByFuelQuery(): Builder
     {
-        return DB::table('inventory_movements')
-            ->whereIn('direction', ['in', 'out'])
-            ->whereNotExists($this->cancelledStockOutExists())
-            ->whereNotExists($this->cancelledHaulAllocationExists())
-            ->selectRaw("fuel_type_id, COALESCE(SUM(CASE WHEN direction = 'in' THEN quantity_liters WHEN direction = 'out' THEN -quantity_liters ELSE 0 END), 0) as liters")
-            ->groupBy('fuel_type_id');
+        $released = DB::table('stock_outs')
+            ->where('status', 'released')
+            ->whereNotNull('purchase_item_id')
+            ->groupBy('purchase_item_id')
+            ->selectRaw('purchase_item_id, COALESCE(SUM(quantity_liters), 0) as released');
+
+        return DB::table('purchase_items')
+            ->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
+            ->leftJoinSub($released, 'released', 'released.purchase_item_id', '=', 'purchase_items.id')
+            ->whereNull('purchases.deleted_at')
+            ->where('purchases.status', '!=', 'cancelled')
+            ->selectRaw('purchase_items.fuel_type_id, COALESCE(SUM(CASE WHEN purchase_items.quantity_ordered_liters > COALESCE(released.released, 0) THEN purchase_items.quantity_ordered_liters - COALESCE(released.released, 0) ELSE 0 END), 0) as liters')
+            ->groupBy('purchase_items.fuel_type_id');
     }
 
     /**

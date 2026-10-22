@@ -74,8 +74,9 @@ class SalesOfficerSalesManagementTest extends TestCase
             ->assertRedirect(route('sales-officer.sales'));
 
         $this->assertDatabaseHas('sales', ['id' => $sale->id, 'delivery_status' => 'delivered']);
-        $this->assertSame($beforeInventory + 1, DB::table('inventory_movements')->count());
-        $this->assertSame(1, DB::table('stock_outs')->where('sale_id', $sale->id)->where('source_type', 'garage')->count());
+        // Part 2 revisions: delivery deducts the liters from the order's purchase (one release, no tank movement).
+        $this->assertSame($beforeInventory, DB::table('inventory_movements')->count());
+        $this->assertSame(1, DB::table('stock_outs')->where('sale_id', $sale->id)->where('source_type', 'depot')->whereNotNull('purchase_item_id')->count());
         $this->assertDatabaseHas('sale_items', [
             'sale_id' => $sale->id,
             'fulfilled_quantity_liters' => '1500.25',
@@ -85,7 +86,7 @@ class SalesOfficerSalesManagementTest extends TestCase
             ->patch(route('sales-officer.sales.delivery-status.update', $sale->id), ['delivery_status' => 'delivered'])
             ->assertRedirect(route('sales-officer.sales'));
 
-        $this->assertSame($beforeInventory + 1, DB::table('inventory_movements')->count());
+        $this->assertSame($beforeInventory, DB::table('inventory_movements')->count());
         $this->assertSame(1, DB::table('stock_outs')->where('sale_id', $sale->id)->count());
         $this->assertSame(0, DB::table('payments')->count());
     }
@@ -140,8 +141,8 @@ class SalesOfficerSalesManagementTest extends TestCase
     public function test_delivery_stays_pending_and_creates_no_stock_out_when_inventory_is_insufficient(): void
     {
         $records = $this->baseRecords();
-        // Sold from a 15,000 L lot; before delivery 5,000 L of it leaves the tank another way, so 15,000 L
-        // can no longer be delivered from it.
+        // Sold from a 15,000 L purchase; before delivery the purchase is corrected to 10,000 L, so 15,000 L can no
+        // longer be delivered from it.
         $lotId = $this->stockLot((int) $records['fuelTypeId'], 15000);
 
         $this->actingAs($records['salesOfficer'])
@@ -150,7 +151,7 @@ class SalesOfficerSalesManagementTest extends TestCase
                 'sales_order_number' => 'SO-PREPARED-STOCK-OUT',
             ]))
             ->assertRedirect(route('sales-officer.sales'));
-        DB::table('inventory_movements')->where('id', $lotId)->update(['quantity_liters' => 10000]);
+        DB::table('purchase_items')->where('id', $lotId)->update(['quantity_ordered_liters' => 10000, 'line_total' => 500000]);
         $beforeInventory = DB::table('inventory_movements')->count();
 
         $sale = DB::table('sales')->where('sales_order_number', 'SO-PREPARED-STOCK-OUT')->first();
@@ -272,7 +273,8 @@ class SalesOfficerSalesManagementTest extends TestCase
                 'payment_method' => 'crypto',
                 'status' => 'shipped',
             ]))
-            ->assertSessionHasErrors(['customer_id', 'fuel_type_id', 'quantity_liters', 'unit_price', 'payment_method', 'status']);
+            // Part 2 revisions: an order line must name a purchase, so the unsellable fuel leaves no order line.
+            ->assertSessionHasErrors(['customer_id', 'items', 'payment_method', 'status']);
 
         $this->assertSame(0, DB::table('sales')->count());
         $this->assertSame(0, DB::table('sale_items')->count());
@@ -424,14 +426,17 @@ class SalesOfficerSalesManagementTest extends TestCase
         $stockOut = DB::table('stock_outs')->where('sale_id', $sale->id)->first();
         $this->assertNotNull($stockOut);
         $this->assertSame('released', $stockOut->status);
-        $this->assertNotNull($stockOut->inventory_movement_id);
+        $this->assertNotNull($stockOut->purchase_item_id);
+        $purchaseStock = fn (): float => (float) app(\App\Services\PurchaseStockService::class)->line((int) $stockOut->purchase_item_id)->on_hand;
+        $deliveredStock = $purchaseStock();
 
         $this->actingAs($records['salesOfficer'])
             ->patch(route('sales-officer.sales.cancel', $sale->id), ['cancel_reason' => 'customer_cancelled'])
             ->assertRedirect(route('sales-officer.sales'));
 
         $this->assertDatabaseHas('stock_outs', ['id' => $stockOut->id, 'status' => 'cancelled']);
-        $this->assertDatabaseHas('inventory_movements', ['id' => $stockOut->inventory_movement_id]);
+        // The voided release gives its liters back to the purchase; the release row stays for history.
+        $this->assertSame(round($deliveredStock + 1000, 2), $purchaseStock());
         $this->assertDatabaseHas('sale_items', [
             'sale_id' => $sale->id,
             'fulfilled_quantity_liters' => '0.00',
@@ -641,7 +646,10 @@ class SalesOfficerSalesManagementTest extends TestCase
         DB::table('sale_items')->insert([
             'sale_id' => $saleId,
             'fuel_type_id' => $records['fuelTypeId'],
+            // Part 2 revisions: the order line names the purchase it is deducted from.
+            'purchase_item_id' => $records['purchaseItemId'],
             'quantity_liters' => 1000,
+            'main_quantity_liters' => 1000,
             'unit_price' => 60,
             'line_total' => 60000,
             'fulfilled_quantity_liters' => 0,
@@ -728,22 +736,9 @@ class SalesOfficerSalesManagementTest extends TestCase
             'updated_at' => now(),
         ]);
 
-        DB::table('inventory_movements')->insert([
-            'movement_code' => 'MOV-'.Str::upper(Str::random(8)),
-            'storage_location_id' => $storageLocationId,
-            'fuel_type_id' => $fuelTypeId,
-            'movement_type' => 'beginning',
-            'direction' => 'in',
-            'quantity_liters' => 10000,
-            'unit_cost' => 50,
-            'reference_type' => 'test',
-            'reference_id' => 1,
-            'movement_date' => now(),
-            'created_by' => $admin->id,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        // Part 2 revisions: the stock is a purchase of the fuel (10,000 L).
+        $purchaseItemId = $this->stockLot($fuelTypeId, 10000);
 
-        return compact('salesOfficer', 'admin', 'customerId', 'fuelTypeId', 'storageLocationId');
+        return compact('salesOfficer', 'admin', 'customerId', 'fuelTypeId', 'storageLocationId', 'purchaseItemId');
     }
 }

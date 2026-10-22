@@ -61,7 +61,7 @@
                 <x-filter.date name="date_from" label="From date" :value="$filters['date_from'] ?? null" />
                 <x-filter.date name="date_to" label="To date" :value="$filters['date_to'] ?? null" />
                 <x-filter.select name="depot_id" label="Depot" :options="$filterOptions['depots']->pluck('name', 'id')" :selected="$filters['depot_id'] ?? null" />
-                <x-filter.select name="destination_type" label="Destination" :options="['garage' => 'Garage', 'customer' => 'Client']" :selected="$filters['destination_type'] ?? null" />
+                <x-filter.select name="destination_type" label="Destination" :options="['customer' => 'Client']" :selected="$filters['destination_type'] ?? null" />
                 <x-filter.select name="fuel_type_id" label="Fuel Type" :options="$filterOptions['fuelTypes']->pluck('name', 'id')" :selected="$filters['fuel_type_id'] ?? null" />
             </x-filter.bar>
 
@@ -115,7 +115,7 @@
                 <x-filter.date name="date_from" label="From date" :value="$filters['date_from'] ?? null" />
                 <x-filter.date name="date_to" label="To date" :value="$filters['date_to'] ?? null" />
                 <x-filter.select name="depot_id" label="Depot" :options="$filterOptions['depots']->pluck('name', 'id')" :selected="$filters['depot_id'] ?? null" />
-                <x-filter.select name="destination_type" label="Destination" :options="['garage' => 'Garage', 'customer' => 'Client']" :selected="$filters['destination_type'] ?? null" />
+                <x-filter.select name="destination_type" label="Destination" :options="['customer' => 'Client']" :selected="$filters['destination_type'] ?? null" />
                 <x-filter.select name="fuel_type_id" label="Fuel Type" :options="$filterOptions['fuelTypes']->pluck('name', 'id')" :selected="$filters['fuel_type_id'] ?? null" />
             </x-filter.bar>
 

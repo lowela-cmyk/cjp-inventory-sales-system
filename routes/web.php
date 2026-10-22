@@ -2,7 +2,7 @@
 
 use App\Http\Controllers\AdminBusinessInsightController;
 use App\Http\Controllers\AdminDashboardController;
-use App\Http\Controllers\AdminInventoryVarianceExplanationController;
+use App\Http\Controllers\AdminDashboardInsightController;
 use App\Http\Controllers\AdminMonitoringController;
 use App\Http\Controllers\AdminRevenueInsightController;
 use App\Http\Controllers\AdminSalesReportController;
@@ -42,12 +42,13 @@ Route::middleware(['auth'])->group(function () {
     Route::redirect('/admin', '/admin/dashboard')->middleware('role:admin')->name('admin.shortcut');
     Route::prefix('admin')->name('admin.')->middleware('role:admin')->group(function () {
         Route::get('/dashboard', AdminDashboardController::class)->name('dashboard');
-        Route::post('/dashboard/inventory-variance-explanation', AdminInventoryVarianceExplanationController::class)->name('dashboard.inventory-variance-explanation');
+        // Part 10: "Insights and A.I Reporting" (the inventory variance explanation is part of it).
+        Route::post('/dashboard/insight', AdminDashboardInsightController::class)->name('dashboard.insight');
         Route::get('/inventory', [InventoryOfficerPurchaseController::class, 'index'])->name('inventory');
         Route::post('/inventory/purchases', [InventoryOfficerPurchaseController::class, 'store'])->name('inventory.purchases.store');
         Route::patch('/inventory/purchases/{purchaseItem}', [InventoryOfficerPurchaseController::class, 'update'])->name('inventory.purchases.update');
         Route::patch('/inventory/purchases/{purchaseItem}/cancel', [InventoryOfficerPurchaseController::class, 'cancel'])->name('inventory.purchases.cancel');
-        Route::post('/inventory/stock-in', [InventoryOfficerPurchaseController::class, 'storeStockIn'])->name('inventory.stock-in.store');
+        // Part 2 revisions: Stock-In (tank receipts) is retired; the old URL opens Purchases.
         Route::get('/inventory/stock-in', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'stock-in')->name('inventory.stock-in');
         Route::get('/inventory/stock-out', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'stock-out')->name('inventory.stock-out');
         Route::post('/inventory/depots', [InventoryOfficerPurchaseController::class, 'storeDepot'])->name('inventory.depots.store');
@@ -121,7 +122,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/inventory/purchases', [InventoryOfficerPurchaseController::class, 'store'])->name('inventory.purchases.store');
         Route::patch('/inventory/purchases/{purchaseItem}', [InventoryOfficerPurchaseController::class, 'update'])->name('inventory.purchases.update');
         Route::patch('/inventory/purchases/{purchaseItem}/cancel', [InventoryOfficerPurchaseController::class, 'cancel'])->name('inventory.purchases.cancel');
-        Route::post('/inventory/stock-in', [InventoryOfficerPurchaseController::class, 'storeStockIn'])->name('inventory.stock-in.store');
+        // Part 2 revisions: Stock-In (tank receipts) is retired; the old URL opens Purchases.
         Route::get('/inventory/stock-in', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'stock-in')->name('inventory.stock-in');
         Route::get('/inventory/stock-out', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'stock-out')->name('inventory.stock-out');
         Route::post('/inventory/depots', [InventoryOfficerPurchaseController::class, 'storeDepot'])->name('inventory.depots.store');

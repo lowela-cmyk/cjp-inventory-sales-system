@@ -7,7 +7,7 @@ use App\Services\DashboardSummaryService;
 use App\Services\IdempotencyService;
 use App\Services\SaleConfirmationService;
 use App\Services\SaleCorrectionService;
-use App\Services\StockLotService;
+use App\Services\PurchaseStockService;
 use App\Support\F1Split;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Database\QueryException;
@@ -26,7 +26,7 @@ class SalesOfficerCustomerController extends Controller
         private readonly SaleConfirmationService $saleConfirmationService,
         private readonly IdempotencyService $idempotencyService,
         private readonly SaleCorrectionService $saleCorrectionService,
-        private readonly StockLotService $stockLots
+        private readonly PurchaseStockService $purchaseStock
     ) {}
 
     public const PAYMENT_STATUSES = ['clear', 'pending', 'partial', 'unpaid'];
@@ -60,8 +60,15 @@ class SalesOfficerCustomerController extends Controller
         'other' => 'Other',
     ];
 
-    /** Part 9: how the order reaches the client. Garage to Client is sold from garage stock lots. */
-    public const DELIVERY_TYPES = ['garage_to_client' => 'Garage to Client', 'depot_to_client' => 'Depot to Client'];
+    /**
+     * How the order reaches the client (Part 2 revisions). Standard orders are delivered by their own truck (Delivery
+     * Details) and deducted from their purchases when Delivered; Depot to Client orders ride on a lift and are
+     * deducted when the lift is completed.
+     */
+    public const DELIVERY_TYPES = ['depot_to_client' => 'Depot to Client', 'standard' => 'Standard'];
+
+    /** Delivery statuses a Standard order can be recorded with (Delivered deducts the stock on save). */
+    private const NEW_ORDER_DELIVERY_STATUSES = ['pending', 'out_for_delivery', 'delivered'];
 
     /** Payment Status shown read-only in the sale modals, worked out from recorded payments. */
     private const PAYMENT_STATUS_LABELS = ['unpaid' => 'Unpaid', 'partially_paid' => 'Partially Paid', 'paid' => 'Fully Paid'];
@@ -75,6 +82,7 @@ class SalesOfficerCustomerController extends Controller
             'search' => ['nullable', 'string', 'max:100'],
             'status' => ['nullable', Rule::in($activeTab === 'customers' ? self::ACCOUNT_STATUSES : array_keys(self::RECEIVABLE_FILTER_STATUSES))],
             'delivery_status' => ['nullable', Rule::in(self::DELIVERY_STATUSES)],
+            'delivery_type' => ['nullable', Rule::in(array_keys(self::DELIVERY_TYPES))],
             'date' => ['nullable', 'date'],
             'fuel_type_id' => ['nullable', 'integer', Rule::exists('fuel_types', 'id')],
             'location' => ['nullable', 'string', 'max:255'],
@@ -86,6 +94,7 @@ class SalesOfficerCustomerController extends Controller
         $filters = array_filter([
             'status' => $data['status'] ?? null,
             'delivery_status' => $data['delivery_status'] ?? null,
+            'delivery_type' => $data['delivery_type'] ?? null,
             'date' => $data['date'] ?? null,
             'fuel_type_id' => $data['fuel_type_id'] ?? null,
             'location' => $data['location'] ?? null,
@@ -98,6 +107,7 @@ class SalesOfficerCustomerController extends Controller
             'filterOptions' => [
                 'receivableStatuses' => self::RECEIVABLE_FILTER_STATUSES,
                 'deliveryStatuses' => collect(self::DELIVERY_STATUSES)->mapWithKeys(fn (string $status): array => [$status => $this->label($status)])->all(),
+                'deliveryTypes' => self::DELIVERY_TYPES,
                 'accountStatuses' => collect(self::ACCOUNT_STATUSES)->mapWithKeys(fn (string $status): array => [$status => $this->label($status)])->all(),
                 'locations' => DB::table('customers')->whereNotNull('location')->where('location', '!=', '')->distinct()->orderBy('location')->pluck('location', 'location'),
             ],
@@ -109,8 +119,12 @@ class SalesOfficerCustomerController extends Controller
             'deliveryTypes' => self::DELIVERY_TYPES,
             'f1Percentages' => F1Split::PERCENTAGES,
             'f1EligibleCodes' => F1Split::ELIGIBLE_CODES,
-            // Stock Source for Record Sales (Part 8 #8): lots with stock, by fuel then oldest first.
-            'stockLotOptions' => $this->stockLots->saleOptions(),
+            // Part 2 revisions: the purchases an order's fuel and its F1 portion are deducted from.
+            'purchaseOptions' => $purchaseOptions = $this->purchaseStock->saleOptions($this->purchaseIdsOnSales()),
+            'f1PurchaseOptions' => $purchaseOptions->where('fuel_code', F1Split::F1_CODE)->values(),
+            'newOrderDeliveryStatuses' => self::NEW_ORDER_DELIVERY_STATUSES,
+            'deliveryTrucks' => DB::table('trucks')->where('status', '!=', 'inactive')->orderBy('truck_code')->get(['id', 'truck_code', 'plate_number']),
+            'deliveryDrivers' => DB::table('users')->where('role', 'driver')->where('status', 'active')->orderBy('name')->get(['id', 'name']),
             'paymentStatuses' => self::PAYMENT_STATUSES,
             'accountStatuses' => self::ACCOUNT_STATUSES,
             'saleStatuses' => self::SALE_STATUSES,
@@ -259,7 +273,7 @@ class SalesOfficerCustomerController extends Controller
         $items = $this->normalizedSaleItems($data);
         $saleTotal = 0.0;
         foreach ($items as $item) {
-            $lineTotal = (float) $this->lineTotal($item['quantity_liters'], $item['unit_price']);
+            $lineTotal = (float) $item['line_total'];
             if ($lineTotal > 999999999999.99) {
                 return back()
                     ->withErrors(['quantity_liters' => 'Calculated line total exceeds allowed limit.'])
@@ -307,12 +321,16 @@ class SalesOfficerCustomerController extends Controller
                             'payment_terms' => $data['payment_terms'] ?? $this->defaultPaymentTerms($data['payment_method']),
                             'status' => $requestedStatus === 'cancelled' ? 'cancelled' : 'draft',
                             'delivery_status' => $requestedStatus === 'cancelled' ? 'cancelled' : 'pending',
+                            // Standard orders: Delivery Details (Depot to Client orders take them from their lift).
+                            'delivery_truck_id' => $data['delivery_truck_id'] ?? null,
+                            'delivery_driver_user_id' => $data['delivery_driver_user_id'] ?? null,
+                            'delivery_date' => $data['delivery_date'] ?? null,
                             'created_by' => $request->user()->id,
                             'created_at' => now(),
                             'updated_at' => now(),
                         ]);
 
-                        $this->assertLotStock($items);
+                        $this->assertPurchaseStock($items);
                         $now = now();
                         foreach ($items as $item) {
                             DB::table('sale_items')->insertGetId($this->saleItemRow($saleId, $item, $now));
@@ -341,6 +359,13 @@ class SalesOfficerCustomerController extends Controller
                                 $this->blankToNull($data['payment_remarks'] ?? null) ?? 'Initial payment recorded with sale',
                                 (int) $request->user()->id
                             );
+                        }
+
+                        // A Standard order recorded as Out for Delivery / Delivered moves on now; Delivered deducts its
+                        // liters from its purchases on save.
+                        $deliveryStatus = $data['delivery_status'] ?? 'pending';
+                        if ($deliveryStatus !== 'pending' && ! in_array($requestedStatus, ['draft', 'cancelled'], true)) {
+                            $this->saleConfirmationService->updateDeliveryStatus((int) $saleId, $deliveryStatus, (int) $request->user()->id);
                         }
 
                         return [
@@ -419,29 +444,13 @@ class SalesOfficerCustomerController extends Controller
                 ->withErrors(['sale' => 'A paid sale cannot be changed to a non-paid status.']);
         }
 
-        $items = $this->normalizedSaleItems($data);
+        $items = $this->normalizedSaleItems($data, $sale);
         foreach ($items as $item) {
-            $lineTotal = (float) $this->lineTotal($item['quantity_liters'], $item['unit_price']);
-            if ($lineTotal > 999999999999.99) {
+            if ((float) $item['line_total'] > 999999999999.99) {
                 return back()
                     ->withInput()
                     ->withErrors(['quantity_liters' => 'Calculated line total exceeds allowed limit.']);
             }
-        }
-
-        // A sale recorded before stock lots keeps its lot-less lines editable; any extra line must name a lot.
-        // Depot to Client lines have no lot: they are released through their lift.
-        $legacyLines = $data['delivery_type'] === 'depot_to_client'
-            ? PHP_INT_MAX
-            : DB::table('sale_items')->where('sale_id', $sale)->whereNull('stock_in_movement_id')->count();
-        $lotErrors = [];
-        foreach ($items as $index => $item) {
-            if ($item['stock_lot_id'] === null && --$legacyLines < 0) {
-                $lotErrors["items.$index.stock_lot_id"] = 'Select a stock source for this line.';
-            }
-        }
-        if ($lotErrors !== []) {
-            return back()->withInput()->withErrors($lotErrors);
         }
 
         try {
@@ -456,12 +465,17 @@ class SalesOfficerCustomerController extends Controller
                         'payment_method' => $data['payment_method'],
                         'payment_terms' => $data['payment_terms'] ?? $this->defaultPaymentTerms($data['payment_method']),
                         'updated_at' => now(),
-                    ]);
+                    ] + ($data['delivery_type'] === 'standard' ? [
+                        // Standard orders: Delivery Details stay editable.
+                        'delivery_truck_id' => $data['delivery_truck_id'] ?? null,
+                        'delivery_driver_user_id' => $data['delivery_driver_user_id'] ?? null,
+                        'delivery_date' => $data['delivery_date'] ?? null,
+                    ] : []));
 
                 if (! $hasDependencies && $this->changesProtectedSaleFields($row, $data)) {
                     DB::table('sale_items')->where('sale_id', $sale)->delete();
                     // Checked after the old lines are gone, so this sale's own reservation is not counted twice.
-                    $this->assertLotStock($items);
+                    $this->assertPurchaseStock($items);
 
                     $now = now();
                     foreach ($items as $item) {
@@ -846,6 +860,8 @@ class SalesOfficerCustomerController extends Controller
             ->join('customers', 'customers.id', '=', 'sales.customer_id')
             ->leftJoin('receivables', 'receivables.sale_id', '=', 'sales.id')
             ->leftJoinSub($payments, 'payments_total', 'payments_total.sale_id', '=', 'sales.id')
+            ->leftJoin('trucks as delivery_trucks', 'delivery_trucks.id', '=', 'sales.delivery_truck_id')
+            ->leftJoin('users as delivery_drivers', 'delivery_drivers.id', '=', 'sales.delivery_driver_user_id')
             ->whereNull('sales.deleted_at')
             ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
                 'sales.sale_code',
@@ -860,6 +876,7 @@ class SalesOfficerCustomerController extends Controller
             ]))
             ->when($filters['date'] ?? null, fn (Builder $query, string $date): Builder => $query->whereDate('sales.sale_date', $date))
             ->when($filters['delivery_status'] ?? null, fn (Builder $query, string $status): Builder => $query->where('sales.delivery_status', $status))
+            ->when($filters['delivery_type'] ?? null, fn (Builder $query, string $type): Builder => $query->where('sales.delivery_type', $type))
             ->when($filters['fuel_type_id'] ?? null, fn (Builder $query, mixed $fuelTypeId): Builder => $query->whereExists(
                 fn (Builder $exists): Builder => $exists->selectRaw('1')->from('sale_items as filter_items')
                     ->whereColumn('filter_items.sale_id', 'sales.id')
@@ -890,6 +907,12 @@ class SalesOfficerCustomerController extends Controller
             'receivables.due_date',
             'receivables.status as receivable_status',
             'payments_total.total_paid',
+            'sales.delivery_truck_id',
+            'sales.delivery_driver_user_id',
+            'sales.delivery_date',
+            'delivery_trucks.truck_code as delivery_truck_code',
+            'delivery_trucks.plate_number as delivery_truck_plate',
+            'delivery_drivers.name as delivery_driver_name',
         ];
 
         $paginator = null;
@@ -931,7 +954,9 @@ class SalesOfficerCustomerController extends Controller
                 $saleItems = $itemsBySale[$saleId] ?? [];
                 $latestPaymentDate = $latestPaymentDates[$saleId] ?? null;
                 $correctionAction = $this->saleCorrectionService->correctionMode($saleId);
-                $deliveryType = self::DELIVERY_TYPES[$row->delivery_type] ?? self::DELIVERY_TYPES['garage_to_client'];
+                $deliveryType = self::DELIVERY_TYPES[$row->delivery_type] ?? self::DELIVERY_TYPES['standard'];
+                $isStandard = $row->delivery_type !== 'depot_to_client';
+                $deliveryTruck = $row->delivery_truck_code ? trim($row->delivery_truck_code.($row->delivery_truck_plate ? ' / '.$row->delivery_truck_plate : '')) : 'N/A';
                 // Part 9: Payment Status is read-only and follows the recorded payments.
                 $paymentStatus = self::PAYMENT_STATUS_LABELS[$this->salePaymentStatus($saleTotal, $paid)];
                 $f1Summary = collect($saleItems)->filter(fn (array $item): bool => $item['f1_quantity_liters'] > 0)
@@ -947,6 +972,9 @@ class SalesOfficerCustomerController extends Controller
                     'sales_order_number' => $row->sales_order_number,
                     'delivery_type' => $row->delivery_type,
                     'delivery_type_label' => $deliveryType,
+                    'delivery_truck_id' => $row->delivery_truck_id,
+                    'delivery_driver_user_id' => $row->delivery_driver_user_id,
+                    'delivery_date' => $row->delivery_date ? date('Y-m-d\\TH:i', strtotime((string) $row->delivery_date)) : null,
                     'payment_status' => $paymentStatus,
                     'sale_date' => $row->sale_date,
                     'customer_id' => (int) $row->customer_id,
@@ -988,7 +1016,12 @@ class SalesOfficerCustomerController extends Controller
                         'Company Name' => $row->company_name,
                         'Fuel Type' => $this->fuelSummary((string) $row->first_fuel_name, (int) $row->item_count),
                         'Quantity Ordered' => $this->formatLiters($row->total_quantity_liters),
-                    ] + ($f1Summary !== '' ? ['F1 Split' => $f1Summary] : []) + [
+                        'Purchase ID' => collect($saleItems)->pluck('source')->implode('; ') ?: 'N/A',
+                    ] + ($f1Summary !== '' ? ['F1 Split' => $f1Summary] : []) + ($isStandard ? [
+                        'Truck ID' => $deliveryTruck,
+                        'Driver Name' => $row->delivery_driver_name ?: 'N/A',
+                        'Delivery Date' => $row->delivery_date ? $this->formatDateTime($row->delivery_date) : 'N/A',
+                    ] : []) + [
                         'Quantity Fulfilled' => $this->formatLiters(collect($saleItems)->sum('fulfilled_quantity_liters')),
                         'Total' => $this->formatNumber($saleTotal),
                         'Total Paid' => $this->formatNumber($paid),
@@ -1019,70 +1052,35 @@ class SalesOfficerCustomerController extends Controller
     private function validatedSaleData(Request $request, ?int $saleId = null): array
     {
         $current = $saleId ? DB::table('sales')->where('id', $saleId)->first(['payment_method', 'payment_terms', 'delivery_type']) : null;
-        // Part 9: the delivery type is chosen when the sale is recorded and stays fixed (lifts may link to it).
-        $deliveryType = $current->delivery_type ?? $request->input('delivery_type');
-        $isDepot = $deliveryType === 'depot_to_client';
+        // The delivery type is chosen when the order is recorded and stays fixed (lifts may link to it).
+        $isDepot = ($current->delivery_type ?? $request->input('delivery_type')) === 'depot_to_client';
+        $isStandard = ! $isDepot;
 
         $data = $request->validate([
             'idempotency_key' => [$saleId ? 'nullable' : 'required', 'uuid'],
-            'delivery_type' => [$saleId ? 'exclude' : 'nullable', Rule::in(array_keys(self::DELIVERY_TYPES))],
+            // "garage_to_client" is the pre-October 22, 2026 name of Standard.
+            'delivery_type' => [$saleId ? 'exclude' : 'nullable', Rule::in([...array_keys(self::DELIVERY_TYPES), 'garage_to_client'])],
             'sales_order_number' => ['nullable', 'string', 'max:60', Rule::unique('sales', 'sales_order_number')->ignore($saleId)->whereNull('deleted_at')],
             'customer_id' => ['required', 'integer', Rule::exists('customers', 'id')->where(fn (Builder $query): Builder => $query->where('status', 'active'))],
             'sale_date' => ['required', 'date'],
-            'fuel_type_id' => [
-                'required_without:items',
-                'integer',
-                ApprovedFuelType::rule(),
-            ],
-            'quantity_liters' => ['required_without:items', 'numeric', 'gt:0', 'max:1000000'],
-            'unit_price' => ['required_without:items', 'numeric', 'gt:0', 'max:10000'],
-            // A new sale is recorded line by line, each from a stock lot (Part 8 follow-up).
+            // Part 2 revisions: an order line names the purchase its fuel is deducted from ("PUR-022 · PREMIUM").
             'items' => [$saleId ? 'nullable' : 'required', 'array', 'min:1'],
-            // Part 8 #8: a line is sold from a stock lot (its fuel and cost come from the lot). A line without a
-            // lot names its fuel instead (legacy pooled release). Depot to Client lines name their fuel: they are
-            // released from the depot through a lift, never from garage stock (Part 9).
-            'items.*.stock_lot_id' => $isDepot
-                ? ['exclude']
-                : [$saleId ? 'nullable' : 'required', 'integer', Rule::exists('inventory_movements', 'id')->where('direction', 'in')],
-            'items.*.fuel_type_id' => $isDepot
-                ? ['required_with:items', 'integer', ApprovedFuelType::rule()]
-                : [
-                    'exclude_with:items.*.stock_lot_id',
-                    'nullable',
-                    'required_without:items.*.stock_lot_id',
-                    'integer',
-                    ApprovedFuelType::rule(),
-                ],
+            'items.*.purchase_item_id' => [$saleId ? 'nullable' : 'required', 'integer', Rule::exists('purchase_items', 'id')],
+            // Only lines recorded before purchases were chosen send their fuel instead.
+            'items.*.fuel_type_id' => ['nullable', 'integer', ApprovedFuelType::rule()],
             'items.*.quantity_liters' => ['required_with:items', 'numeric', 'gt:0', 'max:1000000'],
             'items.*.unit_price' => ['required_with:items', 'numeric', 'gt:0', 'max:10000'],
-            // Part 9: share of the ordered liters delivered as F1 (Unleaded / Premium lines only).
+            // F1 portion (Unleaded / Premium lines): its own F1 purchase and F1 price.
             'items.*.f1_percentage' => [
                 'nullable',
-                function (string $attribute, mixed $value, \Closure $fail) use ($request): void {
-                    if ($value === null || $value === '' || (float) $value === 0.0) {
-                        return;
-                    }
-                    if (preg_match('/^items\.(\d+)\.f1_percentage$/', $attribute, $matches)) {
-                        $index = (int) $matches[1];
-                        $item = $request->input("items.$index");
-                        if (is_array($item)) {
-                            $fuelTypeId = null;
-                            if (! empty($item['stock_lot_id'])) {
-                                $fuelTypeId = DB::table('inventory_movements')->where('id', $item['stock_lot_id'])->value('fuel_type_id');
-                            } elseif (! empty($item['fuel_type_id'])) {
-                                $fuelTypeId = $item['fuel_type_id'];
-                            }
-                            if ($fuelTypeId !== null && ! in_array((int) $fuelTypeId, F1Split::eligibleFuelIds(), true)) {
-                                return;
-                            }
-                        }
-                    }
-                    if (! in_array((int) $value, F1Split::PERCENTAGES, false)) {
-                        $fail('Select an F1 Percentage of 10%, 15% or 17%.');
+                function (string $attribute, mixed $value, \Closure $fail): void {
+                    if ($value !== null && $value !== '' && (float) $value !== 0.0 && ! in_array((float) $value, array_map('floatval', F1Split::PERCENTAGES), true)) {
+                        $fail('Select an F1 % of 10%, 15% or 17%.');
                     }
                 },
             ],
-            'f1_percentage' => ['nullable'],
+            'items.*.f1_purchase_item_id' => ['nullable', 'integer', Rule::exists('purchase_items', 'id')],
+            'items.*.f1_unit_price' => ['nullable', 'numeric', 'gte:0', 'max:10000'],
             'amount_paid' => [$saleId ? 'prohibited' : 'nullable', 'numeric', 'gte:0', 'max:999999999999.99'],
             'payment_reference_number' => [$saleId ? 'prohibited' : 'nullable', 'string', 'max:100'],
             'payment_date' => [$saleId ? 'prohibited' : 'nullable', 'date', 'after_or_equal:sale_date'],
@@ -1091,20 +1089,27 @@ class SalesOfficerCustomerController extends Controller
             'payment_terms' => ['nullable', Rule::in($this->allowedValues(self::PAYMENT_TERMS, self::LEGACY_PAYMENT_TERMS, $current?->payment_terms))],
             'status' => ['nullable', Rule::in(array_diff(self::SALE_STATUSES, ['paid']))],
             'due_date' => ['nullable', 'date', 'after_or_equal:sale_date'],
+            // Standard orders only: Delivery Details. Depot to Client orders are delivered through their lift.
+            'delivery_truck_id' => $isStandard ? ['nullable', 'integer', Rule::exists('trucks', 'id')] : ['exclude'],
+            'delivery_driver_user_id' => $isStandard ? ['nullable', 'integer', Rule::exists('users', 'id')->where(fn (Builder $query): Builder => $query->where('role', 'driver'))] : ['exclude'],
+            'delivery_date' => $isStandard ? ['nullable', 'date'] : ['exclude'],
+            'delivery_status' => $isStandard && ! $saleId ? ['nullable', Rule::in(self::NEW_ORDER_DELIVERY_STATUSES)] : ['prohibited'],
             'created_by' => ['prohibited'],
             'line_total' => ['prohibited'],
             'total' => ['prohibited'],
             'total_paid' => ['prohibited'],
             'balance' => ['prohibited'],
-            'delivery_status' => ['prohibited'],
             'delivered_at' => ['prohibited'],
             'delivery_status_updated_by' => ['prohibited'],
         ], [
-            'items.required' => $isDepot ? 'Add at least one order line.' : 'Add at least one line with a stock source.',
-            'items.*.stock_lot_id.required' => 'Select a stock source for this line.',
-            'items.*.f1_percentage.in' => 'Select an F1 Percentage of 10%, 15% or 17%.',
+            'items.required' => 'Add the order line.',
+            'items.*.purchase_item_id.required' => 'Select the Fuel Type purchase.',
+        ], [
+            'delivery_truck_id' => 'truck',
+            'delivery_driver_user_id' => 'driver',
+            'delivery_date' => 'delivery date',
         ]);
-        $data['delivery_type'] = $isDepot ? 'depot_to_client' : 'garage_to_client';
+        $data['delivery_type'] = $isDepot ? 'depot_to_client' : 'standard';
 
         return $data;
     }
@@ -1134,61 +1139,52 @@ class SalesOfficerCustomerController extends Controller
     }
 
     /**
-     * Sale lines as saved, with the F1 split (Part 9): f1_percentage only counts on an Unleaded or Premium line;
-     * on any other fuel it is treated as 0%.
+     * Order lines as saved (Part 2 revisions). The fuel comes from the selected purchase. An F1 % only counts on an
+     * Unleaded or Premium line (otherwise 0%): f1_percentage of the ordered liters is F1, the rest the line's own fuel.
+     * Line Total = main liters x Fuel Price + F1 liters x F1 Price.
      *
      * @param  array<string, mixed>  $data
-     * @return array<int, array{fuel_type_id: int, stock_lot_id: ?int, quantity_liters: mixed, unit_price: mixed, f1_percentage: float, main_quantity_liters: float, f1_quantity_liters: float}>
+     * @return array<int, array<string, mixed>>
      */
-    private function normalizedSaleItems(array $data): array
+    private function normalizedSaleItems(array $data, ?int $saleId = null): array
     {
-        if (! empty($data['items'])) {
-            $lotFuel = DB::table('inventory_movements')
-                ->whereIn('id', collect($data['items'])->pluck('stock_lot_id')->filter()->all())
-                ->pluck('fuel_type_id', 'id');
-
-            // Validated data can rebuild items in rule order (a line with a lot before one without), so restore
-            // the submitted order: line N is still items.N for its error messages and for the saved order.
-            $items = collect($data['items'])
-                ->sortKeys()
-                ->map(function (array $item) use ($lotFuel): array {
-                    $lotId = ($item['stock_lot_id'] ?? null) ? (int) $item['stock_lot_id'] : null;
-
-                    return [
-                        // The lot decides the fuel, whatever fuel the client sent.
-                        'fuel_type_id' => $lotId ? (int) $lotFuel[$lotId] : (int) $item['fuel_type_id'],
-                        'stock_lot_id' => $lotId,
-                        'quantity_liters' => $item['quantity_liters'],
-                        'unit_price' => $item['unit_price'],
-                        'f1_percentage' => (float) ($item['f1_percentage'] ?? 0),
-                    ];
-                })
-                ->values()
-                ->all();
-        } else {
-            $items = [[
-                'fuel_type_id' => (int) $data['fuel_type_id'],
-                'stock_lot_id' => null,
-                'quantity_liters' => $data['quantity_liters'],
-                'unit_price' => $data['unit_price'],
-                'f1_percentage' => (float) ($data['f1_percentage'] ?? 0.0),
-            ]];
-        }
-
-        // Depot to Client orders split the same way: the main fuel is lifted from the depot, the F1 is loaded at the garage.
+        $rows = collect($data['items'] ?? [])->sortKeys()->values()->all();
+        $existing = $saleId ? DB::table('sale_items')->where('sale_id', $saleId)->orderBy('id')->pluck('fuel_type_id')->values() : collect();
+        $purchaseFuel = DB::table('purchase_items')
+            ->whereIn('id', collect($rows)->pluck('purchase_item_id')->filter()->map(fn (mixed $id): int => (int) $id)->all() ?: [0])
+            ->pluck('fuel_type_id', 'id');
         $eligible = F1Split::eligibleFuelIds();
-        foreach ($items as $index => $item) {
-            $percentage = in_array($item['fuel_type_id'], $eligible, true) ? $item['f1_percentage'] : 0.0;
-            [$main, $f1] = F1Split::split((float) $item['quantity_liters'], $percentage);
-            $items[$index] += ['main_quantity_liters' => $main, 'f1_quantity_liters' => $f1];
-            $items[$index]['f1_percentage'] = $percentage;
+
+        $items = [];
+        foreach ($rows as $index => $row) {
+            $purchaseId = ($row['purchase_item_id'] ?? null) ? (int) $row['purchase_item_id'] : null;
+            $fuelTypeId = $purchaseId ? (int) ($purchaseFuel[$purchaseId] ?? 0) : (int) ($row['fuel_type_id'] ?? ($existing[$index] ?? 0));
+            $quantity = round((float) $row['quantity_liters'], 2);
+            $price = round((float) $row['unit_price'], 2);
+            $percentage = in_array($fuelTypeId, $eligible, true) ? (float) ($row['f1_percentage'] ?? 0) : 0.0;
+            [$main, $f1] = F1Split::split($quantity, $percentage);
+            $f1PurchaseId = $f1 > 0 && ($row['f1_purchase_item_id'] ?? null) ? (int) $row['f1_purchase_item_id'] : null;
+            $f1Price = $f1 > 0 ? round((float) ($row['f1_unit_price'] ?? 0), 2) : 0.0;
+
+            $items[$index] = [
+                'purchase_item_id' => $purchaseId,
+                'fuel_type_id' => $fuelTypeId,
+                'quantity_liters' => $quantity,
+                'unit_price' => $price,
+                'f1_percentage' => $percentage,
+                'f1_purchase_item_id' => $f1PurchaseId,
+                'f1_unit_price' => $f1Price,
+                'main_quantity_liters' => $main,
+                'f1_quantity_liters' => $f1,
+                'line_total' => round($main * $price + $f1 * $f1Price, 2),
+            ];
         }
 
         return $items;
     }
 
     /**
-     * @param  array{fuel_type_id: int, stock_lot_id: ?int, quantity_liters: mixed, unit_price: mixed, f1_percentage: float, main_quantity_liters: float, f1_quantity_liters: float}  $item
+     * @param  array<string, mixed>  $item
      * @return array<string, mixed>
      */
     private function saleItemRow(int $saleId, array $item, mixed $now): array
@@ -1196,11 +1192,13 @@ class SalesOfficerCustomerController extends Controller
         return [
             'sale_id' => $saleId,
             'fuel_type_id' => $item['fuel_type_id'],
-            'stock_in_movement_id' => $item['stock_lot_id'],
+            'purchase_item_id' => $item['purchase_item_id'],
+            'f1_purchase_item_id' => $item['f1_purchase_item_id'],
+            'stock_in_movement_id' => null,
             'quantity_liters' => $item['quantity_liters'],
             'unit_price' => $item['unit_price'],
-            // The F1 split moves stock only: the line is billed as ordered liters × price.
-            'line_total' => $this->lineTotal($item['quantity_liters'], $item['unit_price']),
+            'f1_unit_price' => $item['f1_unit_price'],
+            'line_total' => $item['line_total'],
             'f1_percentage' => $item['f1_percentage'],
             'main_quantity_liters' => $item['main_quantity_liters'],
             'f1_quantity_liters' => $item['f1_quantity_liters'],
@@ -1211,55 +1209,47 @@ class SalesOfficerCustomerController extends Controller
     }
 
     /**
-     * Part 8 #8: lines sold from a lot may not exceed what that lot still has available (stock on hand
-     * minus other undelivered sales). Lots are row-locked so two sales can't promise the same liters.
+     * Each line names a usable purchase of its fuel (and an F1 purchase and F1 Price for an F1 portion), and its
+     * purchases have the liters available: stock on hand less what other undelivered orders were promised.
+     * Purchases are row-locked so two orders can't promise the same liters.
      *
-     * @param  array<int, array{fuel_type_id: int, stock_lot_id: ?int, quantity_liters: mixed, unit_price: mixed}>  $items
+     * @param  array<int, array<string, mixed>>  $items
      *
      * @throws ValidationException
      */
-    private function assertLotStock(array $items): void
+    private function assertPurchaseStock(array $items): void
     {
-        $lotIds = collect($items)->pluck('stock_lot_id')->filter()->unique()->values()->all();
-        $f1Total = round((float) collect($items)->sum('f1_quantity_liters'), 2);
-        if ($lotIds === [] && $f1Total <= 0) {
-            return;
-        }
-
-        $lots = $lotIds === [] ? collect() : $this->stockLots->lots($lotIds, true)->keyBy('id');
+        $ids = collect($items)->flatMap(fn (array $item): array => [$item['purchase_item_id'], $item['f1_purchase_item_id']])->filter()->unique()->values()->all();
+        $lines = $this->purchaseStock->lines($ids, true);
+        $f1FuelId = F1Split::f1FuelId();
         $requested = [];
         $errors = [];
 
         foreach ($items as $index => $item) {
-            if (! $item['stock_lot_id']) {
+            $line = $item['purchase_item_id'] ? $lines->get($item['purchase_item_id']) : null;
+            if (! $line) {
+                $errors["items.$index.purchase_item_id"] = 'Select an available Fuel Type purchase.';
+            } else {
+                $requested[$line->id] = round(($requested[$line->id] ?? 0) + $item['main_quantity_liters'], 2);
+                if ($requested[$line->id] > $line->available) {
+                    $errors["items.$index.quantity_liters"] = 'Only '.number_format($line->available, 2).' L of '.$line->purchase_code.' ('.$line->fuel_name.') is available.';
+                }
+            }
+
+            if ($item['f1_quantity_liters'] <= 0) {
                 continue;
             }
-
-            // The lot supplies the line's own fuel; an F1 portion comes from the F1 tanks (checked below).
-            $lot = $lots->get($item['stock_lot_id']);
-            $requested[$item['stock_lot_id']] = round(($requested[$item['stock_lot_id']] ?? 0) + $item['main_quantity_liters'], 2);
-            if (! $lot) {
-                $errors["items.$index.stock_lot_id"] = 'The selected stock source is no longer available.';
-            } elseif ($requested[$item['stock_lot_id']] > $lot->available) {
-                $errors["items.$index.quantity_liters"] = 'Only '.number_format($lot->available, 2).' L of '.$lot->source_code.' ('.$lot->fuel_name.') is available.';
+            $f1Line = $item['f1_purchase_item_id'] ? $lines->get($item['f1_purchase_item_id']) : null;
+            if (! $f1Line || (int) $f1Line->fuel_type_id !== $f1FuelId) {
+                $errors["items.$index.f1_purchase_item_id"] = 'Select the F1 purchase for the '.number_format($item['f1_quantity_liters'], 2).' L F1 portion.';
+            } else {
+                $requested[$f1Line->id] = round(($requested[$f1Line->id] ?? 0) + $item['f1_quantity_liters'], 2);
+                if ($requested[$f1Line->id] > $f1Line->available) {
+                    $errors["items.$index.f1_purchase_item_id"] = 'Only '.number_format($f1Line->available, 2).' L of F1 is available in '.$f1Line->purchase_code.' for the '.number_format($item['f1_quantity_liters'], 2).' L F1 portion.';
+                }
             }
-        }
-
-        // Part 9: F1 portions are released from the F1 tanks (oldest lot first). They may only promise the F1
-        // stock that other sales have not, less what this sale's own F1 lines take from F1 lots.
-        $f1FuelId = F1Split::f1FuelId();
-        if ($f1Total > 0 && $f1FuelId !== null) {
-            $f1Available = round($this->stockLots->availableForFuel($f1FuelId, true)
-                - (float) $lots->where('fuel_type_id', $f1FuelId)->keys()->sum(fn (int $lotId): float => $requested[$lotId] ?? 0), 2);
-            $f1Requested = 0.0;
-            foreach ($items as $index => $item) {
-                if ($item['f1_quantity_liters'] <= 0) {
-                    continue;
-                }
-                $f1Requested = round($f1Requested + $item['f1_quantity_liters'], 2);
-                if ($f1Requested > $f1Available) {
-                    $errors["items.$index.f1_percentage"] = 'Not enough F1 stock for the F1 portion: '.number_format($item['f1_quantity_liters'], 2).' L needed, '.number_format(max(0, $f1Available - $f1Requested + $item['f1_quantity_liters']), 2).' L of F1 available in the garage tanks.';
-                }
+            if ($item['f1_unit_price'] <= 0) {
+                $errors["items.$index.f1_unit_price"] = 'Enter the F1 Price.';
             }
         }
 
@@ -1330,27 +1320,25 @@ class SalesOfficerCustomerController extends Controller
      */
     private function changesProtectedSaleFields(object $row, array $data): bool
     {
+        $shape = fn (array $item): array => [
+            'purchase_item_id' => $item['purchase_item_id'] ? (int) $item['purchase_item_id'] : null,
+            'fuel_type_id' => (int) $item['fuel_type_id'],
+            'quantity_liters' => number_format((float) $item['quantity_liters'], 2, '.', ''),
+            'unit_price' => number_format((float) $item['unit_price'], 2, '.', ''),
+            'f1_percentage' => number_format((float) $item['f1_percentage'], 2, '.', ''),
+            'f1_purchase_item_id' => (float) $item['f1_quantity_liters'] > 0 && $item['f1_purchase_item_id'] ? (int) $item['f1_purchase_item_id'] : null,
+            'f1_unit_price' => number_format((float) $item['f1_quantity_liters'] > 0 ? (float) $item['f1_unit_price'] : 0, 2, '.', ''),
+        ];
+
         $existingItems = DB::table('sale_items')
             ->where('sale_id', $row->id)
             ->orderBy('id')
-            ->get(['fuel_type_id', 'stock_in_movement_id', 'quantity_liters', 'unit_price', 'f1_percentage'])
-            ->map(fn (object $item): array => [
-                'fuel_type_id' => (int) $item->fuel_type_id,
-                'stock_lot_id' => $item->stock_in_movement_id ? (int) $item->stock_in_movement_id : null,
-                'quantity_liters' => number_format((float) $item->quantity_liters, 2, '.', ''),
-                'unit_price' => number_format((float) $item->unit_price, 2, '.', ''),
-                'f1_percentage' => number_format((float) $item->f1_percentage, 2, '.', ''),
-            ])
+            ->get(['purchase_item_id', 'fuel_type_id', 'quantity_liters', 'unit_price', 'f1_percentage', 'f1_purchase_item_id', 'f1_unit_price', 'f1_quantity_liters'])
+            ->map(fn (object $item): array => $shape((array) $item))
             ->all();
 
-        $submittedItems = collect($this->normalizedSaleItems($data))
-            ->map(fn (array $item): array => [
-                'fuel_type_id' => (int) $item['fuel_type_id'],
-                'stock_lot_id' => $item['stock_lot_id'],
-                'quantity_liters' => number_format((float) $item['quantity_liters'], 2, '.', ''),
-                'unit_price' => number_format((float) $item['unit_price'], 2, '.', ''),
-                'f1_percentage' => number_format((float) $item['f1_percentage'], 2, '.', ''),
-            ])
+        $submittedItems = collect($this->normalizedSaleItems($data, (int) $row->id))
+            ->map(fn (array $item): array => $shape($item))
             ->all();
 
         return (int) $row->customer_id !== (int) $data['customer_id']
@@ -1727,68 +1715,92 @@ class SalesOfficerCustomerController extends Controller
 
         $items = DB::table('sale_items')
             ->join('fuel_types', 'fuel_types.id', '=', 'sale_items.fuel_type_id')
+            ->leftJoin('purchase_items as main_items', 'main_items.id', '=', 'sale_items.purchase_item_id')
+            ->leftJoin('purchases as main_purchases', 'main_purchases.id', '=', 'main_items.purchase_id')
+            ->leftJoin('purchase_items as f1_items', 'f1_items.id', '=', 'sale_items.f1_purchase_item_id')
+            ->leftJoin('purchases as f1_purchases', 'f1_purchases.id', '=', 'f1_items.purchase_id')
             ->whereIn('sale_items.sale_id', $ids->all())
             ->orderBy('sale_items.sale_id')
             ->orderBy('sale_items.id')
             ->get([
                 'sale_items.sale_id',
                 'sale_items.fuel_type_id',
+                'sale_items.purchase_item_id',
+                'sale_items.f1_purchase_item_id',
                 'sale_items.quantity_liters',
                 'sale_items.unit_price',
+                'sale_items.f1_unit_price',
                 'sale_items.line_total',
                 'sale_items.fulfilled_quantity_liters',
-                'sale_items.stock_in_movement_id',
                 'sale_items.f1_percentage',
                 'sale_items.f1_quantity_liters',
                 'fuel_types.name as fuel_name',
                 'fuel_types.code as fuel_code',
+                'main_purchases.purchase_code as purchase_code',
+                'f1_purchases.purchase_code as f1_purchase_code',
             ])
             ->groupBy(fn (object $item): int => (int) $item->sale_id);
-        $lotIds = $items->flatten(1)->pluck('stock_in_movement_id')->filter()->map(fn (mixed $id): int => (int) $id)->unique()->values()->all();
-        $lotLabels = $lotIds === [] ? collect() : $this->stockLots->lots($lotIds)->mapWithKeys(fn (object $lot): array => [(int) $lot->id => $lot->source_code.' · '.$lot->fuel_name.' · ₱'.number_format((float) $lot->unit_cost, 2).'/L']);
 
         return $ids
             ->mapWithKeys(fn (int $saleId): array => [
                 $saleId => ($items[$saleId] ?? collect())
-                    ->map(fn (object $item): array => [
-                        'fuel_type_id' => (int) $item->fuel_type_id,
-                        'fuel_name' => $item->fuel_name,
-                        'quantity_liters' => $item->quantity_liters,
-                        'unit_price' => $item->unit_price,
-                        'line_total' => $item->line_total,
-                        'fulfilled_quantity_liters' => $item->fulfilled_quantity_liters,
-                        'stock_lot_id' => $item->stock_in_movement_id ? (int) $item->stock_in_movement_id : null,
-                        'source' => $item->stock_in_movement_id ? ($lotLabels[(int) $item->stock_in_movement_id] ?? '—') : '—',
-                        'fuel_code' => $item->fuel_code,
-                        'f1_percentage' => (float) $item->f1_percentage,
-                        'f1_quantity_liters' => (float) $item->f1_quantity_liters,
-                        'main_quantity_liters' => round((float) $item->quantity_liters - (float) $item->f1_quantity_liters, 2),
-                    ])
+                    ->map(function (object $item): array {
+                        $main = round((float) $item->quantity_liters - (float) $item->f1_quantity_liters, 2);
+
+                        return [
+                            'fuel_type_id' => (int) $item->fuel_type_id,
+                            'fuel_name' => $item->fuel_name,
+                            'fuel_code' => $item->fuel_code,
+                            'purchase_item_id' => $item->purchase_item_id ? (int) $item->purchase_item_id : null,
+                            'purchase_code' => $item->purchase_code,
+                            'f1_purchase_item_id' => $item->f1_purchase_item_id ? (int) $item->f1_purchase_item_id : null,
+                            'f1_purchase_code' => $item->f1_purchase_code,
+                            'quantity_liters' => $item->quantity_liters,
+                            'unit_price' => $item->unit_price,
+                            'f1_unit_price' => (float) $item->f1_unit_price,
+                            'line_total' => $item->line_total,
+                            'fulfilled_quantity_liters' => $item->fulfilled_quantity_liters,
+                            // Where the liters are deducted from (Part 2 revisions).
+                            'source' => trim(($item->purchase_code ?: '—').((float) $item->f1_quantity_liters > 0 ? ' + F1 '.($item->f1_purchase_code ?: '—') : '')),
+                            'f1_percentage' => (float) $item->f1_percentage,
+                            'f1_quantity_liters' => (float) $item->f1_quantity_liters,
+                            'main_quantity_liters' => $main,
+                            'main_total' => round($main * (float) $item->unit_price, 2),
+                            'f1_total' => round((float) $item->f1_quantity_liters * (float) $item->f1_unit_price, 2),
+                        ];
+                    })
                     ->all(),
             ])
             ->all();
     }
 
+    /**
+     * Purchases already chosen on recorded sales stay selectable in their Edit forms even when sold out.
+     *
+     * @return array<int, int>
+     */
+    private function purchaseIdsOnSales(): array
+    {
+        return DB::table('sale_items')->whereNotNull('purchase_item_id')->distinct()->pluck('purchase_item_id')
+            ->merge(DB::table('sale_items')->whereNotNull('f1_purchase_item_id')->distinct()->pluck('f1_purchase_item_id'))
+            ->map(fn (mixed $id): int => (int) $id)->unique()->values()->all();
+    }
+
     private function fuelTypeOptions()
     {
-        $balances = DB::table('inventory_movements')
-            ->whereIn('direction', ['in', 'out'])
-            ->whereNotExists($this->cancelledStockOutExists())
-            ->whereNotExists($this->cancelledHaulAllocationExists())
-            ->selectRaw("fuel_type_id, COALESCE(SUM(CASE WHEN direction = 'in' THEN quantity_liters ELSE -quantity_liters END), 0) as available_liters")
-            ->groupBy('fuel_type_id');
+        // Part 2 revisions: a fuel's stock is the remaining liters of its purchases.
+        $onHand = $this->purchaseStock->onHandByFuel();
 
         return DB::table('fuel_types')
-            ->leftJoinSub($balances, 'balances', 'balances.fuel_type_id', '=', 'fuel_types.id')
-            ->where('fuel_types.status', 'active')
-            ->whereIn('fuel_types.code', array_keys(config('fuels.approved', ['F1' => true, 'UNL' => true, 'DSL' => true, 'PREM' => true])))
-            ->orderBy('fuel_types.name')
-            ->get([
-                'fuel_types.id',
-                'fuel_types.name',
-                'fuel_types.code',
-                DB::raw('COALESCE(balances.available_liters, 0) as available_liters'),
-            ]);
+            ->where('status', 'active')
+            ->whereIn('code', array_keys(config('fuels.approved', ['F1' => true, 'UNL' => true, 'DSL' => true, 'PREM' => true])))
+            ->orderBy('name')
+            ->get(['id', 'name', 'code'])
+            ->map(function (object $fuel) use ($onHand): object {
+                $fuel->available_liters = round((float) ($onHand[$fuel->id] ?? 0), 2);
+
+                return $fuel;
+            });
     }
 
     /**
@@ -2122,27 +2134,5 @@ class SalesOfficerCustomerController extends Controller
     private function formatLiters(mixed $value): string
     {
         return $this->formatNumber($value).' L';
-    }
-
-    private function cancelledStockOutExists(): \Closure
-    {
-        return function (Builder $query): void {
-            $query->selectRaw('1')
-                ->from('stock_outs')
-                ->whereColumn('stock_outs.id', 'inventory_movements.reference_id')
-                ->where('inventory_movements.reference_type', 'stock_out')
-                ->where('stock_outs.status', 'cancelled');
-        };
-    }
-
-    private function cancelledHaulAllocationExists(): \Closure
-    {
-        return function (Builder $query): void {
-            $query->selectRaw('1')
-                ->from('haul_allocations')
-                ->whereColumn('haul_allocations.id', 'inventory_movements.reference_id')
-                ->where('inventory_movements.reference_type', 'haul_allocation')
-                ->where('haul_allocations.status', 'cancelled');
-        };
     }
 }

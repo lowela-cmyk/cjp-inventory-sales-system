@@ -25,6 +25,13 @@ class StockOutFinancialService
             ->leftJoin('inventory_movements as stock_out_movement', 'stock_out_movement.id', '=', 'stock_outs.inventory_movement_id')
             ->leftJoin('haul_allocations', 'haul_allocations.id', '=', 'stock_outs.haul_allocation_id')
             ->leftJoin('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')
+            // Part 2 revisions: the purchase a release was deducted from, and the delivery details: the lift (Depot to
+            // Client) or the order's own truck, driver and date (Standard).
+            ->leftJoin('purchase_items as release_purchase_item', 'release_purchase_item.id', '=', 'stock_outs.purchase_item_id')
+            ->leftJoin('purchases as release_purchase', 'release_purchase.id', '=', 'release_purchase_item.purchase_id')
+            ->leftJoin('lifting_schedules', 'lifting_schedules.id', '=', 'hauls.lifting_schedule_id')
+            ->leftJoin('trucks as delivery_truck', 'delivery_truck.id', '=', DB::raw('COALESCE(hauls.truck_id, sales.delivery_truck_id)'))
+            ->leftJoin('users as delivery_driver', 'delivery_driver.id', '=', DB::raw('COALESCE(hauls.driver_user_id, sales.delivery_driver_user_id)'))
             ->leftJoin('purchase_items as source_purchase_item', 'source_purchase_item.id', '=', 'hauls.purchase_item_id')
             // Where the fuel physically left from: a garage tank, or the depot of a direct release.
             ->leftJoin('storage_locations as source_garage', 'source_garage.id', '=', 'stock_outs.storage_location_id')
@@ -36,7 +43,7 @@ class StockOutFinancialService
             })
             ->leftJoin('haul_allocations as lot_allocation', function ($join): void {
                 $join->on('lot_allocation.id', '=', 'lot_movement.reference_id')
-                    ->where('lot_movement.reference_type', '=', StockInService::STOCK_IN_REFERENCE_TYPE);
+                    ->where('lot_movement.reference_type', '=', 'haul_allocation');
             })
             ->leftJoin('hauls as lot_haul', 'lot_haul.id', '=', 'lot_allocation.haul_id')
             ->leftJoin('purchases as lot_purchase', 'lot_purchase.id', '=', 'lot_haul.purchase_id')
@@ -54,6 +61,7 @@ class StockOutFinancialService
                     ->orWhere('fuel_types.name', 'like', $term)
                     ->orWhere('source_garage.name', 'like', $term)
                     ->orWhere('source_depot.name', 'like', $term)
+                    ->orWhere('release_purchase.purchase_code', 'like', $term)
                     ->orWhere('stock_outs.status', 'like', $term);
             }))
             ->select([
@@ -72,7 +80,18 @@ class StockOutFinancialService
                 'customers.name as customer_name',
                 'customers.company_name',
                 'fuel_types.name as fuel_name',
-                'sale_items.unit_price',
+                // The F1 portion has its own price (lines recorded before October 22, 2026 billed it at the line price).
+                DB::raw("CASE WHEN stock_outs.portion = 'f1' AND sale_items.f1_unit_price > 0 THEN sale_items.f1_unit_price ELSE sale_items.unit_price END as unit_price"),
+                'stock_outs.portion',
+                'sales.delivery_type',
+                'sales.delivery_status',
+                'release_purchase.purchase_code as release_purchase_code',
+                'delivery_truck.truck_code as delivery_truck_code',
+                'delivery_truck.plate_number as delivery_truck_plate',
+                'delivery_driver.name as delivery_driver_name',
+                DB::raw('COALESCE(hauls.hauled_at, hauls.scheduled_at, sales.delivery_date, stock_outs.stock_out_at) as delivery_date'),
+                'hauls.atl_number',
+                DB::raw('COALESCE(hauls.dr_number, lifting_schedules.dr_number) as dr_number'),
                 DB::raw('COALESCE(stock_outs.unit_cost, stock_out_movement.unit_cost, source_purchase_item.unit_cost) as cost_unit'),
                 DB::raw('COALESCE(payments_total.total_paid, 0) as sale_paid'),
                 DB::raw('COALESCE(sale_totals.sale_total, 0) as sale_total'),

@@ -126,44 +126,6 @@ class FunctionalTestingTest extends TestCase
             ->assertSessionHasErrors(['name', 'email', 'role', 'status', 'password']);
     }
 
-    public function test_purchase_stock_in_inventory_success_and_failed_over_receipt(): void
-    {
-        $records = $this->baseRecords();
-        $purchase = $this->purchase($records, 8000);
-        $haulId = $this->haul($records, $purchase, 8000, 'completed');
-        $allocationId = $this->garageAllocation($records, $haulId, 8000);
-
-        $this->actingAs($records['inventoryOfficer'])
-            ->post(route('inventory-officer.inventory.stock-in.store'), [
-                'haul_allocation_id' => $allocationId,
-                'storage_location_id' => $records['garageId'],
-                'quantity_liters' => 5000,
-                'movement_date' => '2026-09-04 08:00:00',
-                'remarks' => 'Functional stock-in',
-            ])
-            ->assertRedirect(route('inventory-officer.inventory.stock-in'));
-
-        $this->assertDatabaseHas('inventory_movements', [
-            'reference_id' => $allocationId,
-            'movement_type' => 'stock_in',
-            'direction' => 'in',
-            'quantity_liters' => '5000.00',
-        ]);
-
-        $this->actingAs($records['inventoryOfficer'])
-            ->from(route('inventory-officer.inventory.stock-in'))
-            ->post(route('inventory-officer.inventory.stock-in.store'), [
-                'haul_allocation_id' => $allocationId,
-                'storage_location_id' => $records['garageId'],
-                'quantity_liters' => 4000,
-                'movement_date' => '2026-09-04 09:00:00',
-            ])
-            ->assertRedirect(route('inventory-officer.inventory.stock-in'))
-            ->assertSessionHasErrors('stock_in');
-
-        $this->assertSame(1, DB::table('inventory_movements')->count());
-    }
-
     public function test_customer_sale_stock_out_payment_success_and_failed_overpayment(): void
     {
         // Payments are dated 2026-09-04 with a 2026-09-30 due date: freeze "today" so the receivable is
@@ -255,8 +217,10 @@ class FunctionalTestingTest extends TestCase
         $this->actingAs($records['admin'])
             ->get(route('admin.dashboard'))
             ->assertOk()
-            ->assertSee('6 KL')
-            ->assertSee('PHP 100,000');
+            // 6,000 L purchased - 2,000 L delivered.
+            ->assertSeeInOrder(['Total Inventory in Stock', '4.00 KL'])
+            ->assertSeeInOrder(['Total Delivered', '2.00 KL'])
+            ->assertSeeInOrder(['Unpaid Amount', 'PHP 100,000.00']);
 
         $this->actingAs($records['admin'])
             ->get(route('admin.reports', ['period' => 'date', 'date' => '2026-09-04']))
@@ -304,12 +268,12 @@ class FunctionalTestingTest extends TestCase
             ->assertSessionHas('businessInsightNotice', 'Insufficient business data for AI insight generation.');
 
         $this->actingAs($admin)
-            ->post(route('admin.dashboard.inventory-variance-explanation'), [
-                'variance_date_from' => '2024-01-31',
-                'variance_date_to' => '2024-01-01',
+            ->post(route('admin.dashboard.insight'), [
+                'sales_date_from' => '2024-01-31',
+                'sales_date_to' => '2024-01-01',
             ])
             ->assertRedirect()
-            ->assertSessionHasErrors('variance_date_to');
+            ->assertSessionHasErrors('sales_date_to');
 
         Http::assertNothingSent();
         Carbon::setTestNow();
@@ -443,23 +407,12 @@ class FunctionalTestingTest extends TestCase
     /**
      * @param  array<string, mixed>  $records
      */
+    /** Part 2 revisions: the stock is a purchase of the fuel. */
+    private ?int $fixturePurchase = null;
+
     private function seedGarageStock(array $records, float $quantity): void
     {
-        DB::table('inventory_movements')->insert([
-            'movement_code' => 'MOV-FUNC-'.Str::upper(Str::random(6)),
-            'storage_location_id' => $records['garageId'],
-            'fuel_type_id' => $records['fuelTypeId'],
-            'movement_type' => 'beginning',
-            'direction' => 'in',
-            'quantity_liters' => $quantity,
-            'unit_cost' => 50,
-            'reference_type' => 'functional-test',
-            'reference_id' => 0,
-            'movement_date' => '2026-09-04 06:00:00',
-            'created_by' => $records['inventoryOfficer']->id,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        $this->fixturePurchase = $this->stockLot((int) $records['fuelTypeId'], $quantity);
     }
 
     /**
@@ -482,7 +435,9 @@ class FunctionalTestingTest extends TestCase
         $saleItemId = DB::table('sale_items')->insertGetId([
             'sale_id' => $saleId,
             'fuel_type_id' => $records['fuelTypeId'],
+            'purchase_item_id' => $this->fixturePurchase,
             'quantity_liters' => $quantity,
+            'main_quantity_liters' => $quantity,
             'unit_price' => 50,
             'line_total' => $quantity * 50,
             'fulfilled_quantity_liters' => 0,
@@ -518,7 +473,11 @@ class FunctionalTestingTest extends TestCase
             'sale_item_id' => $saleItemId,
             'customer_id' => $records['customerId'],
             'fuel_type_id' => $records['fuelTypeId'],
-            'storage_location_id' => $records['garageId'],
+            // Deducted from the fixture purchase at its depot.
+            'source_type' => 'depot',
+            'portion' => 'main',
+            'purchase_item_id' => $this->fixturePurchase,
+            'depot_id' => DB::table('purchase_items')->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')->where('purchase_items.id', $this->fixturePurchase)->value('purchases.depot_id'),
             'quantity_liters' => $quantity,
             'stock_out_at' => '2026-09-04 10:00:00',
             'status' => 'released',

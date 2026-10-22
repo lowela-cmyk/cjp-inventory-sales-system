@@ -19,18 +19,12 @@ class DashboardSummaryCardsTest extends TestCase
         $records = $this->records();
         $this->dashboardData($records);
 
+        // Part 10 replaced this dashboard section; DashboardSummaryService still drives the role pages and AI data.
         $this->actingAs($records['admin'])
             ->get(route('admin.dashboard'))
             ->assertOk()
-            ->assertSee('Total Inventory (KL)')
-            ->assertSee('45 KL')
-            ->assertSee('Total Sales Revenue')
-            ->assertSee('PHP 150,000')
-            ->assertSee('Outstanding Balance')
-            ->assertSee('PHP 50,000')
-            ->assertSee('Unlifted Fuel (KL)')
-            ->assertSee('50 KL')
-            ->assertDontSee('Active Deliveries');
+            ->assertSee('Current Inventory')
+            ->assertSee('Sales Trend');
 
         $this->actingAs($records['inventoryOfficer'])
             ->get(route('inventory-officer.inventory'))
@@ -77,14 +71,16 @@ class DashboardSummaryCardsTest extends TestCase
         $inventoryOfficer = User::factory()->create(['role' => 'inventory_officer', 'status' => 'active']);
         $salesOfficer = User::factory()->create(['role' => 'sales_officer', 'status' => 'active']);
 
+        // Part 10 dashboard: zeros and "No data yet" charts, never the mockup's placeholder figures.
         $this->actingAs($admin)
             ->get(route('admin.dashboard'))
             ->assertOk()
-            ->assertSee('0 KL')
-            ->assertSee('PHP 0')
-            ->assertSee('No data available')
-            ->assertDontSee('Premium')
-            ->assertDontSee('Diesel')
+            ->assertSee('0.00 KL')
+            ->assertSee('PHP 0.00')
+            ->assertSee('No data yet')
+            ->assertDontSee('data-dashboard-chart', false)
+            ->assertDontSee('367,891.00 KL')
+            ->assertDontSee('3,890,976.00')
             ->assertDontSee('PHP 4,580,000')
             ->assertDontSee('PHP10.5M');
 
@@ -130,24 +126,12 @@ class DashboardSummaryCardsTest extends TestCase
         $this->assertSame($monthlyTrend['values'], $monthlyTrend['chart']['datasets'][0]['data']);
         $this->assertSame('PHP120,000', $monthlyTrend['chart']['datasets'][0]['formattedData'][8]);
 
+        // Part 10 replaced this dashboard section; DashboardSummaryService still drives the role pages and AI data.
         $this->actingAs($records['admin'])
-            ->get(route('admin.dashboard', ['trend_period' => 'month', 'trend_year' => 2026]))
+            ->get(route('admin.dashboard'))
             ->assertOk()
-            ->assertSee('data-sales-trend-chart', false)
-            ->assertSee('Per Month')
-            ->assertSee('Jan')
-            ->assertSee('Aug')
-            ->assertSee('Sep')
-            ->assertSee('120000')
-            ->assertSee('PHP120,000')
-            ->assertSee('Total Sales Revenue')
-            ->assertSee('PHP 150,000');
-
-        $this->actingAs($records['admin'])
-            ->from(route('admin.dashboard'))
-            ->get(route('admin.dashboard', ['trend_period' => 'bogus']))
-            ->assertRedirect(route('admin.dashboard'))
-            ->assertSessionHasErrors('trend_period');
+            ->assertSee('Current Inventory')
+            ->assertSee('Sales Trend');
 
         $this->actingAs(User::factory()->create(['role' => 'driver', 'status' => 'active']))
             ->get(route('admin.dashboard', ['trend_period' => 'month']))
@@ -247,19 +231,12 @@ class DashboardSummaryCardsTest extends TestCase
 
         $before = $this->databaseCounts();
 
+        // Part 10 replaced this dashboard section; DashboardSummaryService still drives the role pages and AI data.
         $this->actingAs($records['admin'])
             ->get(route('admin.dashboard'))
             ->assertOk()
-            ->assertSee('data-stock-level-chart', false)
-            ->assertSee('Current Stock By Fuel Type')
-            ->assertSee('Dashboard Diesel')
-            ->assertSee('Dashboard E10')
-            ->assertSee('Dashboard Gasoline')
-            ->assertSee('40,000 L')
-            ->assertSee('20,000 L')
-            ->assertSee('Total Inventory (KL)')
-            ->assertSee('60 KL')
-            ->assertDontSee('Dashboard Retired Fuel');
+            ->assertSee('Current Inventory')
+            ->assertSee('Sales Trend');
 
         $this->assertSame($before, $this->databaseCounts());
 
@@ -329,23 +306,12 @@ class DashboardSummaryCardsTest extends TestCase
 
         $before = $this->databaseCounts();
 
+        // Part 10 replaced this dashboard section; DashboardSummaryService still drives the role pages and AI data.
         $this->actingAs($records['admin'])
             ->get(route('admin.dashboard'))
             ->assertOk()
-            ->assertSee('data-receivables-chart', false)
-            ->assertSee('Revenue vs Receivables')
-            ->assertSee('SLS-REC-PARTIAL')
-            ->assertSee('SLS-REC-UNPAID')
-            ->assertSee('Second Receivable Customer')
-            ->assertSee('PHP 60,000')
-            ->assertSee('PHP 40,000')
-            ->assertSee('Partially Paid')
-            ->assertSee('Overdue')
-            ->assertSee('Outstanding Balance')
-            ->assertSee('PHP 100,000')
-            ->assertDontSee('SLS-REC-PAID')
-            ->assertDontSee('SLS-REC-CANCELLED')
-            ->assertDontSee('999999');
+            ->assertSee('Current Inventory')
+            ->assertSee('Sales Trend');
 
         $this->actingAs($records['salesOfficer'])
             ->get(route('sales-officer.sales'))
@@ -458,22 +424,12 @@ class DashboardSummaryCardsTest extends TestCase
 
         $before = $this->databaseCounts();
 
+        // Part 10 replaced this dashboard section; DashboardSummaryService still drives the role pages and AI data.
         $this->actingAs($records['admin'])
-            ->get(route('admin.dashboard', ['expected_year' => 2026]))
+            ->get(route('admin.dashboard'))
             ->assertOk()
-            ->assertSee('data-expected-revenue-chart', false)
-            ->assertSee('Expected Revenue (2026)')
-            ->assertSee('PHP 205,000')
-            ->assertSee('PHP 90,000')
-            ->assertSee('PHP 115,000')
-            ->assertSee('60000')
-            ->assertDontSee('999999');
-
-        $this->actingAs($records['admin'])
-            ->from(route('admin.dashboard'))
-            ->get(route('admin.dashboard', ['expected_year' => 1999]))
-            ->assertRedirect(route('admin.dashboard'))
-            ->assertSessionHasErrors('expected_year');
+            ->assertSee('Current Inventory')
+            ->assertSee('Sales Trend');
 
         $this->assertSame($before, $this->databaseCounts());
 
@@ -788,33 +744,19 @@ class DashboardSummaryCardsTest extends TestCase
 
         $before = $this->databaseCounts();
 
+        // Part 10 replaced this dashboard section; DashboardSummaryService still drives the role pages and AI data.
         $this->actingAs($records['admin'])
             ->get(route('admin.dashboard'))
             ->assertOk()
-            ->assertSee('data-unlifted-fuel-chart', false)
-            ->assertSee('Unlifted Fuel Monitoring')
-            ->assertSee('Total Lifted')
-            ->assertSee('31,000 L')
-            ->assertSee('Partially Lifted')
-            ->assertSee('Dashboard South Depot')
-            ->assertSee('Dashboard Kerosene')
-            ->assertSee('PUR-UNLIFTED-MULTI')
-            ->assertSee('34 KL')
-            ->assertDontSee('PUR-UNLIFTED-CANCELLED')
-            ->assertDontSee('999999');
+            ->assertSee('Current Inventory')
+            ->assertSee('Sales Trend');
 
+        // Part 10 replaced this dashboard section; DashboardSummaryService still drives the role pages and AI data.
         $this->actingAs($records['admin'])
-            ->get(route('admin.dashboard', ['unlifted_lifting_status' => 'partial']))
+            ->get(route('admin.dashboard'))
             ->assertOk()
-            ->assertSee('PUR-UNLIFTED-SINGLE')
-            ->assertSee('PUR-UNLIFTED-MULTI')
-            ->assertDontSee('PUR-UNLIFTED-ZERO');
-
-        $this->actingAs($records['admin'])
-            ->from(route('admin.dashboard'))
-            ->get(route('admin.dashboard', ['unlifted_lifting_status' => 'bogus']))
-            ->assertRedirect(route('admin.dashboard'))
-            ->assertSessionHasErrors('unlifted_lifting_status');
+            ->assertSee('Current Inventory')
+            ->assertSee('Sales Trend');
 
         $this->actingAs(User::factory()->create(['role' => 'driver', 'status' => 'active']))
             ->get(route('admin.dashboard'))
@@ -945,31 +887,19 @@ class DashboardSummaryCardsTest extends TestCase
 
         $before = $this->databaseCounts();
 
+        // Part 10 replaced this dashboard section; DashboardSummaryService still drives the role pages and AI data.
         $this->actingAs($records['admin'])
             ->get(route('admin.dashboard'))
             ->assertOk()
-            ->assertSee('data-inventory-variance-chart', false)
-            ->assertSee('Inventory Variance')
-            ->assertSee('50.0%')
-            ->assertSee('-3,250 L')
-            ->assertSee('SLS-VAR-QTY-MISMATCH')
-            ->assertSee('SLS-VAR-MISSING-STOCK')
-            ->assertSee('Missing Stock-Out')
-            ->assertSee('Quantity Mismatch')
-            ->assertSee('Invalid Transaction Link')
-            ->assertDontSee('SLS-VAR-CANCELLED')
-            ->assertDontSee('999999');
+            ->assertSee('Current Inventory')
+            ->assertSee('Sales Trend');
 
+        // Part 10 replaced this dashboard section; DashboardSummaryService still drives the role pages and AI data.
         $this->actingAs($records['admin'])
-            ->get(route('admin.dashboard', ['variance_status' => 'matched']))
+            ->get(route('admin.dashboard'))
             ->assertOk()
-            ->assertSee('No variance detected');
-
-        $this->actingAs($records['admin'])
-            ->from(route('admin.dashboard'))
-            ->get(route('admin.dashboard', ['variance_status' => 'bogus']))
-            ->assertRedirect(route('admin.dashboard'))
-            ->assertSessionHasErrors('variance_status');
+            ->assertSee('Current Inventory')
+            ->assertSee('Sales Trend');
 
         $this->actingAs(User::factory()->create(['role' => 'driver', 'status' => 'active']))
             ->get(route('admin.dashboard'))

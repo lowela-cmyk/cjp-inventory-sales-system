@@ -49,13 +49,14 @@ class AIFeatureTestingTest extends TestCase
             ->assertRedirect()
             ->assertSessionHas('salesTrendSummary');
 
+        // Part 10: the dashboard insight report (it includes the inventory variance explanation).
         $this->actingAs($records['admin'])
-            ->post(route('admin.dashboard.inventory-variance-explanation'), [
-                'variance_date_from' => '2026-09-01',
-                'variance_date_to' => '2026-09-30',
+            ->post(route('admin.dashboard.insight'), [
+                'sales_date_from' => '2026-09-01',
+                'sales_date_to' => '2026-09-30',
             ])
             ->assertRedirect()
-            ->assertSessionHas('inventoryVarianceExplanation');
+            ->assertSessionHas('dashboardInsight.source', 'ai');
 
         $this->actingAs($records['admin'])
             ->post(route('admin.reports.business-insight'), [
@@ -104,7 +105,8 @@ class AIFeatureTestingTest extends TestCase
         $this->assertStringNotContainsString('Authorization', $promptText);
         $this->assertStringNotContainsString('SLS-AI-SENSITIVE', $requestPrompts[0]);
         $this->assertStringNotContainsString('SLS-AI-SENSITIVE', $requestPrompts[1]);
-        $this->assertStringContainsString('SLS-AI-SENSITIVE', $requestPrompts[2]);
+        // The dashboard insight sends totals only, never sale codes.
+        $this->assertStringNotContainsString('SLS-AI-SENSITIVE', $requestPrompts[2]);
         $this->assertStringNotContainsString('SLS-AI-SENSITIVE', $requestPrompts[3]);
 
         foreach ($requests as $request) {
@@ -163,8 +165,8 @@ class AIFeatureTestingTest extends TestCase
             $this->actingAs($records['admin'])
                 ->get(route('admin.dashboard'))
                 ->assertOk()
-                ->assertSee('PHP 195,000')
-                ->assertSee('15 KL')
+                ->assertSeeInOrder(['Collected Revenue', 'PHP 40,000.00'])
+                ->assertSeeInOrder(['Unpaid Amount', 'PHP 155,000.00'])
                 ->assertDontSee('test-groq-key', false)
                 ->assertDontSee('gsk_live_secret', false);
         }
@@ -203,8 +205,8 @@ class AIFeatureTestingTest extends TestCase
         $this->actingAs($records['admin'])
             ->get(route('admin.dashboard'))
             ->assertOk()
-            ->assertSee('PHP 195,000')
-            ->assertSee('15 KL')
+            ->assertSeeInOrder(['Collected Revenue', 'PHP 40,000.00'])
+            ->assertSeeInOrder(['Unpaid Amount', 'PHP 155,000.00'])
             ->assertDontSee('PHP 999,999');
 
         Carbon::setTestNow();

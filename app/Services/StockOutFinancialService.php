@@ -92,7 +92,9 @@ class StockOutFinancialService
                 DB::raw('COALESCE(hauls.hauled_at, hauls.scheduled_at, sales.delivery_date, stock_outs.stock_out_at) as delivery_date'),
                 'hauls.atl_number',
                 DB::raw('COALESCE(hauls.dr_number, lifting_schedules.dr_number) as dr_number'),
-                DB::raw('COALESCE(stock_outs.unit_cost, stock_out_movement.unit_cost, source_purchase_item.unit_cost) as cost_unit'),
+                // Cost / Unit is saved on the release when it is posted (the purchase's cost/liter then), so editing the
+                // purchase later never changes a past stock-out. Older rows fall back to their purchase.
+                DB::raw('COALESCE(stock_outs.unit_cost, stock_out_movement.unit_cost, release_purchase_item.unit_cost, source_purchase_item.unit_cost) as cost_unit'),
                 DB::raw('COALESCE(payments_total.total_paid, 0) as sale_paid'),
                 DB::raw('COALESCE(sale_totals.sale_total, 0) as sale_total'),
             ]);

@@ -164,7 +164,7 @@
         </section>
     </div>
 
-    <x-admin.modal id="so-sales-add" title="Record Sales Receivables" wide>
+    <x-admin.modal id="so-sales-add" title="Record Sales Receivables" size="xl">
         @if ($recordSaleFailed)
             <span hidden data-open-modal-on-load="so-sales-add"></span>
         @endif
@@ -308,7 +308,7 @@
             $editOld = fn (string $key, mixed $default = null): mixed => $isEditedSale ? old($key, $default) : $default;
             $hasPayments = (float) str_replace(',', '', (string) $row['total_paid']) > 0;
         @endphp
-        <x-admin.modal id="{{ $row['modal_id'] }}" title="Edit Sales Record">
+        <x-admin.modal id="{{ $row['modal_id'] }}" title="Edit Sales Record" size="xl">
             @if ($isEditedSale && $errors->any())
                 <span hidden data-open-modal-on-load="{{ $row['modal_id'] }}"></span>
                 <p class="form-alert" role="alert">{{ $errors->first() }}</p>

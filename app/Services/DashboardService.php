@@ -610,6 +610,7 @@ class DashboardService
             ->leftJoin('haul_allocations as release_allocation', 'release_allocation.id', '=', 'stock_outs.haul_allocation_id')
             ->leftJoin('hauls as release_haul', 'release_haul.id', '=', 'release_allocation.haul_id')
             ->leftJoin('purchase_items as release_purchase_item', 'release_purchase_item.id', '=', 'release_haul.purchase_item_id')
+            ->leftJoin('purchase_items as stock_purchase_item', 'stock_purchase_item.id', '=', 'stock_outs.purchase_item_id')
             ->where('stock_outs.status', 'released');
     }
 
@@ -621,7 +622,7 @@ class DashboardService
 
     private function releaseCostSql(): string
     {
-        return 'COALESCE(stock_outs.unit_cost, release_movement.unit_cost, release_purchase_item.unit_cost)';
+        return 'COALESCE(stock_outs.unit_cost, release_movement.unit_cost, stock_purchase_item.unit_cost, release_purchase_item.unit_cost)';
     }
 
     // ----- Helpers --------------------------------------------------------------------------------------------

@@ -76,6 +76,13 @@ class PurchaseStockService
             $line->remaining_in_depot = round(max(0, $ordered - $line->lifted - (float) ($directFromDepot[$id] ?? 0)), 2);
             $line->not_lifted = round(max(0, $ordered - (float) ($physicallyLifted[$id] ?? 0) - (float) ($directFromDepot[$id] ?? 0)), 2);
             $line->label = $line->purchase_code.' · '.mb_strtoupper((string) $line->fuel_name);
+            // Record Sales dropdowns: "PUR-002 – PREMIUM – 60,000 L in stock – ₱55.00/L".
+            $line->option_label = implode(' – ', [
+                $line->purchase_code,
+                mb_strtoupper((string) $line->fuel_name),
+                number_format($line->available, fmod($line->available, 1.0) === 0.0 ? 0 : 2).' L in stock',
+                '₱'.number_format((float) $line->unit_cost, 2).'/L',
+            ]);
 
             return [$id => $line];
         });

@@ -395,10 +395,25 @@
     gap: 12px;
 }
 
+/* Part 11 wireframe: "F1 [purchase]" lines up under "Fuel Type [purchase]"; F1 Price and F1 % share the right half. */
 .sale-f1-row {
     display: grid;
-    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 0.8fr);
+    grid-template-columns: minmax(150px, 190px) minmax(0, 1fr) auto minmax(0, 0.55fr) auto minmax(0, 0.45fr);
     gap: 12px;
+    align-items: center;
+}
+
+.sale-f1-row > .form-row {
+    display: contents;
+}
+
+.sale-f1-row > .form-row > :is(input, select) {
+    width: 100%;
+    min-width: 0;
+}
+
+.sale-f1-row .form-row-message {
+    grid-column: 2 / -1;
 }
 
 .sale-f1-row[hidden] {

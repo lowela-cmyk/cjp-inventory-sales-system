@@ -21,7 +21,7 @@
         <select {!! $formAttr !!} id="{{ $id('purchase_item_id') }}" name="{{ $name('purchase_item_id') }}" data-sale-purchase @if (! ($item['legacy'] ?? false)) required @endif @if ($err('purchase_item_id')) aria-invalid="true" @endif>
             <option value="">{{ ($item['legacy'] ?? false) ? ($item['fuel_name'] ?? 'Fuel').' (no purchase recorded)' : ($purchaseOptions->isEmpty() ? 'No purchases with stock' : 'Select Fuel Type') }}</option>
             @foreach ($purchaseOptions as $purchase)
-                <option value="{{ $purchase->id }}" data-fuel-code="{{ $purchase->fuel_code }}" data-fuel-name="{{ $purchase->fuel_name }}" data-available="{{ $purchase->available }}" @selected($selectedPurchase === (string) $purchase->id)>{{ $purchase->label }} · {{ number_format($purchase->available, 2) }} L available</option>
+                <option value="{{ $purchase->id }}" data-fuel-code="{{ $purchase->fuel_code }}" data-fuel-name="{{ $purchase->fuel_name }}" data-available="{{ $purchase->available }}" @selected($selectedPurchase === (string) $purchase->id)>{{ $purchase->option_label }}</option>
             @endforeach
         </select>
         @if ($item['legacy'] ?? false)
@@ -40,7 +40,7 @@
         <select {!! $formAttr !!} id="{{ $id('f1_purchase_item_id') }}" name="{{ $name('f1_purchase_item_id') }}" data-sale-f1-purchase @if ($err('f1_purchase_item_id')) aria-invalid="true" @endif>
             <option value="">{{ $f1PurchaseOptions->isEmpty() ? 'No F1 purchases with stock' : 'Select F1' }}</option>
             @foreach ($f1PurchaseOptions as $purchase)
-                <option value="{{ $purchase->id }}" data-available="{{ $purchase->available }}" @selected($selectedF1 === (string) $purchase->id)>{{ $purchase->label }} · {{ number_format($purchase->available, 2) }} L available</option>
+                <option value="{{ $purchase->id }}" data-available="{{ $purchase->available }}" @selected($selectedF1 === (string) $purchase->id)>{{ $purchase->option_label }}</option>
             @endforeach
         </select>
         @if ($err('f1_purchase_item_id'))<p class="field-error form-row-message">{{ $err('f1_purchase_item_id') }}</p>@endif

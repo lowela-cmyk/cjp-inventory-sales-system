@@ -624,6 +624,7 @@ class OperationalDataRepairService
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        app(StockInService::class)->sync($purchaseItemId);
 
         // 2. Haul
         $haulId = DB::table('hauls')->insertGetId([
@@ -861,6 +862,7 @@ class OperationalDataRepairService
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        app(StockInService::class)->sync($purchaseItemId);
 
         // 3. Haul
         $haulId = DB::table('hauls')->insertGetId([

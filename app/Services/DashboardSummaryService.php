@@ -19,6 +19,8 @@ class DashboardSummaryService
 
     private const STOCK_LEVEL_COLORS = ['#f7043a', '#3b9a35', '#e28a22', '#0d1424', '#6b7280'];
 
+    public function __construct(private readonly StockInService $stockIns) {}
+
     /**
      * @return array<int, string>
      */
@@ -66,16 +68,27 @@ class DashboardSummaryService
     /**
      * @return array<int, array{label: string, value: string, caption: string}>
      */
-    public function inventoryCards(): array
+    public function inventoryCards(array $filters = []): array
     {
-        return $this->remember('inventoryCards', fn (): array => [
-            ['label' => 'Total Inventory', 'value' => $this->formatLiters($this->totalInventoryLiters()), 'caption' => 'Current stock'],
-            // Part 2 revisions: stock is kept per purchase (tanks are retired).
-            ['label' => 'Purchased Today', 'value' => $this->formatLiters($this->stockMovementLiters('in', CarbonImmutable::now())), 'caption' => 'Purchases dated today'],
-            ['label' => 'Stock-Out Today', 'value' => $this->formatLiters($this->stockMovementLiters('out', CarbonImmutable::now())), 'caption' => 'Delivered today'],
-            ['label' => 'Unlifted Fuel', 'value' => $this->formatLiters($this->unliftedFuelLiters()), 'caption' => 'Pending lifting'],
-            ['label' => 'Open Purchases', 'value' => number_format($this->openPurchases()), 'caption' => 'Not cancelled'],
-        ]);
+        $key = 'inventoryCards:'.md5(json_encode($filters, JSON_THROW_ON_ERROR));
+
+        // Stock-In revisions: every card reads the stock-in records, narrowed by the inventory filters.
+        return $this->remember($key, function () use ($filters): array {
+            $totals = $this->stockIns->totals($filters);
+            $today = $totals['date'] === CarbonImmutable::now()->toDateString();
+            $day = $today ? 'Today' : 'on '.date('n/j/Y', strtotime($totals['date']));
+
+            return [
+                ['label' => 'Total Inventory', 'value' => $this->formatLiters($totals['total_inventory']), 'caption' => 'Remaining in stock-in'],
+                ['label' => 'Stock-In '.$day, 'value' => $this->formatLiters($totals['stock_in']), 'caption' => 'Liters purchased'],
+                ['label' => 'Stock-Out '.$day, 'value' => $this->formatLiters($totals['stock_out']), 'caption' => 'Liters released to customers'],
+                ['label' => 'Unlifted Fuel', 'value' => $this->formatLiters((float) DB::query()
+                    ->fromSub($this->unliftedPurchaseItemsQuery(array_intersect_key($filters, array_flip(['depot_id', 'fuel_type_id']))), 'unlifted_items')
+                    ->selectRaw('COALESCE(SUM(remaining_liters), 0) as total')
+                    ->value('total')), 'caption' => 'Pending lifting'],
+                ['label' => 'Open Purchases', 'value' => number_format($totals['active']), 'caption' => 'Active stock-ins'],
+            ];
+        });
     }
 
     /**
@@ -154,17 +167,14 @@ class DashboardSummaryService
     public function stockLevels(): array
     {
         return $this->remember('stockLevels', function (): array {
+            // Stock-In revisions: the liters remaining in active stock-ins, per fuel.
+            $stock = $this->stockByFuel();
             $rows = DB::table('fuel_types')
-                ->leftJoinSub($this->inventoryBalancesByFuelQuery(), 'inventory_balances', 'inventory_balances.fuel_type_id', '=', 'fuel_types.id')
-                ->where('fuel_types.status', 'active')
-                ->where(function (Builder $query): void {
-                    $query->whereNotIn('fuel_types.code', $this->approvedFuelCodes())
-                        ->orWhereNotNull('inventory_balances.liters');
-                })
-                ->selectRaw('fuel_types.id, fuel_types.name, COALESCE(inventory_balances.liters, 0) as liters')
-                ->groupBy('fuel_types.id', 'fuel_types.name', 'inventory_balances.liters')
-                ->orderBy('fuel_types.name')
-                ->get();
+                ->where('status', 'active')
+                ->where(fn (Builder $query): Builder => $query->whereNotIn('code', $this->approvedFuelCodes())->orWhereIn('id', array_keys($stock) ?: [0]))
+                ->orderBy('name')
+                ->get(['id', 'name'])
+                ->map(fn (object $fuel): object => tap($fuel, fn (object $fuel) => $fuel->liters = $stock[(int) $fuel->id] ?? 0.0));
 
             $values = $rows->map(fn (object $row): float => round((float) $row->liters, 2))->all();
             $labels = $rows->pluck('name')->map(fn (string $name): string => $name)->all();
@@ -476,11 +486,13 @@ class DashboardSummaryService
 
     public function totalInventoryLiters(): float
     {
-        return $this->remember('totalInventoryLiters', fn (): float => (float) DB::table('fuel_types')
-            ->leftJoinSub($this->inventoryBalancesByFuelQuery(), 'inventory_balances', 'inventory_balances.fuel_type_id', '=', 'fuel_types.id')
-            ->where('fuel_types.status', 'active')
-            ->selectRaw('COALESCE(SUM(inventory_balances.liters), 0) as total')
-            ->value('total'));
+        return $this->remember('totalInventoryLiters', fn (): float => round(array_sum($this->stockByFuel()), 2));
+    }
+
+    /** @return array<int, float> fuel_type_id => liters remaining in active stock-ins */
+    private function stockByFuel(): array
+    {
+        return $this->remember('stockByFuel', fn (): array => $this->stockIns->remainingByFuel());
     }
 
     public function totalSalesRevenue(): float
@@ -696,24 +708,6 @@ class DashboardSummaryService
             ->value('total'));
     }
 
-    private function stockMovementLiters(string $direction, CarbonImmutable $date): float
-    {
-        $key = 'stockMovementLiters:'.$direction.':'.$date->toDateString();
-
-        // In: liters purchased that day. Out: liters delivered (released from purchases) that day.
-        return $this->remember($key, fn (): float => $direction === 'in'
-            ? (float) DB::table('purchase_items')
-                ->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
-                ->whereNull('purchases.deleted_at')
-                ->where('purchases.status', '!=', 'cancelled')
-                ->whereDate('purchases.purchase_date', $date->toDateString())
-                ->sum('purchase_items.quantity_ordered_liters')
-            : (float) DB::table('stock_outs')
-                ->where('status', 'released')
-                ->whereDate('stock_out_at', $date->toDateString())
-                ->sum('quantity_liters'));
-    }
-
     private function outstandingReceivableRowsQuery(): Builder
     {
         return DB::table('sales')
@@ -850,26 +844,6 @@ class DashboardSummaryService
             'partial' => 'Partially Paid',
             default => ucwords(str_replace('_', ' ', $status)),
         };
-    }
-
-    /**
-     * Stock per fuel (Part 2 revisions): the remaining liters of its purchases, ordered - delivered (as PurchaseStockService).
-     */
-    private function inventoryBalancesByFuelQuery(): Builder
-    {
-        $released = DB::table('stock_outs')
-            ->where('status', 'released')
-            ->whereNotNull('purchase_item_id')
-            ->groupBy('purchase_item_id')
-            ->selectRaw('purchase_item_id, COALESCE(SUM(quantity_liters), 0) as released');
-
-        return DB::table('purchase_items')
-            ->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
-            ->leftJoinSub($released, 'released', 'released.purchase_item_id', '=', 'purchase_items.id')
-            ->whereNull('purchases.deleted_at')
-            ->where('purchases.status', '!=', 'cancelled')
-            ->selectRaw('purchase_items.fuel_type_id, COALESCE(SUM(CASE WHEN purchase_items.quantity_ordered_liters > COALESCE(released.released, 0) THEN purchase_items.quantity_ordered_liters - COALESCE(released.released, 0) ELSE 0 END), 0) as liters')
-            ->groupBy('purchase_items.fuel_type_id');
     }
 
     /**
@@ -1196,14 +1170,6 @@ class DashboardSummaryService
                 ->where('inventory_movements.reference_type', 'haul_allocation')
                 ->where('haul_allocations.status', 'cancelled');
         };
-    }
-
-    private function openPurchases(): int
-    {
-        return $this->remember('openPurchases', fn (): int => DB::table('purchases')
-            ->whereNull('deleted_at')
-            ->where('status', '!=', 'cancelled')
-            ->count());
     }
 
     private function activeCustomers(): int

@@ -81,6 +81,21 @@ class PurchaseStockService
         });
     }
 
+    /**
+     * Liters taken from each purchase line, without the lift figures: delivered (released) and promised to open orders
+     * not delivered yet (reserved).
+     *
+     * @param  array<int, int>  $purchaseItemIds
+     * @return array{released: array<int, float>, reserved: array<int, float>}
+     */
+    public function usage(array $purchaseItemIds): array
+    {
+        return [
+            'released' => $this->releasedByPurchase($purchaseItemIds),
+            'reserved' => $purchaseItemIds === [] ? [] : $this->reservedByPurchase($purchaseItemIds),
+        ];
+    }
+
     public function line(int $purchaseItemId, bool $lock = false): ?\stdClass
     {
         return $this->lines([$purchaseItemId], $lock, true)->get($purchaseItemId);

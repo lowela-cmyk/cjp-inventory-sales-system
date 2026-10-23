@@ -6,12 +6,12 @@ use App\Rules\ApprovedFuelType;
 use App\Services\DashboardSummaryService;
 use App\Services\IdempotencyService;
 use App\Services\PurchaseService;
+use App\Services\StockInService;
 use App\Services\StockOutFinancialService;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -24,7 +24,8 @@ class InventoryOfficerPurchaseController extends Controller
     public function __construct(
         private readonly IdempotencyService $idempotencyService,
         private readonly PurchaseService $purchaseService,
-        private readonly StockOutFinancialService $stockOutFinancials
+        private readonly StockOutFinancialService $stockOutFinancials,
+        private readonly StockInService $stockIns
     ) {}
 
     private const PURCHASE_STATUSES = ['draft', 'ordered', 'partially_hauled', 'hauled', 'cancelled'];
@@ -33,17 +34,19 @@ class InventoryOfficerPurchaseController extends Controller
 
     private const STOCK_OUT_REFERENCE_TYPE = 'stock_out';
 
-    /** Status filter options per inventory tab (Part 2 revisions: tanks and Stock-In are retired). */
+    private const TABS = ['purchases', 'stock-in', 'stock-out', 'depots'];
+
+    /** Status filter options per inventory tab (tanks are retired; Stock-In is one record per purchase). */
     private const TAB_FILTER_STATUSES = [
         'purchases' => ['pending', 'scheduled', 'in_transit', 'partially_lifted', 'completed', 'cancelled'],
+        'stock-in' => StockInService::STATUSES,
         'stock-out' => ['released', 'cancelled'],
         'depots' => ['active', 'inactive'],
     ];
 
     public function index(Request $request, DashboardSummaryService $dashboardSummary, string $state = 'purchases'): View
     {
-        // The retired Stock-In tab URL opens Purchases.
-        $activeTab = in_array($state, ['purchases', 'stock-out', 'depots'], true) ? $state : 'purchases';
+        $activeTab = in_array($state, self::TABS, true) ? $state : 'purchases';
         $data = $request->validate([
             'search' => ['nullable', 'string', 'max:100'],
             'status' => ['nullable', Rule::in(self::TAB_FILTER_STATUSES[$activeTab])],
@@ -64,6 +67,7 @@ class InventoryOfficerPurchaseController extends Controller
         ];
         $filtersFor = fn (string $tab): array => $tab === $activeTab ? $filters : [];
         $purchases = $this->purchaseRows($search === '' ? null : $search, $filtersFor('purchases'));
+        $stockIn = $this->stockInRows($search === '' ? null : $search, $filtersFor('stock-in'));
         $stockOut = $this->stockOutRows($search === '' ? null : $search, $filtersFor('stock-out'));
         $purchaseFuelTypeIds = $purchases->pluck('fuel_type_id')->map(fn (mixed $id): int => (int) $id)->unique()->values()->all();
         $purchaseDepotIds = $purchases->pluck('depot_id')->map(fn (mixed $id): int => (int) $id)->unique()->values()->all();
@@ -71,8 +75,15 @@ class InventoryOfficerPurchaseController extends Controller
         return view('inventory-officer.inventory', [
             'activeTab' => $activeTab,
             'search' => $search === '' ? null : $search,
-            'summaryCards' => $dashboardSummary->inventoryCards(),
+            // The cards follow the active tab's Depot and Fuel Type filters (and Status and Date on Stock-In).
+            'summaryCards' => $dashboardSummary->inventoryCards(array_filter([
+                'depot_id' => $filters['depot_id'],
+                'fuel_type_id' => $filters['fuel_type_id'],
+                'status' => $activeTab === 'stock-in' ? $filters['status'] : null,
+                'date' => $activeTab === 'stock-in' ? $filters['date'] : null,
+            ])),
             'purchases' => $purchases,
+            'stockIn' => $stockIn,
             'stockOut' => $stockOut,
             'depots' => DB::table('depots')
                 ->where('status', 'active')
@@ -244,6 +255,59 @@ class InventoryOfficerPurchaseController extends Controller
     private function purchaseRows(?string $search, array $filters = []): LengthAwarePaginator
     {
         return $this->purchaseService->purchaseRows($search, filters: $filters);
+    }
+
+    /**
+     * Stock-In tab: one row per purchase line, with what sales took from it and what remains.
+     *
+     * @param  array<string, mixed>  $filters
+     */
+    private function stockInRows(?string $search, array $filters = []): LengthAwarePaginator
+    {
+        $paginator = $this->stockIns->paginate($filters, $search);
+        $paginator->setCollection($paginator->getCollection()->map(fn (object $row): array => [
+            'id' => (int) $row->id,
+            'modal_id' => 'io-stock-in-view-'.$row->id,
+            'purchase_code' => $row->purchase_code,
+            'date' => $this->formatDate($row->stock_in_date),
+            'fuel' => $row->fuel_name,
+            'depot' => $row->depot_name,
+            'purchased' => $this->formatNumber($row->quantity_liters),
+            'unit_cost' => $this->formatNumber($row->unit_cost),
+            'total_cost' => $this->formatNumber($row->total_cost),
+            'stock_out' => $this->formatNumber($row->stock_out),
+            'remaining' => $this->formatNumber($row->remaining),
+            'status' => $this->label($row->stock_status),
+            'details' => [
+                'Purchase ID' => $row->purchase_code,
+                'Date' => $this->formatDate($row->stock_in_date),
+                'Fuel Type' => $row->fuel_name,
+                'Depot' => $row->depot_name,
+                'Quantity Purchased' => $this->formatLiters($row->quantity_liters),
+                'Cost/Liter' => $this->formatNumber($row->unit_cost),
+                'Total Cost' => $this->formatNumber($row->total_cost),
+                'Stock Out' => $this->formatLiters($row->stock_out),
+                'Delivered' => $this->formatLiters($row->delivered),
+                'Awaiting Delivery' => $this->formatLiters($row->reserved),
+                'Remaining' => $this->formatLiters($row->remaining),
+                'Payment Status' => $this->label($row->payment_status),
+                'Recorded By' => $row->created_by_name ?: 'N/A',
+                'Recorded At' => $this->formatDateTime($row->created_at),
+            ] + ($row->voided_at ? ['Cancelled At' => $this->formatDateTime($row->voided_at)] : []),
+            'deductions' => array_map(fn (array $deduction): array => [
+                'order' => $deduction['sale_code'].($deduction['sales_order_number'] ? ' / SO '.$deduction['sales_order_number'] : ''),
+                'date' => $this->formatDate($deduction['sale_date']),
+                'customer' => $deduction['customer_name'],
+                'quantity' => $this->formatLiters($deduction['liters']).($deduction['portion'] === 'f1' ? ' (F1 portion)' : ''),
+                'delivery_type' => SalesOfficerCustomerController::DELIVERY_TYPES[$deduction['delivery_type']] ?? SalesOfficerCustomerController::DELIVERY_TYPES['standard'],
+                'delivery_status' => $this->label($deduction['delivery_status']),
+                'stock_out' => $deduction['stock_out_codes'] === []
+                    ? 'Not delivered yet'
+                    : implode(', ', $deduction['stock_out_codes']).' ('.$this->formatLiters($deduction['delivered']).')',
+            ], $row->deductions),
+        ]));
+
+        return $paginator;
     }
 
     private function depotRows(?string $search, array $filters = []): LengthAwarePaginator

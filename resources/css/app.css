@@ -4106,3 +4106,45 @@ body.login-page {
     padding-right: 10px;
     padding-left: 10px;
 }
+
+/* Stock-In tab (October 23, 2026): eleven even columns that fit the frame; IDs and amounts never wrap. */
+.stock-in-table th,
+.stock-in-table td {
+    padding-right: 12px;
+    padding-left: 12px;
+}
+
+.stock-in-table td.cell-id,
+.stock-in-table td.inventory-number {
+    white-space: nowrap;
+}
+
+.stock-in-table tbody tr {
+    background: #ffffff;
+}
+
+.stock-in-deductions-title {
+    margin: 20px 0 8px;
+    font-size: 15px;
+    font-weight: 800;
+}
+
+.stock-in-deductions-wrap {
+    min-height: 0;
+}
+
+/* All seven columns fit the modal: names and order numbers wrap, quantities never do. */
+.stock-in-deductions {
+    width: 100%;
+    table-layout: auto;
+}
+
+.stock-in-deductions th,
+.stock-in-deductions td {
+    padding: 8px 10px;
+    white-space: normal;
+}
+
+.stock-in-deductions td.inventory-number {
+    white-space: nowrap;
+}

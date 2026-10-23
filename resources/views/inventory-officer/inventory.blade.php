@@ -1,8 +1,9 @@
 @php
-    $activeTab = in_array($activeTab ?? 'purchases', ['purchases', 'stock-out', 'depots'], true) ? $activeTab : 'purchases';
+    $activeTab = in_array($activeTab ?? 'purchases', ['purchases', 'stock-in', 'stock-out', 'depots'], true) ? $activeTab : 'purchases';
     $inventoryRoutePrefix = request()->routeIs('admin.inventory*') ? 'admin.inventory' : 'inventory-officer.inventory';
     $inventoryLayout = request()->routeIs('admin.inventory*') ? 'layouts.admin' : 'layouts.inventory-officer';
-    $headings = ['purchases' => 'Purchases', 'stock-out' => 'Stock-Out', 'depots' => 'Depots'];
+    $headings = ['purchases' => 'Purchases', 'stock-in' => 'Stock-In', 'stock-out' => 'Stock-Out', 'depots' => 'Depots'];
+    $stockIn = $stockIn ?? collect();
     $filters = $filters ?? [];
     $filterOptions = $filterOptions ?? ['statuses' => [], 'depots' => collect(), 'fuelTypes' => collect()];
 @endphp
@@ -15,6 +16,7 @@
 
         <div class="tabs">
             <button class="tab-button {{ $activeTab === 'purchases' ? 'is-active' : '' }}" type="button" data-tab-target="purchases" data-tab-url="{{ route($inventoryRoutePrefix) }}" data-heading="Purchases">Purchases</button>
+            <button class="tab-button {{ $activeTab === 'stock-in' ? 'is-active' : '' }}" type="button" data-tab-target="stock-in" data-tab-url="{{ route($inventoryRoutePrefix.'.stock-in') }}" data-heading="Stock-In">Stock In</button>
             <button class="tab-button {{ $activeTab === 'stock-out' ? 'is-active' : '' }}" type="button" data-tab-target="stock-out" data-tab-url="{{ route($inventoryRoutePrefix.'.stock-out') }}" data-heading="Stock-Out">Stock Out</button>
             <button class="tab-button {{ $activeTab === 'depots' ? 'is-active' : '' }}" type="button" data-tab-target="depots" data-tab-url="{{ route($inventoryRoutePrefix.'.depots') }}" data-heading="Depots">Depots</button>
         </div>
@@ -95,6 +97,53 @@
             @if (method_exists($purchases, 'links'))
                 <div class="pagination-wrap" style="margin-top: 16px;">
                     {{ $purchases->links() }}
+                </div>
+            @endif
+        </section>
+
+        {{-- Stock-In revisions: one record per purchase, created when the purchase is recorded (no manual stock-in). --}}
+        <section data-tab-panel="stock-in" @if ($activeTab !== 'stock-in') hidden @endif>
+            <x-filter.bar class="toolbar-inventory" :action="route($inventoryRoutePrefix.'.stock-in')">
+                <x-filter.search label="Search stock-in" :value="$search" />
+                @include('inventory-officer.partials.filter-controls', ['tab' => 'stock-in'])
+            </x-filter.bar>
+            <p class="table-help">Every purchase is stocked in automatically. Sales deduct from the purchase they select as soon as they are saved; cancelling a sale gives the liters back.</p>
+            <div class="table-wrap inventory-table-wrap">
+                <table class="admin-table inventory-table inventory-table-actions table-stacked stock-in-table">
+                    <thead><tr>
+                        <th>Purchase ID</th><th>Date</th><th>Fuel Type</th><th>Depot</th>
+                        <th>Qty Purchased (L)</th><th>Cost / Liter</th><th>Total Cost</th>
+                        <th>Stock Out (L)</th><th>Remaining (L)</th>
+                        <th class="inventory-status-column">Status</th><th>Actions</th>
+                    </tr></thead>
+                    <tbody>
+                        @forelse ($stockIn as $row)
+                            <tr>
+                                <td class="cell-id">{{ $row['purchase_code'] }}</td>
+                                <td>{{ $row['date'] }}</td>
+                                <td>{{ $row['fuel'] }}</td>
+                                <td class="cell-wrap">{{ $row['depot'] }}</td>
+                                <td class="inventory-number">{{ $row['purchased'] }}</td>
+                                <td class="inventory-number">{{ $row['unit_cost'] }}</td>
+                                <td class="inventory-number">{{ $row['total_cost'] }}</td>
+                                <td class="inventory-number">{{ $row['stock_out'] }}</td>
+                                <td class="inventory-number">{{ $row['remaining'] }}</td>
+                                <td><x-admin.status-badge :status="$row['status']" /></td>
+                                <td>
+                                    <div class="inventory-row-actions">
+                                        <button class="btn btn-secondary" type="button" data-modal-open="{{ $row['modal_id'] }}">View</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        @empty
+                            <tr><td class="empty-cell" colspan="11">No stock-in records found.</td></tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+            @if (method_exists($stockIn, 'links'))
+                <div class="pagination-wrap" style="margin-top: 16px;">
+                    {{ $stockIn->links() }}
                 </div>
             @endif
         </section>
@@ -269,6 +318,49 @@
                     @method('PATCH')
                     <button class="btn btn-pill btn-danger" type="submit">Cancel</button>
                 </form>
+            </x-slot:footer>
+        </x-admin.modal>
+    @endforeach
+
+    @foreach ($stockIn as $row)
+        <x-admin.modal id="{{ $row['modal_id'] }}" title="Stock-In Details" size="xl">
+            <div class="modal-card">
+                <x-admin.status-badge :status="$row['status']" />
+                <p class="detail-id">{{ $row['purchase_code'] }}</p>
+                <div class="detail-grid">
+                    @foreach ($row['details'] as $label => $value)
+                        <div class="detail-row">
+                            <div class="detail-label">{{ $label }}</div>
+                            <div class="detail-value">{{ $value }}</div>
+                        </div>
+                    @endforeach
+                </div>
+                <h3 class="stock-in-deductions-title">Sales deducted from this purchase</h3>
+                @if ($row['deductions'] === [])
+                    <p class="table-help">No sales have deducted from this purchase yet.</p>
+                @else
+                    <div class="table-wrap stock-in-deductions-wrap">
+                        <table class="admin-table stock-in-deductions">
+                            <thead><tr><th>Sales Order</th><th>Date</th><th>Customer</th><th>Quantity</th><th>Delivery Type</th><th>Delivery Status</th><th>Stock Out</th></tr></thead>
+                            <tbody>
+                                @foreach ($row['deductions'] as $deduction)
+                                    <tr>
+                                        <td class="cell-id">{{ $deduction['order'] }}</td>
+                                        <td>{{ $deduction['date'] }}</td>
+                                        <td>{{ $deduction['customer'] }}</td>
+                                        <td class="inventory-number">{{ $deduction['quantity'] }}</td>
+                                        <td>{{ $deduction['delivery_type'] }}</td>
+                                        <td><x-admin.status-badge :status="$deduction['delivery_status']" /></td>
+                                        <td>{{ $deduction['stock_out'] }}</td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @endif
+            </div>
+            <x-slot:footer>
+                <button class="btn btn-pill btn-secondary" type="button" data-modal-close>Close</button>
             </x-slot:footer>
         </x-admin.modal>
     @endforeach

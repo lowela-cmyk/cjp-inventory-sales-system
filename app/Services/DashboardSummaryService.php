@@ -851,16 +851,31 @@ class DashboardSummaryService
      */
     private function unliftedPurchaseItemsQuery(array $filters = []): Builder
     {
+        // Fuel has left the depot once its lift is Lifted (or Completed), as PurchaseStockService::not_lifted and the
+        // dashboard's Remaining Balance in Depots count it.
         $completedHauls = DB::table('hauls')
-            ->where('status', 'completed')
+            ->whereIn('status', ['lifted', 'completed'])
             ->selectRaw('purchase_item_id, COALESCE(SUM(quantity_liters), 0) as completed_liters')
             ->groupBy('purchase_item_id');
+
+        // Liters a release took straight from the depot without a lift of that purchase (Standard deliveries, or an
+        // F1 portion carried on another purchase's lift): they left the depot too.
+        $directReleases = DB::table('stock_outs')
+            ->leftJoin('haul_allocations', 'haul_allocations.id', '=', 'stock_outs.haul_allocation_id')
+            ->leftJoin('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')
+            ->where('stock_outs.status', 'released')
+            ->where('stock_outs.source_type', 'depot')
+            ->whereNotNull('stock_outs.purchase_item_id')
+            ->where(fn (Builder $query): Builder => $query->whereNull('hauls.id')->orWhereColumn('hauls.purchase_item_id', '!=', 'stock_outs.purchase_item_id'))
+            ->groupBy('stock_outs.purchase_item_id')
+            ->selectRaw('stock_outs.purchase_item_id, COALESCE(SUM(stock_outs.quantity_liters), 0) as direct_liters');
 
         $query = DB::table('purchase_items')
             ->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
             ->join('depots', 'depots.id', '=', 'purchases.depot_id')
             ->join('fuel_types', 'fuel_types.id', '=', 'purchase_items.fuel_type_id')
             ->leftJoinSub($completedHauls, 'completed_hauls', 'completed_hauls.purchase_item_id', '=', 'purchase_items.id')
+            ->leftJoinSub($directReleases, 'direct_releases', 'direct_releases.purchase_item_id', '=', 'purchase_items.id')
             ->whereNull('purchases.deleted_at')
             ->where('purchases.status', '!=', 'cancelled')
             ->when($filters['date_from'] ?? null, fn (Builder $query, string $date): Builder => $query->where('purchases.purchase_date', '>=', $date))
@@ -896,7 +911,9 @@ class DashboardSummaryService
 
     private function remainingLitersSql(): string
     {
-        return 'ROUND(CASE WHEN purchase_items.quantity_ordered_liters > COALESCE(completed_hauls.completed_liters, 0) THEN purchase_items.quantity_ordered_liters - COALESCE(completed_hauls.completed_liters, 0) ELSE 0 END, 2)';
+        $left = 'COALESCE(completed_hauls.completed_liters, 0) + COALESCE(direct_releases.direct_liters, 0)';
+
+        return "ROUND(CASE WHEN purchase_items.quantity_ordered_liters > $left THEN purchase_items.quantity_ordered_liters - ($left) ELSE 0 END, 2)";
     }
 
     private function liftStatusSql(): string

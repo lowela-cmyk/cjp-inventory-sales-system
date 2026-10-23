@@ -128,9 +128,13 @@ class PurchaseStockService
      */
     private function releasedByPurchase(array $ids): array
     {
+        if ($ids === []) {
+            return [];
+        }
+
         return DB::table('stock_outs')
             ->where('status', 'released')
-            ->whereIn('purchase_item_id', $ids ?: [0])
+            ->whereIn('purchase_item_id', $ids)
             ->groupBy('purchase_item_id')
             ->selectRaw('purchase_item_id, COALESCE(SUM(quantity_liters), 0) as liters')
             ->pluck('liters', 'purchase_item_id')
@@ -150,7 +154,7 @@ class PurchaseStockService
             ->where('status', 'released')
             ->whereNotNull('sale_item_id')
             ->groupBy('sale_item_id')
-            ->selectRaw("sale_item_id, COALESCE(SUM(CASE WHEN portion = 'f1' THEN quantity_liters ELSE 0 END), 0) as f1_released, COALESCE(SUM(CASE WHEN portion = 'f1' THEN 0 ELSE quantity_liters END), 0) as main_released");
+            ->selectRaw("sale_item_id, COALESCE(SUM(CASE WHEN stock_outs.portion = 'f1' THEN quantity_liters ELSE 0 END), 0) as f1_released, COALESCE(SUM(CASE WHEN stock_outs.portion = 'f1' THEN 0 ELSE quantity_liters END), 0) as main_released");
 
         $open = fn (string $column): Builder => DB::table('sale_items')
             ->join('sales', 'sales.id', '=', 'sale_items.sale_id')

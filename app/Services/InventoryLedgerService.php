@@ -28,7 +28,7 @@ class InventoryLedgerService
             $lifted = round(min($purchased, (float) $row->total_lifted_liters), 2);
             $remaining = round(max(0, $purchased - $lifted), 2);
             $lifts = $liftsByPurchaseItem[(int) $row->purchase_item_id] ?? collect();
-            $movementSummary = $movementsByPurchaseItem[(int) $row->purchase_item_id] ?? 'No inventory movements recorded';
+            $movementSummary = $movementsByPurchaseItem[(int) $row->purchase_item_id] ?? 'No deliveries recorded';
             $status = $this->liftingStatus($lifted, $purchased);
 
             return [
@@ -68,7 +68,7 @@ class InventoryLedgerService
                     'Total Lifted' => $this->formatLiters($lifted),
                     'Remaining Quantity' => $this->formatLiters($remaining),
                     'Lift Transactions' => (string) $lifts->count(),
-                    'Inventory Movements' => $movementSummary,
+                    'Deliveries' => $movementSummary,
                     'Status' => $status,
                 ],
             ];
@@ -212,44 +212,18 @@ class InventoryLedgerService
             return [];
         }
 
-        return DB::table('inventory_movements')
-            ->leftJoin('haul_allocations', function ($join): void {
-                $join->on('haul_allocations.id', '=', 'inventory_movements.reference_id')
-                    ->where('inventory_movements.reference_type', 'haul_allocation');
-            })
-            ->leftJoin('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')
-            ->where(function (Builder $query) use ($purchaseItemIds): void {
-                $query->where(function (Builder $query) use ($purchaseItemIds): void {
-                    $query->where('inventory_movements.reference_type', 'purchase_item')
-                        ->whereIn('inventory_movements.reference_id', $purchaseItemIds);
-                })->orWhereIn('hauls.purchase_item_id', $purchaseItemIds);
-            })
-            ->whereNotExists($this->cancelledStockOutExists())
-            ->whereNotExists($this->cancelledHaulAllocationExists())
-            ->get([
-                'inventory_movements.movement_type',
-                'inventory_movements.quantity_liters',
-                'inventory_movements.direction',
-                'inventory_movements.reference_type',
-                'inventory_movements.reference_id',
-                'hauls.purchase_item_id as allocation_purchase_item_id',
-            ])
-            ->groupBy(function (object $row): int {
-                return $row->reference_type === 'haul_allocation'
-                    ? (int) $row->allocation_purchase_item_id
-                    : (int) $row->reference_id;
-            })
-            ->map(function (Collection $rows): string {
-                return $rows
-                    ->groupBy('movement_type')
-                    ->map(function (Collection $rows, string $type): string {
-                        $quantity = $rows->sum(fn (object $row): float => (float) $row->quantity_liters);
-
-                        return $this->label($type).': '.$this->formatLiters($quantity);
-                    })
-                    ->values()
-                    ->implode(', ');
-            })
+        // Part 2 revisions: what deliveries took from the purchase (its stock), by delivery type.
+        return DB::table('stock_outs')
+            ->join('sales', 'sales.id', '=', 'stock_outs.sale_id')
+            ->where('stock_outs.status', 'released')
+            ->whereIn('stock_outs.purchase_item_id', $purchaseItemIds)
+            ->groupBy('stock_outs.purchase_item_id', 'sales.delivery_type')
+            ->selectRaw('stock_outs.purchase_item_id, sales.delivery_type, COALESCE(SUM(stock_outs.quantity_liters), 0) as liters')
+            ->get()
+            ->groupBy('purchase_item_id')
+            ->map(fn (Collection $rows): string => 'Delivered: '.$rows
+                ->map(fn (object $row): string => ($row->delivery_type === 'depot_to_client' ? 'Depot to Client' : 'Standard').' '.$this->formatLiters($row->liters))
+                ->implode(', '))
             ->all();
     }
 
@@ -310,19 +284,24 @@ class InventoryLedgerService
     }
 
     /**
+     * Stock per fuel (Part 2 revisions): the remaining liters of its purchases, keyed "fuel_type_id".
+     *
      * @return array<string, float>
      */
     private function latestBalances(): array
     {
-        return DB::table('inventory_movements')
-            ->whereNotExists($this->cancelledStockOutExists())
-            ->whereNotExists($this->cancelledHaulAllocationExists())
-            ->selectRaw("storage_location_id, fuel_type_id, COALESCE(SUM(CASE WHEN direction = 'in' THEN quantity_liters ELSE -quantity_liters END), 0) as balance")
-            ->groupBy('storage_location_id', 'fuel_type_id')
-            ->get()
-            ->mapWithKeys(fn (object $row): array => [
-                $row->storage_location_id.'-'.$row->fuel_type_id => round((float) $row->balance, 2),
-            ])
+        $released = DB::table('stock_outs')->where('status', 'released')->whereNotNull('purchase_item_id')
+            ->groupBy('purchase_item_id')->selectRaw('purchase_item_id, COALESCE(SUM(quantity_liters), 0) as released');
+
+        return DB::table('purchase_items')
+            ->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
+            ->leftJoinSub($released, 'released', 'released.purchase_item_id', '=', 'purchase_items.id')
+            ->whereNull('purchases.deleted_at')
+            ->where('purchases.status', '!=', 'cancelled')
+            ->groupBy('purchase_items.fuel_type_id')
+            ->selectRaw('purchase_items.fuel_type_id, COALESCE(SUM(CASE WHEN purchase_items.quantity_ordered_liters > COALESCE(released.released, 0) THEN purchase_items.quantity_ordered_liters - COALESCE(released.released, 0) ELSE 0 END), 0) as balance')
+            ->pluck('balance', 'fuel_type_id')
+            ->mapWithKeys(fn (mixed $balance, mixed $fuelTypeId): array => [(string) $fuelTypeId => round((float) $balance, 2)])
             ->all();
     }
 

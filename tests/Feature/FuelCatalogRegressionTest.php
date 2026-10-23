@@ -176,21 +176,21 @@ class FuelCatalogRegressionTest extends TestCase
             'updated_at' => now(),
         ]);
 
-        // Dashboard unlifted filter
+        // Dashboard Current Inventory filter
         $this->actingAs($admin)
-            ->get(route('admin.dashboard', ['unlifted_fuel_type_id' => $inactiveFuelId]))
-            ->assertSessionHasErrors('unlifted_fuel_type_id');
+            ->get(route('admin.dashboard', ['inv_fuel_type_id' => $inactiveFuelId]))
+            ->assertSessionHasErrors('inv_fuel_type_id');
 
-        // Dashboard variance filter
+        // Dashboard Sales Trend filter
         $this->actingAs($admin)
-            ->get(route('admin.dashboard', ['variance_fuel_type_id' => $inactiveFuelId]))
-            ->assertSessionHasErrors('variance_fuel_type_id');
+            ->get(route('admin.dashboard', ['sales_fuel_type_id' => $inactiveFuelId]))
+            ->assertSessionHasErrors('sales_fuel_type_id');
 
-        // AI explanation filter
+        // Dashboard insight report filter
         $this->actingAs($admin)
-            ->post(route('admin.dashboard.inventory-variance-explanation'), [
-                'variance_fuel_type_id' => $inactiveFuelId,
+            ->post(route('admin.dashboard.insight'), [
+                'sales_fuel_type_id' => $inactiveFuelId,
             ])
-            ->assertSessionHasErrors('variance_fuel_type_id');
+            ->assertSessionHasErrors('sales_fuel_type_id');
     }
 }

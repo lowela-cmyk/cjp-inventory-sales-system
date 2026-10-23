@@ -1,8 +1,12 @@
 import './bootstrap';
-import Chart from 'chart.js/auto';
 import '../css/part9.css';
 import '../css/select-picker.css';
 import './select-picker';
+// Part 10: Dashboard and Analytics charts.
+import '../css/dashboard.css';
+import './dashboard';
+// Part 2 revisions: Schedule Lift (purchases + Depot to Client deliveries).
+import './lift-schedule';
 
 // True while a dropdown list rendered in-page (appearance: base-select) is open. Browsers without the :open
 // selector keep the native list, which never passes Escape to the page.
@@ -184,138 +188,7 @@ document.addEventListener('click', (event) => {
         form.requestSubmit();
     }
 
-    const addSaleItemButton = event.target.closest('[data-sales-item-add]');
-    if (addSaleItemButton) {
-        const modal = addSaleItemButton.closest('.modal-backdrop');
-        const items = modal?.querySelector('[data-sales-items]');
-        // Edit forms carry a Stock Source row template: a new line must be sold from a stock lot.
-        const template = modal?.querySelector('template[data-sales-item-template]');
-        const source = template?.content.querySelector('[data-sales-item]') || items?.querySelector('[data-sales-item]:last-child');
-
-        if (!items || !source) {
-            return;
-        }
-
-        const clone = source.cloneNode(true);
-        clone.querySelectorAll('input').forEach((input) => {
-            input.value = '';
-        });
-        clone.querySelectorAll('select').forEach((select) => {
-            select.selectedIndex = 0;
-        });
-        items.appendChild(clone);
-        reindexSaleItems(items);
-        updateSalesTotals(items);
-    }
-
-    const removeSaleItemButton = event.target.closest('[data-sales-item-remove]');
-    if (removeSaleItemButton) {
-        const items = removeSaleItemButton.closest('[data-sales-items]');
-
-        if (!items || items.querySelectorAll('[data-sales-item]').length <= 1) {
-            return;
-        }
-
-        removeSaleItemButton.closest('[data-sales-item]')?.remove();
-        reindexSaleItems(items);
-        updateSalesTotals(items);
-    }
-
-    const addLiftingItemButton = event.target.closest('[data-lifting-item-add]');
-    if (addLiftingItemButton) {
-        const form = addLiftingItemButton.closest('[data-lifting-schedule-form]');
-        const items = form?.querySelector('[data-lifting-items]');
-        const source = items?.querySelector('[data-lifting-item]:last-child');
-        if (items && source) {
-            const clone = source.cloneNode(true);
-            // A new purchase starts with one Depot to Garage lift row.
-            clone.querySelectorAll('[data-lift-row]').forEach((liftRow, index) => { if (index > 0) liftRow.remove(); });
-            clone.querySelectorAll('select').forEach((select) => { select.selectedIndex = 0; });
-            clone.querySelectorAll('input').forEach((input) => { input.value = ''; delete input.dataset.mirror; });
-            clone.querySelectorAll('.field-error:not([data-lift-rows-warning])').forEach((message) => message.remove());
-            clone.querySelectorAll('[aria-invalid]').forEach((field) => field.removeAttribute('aria-invalid'));
-            const summary = clone.querySelector('[data-purchase-summary]');
-            if (summary) summary.textContent = 'Select Purchase ID';
-            items.appendChild(clone);
-            updateLiftingSchedule(form);
-        }
-    }
-
-    // Part 9: lift rows (Depot to Garage / Depot to Client) under each purchase.
-    const addLiftRowButton = event.target.closest('[data-lift-row-add]');
-    if (addLiftRowButton) {
-        const container = addLiftRowButton.closest('[data-lift-rows]');
-        const source = [...(container?.querySelectorAll('[data-lift-row]') || [])].pop();
-        if (container && source) {
-            const clone = source.cloneNode(true);
-            clone.querySelectorAll('select').forEach((select) => { select.selectedIndex = 0; });
-            clone.querySelectorAll('input').forEach((input) => { input.value = ''; });
-            clone.querySelectorAll('.field-error').forEach((message) => message.remove());
-            clone.querySelectorAll('[aria-invalid]').forEach((field) => field.removeAttribute('aria-invalid'));
-            source.after(clone);
-            updateLiftingSchedule(addLiftRowButton.closest('[data-lifting-schedule-form]'));
-        }
-    }
-
-    const removeLiftRowButton = event.target.closest('[data-lift-row-remove]');
-    if (removeLiftRowButton) {
-        const container = removeLiftRowButton.closest('[data-lift-rows]');
-        if (container?.querySelectorAll('[data-lift-row]').length > 1) {
-            removeLiftRowButton.closest('[data-lift-row]')?.remove();
-            updateLiftingSchedule(container.closest('[data-lifting-schedule-form]'));
-        }
-    }
-
-    const removeLiftingItemButton = event.target.closest('[data-lifting-item-remove]');
-    if (removeLiftingItemButton) {
-        const form = removeLiftingItemButton.closest('[data-lifting-schedule-form]');
-        const items = form?.querySelector('[data-lifting-items]');
-        if (items?.querySelectorAll('[data-lifting-item]').length > 1) {
-            removeLiftingItemButton.closest('[data-lifting-item]')?.remove();
-            updateLiftingSchedule(form);
-        }
-    }
 });
-
-const formatLitersText = (value) => `${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} L`;
-
-// Part 9: a lift row is Depot to Garage (tank + its stock) or Depot to Client (an open sales order). Only tanks and
-// orders of the purchase's fuel type can be chosen; the fields of the other kind are hidden and not submitted.
-const syncLiftRow = (liftRow, fuel) => {
-    const isClient = liftRow.querySelector('[data-lift-type]')?.value === 'client';
-    liftRow.querySelectorAll('[data-lift-garage]').forEach((field) => { field.hidden = isClient; });
-    liftRow.querySelectorAll('[data-lift-client]').forEach((field) => { field.hidden = !isClient; });
-    const tank = liftRow.querySelector('[data-allocation-tank]');
-    const sale = liftRow.querySelector('[data-lift-sale]');
-    [[tank, !isClient], [sale, isClient]].forEach(([select, active]) => {
-        if (!select) return;
-        select.disabled = !active;
-        select.required = active;
-        [...select.options].forEach((option) => {
-            if (!option.value) return;
-            const matches = fuel !== '' && option.dataset.fuelTypeId === fuel;
-            option.hidden = !matches;
-            option.disabled = !matches;
-        });
-        if (select.selectedOptions[0]?.disabled) select.value = '';
-    });
-    if (tank && !isClient && !tank.value) {
-        const first = [...tank.options].find((option) => option.value && !option.disabled);
-        if (first) tank.value = first.value;
-    }
-    const stock = liftRow.querySelector('[data-tank-stock]');
-    const tankOption = tank?.selectedOptions?.[0];
-    if (stock) {
-        stock.textContent = tankOption?.value
-            ? `${formatLitersText(tankOption.dataset.stock)} \u00b7 free ${formatLitersText(tankOption.dataset.free)}`
-            : 'Select a Tank';
-    }
-};
-
-const filterAllocationOptions = (row) => {
-    const fuel = row.querySelector('[data-lifting-purchase]')?.selectedOptions?.[0]?.dataset.fuelTypeId || '';
-    row.querySelectorAll('[data-lift-row]').forEach((liftRow) => syncLiftRow(liftRow, fuel));
-};
 
 document.addEventListener('input', (event) => {
     if (event.target.closest('[data-sales-item]')) {
@@ -327,42 +200,20 @@ document.addEventListener('input', (event) => {
         updateSalesTotals(modal?.querySelector('[data-sales-items]'));
     }
 
-    const liftingForm = event.target.closest('[data-lifting-schedule-form]');
-    if (liftingForm) updateLiftingSchedule(liftingForm);
 });
 
 document.addEventListener('change', (event) => {
     // Part 9 Purchases: Bank Selection is required for Bank Transfer / Cheque, and disabled and cleared for Cash.
     if (event.target.matches('[data-payment-mode]')) syncBankSelect(event.target);
 
-    // Part 9 Record Sales: the delivery type switches each line between Stock Source and Fuel Type.
-    if (event.target.matches('[data-delivery-type]')) {
-        const items = event.target.closest('[data-sale-form]')?.querySelector('[data-sales-items]');
-        if (items) {
-            items.dataset.deliveryTypeValue = event.target.value;
-            updateSalesTotals(items);
-        }
-    }
+    // Part 2 revisions Record Sales: Delivery Details (truck, driver, date, status) belong to Standard orders only.
+    if (event.target.matches('[data-delivery-type]')) syncDeliveryType(event.target);
 
-    if (event.target.matches('[data-stock-lot], [data-f1-percentage], select[name$="[fuel_type_id]"]') && event.target.closest('[data-sales-item]')) {
+    if (event.target.closest('[data-sales-item]')) {
         updateSalesTotals(event.target.closest('[data-sales-items]'));
     }
 
-    // Record Sales: a stock lot caps the line's quantity at what the lot has available (the server re-checks).
-    if (event.target.matches('[data-stock-lot]')) {
-        const available = event.target.selectedOptions?.[0]?.dataset.available;
-        const quantity = event.target.closest('[data-sales-item]')?.querySelector('input[name$="[quantity_liters]"]');
-        if (quantity) {
-            if (available) quantity.max = available; else quantity.removeAttribute('max');
-        }
-    }
 
-    if (event.target.matches('[data-lifting-purchase]')) {
-        filterAllocationOptions(event.target.closest('[data-lifting-item]'));
-    }
-
-    const liftingForm = event.target.closest('[data-lifting-schedule-form]');
-    if (liftingForm) updateLiftingSchedule(liftingForm);
 });
 
 // Submit buttons of a form, including ones placed in a modal footer via the form="..." attribute.
@@ -371,168 +222,10 @@ const submitButtonsFor = (form) => [
     ...(form.id ? document.querySelectorAll(`button[type="submit"][form="${form.id}"]`) : []),
 ];
 
-const updateLiftingSchedule = (form) => {
-    if (!form) return;
-    const rows = [...form.querySelectorAll('[data-lifting-item]')];
-    const truckOption = form.querySelector('[name="truck_id"]')?.selectedOptions?.[0];
-    const capacity = Number(truckOption?.dataset.capacity || 0);
-    const selectedIds = new Set();
-    let total = 0;
-    let depotId = null;
-    let depotLabel = '';
-    let error = '';
-    // Part 9: an order's F1 is loaded at the garage with its first lift row only; F1 tanks are shared across rows.
-    const f1SalesSeen = new Set();
-    const f1ByTank = {};
-    // Part 9: Depot to Garage liters per tank across the whole schedule, checked against the tank's free space (24KL).
-    const garageByTank = {};
-
-    rows.forEach((row, index) => {
-        row.querySelectorAll('[name]:not([data-lift-field])').forEach((field) => {
-            field.name = field.name.replace(/items\[\d+\]/, `items[${index}]`);
-        });
-        row.querySelectorAll('[id]:not([data-lift-field])').forEach((field) => {
-            const label = row.querySelector(`label[for="${field.id}"]`);
-            field.id = field.id.replace(/_\d+$/, `_${index}`);
-            label?.setAttribute('for', field.id);
-        });
-        const select = row.querySelector('[data-lifting-purchase]');
-        const option = select?.selectedOptions?.[0];
-        const quantityInput = row.querySelector('[data-lifting-quantity]');
-        const quantity = Number(quantityInput?.value || 0);
-        const remaining = Number(option?.dataset.remaining || 0);
-        const currentDepot = option?.dataset.depotId || null;
-        const summary = row.querySelector('[data-purchase-summary]');
-        total += Number.isFinite(quantity) ? quantity : 0;
-
-        if (option?.value) {
-            if (selectedIds.has(option.value)) error ||= 'The same Purchase ID cannot be added twice.';
-            selectedIds.add(option.value);
-            if (depotId && currentDepot !== depotId) error ||= 'All purchases must use the same pickup depot.';
-            depotId ||= currentDepot;
-            // The depot label is built server-side, so no separator character is ever encoded in JS.
-            depotLabel ||= option.dataset.pickup || '';
-            if (quantity > remaining) error ||= 'An amount to lift exceeds its remaining purchase quantity.';
-            if (quantityInput) quantityInput.max = String(remaining);
-            if (summary) summary.textContent = `${option.dataset.fuel} \u00b7 ${remaining.toLocaleString()} L remaining`;
-        } else if (summary) {
-            summary.textContent = 'Select Purchase ID';
-        }
-
-        // Part 9: the lift rows add up to at most the Amount to Lift; the rest stays on the truck.
-        const liftRows = [...row.querySelectorAll('[data-lift-row]')];
-        let liftTotal = 0;
-        let rowError = '';
-        liftRows.forEach((liftRow, liftIndex) => {
-            liftRow.querySelectorAll('[data-lift-field]').forEach((field) => {
-                const label = liftRow.querySelector(`label[for="${field.id}"]`);
-                field.name = `items[${index}][lifts][${liftIndex}][${field.dataset.liftField}]`;
-                field.id = field.id.replace(/_\d+_\d+$/, `_${index}_${liftIndex}`);
-                label?.setAttribute('for', field.id);
-            });
-            syncLiftRow(liftRow, option?.dataset.fuelTypeId || '');
-            const amountInput = liftRow.querySelector('[data-lift-amount]');
-            const amount = Number(amountInput?.value || 0);
-            liftTotal += Number.isFinite(amount) ? amount : 0;
-            const tankOption = liftRow.querySelector('[data-allocation-tank]:not(:disabled)')?.selectedOptions?.[0];
-            if (tankOption?.value && amount > 0) {
-                garageByTank[tankOption.value] = (garageByTank[tankOption.value] || 0) + amount;
-                const free = Number(tankOption.dataset.free || 0);
-                if (Math.round(garageByTank[tankOption.value] * 100) > Math.round(free * 100)) {
-                    const incoming = Number(tankOption.dataset.incoming || 0);
-                    rowError ||= `${tankOption.dataset.name} has only ${formatLitersText(free)} of free space (stock ${formatLitersText(tankOption.dataset.stock)}${incoming > 0 ? ` + ${formatLitersText(incoming)} already scheduled` : ''} of ${formatLitersText(tankOption.dataset.capacity)}).`;
-                }
-            }
-            const saleOption = liftRow.querySelector('[data-lift-sale]:not(:disabled)')?.selectedOptions?.[0];
-            if (saleOption?.value && amount > Number(saleOption.dataset.open || 0)) {
-                rowError ||= `A Depot to Client amount is more than the ${formatLitersText(saleOption.dataset.open)} left on its sales order.`;
-            }
-
-            const f1Liters = saleOption?.value && !f1SalesSeen.has(saleOption.value) ? Number(saleOption.dataset.f1 || 0) : 0;
-            if (saleOption?.value) f1SalesSeen.add(saleOption.value);
-            const f1Block = liftRow.querySelector('[data-lift-f1]');
-            const f1Tank = liftRow.querySelector('[data-lift-f1-tank]');
-            if (f1Block) f1Block.hidden = f1Liters <= 0;
-            if (f1Tank) {
-                f1Tank.disabled = f1Liters <= 0;
-                f1Tank.required = f1Liters > 0;
-                if (f1Liters > 0 && !f1Tank.value) {
-                    const first = [...f1Tank.options].find((option) => option.value);
-                    if (first) f1Tank.value = first.value;
-                }
-                const f1Option = f1Tank.selectedOptions?.[0];
-                const setF1Text = (selector, value) => { const element = liftRow.querySelector(selector); if (element) element.textContent = value; };
-                setF1Text('[data-lift-f1-liters]', formatLitersText(f1Liters));
-                setF1Text('[data-lift-f1-stock]', f1Option?.value ? formatLitersText(f1Option.dataset.stock) : 'Select an F1 tank');
-                if (f1Liters > 0 && f1Option?.value) {
-                    f1ByTank[f1Option.value] = (f1ByTank[f1Option.value] || 0) + f1Liters;
-                    if (f1ByTank[f1Option.value] > Number(f1Option.dataset.stock || 0)) {
-                        rowError ||= `${f1Option.textContent.trim()} has only ${formatLitersText(f1Option.dataset.stock)} of F1 for the ${formatLitersText(f1ByTank[f1Option.value])} to load at the garage.`;
-                    }
-                }
-            }
-            const removeButton = liftRow.querySelector('[data-lift-row-remove]');
-            if (removeButton) removeButton.disabled = liftRows.length === 1;
-        });
-        const overAllocated = Math.round(liftTotal * 100) > Math.round(quantity * 100);
-        if (overAllocated) {
-            rowError ||= `The lift rows add up to ${formatLitersText(liftTotal)}, more than the Amount to Lift of ${formatLitersText(quantity)}.`;
-        }
-        const setRowText = (selector, value) => { const element = row.querySelector(selector); if (element) element.textContent = value; };
-        setRowText('[data-lift-rows-total]', formatLitersText(liftTotal));
-        setRowText('[data-lift-rows-target]', formatLitersText(quantity));
-        // Over-allocation shows the (negative) balance in red and blocks Add Schedule.
-        setRowText('[data-lift-rows-remaining]', overAllocated ? `\u2212${formatLitersText(liftTotal - quantity)}` : formatLitersText(quantity - liftTotal));
-        row.querySelector('[data-lift-balance]')?.classList.toggle('is-over', overAllocated);
-        setRowText('[data-lift-rows-warning]', rowError);
-        if (rowError) error ||= 'Fix the lift rows of each purchase before scheduling.';
-    });
-
-    if (capacity > 0 && total > capacity) error ||= 'Combined quantity exceeds the selected truck capacity.';
-    const format = (value) => `${Math.max(0, value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} L`;
-    const setText = (selector, value) => { const element = form.querySelector(selector); if (element) element.textContent = value; };
-    setText('[data-truck-capacity]', format(capacity));
-    setText('[data-lifting-total]', format(total));
-    setText('[data-lifting-remaining]', format(capacity - total));
-    setText('[data-pickup-depot]', depotLabel || 'Select a purchase to derive the official depot and address.');
-    setText('[data-lifting-warning]', error);
-    rows.forEach((row) => { const button = row.querySelector('[data-lifting-item-remove]'); if (button) button.disabled = rows.length === 1; });
-    const submit = submitButtonsFor(form)[0];
-    if (submit) submit.disabled = Boolean(error) || rows.some((row) => !row.querySelector('[data-lifting-purchase]')?.value) || capacity <= 0 || total <= 0;
-};
-
-document.querySelectorAll('[data-lifting-item]').forEach(filterAllocationOptions);
-document.querySelectorAll('[data-lifting-schedule-form]').forEach(updateLiftingSchedule);
 
 // Reopen a modal after a redirect (e.g. Payment History after recording a payment).
 const modalToReopen = document.querySelector('[data-open-modal-on-load]')?.dataset.openModalOnLoad;
 if (modalToReopen) openModal(document.getElementById(modalToReopen));
-
-const reindexSaleItems = (items) => {
-    const rows = items.querySelectorAll('[data-sales-item]');
-
-    rows.forEach((row, index) => {
-        row.querySelectorAll('[name]').forEach((field) => {
-            field.name = field.name.replace(/items\[\d+\]/, `items[${index}]`);
-        });
-
-        row.querySelectorAll('[id]').forEach((field) => {
-            const oldId = field.id;
-            const newId = oldId.replace(/_(\d+|new)$/, `_${index}`);
-            field.id = newId;
-
-            const label = row.querySelector(`label[for="${oldId}"]`);
-            if (label) {
-                label.setAttribute('for', newId);
-            }
-        });
-
-        const removeButton = row.querySelector('[data-sales-item-remove]');
-        if (removeButton) {
-            removeButton.disabled = rows.length === 1;
-        }
-    });
-};
 
 const updateSalesTotals = (items) => {
     if (!items) {
@@ -542,20 +235,7 @@ const updateSalesTotals = (items) => {
     let total = 0;
 
     items.querySelectorAll('[data-sales-item]').forEach((row) => {
-        syncSaleItemRow(row, items);
-        const quantity = Number(row.querySelector('input[name*="[quantity_liters]"]')?.value || 0);
-        const unitPrice = Number(row.querySelector('input[name*="[unit_price]"]')?.value || 0);
-        const lineTotal = Number.isFinite(quantity * unitPrice) ? quantity * unitPrice : 0;
-        const output = row.querySelector('[data-sales-line-total]');
-
-        total += lineTotal;
-
-        if (output) {
-            output.textContent = lineTotal.toLocaleString(undefined, {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-            });
-        }
+        total += syncSaleItemRow(row);
     });
 
     const scope = items.closest('.modal-backdrop') || items.parentElement;
@@ -613,84 +293,70 @@ function syncBankSelect(modeSelect) {
 
 document.querySelectorAll('[data-payment-mode]').forEach(syncBankSelect);
 
-// Part 9 Record Sales: a line shows Stock Source (Garage to Client) or Fuel Type (Depot to Client). F1 Percentage
-// applies to Unleaded / Premium lines only (for Depot to Client the F1 is loaded at the garage); otherwise it is
-// completely hidden, cleared, and counts as 0%.
-function syncSaleItemRow(row, items) {
-    const isDepot = items.dataset.deliveryTypeValue === 'depot_to_client';
-    row.querySelectorAll('[data-garage-only]').forEach((field) => {
-        field.hidden = isDepot;
-        field.querySelectorAll('select, input').forEach((input) => { input.disabled = isDepot; });
-    });
-    row.querySelectorAll('[data-depot-only]').forEach((field) => {
-        field.hidden = !isDepot;
-        field.querySelectorAll('select, input').forEach((input) => { input.disabled = !isDepot; });
-    });
-
-    const activeFuelSelect = [...row.querySelectorAll('select[name$="[stock_lot_id]"], select[name$="[fuel_type_id]"]')]
-        .find((select) => !select.disabled);
-    const fuelOption = activeFuelSelect?.selectedOptions?.[0];
-
-    const fuelTypeValue = (fuelOption?.dataset?.fuelType || fuelOption?.dataset?.fuelName || '').trim().toLowerCase();
-    const fuelCodeValue = (fuelOption?.dataset?.fuelCode || '').trim().toUpperCase();
-    const eligible = Boolean(fuelOption?.value) && (
-        fuelTypeValue === 'unleaded' ||
-        fuelTypeValue === 'premium' ||
-        fuelCodeValue === 'UNL' ||
-        fuelCodeValue === 'PREM'
-    );
-
-    const f1Field = row.querySelector('[data-f1-field]');
-    const f1Select = row.querySelector('[data-f1-percentage]');
-    const pricePair = f1Field?.closest('.sale-pair') || row.querySelector('.sale-pair');
-
-    if (f1Field) {
-        f1Field.hidden = !eligible;
-    }
-    if (pricePair) {
-        pricePair.classList.toggle('has-no-f1', !eligible);
-    }
-    if (f1Select) {
-        if (!eligible) {
-            f1Select.value = '0';
-        }
-        f1Select.disabled = !eligible;
-    }
-
-    const breakdown = row.querySelector('[data-f1-breakdown]');
-    if (!breakdown) return;
-
-    const percent = eligible ? Number(f1Select?.value || 0) : 0;
-    const showBreakdown = eligible && percent > 0;
-    breakdown.hidden = !showBreakdown;
-
-    const quantity = Number(row.querySelector('input[name*="[quantity_liters]"]')?.value || 0);
-    const ordered = (showBreakdown && Number.isFinite(quantity)) ? quantity : 0;
-    const f1Amount = showBreakdown ? Math.round(ordered * percent) / 100 : 0;
-    const mainAmount = showBreakdown ? Math.round((ordered - f1Amount) * 100) / 100 : 0;
+// Part 2 revisions Record Sales: one order line. The Fuel Type is a purchase; an Unleaded / Premium line can carry an
+// F1 portion (F1 purchase, F1 Price, F1 %), otherwise the F1 row is hidden and counts as 0%.
+// Premium Total = main liters x Fuel Price, F1 Total = F1 liters x F1 Price, Line Total = Premium Total + F1 Total.
+// Returns the Line Total. The server re-checks prices and stock.
+function syncSaleItemRow(row) {
     const format = (value) => value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const set = (selector, value) => {
-        const element = breakdown.querySelector(selector);
-        if (element) element.textContent = value;
-    };
+    const set = (selector, value) => { const element = row.querySelector(selector); if (element) element.textContent = value; };
+    const purchase = row.querySelector('[data-sale-purchase]');
+    const fuelSource = purchase?.value ? purchase.selectedOptions[0] : row.querySelector('[data-legacy-fuel]');
+    const fuelCode = (fuelSource?.dataset?.fuelCode || '').toUpperCase();
+    const fuelName = fuelSource?.dataset?.fuelName || 'Fuel';
+    const eligible = ['UNL', 'PREM'].includes(fuelCode);
 
-    if (showBreakdown) {
-        set('[data-f1-ordered]', format(ordered));
-        set('[data-f1-percent]', `${percent}%`);
-        set('[data-f1-amount]', format(f1Amount));
-        const fuelName = fuelOption?.dataset?.fuelType || fuelOption?.dataset?.fuelName || 'Fuel';
-        set('[data-f1-main-label]', `${fuelName} Amount`);
-        set('[data-f1-main]', format(mainAmount));
-        set('[data-f1-total]', format(mainAmount + f1Amount));
-    } else {
-        set('[data-f1-ordered]', '0.00');
-        set('[data-f1-percent]', '0%');
-        set('[data-f1-amount]', '0.00');
-        set('[data-f1-main-label]', 'Fuel Amount');
-        set('[data-f1-main]', '0.00');
-        set('[data-f1-total]', '0.00');
-    }
+    const f1Row = row.querySelector('[data-f1-row]');
+    const f1Select = row.querySelector('[data-f1-percentage]');
+    if (f1Row) f1Row.hidden = !eligible;
+    if (!eligible && f1Select) f1Select.value = '0';
+    row.querySelectorAll('[data-f1-row] select, [data-f1-row] input').forEach((field) => { field.disabled = !eligible; });
+
+    const quantity = Number(row.querySelector('[data-sale-quantity]')?.value || 0) || 0;
+    const percent = eligible ? Number(f1Select?.value || 0) : 0;
+    const f1 = Math.round(quantity * percent) / 100;
+    const main = Math.round((quantity - f1) * 100) / 100;
+    const f1Purchase = row.querySelector('[data-sale-f1-purchase]');
+    const f1Price = row.querySelector('[data-sale-f1-price]');
+    if (f1Purchase) f1Purchase.required = eligible && percent > 0;
+    if (f1Price) f1Price.required = eligible && percent > 0;
+
+    const price = Number(row.querySelector('[data-sale-price]')?.value || 0) || 0;
+    const mainTotal = Math.round(main * price * 100) / 100;
+    const f1Total = percent > 0 ? Math.round(f1 * (Number(f1Price?.value || 0) || 0) * 100) / 100 : 0;
+    const lineTotal = mainTotal + f1Total;
+
+    set('[data-f1-ordered]', format(quantity));
+    set('[data-f1-percent]', `${percent}%`);
+    set('[data-f1-main-label]', `${fuelName} Amount`);
+    set('[data-f1-main]', format(main));
+    set('[data-f1-amount]', format(f1));
+    set('[data-f1-total]', format(main + f1));
+    set('[data-main-total-label]', `${fuelName} Total`);
+    set('[data-sales-main-total]', format(mainTotal));
+    set('[data-sales-f1-total]', format(f1Total));
+    set('[data-sales-line-total]', format(lineTotal));
+
+    // Each purchase may only give what it has available.
+    const quantityInput = row.querySelector('[data-sale-quantity]');
+    const available = purchase?.value ? Number(purchase.selectedOptions[0].dataset.available || 0) : Infinity;
+    quantityInput?.setCustomValidity(main > available ? `Only ${format(available)} L of this purchase is available.` : '');
+    const f1Available = f1Purchase?.value ? Number(f1Purchase.selectedOptions[0].dataset.available || 0) : Infinity;
+    f1Purchase?.setCustomValidity(eligible && f1 > f1Available ? `Only ${format(f1Available)} L of this F1 purchase is available.` : '');
+
+    return lineTotal;
 }
+
+function syncDeliveryType(select) {
+    const form = select.closest('[data-sale-form]');
+    const standard = select.value !== 'depot_to_client';
+    form?.querySelectorAll('[data-standard-only]').forEach((section) => {
+        section.hidden = !standard;
+        section.querySelectorAll('select, input').forEach((field) => { field.disabled = !standard; });
+    });
+}
+
+document.querySelectorAll('[data-delivery-type]').forEach(syncDeliveryType);
 
 const visibleTableFor = (trigger) => {
     const scope = trigger.closest('[data-tabs]') || trigger.closest('section') || document;
@@ -939,167 +605,6 @@ document.addEventListener('submit', (event) => {
         button.disabled = true;
         button.setAttribute('aria-disabled', 'true');
     });
-});
-
-const renderDashboardBarChart = (canvas, fallbackSelector, yTickFormatter, fallbackFormatter) => {
-    if (canvas.dataset.chartRendered === 'true') {
-        return;
-    }
-
-    let chartData;
-    try {
-        chartData = JSON.parse(canvas.dataset.chart || '{"labels":[],"datasets":[]}');
-    } catch (error) {
-        canvas.hidden = true;
-
-        return;
-    }
-
-    const fallback = canvas.parentElement?.querySelector(fallbackSelector);
-
-    try {
-        new Chart(canvas, {
-            type: 'bar',
-            data: chartData,
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { display: false },
-                    tooltip: {
-                        callbacks: {
-                            label: (context) => context.dataset.formattedData?.[context.dataIndex] || fallbackFormatter(context.raw),
-                        },
-                    },
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        ticks: {
-                            callback: yTickFormatter,
-                        },
-                    },
-                },
-            },
-        });
-    } catch (error) {
-        canvas.hidden = true;
-
-        return;
-    }
-
-    canvas.dataset.chartRendered = 'true';
-
-    if (fallback) {
-        fallback.hidden = true;
-    }
-};
-
-document.querySelectorAll('[data-sales-trend-chart]').forEach((canvas) => {
-    renderDashboardBarChart(
-        canvas,
-        '.sales-trend-fallback',
-        (value) => `PHP ${Number(value).toLocaleString()}`,
-        (value) => `PHP ${Number(value || 0).toLocaleString()}`,
-    );
-});
-
-document.querySelectorAll('[data-stock-level-chart]').forEach((canvas) => {
-    renderDashboardBarChart(
-        canvas,
-        '.stock-level-fallback',
-        (value) => `${Number(value).toLocaleString()} L`,
-        (value) => `${Number(value || 0).toLocaleString()} L`,
-    );
-});
-
-document.querySelectorAll('[data-unlifted-fuel-chart]').forEach((canvas) => {
-    renderDashboardBarChart(
-        canvas,
-        '.unlifted-fuel-fallback',
-        (value) => `${Number(value).toLocaleString()} L`,
-        (value) => `${Number(value || 0).toLocaleString()} L`,
-    );
-});
-
-document.querySelectorAll('[data-inventory-variance-chart]').forEach((canvas) => {
-    renderDashboardBarChart(
-        canvas,
-        '.inventory-variance-fallback',
-        (value) => Number(value).toLocaleString(),
-        (value) => Number(value || 0).toLocaleString(),
-    );
-});
-
-document.querySelectorAll('[data-receivables-chart]').forEach((canvas) => {
-    if (canvas.dataset.chartRendered === 'true') return;
-
-    let chartData;
-    try {
-        chartData = JSON.parse(canvas.dataset.chart || '{"labels":[],"datasets":[]}');
-    } catch {
-        canvas.hidden = true;
-        return;
-    }
-
-    const fallback = canvas.parentElement?.querySelector('.receivables-fallback');
-
-    try {
-        new Chart(canvas, {
-            type: 'bar',
-            data: chartData,
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { display: false },
-                    tooltip: {
-                        callbacks: {
-                            label: (context) =>
-                                context.dataset.formattedData?.[context.dataIndex]
-                                || `PHP ${Number(context.raw || 0).toLocaleString()}`,
-                        },
-                    },
-                },
-                scales: {
-                    x: {
-                        // Always show both x-axis labels even when one bar value is 0
-                        ticks: { display: true },
-                        grid: { display: false },
-                    },
-                    y: {
-                        beginAtZero: true,
-                        ticks: {
-                            callback: (value) => `PHP ${Number(value).toLocaleString()}`,
-                        },
-                    },
-                },
-                // Ensure zero-value bars always render as a visible stub
-                datasets: { bar: { minBarLength: 6 } },
-            },
-        });
-    } catch {
-        canvas.hidden = true;
-        return;
-    }
-
-    canvas.dataset.chartRendered = 'true';
-    if (fallback) fallback.hidden = true;
-    renderDashboardBarChart(
-        canvas,
-        '.receivables-fallback',
-        (value) => `PHP ${Number(value).toLocaleString()}`,
-        (value) => `PHP ${Number(value || 0).toLocaleString()}`,
-    );
-});
-
-document.querySelectorAll('[data-expected-revenue-chart]').forEach((canvas) => {
-    renderDashboardBarChart(
-        canvas,
-        '.expected-revenue-fallback',
-        (value) => `PHP ${Number(value).toLocaleString()}`,
-        (value) => `PHP ${Number(value || 0).toLocaleString()}`,
-    );
 });
 
 // -- Responsive table scroll helpers ----------------------------------------

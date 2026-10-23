@@ -513,9 +513,9 @@ class RoleBasedAccessControlTest extends TestCase
         $this->actingAs($admin)
             ->get('/admin/dashboard')
             ->assertOk()
-            ->assertSee('0 KL')
-            ->assertSee('PHP 0')
-            ->assertSee('No data available')
+            ->assertSee('0.00 KL')
+            ->assertSee('PHP 0.00')
+            ->assertSee('No data yet')
             ->assertDontSee('PHP 4,580,000')
             ->assertDontSee('PHP10.5M')
             ->assertDontSee('40,000 L');
@@ -698,18 +698,18 @@ class RoleBasedAccessControlTest extends TestCase
         $this->actingAs($admin)
             ->get('/admin/dashboard')
             ->assertOk()
-            ->assertSee('41 KL')
-            ->assertSee('PHP 1,800,000')
-            ->assertSee('PHP 1,000,000')
-            ->assertSee('60 KL')
-            ->assertSee('40,000 L')
+            // Part 10: Premium 50,000 - 10,000 + Diesel 1,000 in stock; 100,000 - 40,000 L still at the depot.
+            ->assertSeeInOrder(['Total Inventory in Stock', '41.00 KL'])
+            ->assertSeeInOrder(['Remaining Balance in Depots', '60.00 KL'])
+            ->assertSeeInOrder(['Total Lifts', '1'])
+            // 20,000 - 5,000 L still to deliver / 41,000 L in stock.
+            ->assertSeeInOrder(['Expected Stock Out Rate:', '36.59%'])
+            ->assertSeeInOrder(['Collected Revenue', 'PHP 800,000.00'])
+            ->assertSeeInOrder(['Unpaid Amount', 'PHP 1,000,000.00'])
+            ->assertSeeInOrder(['Month With Highest Sales :', 'August'])
+            ->assertSee('40000')
             ->assertSee('Premium')
-            ->assertSee('1,000 L')
-            ->assertSee('Diesel')
-            ->assertSee('PHP1,800,000')
-            ->assertSee('PHP800,000')
-            ->assertSee('PHP1,000,000')
-            ->assertSee('Hot Wed');
+            ->assertSee('Diesel');
 
         Carbon::setTestNow();
     }

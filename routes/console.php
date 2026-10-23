@@ -1,7 +1,6 @@
 <?php
 
 use App\Services\AIService;
-use App\Services\LiftAllocationService;
 use App\Services\OperationalDataRepairService;
 use App\Services\TruckAvailabilityService;
 use App\Services\WorkflowSmokeTestService;
@@ -271,33 +270,6 @@ Artisan::command('cjp:repair-data', function (OperationalDataRepairService $repa
         return 1;
     }
 })->purpose('Repair legacy operational data, provision master data, and seed reconciled acceptance workflows for CJP Southern Star OPC');
-
-Artisan::command('cjp:backfill-lift-allocations {--apply : Create the allocations (default is a dry run that changes nothing)}', function (LiftAllocationService $allocations): int {
-    // Audit C01: lifts scheduled before Part 7 have no garage/client allocation, so their fuel can never be stocked in.
-    $plan = $allocations->backfillPlan();
-
-    if ($plan->isEmpty()) {
-        $this->info('Every lift already has an allocation. Nothing to backfill.');
-
-        return 0;
-    }
-
-    $this->table(
-        ['Haul', 'Lift ID', 'Lift status', 'Purchase', 'Fuel', 'Garage allocation (L)', 'Tank (unconfirmed)'],
-        $plan->map(fn (array $row): array => [$row['haul_id'], $row['haul_code'], $row['haul_status'], $row['purchase_code'], $row['fuel'], number_format($row['quantity_liters'], 2), $row['tank']])->all()
-    );
-
-    if (! $this->option('apply')) {
-        $this->warn('DRY RUN: '.$plan->count().' garage allocation(s) would be created. Nothing was changed. Re-run with --apply to create them.');
-
-        return 0;
-    }
-
-    $created = $allocations->applyBackfill();
-    $this->info($created.' garage allocation(s) created. They appear under Pending Garage Receipts for the Inventory Officer to confirm.');
-
-    return 0;
-})->purpose('Audit C01: give lifts without an allocation a garage allocation (dry run unless --apply)');
 
 Artisan::command('cjp:sync-truck-status {--apply : Update the trucks (default is a dry run that changes nothing)}', function (TruckAvailabilityService $trucks): int {
     $drift = $trucks->statusDrift();

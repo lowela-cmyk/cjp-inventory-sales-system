@@ -4,9 +4,7 @@
     $filterOptions = $filterOptions ?? ['statuses' => [], 'fuelTypes' => collect(), 'drivers' => collect(), 'trucks' => collect()];
     $summaryCards = $summaryCards ?? [];
     $purchaseItems = $purchaseItems ?? collect();
-    $tankOptions = $tankOptions ?? collect();
     $directSaleOptions = $directSaleOptions ?? collect();
-    $f1FuelId = $f1FuelId ?? null;
     $truckAssignmentIdempotencyKey = $truckAssignmentIdempotencyKey ?? (string) \Illuminate\Support\Str::uuid();
     // The same page serves Dispatch Officers and Admin (who may also act on behalf of drivers).
     $isAdminLifting = request()->routeIs('admin.*');
@@ -16,6 +14,8 @@
     $headings = ['schedule' => 'Schedule', 'hauled' => 'Hauled', 'trucks' => 'Trucks'];
     $scheduleFormFailed = old('form_context') === 'schedule-lift' && $errors->any();
     $liftLines = array_values(old('items', [[]])) ?: [[]];
+    $oldDeliveries = array_values(old('deliveries', []));
+    $directSaleOptions = $directSaleOptions ?? collect();
     $truckFilterOptions = $filterOptions['trucks']->mapWithKeys(fn (object $truck): array => [$truck->id => $truck->truck_code.($truck->plate_number ? ' / '.$truck->plate_number : '')]);
 @endphp
 
@@ -115,7 +115,6 @@
                             <th>Truck-ID</th>
                             <th>Capacity</th>
                             <th>Lifted</th>
-                            <th>Allocated Quantity</th>
                             <th>Delivered Quantity</th>
                             <th>Status</th>
                             <th>Actions</th>
@@ -127,14 +126,13 @@
                                 @foreach ($row['cells'] as $cell)
                                     <td>{{ $cell }}</td>
                                 @endforeach
-                                {{-- Part 9: liters put into garage tanks / released to clients from this lift. --}}
-                                <td>{{ $row['load']['allocated'] }}</td>
+                                {{-- Liters delivered to Depot to Client orders from this lift. --}}
                                 <td>{{ $row['load']['delivered'] }}</td>
                                 <td><x-admin.status-badge :status="$row['status']" /></td>
                                 <td><button class="btn btn-secondary" type="button" data-modal-open="{{ $row['id'] }}">View</button></td>
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="14">No records found.</td></tr>
+                            <tr><td class="empty-cell" colspan="13">No records found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -161,13 +159,14 @@
                 <p class="form-alert" role="alert">{{ $message }}</p>
             @enderror
 
-            {{-- Part 9 layout (System Analysis mockup): Truck ID | Driver | Lift Date, then each purchase card, then its Lift Details. --}}
-            <section class="lift-form-section lift-header-card" aria-label="Lift schedule">
+            {{-- Part 2 revisions (mockup): Lift Details (truck, driver, date, purchases), then Delivery Details. --}}
+            <h3 class="lift-section-title">Lift Details</h3>
+            <section class="lift-form-section lift-header-card" aria-label="Lift details">
                 <div class="lift-fields lift-fields-3">
                     <div class="lift-field">
                         <label for="dispatch_truck_id">Truck ID</label>
                         <select id="dispatch_truck_id" name="truck_id" required @error('truck_id') aria-invalid="true" @enderror>
-                            <option value="">Select Truck ID</option>
+                            <option value="">Select Truck</option>
                             @foreach ($trucks as $truck)
                                 <option value="{{ $truck->id }}" data-capacity="{{ $truck->capacity_liters }}" @selected((string) old('truck_id') === (string) $truck->id)>{{ $truck->plate_number ?: 'No plate' }} – {{ $truck->truck_code }} – {{ number_format((float) $truck->capacity_liters, 2) }} L – Available</option>
                             @endforeach
@@ -189,42 +188,30 @@
                         <input id="dispatch_scheduled_at" name="scheduled_at" type="datetime-local" value="{{ old('scheduled_at') }}" required @error('scheduled_at') aria-invalid="true" @enderror>
                         @error('scheduled_at')<p class="field-error">{{ $message }}</p>@enderror
                     </div>
-                    {{-- Kept at the client's request (not on the mockup). --}}
-                    <div class="lift-field lift-dr-field">
-                        <label for="dispatch_dr_number">DR Number</label>
-                        <input id="dispatch_dr_number" name="dr_number" type="text" value="{{ old('dr_number') }}" maxlength="100" placeholder="Enter DR Number" @error('dr_number') aria-invalid="true" @enderror>
-                        @error('dr_number')<p class="field-error">{{ $message }}</p>@enderror
-                    </div>
                 </div>
-                @if ($purchaseItems->isEmpty())
-                    <p class="lifting-empty-note" role="note">No purchases have remaining unlifted quantity. Record a new purchase in Inventory, or cancel an unneeded lift to free its quantity.</p>
-                @endif
-                @error('items')<p class="field-error">{{ $message }}</p>@enderror
-            </section>
 
-            <div class="lift-lines" data-lifting-items>
-                @foreach ($liftLines as $index => $oldItem)
-                    <div class="lift-line" data-lifting-item>
-                        <section class="lift-form-section lift-purchase-card" aria-label="Purchase">
+                <div class="lift-lines" data-lifting-items>
+                    @foreach ($liftLines as $index => $oldItem)
+                        <div class="lift-line" data-lifting-item>
                             <div class="lift-fields lift-fields-3">
                                 <div class="lift-field">
                                     <label for="dispatch_purchase_{{ $index }}">Purchase ID</label>
                                     <select id="dispatch_purchase_{{ $index }}" name="items[{{ $index }}][purchase_item_id]" data-lifting-purchase required>
-                                        <option value="">{{ $purchaseItems->isEmpty() ? 'No purchases available to lift' : 'Select Purchase ID' }}</option>
+                                        <option value="">{{ $purchaseItems->isEmpty() ? 'No purchases in the depot' : 'Select Purchase ID' }}</option>
                                         @foreach ($purchaseItems as $purchaseItem)
-                                            <option value="{{ $purchaseItem->id }}" data-depot-id="{{ $purchaseItem->depot_id }}" data-pickup="{{ $purchaseItem->pickup_label }}" data-fuel="{{ $purchaseItem->fuel_name }}" data-fuel-type-id="{{ $purchaseItem->fuel_type_id }}" data-remaining="{{ $purchaseItem->remaining_liters }}" @selected((string) ($oldItem['purchase_item_id'] ?? '') === (string) $purchaseItem->id)>{{ $purchaseItem->label }}</option>
+                                            <option value="{{ $purchaseItem->id }}" data-depot-id="{{ $purchaseItem->depot_id }}" data-pickup="{{ $purchaseItem->pickup_label }}" data-fuel="{{ $purchaseItem->fuel_name }}" data-fuel-type-id="{{ $purchaseItem->fuel_type_id }}" data-remaining="{{ $purchaseItem->remaining_liters }}" data-remaining-label="{{ $purchaseItem->remaining_label }}" @selected((string) ($oldItem['purchase_item_id'] ?? '') === (string) $purchaseItem->id)>{{ $purchaseItem->label }}</option>
                                         @endforeach
                                     </select>
                                     @error("items.$index.purchase_item_id")<p class="field-error">{{ $message }}</p>@enderror
                                 </div>
                                 <div class="lift-field">
-                                    <span class="lift-field-label">Fuel / Remaining</span>
+                                    <span class="lift-field-label">Fuel / Remaining in Depot</span>
                                     <p class="lift-line-summary-text" data-purchase-summary>Select Purchase ID</p>
                                 </div>
                                 <div class="lift-field">
                                     <label for="dispatch_quantity_{{ $index }}">Amount to Lift</label>
                                     <div class="input-suffix">
-                                        <input id="dispatch_quantity_{{ $index }}" name="items[{{ $index }}][quantity_liters]" data-lifting-quantity type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="Enter Amount to Lift" value="{{ $oldItem['quantity_liters'] ?? '' }}" required>
+                                        <input id="dispatch_quantity_{{ $index }}" name="items[{{ $index }}][quantity_liters]" data-lifting-quantity type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="Enter Amount" value="{{ $oldItem['quantity_liters'] ?? '' }}" required>
                                         <span aria-hidden="true">L</span>
                                     </div>
                                     @error("items.$index.quantity_liters")<p class="field-error">{{ $message }}</p>@enderror
@@ -239,93 +226,46 @@
                                     <button class="btn btn-danger" type="button" data-lifting-item-remove disabled>Remove Purchase</button>
                                 </div>
                             </div>
-                        </section>
-
-                        {{-- Part 9: lift rows (Depot to Garage / Depot to Client) add up to at most the Amount to Lift; the rest stays on the truck. --}}
-                        <div class="lift-details" data-lift-rows>
-                            <h3 class="lift-section-title">Lift Details</h3>
-                            @foreach (array_values($oldItem['lifts'] ?? [['type' => 'garage']]) as $liftIndex => $lift)
-                                @php
-                                    $isClient = ($lift['type'] ?? 'garage') === 'client';
-                                    $f1Error = $errors->first("items.$index.lifts.$liftIndex.f1_storage_location_id");
-                                @endphp
-                                <div class="lift-row" data-lift-row>
-                                    <div class="lift-row-head">
-                                        <div class="lift-field">
-                                            <label for="dispatch_lift_type_{{ $index }}_{{ $liftIndex }}">Allocation / Delivery</label>
-                                            <select id="dispatch_lift_type_{{ $index }}_{{ $liftIndex }}" name="items[{{ $index }}][lifts][{{ $liftIndex }}][type]" data-lift-field="type" data-lift-type>
-                                                <option value="garage" @selected(! $isClient)>Depot to Garage</option>
-                                                <option value="client" @selected($isClient)>Depot to Client</option>
-                                            </select>
-                                        </div>
-                                        <button class="btn btn-danger lift-row-remove" type="button" data-lift-row-remove>Remove Lift</button>
-                                    </div>
-                                    <div class="lift-row-body">
-                                        <div class="lift-field" data-lift-garage @if ($isClient) hidden @endif>
-                                            <label for="dispatch_lift_tank_{{ $index }}_{{ $liftIndex }}">Tank</label>
-                                            <select id="dispatch_lift_tank_{{ $index }}_{{ $liftIndex }}" name="items[{{ $index }}][lifts][{{ $liftIndex }}][storage_location_id]" data-lift-field="storage_location_id" data-allocation-tank @disabled($isClient) @error("items.$index.lifts.$liftIndex.storage_location_id") aria-invalid="true" @enderror>
-                                                <option value="">Select Tank</option>
-                                                @foreach ($tankOptions as $tank)
-                                                    <option value="{{ $tank->id }}" data-fuel-type-id="{{ $tank->fuel_type_id }}" data-stock="{{ $tank->balance_liters }}" data-free="{{ $tank->free_liters }}" data-capacity="{{ $tank->capacity_liters }}" data-incoming="{{ $tank->incoming_liters }}" data-name="{{ $tank->name }}" @selected((string) ($lift['storage_location_id'] ?? '') === (string) $tank->id)>{{ $tank->label }}</option>
-                                                @endforeach
-                                            </select>
-                                            @error("items.$index.lifts.$liftIndex.storage_location_id")<p class="field-error">{{ $message }}</p>@enderror
-                                        </div>
-                                        <div class="lift-field" data-lift-garage @if ($isClient) hidden @endif>
-                                            <span class="lift-field-label">In Stock</span>
-                                            <p class="lift-line-summary-text" data-tank-stock>Select a Tank</p>
-                                        </div>
-                                        <div class="lift-field lift-span-2" data-lift-client @unless ($isClient) hidden @endunless>
-                                            <label for="dispatch_lift_sale_{{ $index }}_{{ $liftIndex }}">Order ID / Sales Order</label>
-                                            <select id="dispatch_lift_sale_{{ $index }}_{{ $liftIndex }}" name="items[{{ $index }}][lifts][{{ $liftIndex }}][sale_id]" data-lift-field="sale_id" data-lift-sale @disabled(! $isClient) @error("items.$index.lifts.$liftIndex.sale_id") aria-invalid="true" @enderror>
-                                                <option value="">{{ $directSaleOptions->isEmpty() ? 'No open Depot to Client orders' : 'Select Order ID / Sales Order' }}</option>
-                                                @foreach ($directSaleOptions as $directSale)
-                                                    <option value="{{ $directSale->sale_id }}" data-fuel-type-id="{{ $directSale->fuel_type_id }}" data-open="{{ $directSale->open_liters }}" data-f1="{{ $directSale->f1_liters }}" @selected((string) ($lift['sale_id'] ?? '') === (string) $directSale->sale_id)>{{ $directSale->label }}</option>
-                                                @endforeach
-                                            </select>
-                                            @error("items.$index.lifts.$liftIndex.sale_id")<p class="field-error">{{ $message }}</p>@enderror
-                                        </div>
-                                        <div class="lift-field">
-                                            <label for="dispatch_lift_amount_{{ $index }}_{{ $liftIndex }}">Amount</label>
-                                            <div class="input-suffix">
-                                                <input id="dispatch_lift_amount_{{ $index }}_{{ $liftIndex }}" name="items[{{ $index }}][lifts][{{ $liftIndex }}][quantity_liters]" data-lift-field="quantity_liters" data-lift-amount type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="Enter Amount" value="{{ $lift['quantity_liters'] ?? '' }}" required @error("items.$index.lifts.$liftIndex.quantity_liters") aria-invalid="true" @enderror>
-                                                <span aria-hidden="true">L</span>
-                                            </div>
-                                            @error("items.$index.lifts.$liftIndex.quantity_liters")<p class="field-error">{{ $message }}</p>@enderror
-                                        </div>
-                                    </div>
-                                    {{-- Part 9: an order with an F1 portion loads that F1 at the garage onto this truck. --}}
-                                    <div class="lift-row-f1" data-lift-f1 @unless ($isClient && $f1Error) hidden @endunless>
-                                        <p class="lift-row-f1-note">Load at the garage: <strong data-lift-f1-liters>0.00 L</strong> of F1</p>
-                                        <div class="lift-field">
-                                            <label for="dispatch_lift_f1_storage_location_id_{{ $index }}_{{ $liftIndex }}">F1 Tank</label>
-                                            <select id="dispatch_lift_f1_storage_location_id_{{ $index }}_{{ $liftIndex }}" name="items[{{ $index }}][lifts][{{ $liftIndex }}][f1_storage_location_id]" data-lift-field="f1_storage_location_id" data-lift-f1-tank @disabled(! ($isClient && $f1Error)) @if ($f1Error) aria-invalid="true" @endif>
-                                                <option value="">Select F1 Tank</option>
-                                                @foreach ($tankOptions->where('fuel_type_id', $f1FuelId) as $tank)
-                                                    <option value="{{ $tank->id }}" data-stock="{{ $tank->balance_liters }}" @selected((string) ($lift['f1_storage_location_id'] ?? '') === (string) $tank->id)>{{ $tank->name }}</option>
-                                                @endforeach
-                                            </select>
-                                            @if ($f1Error)<p class="field-error">{{ $f1Error }}</p>@endif
-                                        </div>
-                                        <div class="lift-field">
-                                            <span class="lift-field-label">F1 In Stock</span>
-                                            <p class="lift-line-summary-text" data-lift-f1-stock>Select an F1 tank</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            @endforeach
-                            <button class="btn lift-add-row" type="button" data-lift-row-add>+ Add Lift</button>
-                            <p class="lift-balance" data-lift-balance aria-live="polite">
-                                <span>Amount to Lift: <output data-lift-rows-target>0.00 L</output></span>
-                                <span>Allocated: <output data-lift-rows-total>0.00 L</output></span>
-                                <span>Remaining on truck: <output data-lift-rows-remaining>0.00 L</output></span>
-                            </p>
-                            @error("items.$index.lifts")<p class="field-error" role="alert">{{ $message }}</p>@enderror
-                            <p class="field-error" data-lift-rows-warning role="alert"></p>
                         </div>
+                    @endforeach
+                </div>
+
+                {{-- Kept at the client's request (not on the mockup). --}}
+                <div class="lift-fields lift-fields-3">
+                    <div class="lift-field">
+                        <label for="dispatch_dr_number">DR Number</label>
+                        <input id="dispatch_dr_number" name="dr_number" type="text" value="{{ old('dr_number') }}" maxlength="100" placeholder="Enter DR Number" @error('dr_number') aria-invalid="true" @enderror>
+                        @error('dr_number')<p class="field-error">{{ $message }}</p>@enderror
                     </div>
-                @endforeach
+                </div>
+                @if ($purchaseItems->isEmpty())
+                    <p class="lifting-empty-note" role="note">No purchases have fuel remaining in the depot. Record a new purchase in Inventory, or cancel an unneeded lift to free its quantity.</p>
+                @endif
+                @error('items')<p class="field-error">{{ $message }}</p>@enderror
+            </section>
+
+            {{-- Depot to Client orders this lift delivers. Fuel Remaining in Truck = Amount to Lift - deliveries. --}}
+            <div class="lift-deliveries" data-lift-deliveries>
+                <h3 class="lift-section-title" data-deliveries-title @if (empty($oldDeliveries)) hidden @endif>Delivery Details</h3>
+                <div class="lift-delivery-rows" data-delivery-rows>
+                    @foreach ($oldDeliveries as $deliveryIndex => $delivery)
+                        @include('dispatch.partials.lift-delivery-row', ['deliveryIndex' => $deliveryIndex, 'selectedSale' => $delivery['sale_id'] ?? null])
+                    @endforeach
+                </div>
+                <template data-delivery-template>
+                    @include('dispatch.partials.lift-delivery-row', ['deliveryIndex' => '__INDEX__', 'selectedSale' => null])
+                </template>
+                <div class="lift-delivery-footer">
+                    <p class="lift-truck-remaining" data-truck-remaining-line aria-live="polite">Fuel Remaining in Truck: <output data-truck-remaining>0.00 L</output></p>
+                    <button class="btn lift-add-row" type="button" data-delivery-add @disabled($directSaleOptions->isEmpty())>{{ $directSaleOptions->isEmpty() ? 'No open Depot to Client orders' : '+ Add Depot to Client Delivery' }}</button>
+                </div>
+                @error('deliveries')<p class="field-error" role="alert">{{ $message }}</p>@enderror
+                <p class="field-error" data-deliveries-warning role="alert"></p>
             </div>
+            <dl class="lift-info">
+                <div class="lift-info-row"><dt>Pickup Depot</dt><dd data-pickup-depot>Select a purchase to derive the official depot and address.</dd></div>
+                <div class="lift-info-row"><dt>Truck Capacity</dt><dd data-truck-capacity>0.00 L</dd></div>
+            </dl>
             <p class="field-error lift-totals-warning" data-lifting-warning role="alert"></p>
         </form>
         <x-slot:footer>
@@ -350,14 +290,11 @@
                 @foreach ($row['hauls'] as $haul)
                     <div class="receipt-line">
                         <p class="receipt-line-title"><strong>{{ $haul['purchase_code'] }}</strong> &middot; {{ $haul['fuel_name'] }} &middot; {{ $haul['quantity'] }} &middot; ATL: {{ $haul['atl_number'] }}</p>
-                        <p class="receipt-line-note">Allocated: {{ number_format($haul['load']['allocated'], 2) }} L &middot; Delivered: {{ number_format($haul['load']['delivered'], 2) }} L &middot; Remaining on truck: {{ number_format($haul['load']['remaining'], 2) }} L</p>
+                        <p class="receipt-line-note">Delivered: {{ number_format($haul['load']['delivered'], 2) }} L &middot; Remaining on truck: {{ number_format($haul['load']['remaining'], 2) }} L</p>
                         @forelse ($haul['lifts'] as $lift)
                             <p class="receipt-line-note">{{ $lift['type'] }}: {{ $lift['destination'] }} &middot; {{ $lift['quantity'] }} &middot; {{ $lift['status'] }}</p>
-                            @if ($lift['f1'])
-                                <p class="receipt-line-note"><strong>{{ $lift['f1'] }}</strong></p>
-                            @endif
                         @empty
-                            <p class="receipt-line-note">No lift rows recorded.</p>
+                            <p class="receipt-line-note">No Depot to Client deliveries on this lift.</p>
                         @endforelse
                     </div>
                 @endforeach

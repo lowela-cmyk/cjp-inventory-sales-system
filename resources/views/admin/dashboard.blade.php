@@ -1,323 +1,204 @@
+@php
+    // Part 10 (October 22, 2026): Dashboard and Analytics, laid out exactly as the System Analysis mockup.
+    $filterQuery = $filterQuery ?? [];
+    $invFilters = $inventory['filters'];
+    $salesFilters = $salesTrend['filters'];
+    // Each section's filter form keeps the other section's filters.
+    $keepFilters = fn (string $prefix): array => collect($filterQuery)->reject(fn (mixed $value, string $key): bool => str_starts_with($key, $prefix))->all();
+    $margin = $revenue['margin'];
+    $peak = $salesTrend['peak'];
+    $salesPeriod = $filterQuery['sales_period'] ?? null;
+    $customRange = ! $salesPeriod && ($salesFilters['date_from'] || $salesFilters['date_to']);
+@endphp
+
 @component('layouts.admin', ['title' => 'Dashboard and Analytics', 'active' => 'dashboard'])
-    <div class="metric-row">
-        @foreach ($metricCards as $card)
-            <div class="metric-card">
-                <em>{{ $card[0] }}</em>
-                <strong style="{{ $card[3] }}">{{ $card[1] }}</strong>
-                <span>{{ $card[2] }}</span>
-            </div>
-        @endforeach
-    </div>
+    <div class="dash">
+        @if ($errors->any())
+            <p class="form-alert" role="alert">{{ $errors->first() }}</p>
+        @endif
 
-    <div class="dashboard-grid">
-        <section class="chart-panel">
-            <div class="chart-header">
-                <h2>Sales Trend</h2>
-                <div class="chart-tabs" aria-label="Sales period">
-                    @foreach (['week' => 'Per Week', 'month' => 'Per Month', 'year' => 'Per Year'] as $period => $label)
-                        <a href="{{ route('admin.dashboard', array_filter(['trend_period' => $period, 'trend_year' => $salesTrendFilters['year'] ?? now()->year])) }}" class="{{ ($salesTrendFilters['period'] ?? 'week') === $period ? 'is-selected' : '' }}">{{ $label }}</a>
+        {{-- Current Inventory --}}
+        <section class="dash-section" id="current-inventory" aria-labelledby="dash-inventory-title">
+            <h2 class="dash-section-title" id="dash-inventory-title">Current Inventory</h2>
+            <div class="dash-panel">
+                <form class="dash-filters dash-filters-inventory" method="GET" action="{{ route('admin.dashboard') }}#current-inventory" data-auto-filter>
+                    @foreach ($keepFilters('inv_') as $name => $value)
+                        <input type="hidden" name="{{ $name }}" value="{{ $value }}">
                     @endforeach
-                </div>
-            </div>
-            <div class="sales-trend-chart">
-                <canvas data-sales-trend-chart data-chart='@json($salesTrendChart)' aria-label="Sales revenue trend" role="img"></canvas>
-                <div class="sales-bars sales-trend-fallback">
-                    @foreach ($salesTrend as $day)
-                        <div class="mini-bar">
-                            <strong>{{ $day['value'] }}</strong>
-                            <i style="--bar-height: {{ $day['height'] }}px"></i>
-                            <span>{{ $day['label'] }}</span>
-                        </div>
-                    @endforeach
-                </div>
-            </div>
-        </section>
-
-        <section class="chart-panel">
-            <div class="chart-header">
-                <h2>Current Stock By Fuel Type</h2>
-            </div>
-            @if (! empty($stockByFuelType))
-                <div class="stock-level-chart">
-                    <canvas data-stock-level-chart data-chart='@json($stockLevelChart)' aria-label="Current stock by fuel type" role="img"></canvas>
-                    <div class="stock-bars stock-level-fallback">
-                        @foreach ($stockByFuelType as $stock)
-                            <div class="stock-bar">
-                                <strong>{{ $stock['value'] }}</strong>
-                                <i style="--bar-height: {{ $stock['height'] }}px; --bar-color: {{ $stock['color'] }}"></i>
-                                <span>{{ $stock['label'] }}</span>
-                            </div>
+                    <input type="search" name="inv_search" placeholder="Search by Purchase ID" aria-label="Search by Purchase ID" value="{{ $invFilters['search'] }}">
+                    <select name="inv_fuel_type_id" aria-label="Filter current inventory by fuel type">
+                        <option value="">Fuel Type (All)</option>
+                        @foreach ($filterOptions['fuelTypes'] as $fuelType)
+                            <option value="{{ $fuelType->id }}" @selected((string) $invFilters['fuel_type_id'] === (string) $fuelType->id)>{{ $fuelType->name }}</option>
                         @endforeach
+                    </select>
+                    <select name="inv_depot_id" aria-label="Filter current inventory by depot">
+                        <option value="">Depots (ALL)</option>
+                        @foreach ($filterOptions['depots'] as $depot)
+                            <option value="{{ $depot->id }}" @selected((string) $invFilters['depot_id'] === (string) $depot->id)>{{ $depot->name }}</option>
+                        @endforeach
+                    </select>
+                </form>
+
+                <div class="dash-kpis dash-kpis-6">
+                    @foreach ($inventory['cards'] as [$label, $value])
+                        <div class="dash-kpi"><span>{{ $label }}</span><strong>{{ $value }}</strong></div>
+                    @endforeach
+                </div>
+
+                <div class="dash-charts dash-charts-3">
+                    <div class="dash-chart-block">
+                        <h3 class="dash-chart-title">Current Stock By Fuel Type (Stock Levels)</h3>
+                        <div class="dash-chart">
+                            @include('admin.partials.dashboard-chart', ['chart' => $inventory['stockChart'], 'label' => 'Current stock by fuel type'])
+                            <p class="dash-note">Expected Stock Out Rate: <strong class="dash-red" data-stock-out-rate>{{ $inventory['stockOutRateLabel'] }}</strong></p>
+                        </div>
+                    </div>
+                    <div class="dash-chart-block">
+                        <h3 class="dash-chart-title">Fuel Lifting Status</h3>
+                        <div class="dash-chart">
+                            @include('admin.partials.dashboard-chart', ['chart' => $inventory['liftingChart'], 'label' => 'Purchases by lifting status'])
+                        </div>
+                    </div>
+                    <div class="dash-chart-block">
+                        <h3 class="dash-chart-title">Purchased V.S Stock In</h3>
+                        <div class="dash-chart">
+                            @include('admin.partials.dashboard-chart', ['chart' => $inventory['purchasedChart'], 'label' => 'Purchased liters completed versus uncompleted'])
+                        </div>
                     </div>
                 </div>
-            @else
-                <div class="dashboard-empty-state">No data available</div>
-            @endif
-        </section>
-
-        <section class="chart-panel">
-            <div class="chart-header"><h2>Unlifted Fuel Monitoring</h2></div>
-            <form class="dashboard-filter-row" method="GET" action="{{ route('admin.dashboard') }}" data-auto-filter>
-                <input type="date" name="unlifted_date_from" value="{{ $unliftedFuelFilters['date_from'] ?? '' }}" aria-label="Purchase date from">
-                <input type="date" name="unlifted_date_to" value="{{ $unliftedFuelFilters['date_to'] ?? '' }}" aria-label="Purchase date to">
-                <select name="unlifted_depot_id" aria-label="Filter by depot">
-                    <option value="">Depot (All)</option>
-                    @foreach ($unliftedFuelFilterOptions['depots'] as $depot)
-                        <option value="{{ $depot->id }}" @selected((string) ($unliftedFuelFilters['depot_id'] ?? '') === (string) $depot->id)>{{ $depot->name }}</option>
-                    @endforeach
-                </select>
-                <select name="unlifted_fuel_type_id" aria-label="Filter by fuel type">
-                    <option value="">Fuel Type (All)</option>
-                    @foreach ($unliftedFuelFilterOptions['fuelTypes'] as $fuelType)
-                        <option value="{{ $fuelType->id }}" @selected((string) ($unliftedFuelFilters['fuel_type_id'] ?? '') === (string) $fuelType->id)>{{ $fuelType->name }}</option>
-                    @endforeach
-                </select>
-                <select name="unlifted_lifting_status" aria-label="Filter by lifting status">
-                    <option value="">Lifting Status (All)</option>
-                    @foreach ($unliftedFuelFilterOptions['statuses'] as $status)
-                        <option value="{{ $status }}" @selected(($unliftedFuelFilters['lifting_status'] ?? '') === $status)>{{ $status === 'partial' ? 'Partially Lifted' : ($status === 'lifted' ? 'Fully Lifted' : 'Unlifted') }}</option>
-                    @endforeach
-                </select>
-            </form>
-            <div class="unlifted-fuel-chart">
-                <canvas data-unlifted-fuel-chart data-chart='@json($unliftedFuelChart)' aria-label="Purchased lifted and unlifted fuel" role="img"></canvas>
-                <div class="revenue-bars unlifted-fuel-fallback">
-                    @foreach ([
-                        ['Purchased', $unliftedMonitoring['summary']['formatted_purchased'], 120, '#0d1424'],
-                        ['Lifted', $unliftedMonitoring['summary']['formatted_lifted'], 120, '#3b9a35'],
-                        ['Unlifted', $unliftedMonitoring['summary']['formatted_remaining'], 120, '#f7043a'],
-                    ] as $bar)
-                        <div class="revenue-bar">
-                            <strong>{{ $bar[1] }}</strong>
-                            <i style="--h: {{ $bar[2] }}px; --c: {{ $bar[3] }}"></i>
-                            <span>{{ $bar[0] }}</span>
-                        </div>
-                    @endforeach
-                </div>
-            </div>
-            <div class="dashboard-kpi-strip">
-                <div><span>Total Lifted</span><strong>{{ $unliftedMonitoring['summary']['formatted_lifted'] }}</strong></div>
-                <div><span>Partially Lifted</span><strong>{{ number_format($unliftedMonitoring['summary']['partial_count']) }}</strong></div>
-                <div><span>Fully Unlifted</span><strong>{{ number_format($unliftedMonitoring['summary']['unlifted_count']) }}</strong></div>
-            </div>
-            @if (! empty($unliftedFuelRows))
-                <div class="dashboard-mini-table">
-                    <table>
-                        <thead><tr><th>Purchase</th><th>Depot</th><th>Fuel</th><th>Purchased</th><th>Lifted</th><th>Unlifted</th><th>Status</th><th>Date</th></tr></thead>
-                        <tbody>
-                            @foreach ($unliftedFuelRows as $row)
-                                <tr>
-                                    <td>{{ $row['purchase_code'] }}</td>
-                                    <td>{{ $row['depot_name'] }}</td>
-                                    <td>{{ $row['fuel_name'] }}</td>
-                                    <td>{{ $row['formatted_purchased'] }}</td>
-                                    <td>{{ $row['formatted_lifted'] }}</td>
-                                    <td>{{ $row['formatted_remaining'] }}</td>
-                                    <td><x-admin.status-badge :status="$row['lift_status_label']" /></td>
-                                    <td>{{ $row['formatted_purchase_date'] }}</td>
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                </div>
-            @else
-                <div class="dashboard-empty-state dashboard-empty-state-small">0 L</div>
-            @endif
-            <div class="dashboard-breakdown-grid">
-                <div>
-                    <h3>By Fuel Type</h3>
-                    @forelse ($unliftedMonitoring['fuelBreakdown'] as $row)
-                        <div class="demand-row"><span>{{ $row['label'] }}</span><span class="demand-track"><i class="demand-fill" style="--p:{{ $unliftedMonitoring['summary']['remaining_liters'] > 0 ? round(($row['liters'] / $unliftedMonitoring['summary']['remaining_liters']) * 100) : 0 }}%"></i></span><strong>{{ $row['formatted_liters'] }}</strong></div>
-                    @empty
-                        <div class="dashboard-empty-state dashboard-empty-state-small">No data available</div>
-                    @endforelse
-                </div>
-                <div>
-                    <h3>By Depot</h3>
-                    @forelse ($unliftedMonitoring['depotBreakdown'] as $row)
-                        <div class="demand-row"><span>{{ $row['label'] }}</span><span class="demand-track"><i class="demand-fill" style="--p:{{ $unliftedMonitoring['summary']['remaining_liters'] > 0 ? round(($row['liters'] / $unliftedMonitoring['summary']['remaining_liters']) * 100) : 0 }}%"></i></span><strong>{{ $row['formatted_liters'] }}</strong></div>
-                    @empty
-                        <div class="dashboard-empty-state dashboard-empty-state-small">No data available</div>
-                    @endforelse
-                </div>
             </div>
         </section>
 
-        <section class="chart-panel">
-            <div class="chart-header"><h2>Inventory Variance</h2></div>
-            <form class="dashboard-filter-row dashboard-filter-row-variance" method="GET" action="{{ route('admin.dashboard') }}" data-auto-filter>
-                <input type="date" name="variance_date_from" value="{{ $inventoryVarianceFilters['date_from'] ?? '' }}" aria-label="Sale date from">
-                <input type="date" name="variance_date_to" value="{{ $inventoryVarianceFilters['date_to'] ?? '' }}" aria-label="Sale date to">
-                <select name="variance_fuel_type_id" aria-label="Filter variance by fuel type">
-                    <option value="">Fuel Type (All)</option>
-                    @foreach ($inventoryVarianceFilterOptions['fuelTypes'] as $fuelType)
-                        <option value="{{ $fuelType->id }}" @selected((string) ($inventoryVarianceFilters['fuel_type_id'] ?? '') === (string) $fuelType->id)>{{ $fuelType->name }}</option>
-                    @endforeach
-                </select>
-                <select name="variance_customer_id" aria-label="Filter variance by customer">
-                    <option value="">Customer (All)</option>
-                    @foreach ($inventoryVarianceFilterOptions['customers'] as $customer)
-                        <option value="{{ $customer->id }}" @selected((string) ($inventoryVarianceFilters['customer_id'] ?? '') === (string) $customer->id)>{{ $customer->company_name ?: $customer->name }}</option>
-                    @endforeach
-                </select>
-                <select name="variance_status" aria-label="Filter variance status">
-                    <option value="">Variance Status (All)</option>
-                    @foreach ($inventoryVarianceFilterOptions['statuses'] as $status)
-                        <option value="{{ $status }}" @selected(($inventoryVarianceFilters['variance_status'] ?? '') === $status)>{{ $status === 'matched' ? 'Matched' : 'Requires Verification' }}</option>
-                    @endforeach
-                </select>
-            </form>
-            <div class="inventory-variance-chart">
-                <canvas data-inventory-variance-chart data-chart='@json($inventoryVarianceChart)' aria-label="Matched stock-out and receivable transactions versus variances" role="img"></canvas>
-                <div class="revenue-bars inventory-variance-fallback">
-                    @foreach ([
-                        ['Matched', number_format($inventoryVariance['summary']['matched_count']), 120, '#3b9a35'],
-                        ['Requires Verification', number_format($inventoryVariance['summary']['variance_count']), 120, '#f7043a'],
-                    ] as $bar)
-                        <div class="revenue-bar">
-                            <strong>{{ $bar[1] }}</strong>
-                            <i style="--h: {{ $bar[2] }}px; --c: {{ $bar[3] }}"></i>
-                            <span>{{ $bar[0] }}</span>
-                        </div>
-                    @endforeach
-                </div>
-            </div>
-            <div class="dashboard-kpi-strip dashboard-kpi-strip-variance">
-                <div><span>Checked</span><strong>{{ number_format($inventoryVariance['summary']['total_checked']) }}</strong></div>
-                <div><span>Variance Rate</span><strong>{{ $inventoryVariance['summary']['formatted_variance_rate'] }}</strong></div>
-                <div><span>Quantity Variance</span><strong>{{ $inventoryVariance['summary']['formatted_quantity_variance'] }}</strong></div>
-            </div>
-            @if (! empty($inventoryVarianceRows))
-                <div class="dashboard-mini-table">
-                    <table>
-                        <thead><tr><th>Reference</th><th>Customer</th><th>Fuel</th><th>Sale Qty</th><th>Stock-Out Qty</th><th>Difference</th><th>Receivable</th><th>Reason</th><th>Date</th></tr></thead>
-                        <tbody>
-                            @foreach ($inventoryVarianceRows as $row)
-                                <tr>
-                                    <td>{{ $row['transaction_reference'] }}</td>
-                                    <td>{{ $row['company_name'] ?: $row['customer_name'] }}</td>
-                                    <td>{{ $row['fuel_name'] }}</td>
-                                    <td>{{ $row['formatted_sale_quantity'] }}</td>
-                                    <td>{{ $row['formatted_stock_out_quantity'] }}</td>
-                                    <td>{{ $row['formatted_quantity_variance'] }}</td>
-                                    <td><x-admin.status-badge :status="$row['receivable_status_label']" /></td>
-                                    <td>{{ $row['reason'] }}</td>
-                                    <td>{{ $row['formatted_transaction_date'] }}</td>
-                                </tr>
+        {{-- Expected Sales Revenue | Stock Out V.S Receivables Margin --}}
+        <div class="dash-revenue-row">
+            <section class="dash-section" aria-labelledby="dash-revenue-title">
+                <h2 class="dash-section-title" id="dash-revenue-title">Expected Sales Revenue</h2>
+                <div class="dash-chart dash-chart-panel" data-dashboard-revenue data-series='@json($revenue['series'])' data-default-period="month">
+                    <div class="dash-chart-canvas dash-chart-canvas-tall">
+                        <canvas role="img" aria-label="Actual and expected sales revenue" @if ($revenue['series']['month']['empty']) hidden @endif></canvas>
+                        <div class="dashboard-empty-state" data-revenue-empty @unless ($revenue['series']['month']['empty']) hidden @endunless>No data yet</div>
+                    </div>
+                    <div class="dash-chart-footer">
+                        <p class="dash-note">Increase Rate: <strong data-revenue-increase>{{ $revenue['series']['month']['increaseRateLabel'] }}</strong></p>
+                        <div class="dash-toggle" role="group" aria-label="Revenue period">
+                            @foreach (['week' => 'Week', 'month' => 'Month', 'year' => 'Year'] as $period => $periodLabel)
+                                <button class="btn {{ $period === 'month' ? 'is-selected' : '' }}" type="button" data-revenue-period="{{ $period }}" aria-pressed="{{ $period === 'month' ? 'true' : 'false' }}">{{ $periodLabel }}</button>
                             @endforeach
-                        </tbody>
-                    </table>
+                        </div>
+                    </div>
                 </div>
-            @else
-                <div class="dashboard-empty-state dashboard-empty-state-small">No variance detected</div>
-            @endif
-            <div class="dashboard-breakdown-grid dashboard-breakdown-grid-compact">
-                <div>
-                    <h3>Reasons</h3>
-                    @forelse ($inventoryVariance['reasonBreakdown'] as $row)
-                        <div class="demand-row"><span>{{ $row['label'] }}</span><span class="demand-track"><i class="demand-fill" style="--p:{{ $inventoryVariance['summary']['variance_count'] > 0 ? round(($row['count'] / $inventoryVariance['summary']['variance_count']) * 100) : 0 }}%"></i></span><strong>{{ number_format($row['count']) }}</strong></div>
-                    @empty
-                        <div class="dashboard-empty-state dashboard-empty-state-small">0</div>
-                    @endforelse
+            </section>
+
+            <section class="dash-section" aria-labelledby="dash-margin-title">
+                <h2 class="dash-section-title" id="dash-margin-title">Stock Out V.S Receivables Margin</h2>
+                <div class="dash-chart dash-chart-panel">
+                    @include('admin.partials.dashboard-chart', ['chart' => $margin['chart'], 'label' => 'Stock out value versus receivables of delivered sales', 'class' => 'dash-chart-canvas-tall'])
+                    <div class="dash-notes-stack">
+                        <p class="dash-note">Inventory Variance Rate: <strong class="dash-red">{{ $margin['varianceRateLabel'] }}</strong></p>
+                        <p class="dash-note">Missing: <strong>{{ $margin['missingLabel'] }}</strong></p>
+                    </div>
                 </div>
-                <div>
-                    <h3>Status</h3>
-                    <div class="demand-row"><span>Matched</span><span class="demand-track"><i class="demand-fill" style="--p:{{ $inventoryVariance['summary']['total_checked'] > 0 ? round(($inventoryVariance['summary']['matched_count'] / $inventoryVariance['summary']['total_checked']) * 100) : 0 }}%"></i></span><strong>{{ number_format($inventoryVariance['summary']['matched_count']) }}</strong></div>
-                    <div class="demand-row"><span>Requires Verification</span><span class="demand-track"><i class="demand-fill" style="--p:{{ $inventoryVariance['summary']['total_checked'] > 0 ? round(($inventoryVariance['summary']['variance_count'] / $inventoryVariance['summary']['total_checked']) * 100) : 0 }}%"></i></span><strong>{{ number_format($inventoryVariance['summary']['variance_count']) }}</strong></div>
+            </section>
+        </div>
+
+        {{-- Sales Trend --}}
+        <section class="dash-section" id="sales-trend" aria-labelledby="dash-sales-title">
+            <h2 class="dash-section-title" id="dash-sales-title">Sales Trend</h2>
+            <div class="dash-panel">
+                <form class="dash-filters dash-filters-sales" method="GET" action="{{ route('admin.dashboard') }}#sales-trend" data-auto-filter>
+                    @foreach ($keepFilters('sales_') as $name => $value)
+                        <input type="hidden" name="{{ $name }}" value="{{ $value }}">
+                    @endforeach
+                    @if ($customRange)
+                        {{-- A date range from a link keeps applying until another Date option is chosen. --}}
+                        <input type="hidden" name="sales_date_from" value="{{ $salesFilters['date_from'] }}">
+                        <input type="hidden" name="sales_date_to" value="{{ $salesFilters['date_to'] }}">
+                    @endif
+                    <input type="search" name="sales_search" placeholder="Search by Sales ID" aria-label="Search by Sales ID" value="{{ $salesFilters['search'] }}">
+                    <select name="sales_period" aria-label="Filter sales by date" data-sales-period>
+                        <option value="">Date</option>
+                        @if ($customRange)
+                            <option value="" selected>{{ $salesFilters['date_from'] ?: '…' }} to {{ $salesFilters['date_to'] ?: '…' }}</option>
+                        @endif
+                        @foreach (\App\Http\Controllers\AdminDashboardController::SALES_PERIODS as $value => $periodLabel)
+                            <option value="{{ $value }}" @selected($salesPeriod === $value)>{{ $periodLabel }}</option>
+                        @endforeach
+                    </select>
+                    <select name="sales_fuel_type_id" aria-label="Filter sales by fuel type">
+                        <option value="">Fuel Type (All)</option>
+                        @foreach ($filterOptions['fuelTypes'] as $fuelType)
+                            <option value="{{ $fuelType->id }}" @selected((string) $salesFilters['fuel_type_id'] === (string) $fuelType->id)>{{ $fuelType->name }}</option>
+                        @endforeach
+                    </select>
+                    <select name="sales_customer_id" aria-label="Filter sales by customer">
+                        <option value="">Customer (ALL)</option>
+                        @foreach ($filterOptions['customers'] as $customer)
+                            <option value="{{ $customer->id }}" @selected((string) $salesFilters['customer_id'] === (string) $customer->id)>{{ $customer->company_name ?: $customer->name }}</option>
+                        @endforeach
+                    </select>
+                </form>
+
+                <div class="dash-kpis dash-kpis-7">
+                    @foreach ($salesTrend['cards'] as [$label, $value])
+                        <div class="dash-kpi"><span>{{ $label }}</span><strong>{{ $value }}</strong></div>
+                    @endforeach
+                </div>
+
+                <div class="dash-charts dash-charts-2">
+                    <div class="dash-chart-block">
+                        <h3 class="dash-chart-title">Fuel Sold</h3>
+                        <div class="dash-chart">
+                            @include('admin.partials.dashboard-chart', ['chart' => $salesTrend['fuelSoldChart'], 'label' => 'Liters sold by fuel type'])
+                        </div>
+                    </div>
+                    <div class="dash-chart-block">
+                        <h3 class="dash-chart-title">Payment Status</h3>
+                        <div class="dash-chart">
+                            @include('admin.partials.dashboard-chart', ['chart' => $salesTrend['paymentChart'], 'label' => 'Sales by payment status'])
+                        </div>
+                    </div>
+                </div>
+
+                <div class="dash-chart-block">
+                    <h3 class="dash-chart-title">Peak Demands</h3>
+                    <div class="dash-chart">
+                        @include('admin.partials.dashboard-chart', ['chart' => $peak['chart'], 'label' => 'Liters sold per month of '.$peak['year'], 'class' => 'dash-chart-canvas-tall'])
+                        <div class="dash-peak-notes">
+                            <div class="dash-notes-stack">
+                                <p class="dash-note">Month With Highest Sales : <strong>{{ $peak['highestMonthLabel'] }}</strong></p>
+                                <p class="dash-note">Expected Month with Most Demand (YoY) : <strong>{{ $peak['yoyMonthLabel'] }}</strong></p>
+                            </div>
+                            <p class="dash-note dash-note-end">Expected Increase Rate by next Month : <strong @class(['dash-red' => ($peak['nextMonthRate'] ?? 0) < 0])>{{ $peak['nextMonthRateLabel'] }}</strong></p>
+                        </div>
+                    </div>
                 </div>
             </div>
-            <div class="ai-insight-panel" style="margin-top:18px">
-                <div class="chart-header">
-                    <h2>Inventory Variance AI Explanation</h2>
-                    <form method="POST" action="{{ route('admin.dashboard.inventory-variance-explanation') }}" data-ai-generate-form>
+        </section>
+
+        {{-- Insights and A.I Reporting (includes the inventory variance explanation) --}}
+        <section class="dash-section" id="insights" aria-labelledby="dash-insights-title">
+            <h2 class="dash-section-title" id="dash-insights-title">Insights and A.I Reporting</h2>
+            <div class="dash-panel ai-insight-panel">
+                <div class="dash-insight-head">
+                    <form method="POST" action="{{ route('admin.dashboard.insight') }}" data-ai-generate-form>
                         @csrf
-                        <input type="hidden" name="variance_date_from" value="{{ $inventoryVarianceFilters['date_from'] ?? '' }}">
-                        <input type="hidden" name="variance_date_to" value="{{ $inventoryVarianceFilters['date_to'] ?? '' }}">
-                        <input type="hidden" name="variance_fuel_type_id" value="{{ $inventoryVarianceFilters['fuel_type_id'] ?? '' }}">
-                        <input type="hidden" name="variance_customer_id" value="{{ $inventoryVarianceFilters['customer_id'] ?? '' }}">
-                        <input type="hidden" name="variance_status" value="{{ $inventoryVarianceFilters['variance_status'] ?? '' }}">
-                        <button class="btn btn-primary" type="submit">Generate Explanation</button>
+                        @foreach ($filterQuery as $name => $value)
+                            <input type="hidden" name="{{ $name }}" value="{{ $value }}">
+                        @endforeach
+                        <button class="btn btn-primary" type="submit">Generate Insight and Reports</button>
                     </form>
                 </div>
-                <div class="ai-insight-body">
-                    @if (session('inventoryVarianceExplanation'))
-                        <div class="ai-insight-text">{!! nl2br(e(session('inventoryVarianceExplanation.text'))) !!}</div>
-                        <p>AI-assisted explanation based on system-detected inventory variance. Use it to support, not replace, record verification.</p>
-                        <span>Generated {{ session('inventoryVarianceExplanation.generated_at') }}</span>
-                    @elseif (session('inventoryVarianceExplanationNotice'))
-                        <div class="dashboard-empty-state dashboard-empty-state-small">{{ session('inventoryVarianceExplanationNotice') }}</div>
-                    @else
-                        <div class="dashboard-empty-state dashboard-empty-state-small">Generate an explanation from the current inventory variance values.</div>
-                    @endif
-                </div>
-            </div>
-        </section>
-
-        <section class="chart-panel chart-panel-wide">
-            <div class="chart-header"><h2>Expected Revenue ({{ $expectedRevenue['period'] }})</h2></div>
-            <div class="expected-revenue-chart">
-                <canvas data-expected-revenue-chart data-chart='@json($expectedRevenueChart)' aria-label="Expected revenue by month" role="img"></canvas>
-                <div class="sales-bars expected-revenue-fallback">
-                    @foreach ($expectedRevenue['bars'] as $bar)
-                        <div class="mini-bar">
-                            <strong>{{ $bar['value'] }}</strong>
-                            <i style="--bar-height: {{ $bar['height'] }}px"></i>
-                            <span>{{ $bar['label'] }}</span>
-                        </div>
-                    @endforeach
-                </div>
-            </div>
-            <div class="dashboard-kpi-strip">
-                <div><span>Expected</span><strong>{{ $expectedRevenue['formattedTotalExpected'] }}</strong></div>
-                <div><span>Collected</span><strong>{{ $expectedRevenue['formattedTotalCollected'] }}</strong></div>
-                <div><span>Due Outstanding</span><strong>{{ $expectedRevenue['formattedTotalDueOutstanding'] }}</strong></div>
-            </div>
-            <div class="chart-header"><h2>Revenue vs Receivables</h2></div>
-            <div class="receivables-chart">
-                <canvas data-receivables-chart data-chart='@json($receivablesChart)' aria-label="Payments collected versus outstanding receivables" role="img"></canvas>
-                <div class="revenue-bars receivables-fallback">
-                    @foreach ($revenueBars as $bar)
-                        <div class="revenue-bar">
-                            <strong>{{ $bar['value'] }}</strong>
-                            <i style="--h: {{ $bar['height'] }}px; --c: {{ $bar['color'] }}"></i>
-                            <span>{{ $bar['label'] }}</span>
-                        </div>
-                    @endforeach
-                </div>
-            </div>
-            @if (! empty($receivableRows))
-                <div class="dashboard-mini-table">
-                    <table>
-                        <thead><tr><th>Customer</th><th>Reference</th><th>Paid</th><th>Balance</th><th>Status</th></tr></thead>
-                        <tbody>
-                            @foreach ($receivableRows as $row)
-                                <tr>
-                                    <td>{{ $row['customer_name'] }}</td>
-                                    <td>{{ $row['sale_code'] }}</td>
-                                    <td>{{ $row['formatted_paid'] }}</td>
-                                    <td>{{ $row['formatted_balance'] }}</td>
-                                    <td><x-admin.status-badge :status="$row['status_label']" /></td>
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                </div>
-            @else
-                <div class="dashboard-empty-state dashboard-empty-state-small">{{ $receivablesMonitoring['formattedTotalOutstanding'] }}</div>
-            @endif
-        </section>
-
-        <section class="chart-panel chart-panel-wide">
-            <div class="chart-header"><h2>Predicted Peak Demand</h2></div>
-            <div class="demand-list">
-                <h3>Peak Days of the Week</h3>
-                @foreach ($demandDays as $item)
-                    <div class="demand-row"><span>{{ $item['hot'] ? 'Hot ' : '' }}{{ $item['label'] }}</span><span class="demand-track"><i class="demand-fill" style="--p:{{ $item['percent'] }}%"></i></span><strong>{{ $item['percent'] }}%</strong></div>
-                @endforeach
-                <h3 style="margin-top:20px">Peak Months of the Year</h3>
-                @foreach ($demandMonths as $item)
-                    <div class="demand-row"><span>{{ $item['hot'] ? 'Hot ' : '' }}{{ $item['label'] }}</span><span class="demand-track"><i class="demand-fill" style="--p:{{ $item['percent'] }}%"></i></span><strong>{{ $item['percent'] }}%</strong></div>
-                @endforeach
+                @if (session('dashboardInsight'))
+                    <div class="ai-insight-body" aria-live="polite">
+                        @if (session('dashboardInsight.note'))
+                            <p class="dash-insight-note" role="note">{{ session('dashboardInsight.note') }}</p>
+                        @endif
+                        <div class="ai-insight-text">{!! nl2br(e(session('dashboardInsight.text'))) !!}</div>
+                        <p>{{ session('dashboardInsight.source') === 'ai' ? 'AI-assisted insight from the dashboard totals. Use it to support, not replace, record verification.' : 'Rule-based summary of the dashboard totals.' }}</p>
+                        <span>Generated {{ session('dashboardInsight.generated_at') }}</span>
+                    </div>
+                @endif
             </div>
         </section>
     </div>

@@ -106,14 +106,12 @@ class AnalyticsTestingTest extends TestCase
         $this->assertSame(30000.0, collect($receivables['rows'])->firstWhere('sale_code', 'SLS-ANA-AUG')['balance']);
         $this->assertFalse(collect($receivables['rows'])->contains('sale_code', 'SLS-ANA-CANCELLED'));
 
+        // Part 10 dashboard: Sales Trend's collected and unpaid amounts come from the same records.
         $this->actingAs($records['admin'])
-            ->get(route('admin.dashboard', ['trend_period' => 'month', 'trend_year' => 2026]))
+            ->get(route('admin.dashboard'))
             ->assertOk()
-            ->assertSee('90 KL')
-            ->assertSee('PHP 170,000')
-            ->assertSee('PHP 90,000')
-            ->assertSee('140000')
-            ->assertSee('67,500 L')
+            ->assertSeeInOrder(['Collected Revenue', 'PHP 80,000.00'])
+            ->assertSeeInOrder(['Unpaid Amount', 'PHP 90,000.00'])
             ->assertDontSee('999999');
 
         Carbon::setTestNow();
@@ -178,18 +176,11 @@ class AnalyticsTestingTest extends TestCase
         $this->assertSame(0.0, $emptyExpected['totalExpected']);
         $this->assertSame(0.0, $emptyExpected['collectionRate']);
 
+        // Part 10 dashboard: the Current Inventory depot filter (the unlifted fuel table was removed).
         $this->actingAs($records['admin'])
-            ->get(route('admin.dashboard', [
-                'expected_year' => 2026,
-                'unlifted_fuel_type_id' => $records['fuelTypeId'],
-                'unlifted_depot_id' => $records['depotId'],
-                'unlifted_lifting_status' => 'partial',
-            ]))
+            ->get(route('admin.dashboard', ['inv_depot_id' => $records['depotId']]))
             ->assertOk()
-            ->assertSee('PHP 170,000')
-            ->assertSee('30,000 L')
-            ->assertSee('PUR-ANA-DIESEL-PARTIAL')
-            ->assertDontSee('PUR-ANA-CANCELLED')
+            ->assertSeeInOrder(['Depot', 'Analytics Depot'])
             ->assertDontSee('999999');
 
         Carbon::setTestNow();
@@ -239,16 +230,11 @@ class AnalyticsTestingTest extends TestCase
         $this->assertSame(0, $noData['summary']['total_checked']);
         $this->assertSame(0.0, $noData['summary']['variance_rate']);
 
+        // Part 10 dashboard: the variance table was folded into Stock Out vs Receivables and the insight report.
         $this->actingAs($records['admin'])
-            ->get(route('admin.dashboard', [
-                'variance_fuel_type_id' => $gasolineId,
-                'variance_date_from' => '2026-09-03',
-                'variance_date_to' => '2026-09-03',
-            ]))
+            ->get(route('admin.dashboard', ['sales_date_from' => '2026-09-03', 'sales_date_to' => '2026-09-03']))
             ->assertOk()
-            ->assertSee('100.0%')
-            ->assertSee('SLS-ANA-VAR-MISMATCH')
-            ->assertDontSee('SLS-ANA-VAR-CANCELLED')
+            ->assertSee('Inventory Variance Rate:')
             ->assertDontSee('999999');
     }
 

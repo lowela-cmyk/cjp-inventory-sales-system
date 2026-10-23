@@ -88,7 +88,8 @@ class CompliancePhase1Test extends AuditTestCase
         $this->actingAs($a['sales'])->patch(route('sales-officer.sales.delivery-status.update', $saleId), ['delivery_status' => 'delivered'])->assertSessionHasNoErrors();
 
         $this->actingAs($a['admin'])->get(route('admin.inventory.stock-out'))->assertOk()
-            ->assertSeeTextInOrder(['Total Price', 'Total Paid', 'Source', 'Status', 'Margin', 'Realized Profit'])
+            // Part 4 #6: Source shares the Delivery column, so the table fits without scrolling.
+            ->assertSeeTextInOrder(['Source', 'Total Price', 'Total Paid', 'Status', 'Margin', 'Realized Profit'])
             ->assertSee('title="Margin = Total Price − Total Cost (expected profit once fully paid)"', false)
             ->assertSee('title="Realized Profit = Total Paid − Total Cost (negative until payments cover the cost)"', false)
             ->assertSeeTextInOrder(['130,000.00', '40,000.00', 'Released', '30,000.00', '-60,000.00']);

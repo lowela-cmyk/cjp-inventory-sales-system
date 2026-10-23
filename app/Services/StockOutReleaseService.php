@@ -58,7 +58,7 @@ class StockOutReleaseService
             ->where('sale_item_id', $item->id)
             ->where('status', 'released')
             ->lockForUpdate()
-            ->selectRaw("COALESCE(SUM(CASE WHEN portion = 'f1' THEN quantity_liters ELSE 0 END), 0) as f1, COALESCE(SUM(CASE WHEN portion = 'f1' THEN 0 ELSE quantity_liters END), 0) as main")
+            ->selectRaw("COALESCE(SUM(CASE WHEN stock_outs.portion = 'f1' THEN quantity_liters ELSE 0 END), 0) as f1, COALESCE(SUM(CASE WHEN stock_outs.portion = 'f1' THEN 0 ELSE quantity_liters END), 0) as main")
             ->first();
         $mainDue = round(max(0, $main - (float) $released->main), 2);
         $f1Due = round(max(0, $f1 - (float) $released->f1), 2);

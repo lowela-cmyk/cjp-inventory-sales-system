@@ -53,7 +53,7 @@
                 <x-filter.select name="status" label="Status" :options="$filterOptions['receivableStatuses']" :selected="$receivableFilters['status'] ?? null" />
                 <x-filter.select name="delivery_status" label="Delivery Status" :options="$filterOptions['deliveryStatuses']" :selected="$receivableFilters['delivery_status'] ?? null" />
                 <x-filter.select name="delivery_type" label="Delivery Type" :options="$filterOptions['deliveryTypes']" :selected="$receivableFilters['delivery_type'] ?? null" />
-                <x-filter.date name="date" label="Transaction date" :value="$receivableFilters['date'] ?? null" />
+                <x-filter.date-select name="date" label="Transaction date" :value="$receivableFilters['date'] ?? null" :dates="$filterOptions['saleDates']" />
                 <x-filter.select name="fuel_type_id" label="Fuel Type" :options="$fuelTypes->pluck('name', 'id')" :selected="$receivableFilters['fuel_type_id'] ?? null" />
                 <button class="btn btn-secondary btn-wide" type="button" data-modal-open="so-sales-add">+ Record Sales</button>
             </x-filter.bar>

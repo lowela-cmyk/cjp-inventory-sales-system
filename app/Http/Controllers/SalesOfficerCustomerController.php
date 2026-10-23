@@ -5,10 +5,11 @@ namespace App\Http\Controllers;
 use App\Rules\ApprovedFuelType;
 use App\Services\DashboardSummaryService;
 use App\Services\IdempotencyService;
+use App\Services\PurchaseStockService;
 use App\Services\SaleConfirmationService;
 use App\Services\SaleCorrectionService;
-use App\Services\PurchaseStockService;
 use App\Support\F1Split;
+use App\Support\FilterDates;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
@@ -110,6 +111,7 @@ class SalesOfficerCustomerController extends Controller
                 'deliveryTypes' => self::DELIVERY_TYPES,
                 'accountStatuses' => collect(self::ACCOUNT_STATUSES)->mapWithKeys(fn (string $status): array => [$status => $this->label($status)])->all(),
                 'locations' => DB::table('customers')->whereNotNull('location')->where('location', '!=', '')->distinct()->orderBy('location')->pluck('location', 'location'),
+                'saleDates' => FilterDates::distinct(DB::table('sales')->whereNull('deleted_at'), 'sale_date'),
             ],
             'summaryCards' => $dashboardSummary->salesCards(),
             'sales' => $this->salesRows($normalizedSearch, filters: $activeTab === 'receivables' ? $filters : []),

@@ -9,6 +9,7 @@ use App\Services\PurchaseStockService;
 use App\Services\PurchaseWorkflowService;
 use App\Services\TruckAvailabilityService;
 use App\Support\DepotLabel;
+use App\Support\FilterDates;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -464,6 +465,7 @@ class DispatchDeliveryController extends Controller
             'fuelTypes' => DB::table('fuel_types')->where('status', 'active')->whereIn('code', array_keys(config('fuels.approved', ['F1' => true, 'UNL' => true, 'DSL' => true, 'PREM' => true])))->orderBy('name')->get(['id', 'name']),
             'drivers' => $this->driverOptions(),
             'trucks' => $this->haulTruckOptions(),
+            'liftDates' => FilterDates::distinct(DB::table('hauls'), 'scheduled_at'),
         ];
     }
 

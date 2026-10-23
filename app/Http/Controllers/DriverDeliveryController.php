@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Rules\ApprovedFuelType;
 use App\Support\DepotLabel;
+use App\Support\FilterDates;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -297,6 +298,8 @@ class DriverDeliveryController extends Controller
             ->values();
 
         return [
+            // The days this driver has lifts on (From / To date dropdowns).
+            'liftDates' => FilterDates::distinct(DB::table('hauls')->where('driver_user_id', $driverId), 'scheduled_at'),
             'statuses' => self::TASK_STATUSES,
             'fuelTypes' => DB::table('fuel_types')
                 ->when(

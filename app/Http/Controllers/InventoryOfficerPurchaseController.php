@@ -8,6 +8,7 @@ use App\Services\IdempotencyService;
 use App\Services\PurchaseService;
 use App\Services\StockInService;
 use App\Services\StockOutFinancialService;
+use App\Support\FilterDates;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -93,6 +94,12 @@ class InventoryOfficerPurchaseController extends Controller
             'filters' => $filters,
             'filterOptions' => [
                 'statuses' => self::TAB_FILTER_STATUSES,
+                // Important Notes (Part 6): every filter is a dropdown; Date lists the dates each tab has records on.
+                'dates' => [
+                    'purchases' => FilterDates::distinct(DB::table('purchases')->whereNull('deleted_at'), 'purchase_date'),
+                    'stock-in' => $this->stockIns->dates(),
+                    'stock-out' => FilterDates::distinct(DB::table('stock_outs'), 'stock_out_at'),
+                ],
                 'depots' => DB::table('depots')->orderBy('name')->get(['id', 'name']),
                 'fuelTypes' => DB::table('fuel_types')
                     ->where('status', 'active')

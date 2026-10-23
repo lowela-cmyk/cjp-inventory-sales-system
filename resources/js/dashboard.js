@@ -87,7 +87,8 @@ const renderChart = (canvas) => {
         data: {
             labels: config.labels || [],
             // Wide, square bars as on the mockup.
-            datasets: (config.datasets || []).map((dataset) => ({ borderRadius: 0, barPercentage: 0.82, categoryPercentage: 0.9, ...dataset })),
+            // Pie slices meet without white separators (Part 10 mockup); a 0% slice then leaves no line behind.
+            datasets: (config.datasets || []).map((dataset) => ({ borderRadius: 0, barPercentage: 0.82, categoryPercentage: 0.9, ...dataset, ...(isPie ? { borderWidth: 0 } : {}) })),
         },
         options: {
             responsive: true,

@@ -166,7 +166,7 @@ class DashboardService
                 'data' => $liftCounts,
                 'backgroundColor' => [self::RED, self::ORANGE, self::GREEN],
             ]], yAxis: 'none'),
-            // Mockup: "Completed 68.8%" / "Uncompleted 31.3%" written beside the slices, no legend.
+            // Part 10 wireframe: "Completed 68.8%" / "Uncompleted 31.3%" written beside the slices, no legend.
             'purchasedChart' => $this->chart('pie', 'liters', ['Completed', 'Uncompleted'], [[
                 'label' => 'Purchased',
                 'data' => [$completed, $uncompleted],

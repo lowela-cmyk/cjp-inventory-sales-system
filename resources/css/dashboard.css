@@ -5,13 +5,13 @@
     --dash-orange: #e28a22;
     --dash-navy: #0d1424;
     display: grid;
-    gap: 22px;
+    gap: 30px;
     min-width: 0;
 }
 
 .dash-section {
     display: grid;
-    gap: 8px;
+    gap: 12px;
     min-width: 0;
 }
 
@@ -23,11 +23,11 @@
 
 .dash-panel {
     display: grid;
-    gap: 14px;
+    gap: 20px;
     min-width: 0;
     border: 1px solid var(--admin-soft-line);
     border-radius: 8px;
-    padding: 14px;
+    padding: 20px;
     background: #fff;
 }
 
@@ -35,7 +35,7 @@
 .dash-filters {
     display: grid;
     grid-template-columns: minmax(180px, 1fr) repeat(auto-fit, minmax(150px, 190px));
-    gap: 10px;
+    gap: 16px;
 }
 
 .dash-filters-sales {
@@ -58,7 +58,7 @@
 .dash-kpis {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 10px;
+    gap: 16px;
 }
 
 /* Sales Trend's seven cards fit one row on a desktop, as in the mockup. */
@@ -72,7 +72,7 @@
     min-width: 0;
     border: 1px solid var(--admin-soft-line);
     border-radius: 6px;
-    padding: 8px 12px 10px;
+    padding: 10px 14px 12px;
 }
 
 .dash-kpi span {
@@ -90,7 +90,7 @@
 
 .dash-charts {
     display: grid;
-    gap: 14px;
+    gap: 20px;
 }
 
 .dash-charts-3 {
@@ -237,4 +237,21 @@
     .dash-filters-sales {
         grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
     }
+}
+
+/* Part 11 ("Papantay netong charts"): the three Current Inventory boxes share one height. Each chart grows to fill
+   its box, so the Stock Levels note sits at the bottom without making that box taller than the others. */
+.dash-charts-3 > .dash-chart-block {
+    grid-template-rows: auto 1fr;
+    align-content: stretch;
+}
+
+.dash-charts-3 .dash-chart {
+    grid-template-rows: minmax(220px, 1fr) auto;
+    align-content: stretch;
+}
+
+.dash-charts-3 .dash-chart-canvas {
+    height: 100%;
+    min-height: 220px;
 }

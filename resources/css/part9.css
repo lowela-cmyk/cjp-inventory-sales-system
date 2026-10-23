@@ -23,25 +23,6 @@
     grid-template-columns: 120px minmax(0, 1fr);
 }
 
-/* As on the mockup, Truck ID | Driver | Lift Date and the first purchase sit in one card. */
-.lift-form .lift-header-card {
-    border-bottom: 0;
-    border-bottom-left-radius: 0;
-    border-bottom-right-radius: 0;
-    padding-bottom: 4px;
-}
-
-.lift-form .lift-header-card + .lift-lines {
-    margin-top: -18px;
-}
-
-.lift-form .lift-lines > .lift-line:first-child .lift-purchase-card {
-    border-top: 0;
-    border-top-left-radius: 0;
-    border-top-right-radius: 0;
-    padding-top: 6px;
-}
-
 /* Each purchase: its card, then its Lift Details (the old one-row grid of Part 8 no longer applies). */
 .lift-lines .lift-line {
     display: grid;

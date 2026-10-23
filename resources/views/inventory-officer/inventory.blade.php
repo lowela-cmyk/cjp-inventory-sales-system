@@ -156,14 +156,16 @@
             </x-filter.bar>
             <p class="table-help">Both delivery types appear here: a Standard order when it is Delivered, a Depot to Client order when its lift is completed. Each row names the purchase it was deducted from.</p>
             <div class="table-wrap inventory-table-wrap">
-                {{-- Part 8 #4: one value per column with room to read; the frame scrolls sideways when narrower. --}}
+                {{-- Part 4 #6 / Part 8 #4: the table fits its frame. Related values share a cell (one export column each);
+                     every money value keeps its own column, as on the Part 4 example. --}}
                 <table class="admin-table inventory-table stock-out-table table-stacked">
                     <thead><tr>
-                        <th>Order-ID</th><th>Transaction Date</th><th>Customer Name</th><th>Company Name</th><th>Delivery Type</th><th>Fuel</th><th>Purchase ID</th>
+                        <th><span class="th-line" data-export-part>Order-ID</span><span class="th-line" data-export-part>Transaction Date</span></th>
+                        <th><span class="th-line" data-export-part>Customer Name</span><span class="th-line" data-export-part>Company Name</span></th>
+                        <th><span class="th-line" data-export-part>Fuel</span><span class="th-line" data-export-part>Purchase ID</span></th>
+                        <th><span class="th-line" data-export-part>Delivery Type</span><span class="th-line" data-export-part>Truck / Driver</span><span class="th-line" data-export-part>Delivery Date / Status</span><span class="th-line" data-export-part>ATL / DR Number</span><span class="th-line" data-export-part>Source</span></th>
                         <th>QTY Released</th><th>Cost / Unit</th><th>Total Cost</th><th>Price / Unit</th><th>Total Price</th><th>Total Paid</th>
-                        <th><span class="th-line" data-export-part>Truck</span><span class="th-line" data-export-part>Driver</span><span class="th-line" data-export-part>Delivery / Lift Date</span><span class="th-line" data-export-part>Delivery Status</span></th>
-                        <th><span class="th-line" data-export-part>ATL</span><span class="th-line" data-export-part>DR Number</span></th>
-                        <th>Source</th><th class="inventory-status-column">Status</th>
+                        <th class="inventory-status-column">Status</th>
                         <th><span class="th-hint" tabindex="0" title="Margin = Total Price − Total Cost (expected profit once fully paid)">Margin</span></th>
                         <th><span class="th-hint" tabindex="0" title="Realized Profit = Total Paid − Total Cost (negative until payments cover the cost)">Realized Profit</span></th>
                     </tr></thead>
@@ -175,25 +177,25 @@
                                 $negative = fn (mixed $value): bool => is_numeric($value) && $value < 0;
                             @endphp
                             <tr class="{{ $row['class'] }}">
-                                <td class="cell-id">{{ $c[0] }}</td>
-                                <td>{{ $c[1] }}</td>
-                                <td class="cell-name">{{ $c[2] }}</td>
-                                <td class="cell-name">{{ $c[3] }}</td>
-                                <td>{{ $c[4] }}</td>
-                                <td>{{ $c[5] }}</td>
-                                <td class="cell-id">{{ $c[6] }}</td>
+                                <td><x-table.stack :lines="[['value' => $c[0], 'class' => 'cell-id'], ['value' => $c[1], 'class' => 'is-secondary']]" /></td>
+                                <td class="cell-wrap"><x-table.stack :lines="[['value' => $c[2]], ['value' => $c[3], 'class' => 'is-secondary']]" /></td>
+                                <td><x-table.stack :lines="[['value' => $c[5]], ['value' => $c[6], 'class' => 'cell-id is-secondary']]" /></td>
+                                <td class="stock-out-delivery"><x-table.stack :lines="[
+                                    ['value' => $c[4], 'class' => 'is-strong'],
+                                    ['label' => 'Truck', 'value' => $d['truck'].' · '.$d['driver'], 'class' => 'is-secondary'],
+                                    ['label' => 'Date', 'value' => $d['date'].' · '.$d['status'], 'class' => 'is-secondary'],
+                                    ['label' => 'ATL', 'value' => $d['atl'].' · DR '.$d['dr'], 'class' => 'is-secondary'],
+                                    ['label' => 'From', 'value' => $c[13], 'class' => 'is-secondary'],
+                                ]" /></td>
                                 @foreach ([7, 8, 9, 10, 11, 12] as $i)
                                     <td class="inventory-number">{{ $c[$i] }}</td>
                                 @endforeach
-                                <td><x-table.stack :lines="[['label' => 'Truck', 'value' => $d['truck']], ['label' => 'Driver', 'value' => $d['driver'], 'class' => 'is-secondary'], ['label' => 'Date', 'value' => $d['date'], 'class' => 'is-secondary'], ['label' => 'Status', 'value' => $d['status'], 'class' => 'is-secondary']]" /></td>
-                                <td><x-table.stack :lines="[['label' => 'ATL', 'value' => $d['atl']], ['label' => 'DR', 'value' => $d['dr'], 'class' => 'is-secondary']]" /></td>
-                                <td class="cell-name">{{ $c[13] }}</td>
                                 <td><x-admin.status-badge :status="$c[14]" /></td>
                                 <td @class(['inventory-number', 'inventory-profit', 'is-negative' => $negative($row['margin'])])>{{ $c[15] }}</td>
                                 <td @class(['inventory-number', 'inventory-profit', 'is-negative' => $negative($row['profit'])])>{{ $c[16] }}</td>
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="19">No records found.</td></tr>
+                            <tr><td class="empty-cell" colspan="13">No records found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>

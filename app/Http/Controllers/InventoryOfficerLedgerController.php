@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\InventoryLedgerService;
+use App\Support\FilterDates;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -46,6 +47,7 @@ class InventoryOfficerLedgerController extends Controller
                     ->orderBy('name')
                     ->pluck('name', 'id'),
                 'statuses' => InventoryLedgerService::STATUSES,
+                'purchaseDates' => FilterDates::distinct(DB::table('purchases')->whereNull('deleted_at'), 'purchase_date'),
             ],
             'ledger' => $rows['ledger'],
             'transactions' => $rows['transactions'],

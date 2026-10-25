@@ -5,10 +5,11 @@ namespace App\Http\Controllers;
 use App\Rules\ApprovedFuelType;
 use App\Services\DashboardSummaryService;
 use App\Services\IdempotencyService;
+use App\Services\PurchaseStockService;
 use App\Services\SaleConfirmationService;
 use App\Services\SaleCorrectionService;
-use App\Services\PurchaseStockService;
 use App\Support\F1Split;
+use App\Support\FilterDates;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
@@ -110,6 +111,7 @@ class SalesOfficerCustomerController extends Controller
                 'deliveryTypes' => self::DELIVERY_TYPES,
                 'accountStatuses' => collect(self::ACCOUNT_STATUSES)->mapWithKeys(fn (string $status): array => [$status => $this->label($status)])->all(),
                 'locations' => DB::table('customers')->whereNotNull('location')->where('location', '!=', '')->distinct()->orderBy('location')->pluck('location', 'location'),
+                'saleDates' => FilterDates::distinct(DB::table('sales')->whereNull('deleted_at'), 'sale_date'),
             ],
             'summaryCards' => $dashboardSummary->salesCards(),
             'sales' => $this->salesRows($normalizedSearch, filters: $activeTab === 'receivables' ? $filters : []),
@@ -510,6 +512,40 @@ class SalesOfficerCustomerController extends Controller
         return redirect()
             ->route($this->salesRedirectRoute($request))
             ->with('status', 'Sale record updated successfully.');
+    }
+
+    /**
+     * Part 11: Delete (archive) a delivered order. Only Delivered orders qualify. The sale is soft-deleted: it leaves
+     * Receivables, Stock Out and the sales and revenue figures, while its payments, receivable and stock-outs stay in
+     * the database untouched. The fuel was delivered, so it stays deducted from its purchase (Stock-In is unchanged).
+     */
+    public function destroySale(Request $request, int $sale): RedirectResponse
+    {
+        abort_unless($request->user()?->role === 'admin', 403, 'Only admin users can delete orders.');
+        abort_unless(DB::table('sales')->where('id', $sale)->whereNull('deleted_at')->exists(), 404);
+
+        try {
+            // The request itself is recorded by the RecordActivity middleware (audit trail).
+            $code = DB::transaction(function () use ($sale): string {
+                $row = DB::table('sales')->where('id', $sale)->whereNull('deleted_at')->lockForUpdate()->first(['id', 'sale_code', 'delivery_status']);
+                if (! $row) {
+                    throw new \RuntimeException('This order was already deleted.');
+                }
+                if ($row->delivery_status !== 'delivered') {
+                    throw new \RuntimeException('Only delivered orders can be deleted. '.$row->sale_code.' is '.$this->label($row->delivery_status).'.');
+                }
+
+                DB::table('sales')->where('id', $row->id)->update(['deleted_at' => now(), 'updated_at' => now()]);
+
+                return $row->sale_code;
+            });
+        } catch (\RuntimeException $exception) {
+            return back()->withErrors(['sale' => $exception->getMessage()]);
+        }
+
+        return redirect()
+            ->route($this->salesRedirectRoute($request))
+            ->with('status', 'Order '.$code.' deleted. Its fuel stays deducted from its purchase.');
     }
 
     public function cancelSale(Request $request, int $sale): RedirectResponse
@@ -1080,6 +1116,8 @@ class SalesOfficerCustomerController extends Controller
                 },
             ],
             'items.*.f1_purchase_item_id' => ['nullable', 'integer', Rule::exists('purchase_items', 'id')],
+            // f1_unit_price remains accepted for existing forms/API clients; f1_price is the canonical field.
+            'items.*.f1_price' => ['nullable', 'numeric', 'gte:0', 'max:10000'],
             'items.*.f1_unit_price' => ['nullable', 'numeric', 'gte:0', 'max:10000'],
             'amount_paid' => [$saleId ? 'prohibited' : 'nullable', 'numeric', 'gte:0', 'max:999999999999.99'],
             'payment_reference_number' => [$saleId ? 'prohibited' : 'nullable', 'string', 'max:100'],
@@ -1164,7 +1202,7 @@ class SalesOfficerCustomerController extends Controller
             $percentage = in_array($fuelTypeId, $eligible, true) ? (float) ($row['f1_percentage'] ?? 0) : 0.0;
             [$main, $f1] = F1Split::split($quantity, $percentage);
             $f1PurchaseId = $f1 > 0 && ($row['f1_purchase_item_id'] ?? null) ? (int) $row['f1_purchase_item_id'] : null;
-            $f1Price = $f1 > 0 ? round((float) ($row['f1_unit_price'] ?? 0), 2) : 0.0;
+            $f1Price = $f1 > 0 ? round((float) ($row['f1_price'] ?? $row['f1_unit_price'] ?? 0), 2) : 0.0;
 
             $items[$index] = [
                 'purchase_item_id' => $purchaseId,
@@ -1173,6 +1211,7 @@ class SalesOfficerCustomerController extends Controller
                 'unit_price' => $price,
                 'f1_percentage' => $percentage,
                 'f1_purchase_item_id' => $f1PurchaseId,
+                'f1_price' => $f1Price,
                 'f1_unit_price' => $f1Price,
                 'main_quantity_liters' => $main,
                 'f1_quantity_liters' => $f1,
@@ -1197,6 +1236,7 @@ class SalesOfficerCustomerController extends Controller
             'stock_in_movement_id' => null,
             'quantity_liters' => $item['quantity_liters'],
             'unit_price' => $item['unit_price'],
+            'f1_price' => $item['f1_price'],
             'f1_unit_price' => $item['f1_unit_price'],
             'line_total' => $item['line_total'],
             'f1_percentage' => $item['f1_percentage'],
@@ -1327,13 +1367,13 @@ class SalesOfficerCustomerController extends Controller
             'unit_price' => number_format((float) $item['unit_price'], 2, '.', ''),
             'f1_percentage' => number_format((float) $item['f1_percentage'], 2, '.', ''),
             'f1_purchase_item_id' => (float) $item['f1_quantity_liters'] > 0 && $item['f1_purchase_item_id'] ? (int) $item['f1_purchase_item_id'] : null,
-            'f1_unit_price' => number_format((float) $item['f1_quantity_liters'] > 0 ? (float) $item['f1_unit_price'] : 0, 2, '.', ''),
+            'f1_unit_price' => number_format((float) $item['f1_quantity_liters'] > 0 ? (float) ($item['f1_price'] ?? $item['f1_unit_price']) : 0, 2, '.', ''),
         ];
 
         $existingItems = DB::table('sale_items')
             ->where('sale_id', $row->id)
             ->orderBy('id')
-            ->get(['purchase_item_id', 'fuel_type_id', 'quantity_liters', 'unit_price', 'f1_percentage', 'f1_purchase_item_id', 'f1_unit_price', 'f1_quantity_liters'])
+            ->get(['purchase_item_id', 'fuel_type_id', 'quantity_liters', 'unit_price', 'f1_percentage', 'f1_purchase_item_id', 'f1_price', 'f1_unit_price', 'f1_quantity_liters'])
             ->map(fn (object $item): array => $shape((array) $item))
             ->all();
 
@@ -1729,6 +1769,7 @@ class SalesOfficerCustomerController extends Controller
                 'sale_items.f1_purchase_item_id',
                 'sale_items.quantity_liters',
                 'sale_items.unit_price',
+                'sale_items.f1_price',
                 'sale_items.f1_unit_price',
                 'sale_items.line_total',
                 'sale_items.fulfilled_quantity_liters',
@@ -1757,7 +1798,8 @@ class SalesOfficerCustomerController extends Controller
                             'f1_purchase_code' => $item->f1_purchase_code,
                             'quantity_liters' => $item->quantity_liters,
                             'unit_price' => $item->unit_price,
-                            'f1_unit_price' => (float) $item->f1_unit_price,
+                            'f1_price' => (float) ($item->f1_price ?? $item->f1_unit_price),
+                            'f1_unit_price' => (float) ($item->f1_price ?? $item->f1_unit_price),
                             'line_total' => $item->line_total,
                             'fulfilled_quantity_liters' => $item->fulfilled_quantity_liters,
                             // Where the liters are deducted from (Part 2 revisions).
@@ -1766,7 +1808,7 @@ class SalesOfficerCustomerController extends Controller
                             'f1_quantity_liters' => (float) $item->f1_quantity_liters,
                             'main_quantity_liters' => $main,
                             'main_total' => round($main * (float) $item->unit_price, 2),
-                            'f1_total' => round((float) $item->f1_quantity_liters * (float) $item->f1_unit_price, 2),
+                            'f1_total' => round((float) $item->f1_quantity_liters * (float) ($item->f1_price ?? $item->f1_unit_price), 2),
                         ];
                     })
                     ->all(),

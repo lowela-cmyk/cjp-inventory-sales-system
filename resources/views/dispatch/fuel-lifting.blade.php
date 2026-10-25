@@ -48,7 +48,7 @@
         <section data-tab-panel="schedule" {{ $activeTab !== 'schedule' ? 'hidden' : '' }}>
             <x-filter.bar class="dispatch-fuel-filter" :action="route($liftRoutePrefix)">
                 <x-filter.search label="Search scheduled lifts" :value="$search" />
-                <x-filter.date name="lift_date" label="Lift date" :value="$filters['lift_date'] ?? null" />
+                <x-filter.date-select name="lift_date" label="Lift date" :value="$filters['lift_date'] ?? null" :dates="$filterOptions['liftDates']" />
                 <x-filter.select name="fuel_type_id" label="Fuel Type" :options="$filterOptions['fuelTypes']->pluck('name', 'id')" :selected="$filters['fuel_type_id'] ?? null" />
                 <x-filter.select name="driver_user_id" label="Driver" :options="$filterOptions['drivers']->pluck('name', 'id')" :selected="$filters['driver_user_id'] ?? null" />
                 <x-filter.select name="truck_id" label="Truck" :options="$truckFilterOptions" :selected="$filters['truck_id'] ?? null" />
@@ -95,7 +95,7 @@
                 <x-filter.search label="Search hauled lifts" :value="$search" />
                 <x-filter.select name="status" label="Status" :selected="$filters['status'] ?? null"
                     :options="collect($filterOptions['statuses'])->mapWithKeys(fn (string $status): array => [$status => ucwords(str_replace('_', ' ', $status))])" />
-                <x-filter.date name="lift_date" label="Lift date" :value="$filters['lift_date'] ?? null" />
+                <x-filter.date-select name="lift_date" label="Lift date" :value="$filters['lift_date'] ?? null" :dates="$filterOptions['liftDates']" />
                 <x-filter.select name="fuel_type_id" label="Fuel Type" :options="$filterOptions['fuelTypes']->pluck('name', 'id')" :selected="$filters['fuel_type_id'] ?? null" />
                 <x-filter.select name="driver_user_id" label="Driver" :options="$filterOptions['drivers']->pluck('name', 'id')" :selected="$filters['driver_user_id'] ?? null" />
                 <x-filter.select name="truck_id" label="Truck" :options="$truckFilterOptions" :selected="$filters['truck_id'] ?? null" />

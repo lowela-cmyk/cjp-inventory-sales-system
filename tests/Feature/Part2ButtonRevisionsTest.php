@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Services\LiftAllocationService;
+use App\Services\PurchaseStockService;
 use Illuminate\Support\Facades\DB;
 use Tests\Concerns\PurchaseFlows;
 use Tests\Feature\Audit\AuditTestCase;
@@ -187,7 +188,7 @@ class Part2ButtonRevisionsTest extends AuditTestCase
         $this->assertSame(2, DB::table('stock_outs')->where('sale_id', $saleId)->whereNotNull('haul_allocation_id')->count());
 
         // The purchase's depot balance: 60,000 - 40,000 lifted (the order rode on the lift, not counted twice).
-        $this->assertSame(20000.0, (float) app(\App\Services\PurchaseStockService::class)->line($premium)->remaining_in_depot);
+        $this->assertSame(20000.0, (float) app(PurchaseStockService::class)->line($premium)->remaining_in_depot);
         // The Hauled tab: Delivered next to Lifted, no Allocated column.
         $html = $this->actingAs($a['dispatch'])->get(route('dispatch.fuel-lifting.hauled'))->assertOk()->getContent();
         $this->assertStringNotContainsString('Allocated Quantity', $html);
@@ -253,11 +254,12 @@ class Part2ButtonRevisionsTest extends AuditTestCase
         $html = $this->actingAs($a['inventory'])->get(route('inventory-officer.inventory'))->assertOk()->getContent();
         $this->assertStringContainsString('<th>Remaining (L)</th>', $html);
         $this->assertStringContainsString('6,000.00', $html);
-        foreach (['Stock-In', 'Assign Tank', 'Pending Garage Receipts'] as $retired) {
+        foreach (['Assign Tank', 'Pending Garage Receipts', 'Record Stock-In', 'Purchase Stock-In Pipeline', 'tank assignment'] as $retired) {
             $this->assertStringNotContainsString($retired, $html);
         }
-        // The old Stock-In URL opens Purchases.
-        $this->actingAs($a['inventory'])->get(route('inventory-officer.inventory.stock-in'))->assertOk()->assertSee('+ Record Purchase');
+        // Stock-In revisions (October 23, 2026): the Stock-In URL opens its own tab again.
+        $stockIn = $this->actingAs($a['inventory'])->get(route('inventory-officer.inventory.stock-in'))->assertOk()->getContent();
+        $this->assertMatchesRegularExpression('/<section data-tab-panel="stock-in"\s*>/', $stockIn);
     }
 
     /**

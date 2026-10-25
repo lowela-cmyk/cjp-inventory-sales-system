@@ -249,6 +249,8 @@ class WorkflowSmokeTestService
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        // A purchase is stocked in the moment it is recorded.
+        app(StockInService::class)->sync($purchaseItemId);
 
         return ['id' => $purchaseId, 'item_id' => $purchaseItemId, 'code' => $purchaseCode];
     }

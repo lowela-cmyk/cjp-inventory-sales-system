@@ -32,7 +32,6 @@ class TruckController extends Controller
             'name' => $data['name'],
             'description' => $data['description'] ?? null,
             'capacity_liters' => round((float) $data['capacity_liters'], 2),
-            'truck_type' => $data['truck_type'],
             'status' => $data['status'],
             'created_at' => now(),
             'updated_at' => now(),
@@ -56,7 +55,6 @@ class TruckController extends Controller
             'name' => $data['name'],
             'description' => $data['description'] ?? null,
             'capacity_liters' => round((float) $data['capacity_liters'], 2),
-            'truck_type' => $data['truck_type'],
             'status' => $data['status'],
             'updated_at' => now(),
         ]);
@@ -89,7 +87,6 @@ class TruckController extends Controller
             'name' => ['required', 'string', 'max:100'],
             'description' => ['nullable', 'string', 'max:255'],
             'capacity_liters' => ['required', 'numeric', 'gt:0', 'max:1000000'],
-            'truck_type' => ['required', Rule::in(TruckAvailabilityService::TRUCK_TYPES)],
             'status' => ['required', Rule::in(TruckAvailabilityService::MANAGED_STATUSES)],
         ];
     }

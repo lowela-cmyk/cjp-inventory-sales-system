@@ -37,7 +37,7 @@ class InventoryOfficerStockOutTest extends TestCase
         $this->actingAs($records['inventoryOfficer'])
             ->get(route('inventory-officer.inventory.stock-out'))
             ->assertOk()
-            ->assertSeeTextInOrder(['Cost / Unit', 'Total Cost', 'Price / Unit', 'Total Price', 'Total Paid', 'Source', 'Profit'])
+            ->assertSeeTextInOrder(['Source', 'Cost / Unit', 'Total Cost', 'Price / Unit', 'Total Price', 'Total Paid', 'Profit'])
             ->assertSeeText('6,000,000.00')
             ->assertSeeText('6,500,000.00')
             ->assertSeeText('500,000.00');

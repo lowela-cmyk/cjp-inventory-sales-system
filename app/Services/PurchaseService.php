@@ -22,7 +22,8 @@ class PurchaseService
         private readonly IdempotencyService $idempotencyService,
         private readonly WorkflowAlertService $alerts,
         private readonly PurchaseWorkflowService $workflow,
-        private readonly PurchaseStockService $purchaseStock
+        private readonly PurchaseStockService $purchaseStock,
+        private readonly StockInService $stockIns
     ) {}
 
     /**
@@ -55,7 +56,7 @@ class PurchaseService
                 ]);
             });
 
-            DB::table('purchase_items')->insert([
+            $purchaseItemId = (int) DB::table('purchase_items')->insertGetId([
                 'purchase_id' => $purchaseId,
                 'fuel_type_id' => $data['fuel_type_id'],
                 'quantity_ordered_liters' => $data['quantity_ordered_liters'],
@@ -66,6 +67,9 @@ class PurchaseService
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
+
+            // Stock-In revisions: the purchase is in stock as soon as it is recorded (no lift needed).
+            $this->stockIns->sync($purchaseItemId, $userId);
 
             DB::table('purchase_status_histories')->insert([
                 'purchase_id' => $purchaseId,
@@ -101,11 +105,7 @@ class PurchaseService
                 abort(404);
             }
 
-            if ($this->hasDependentActivity($row) && $this->changesProtectedFields($row, $data)) {
-                throw ValidationException::withMessages([
-                    'purchase' => 'This purchase already has hauling activity, so quantity, fuel, depot, and date cannot be changed.',
-                ]);
-            }
+            $this->assertEditableStock($row, $data);
 
             DB::table('purchases')
                 ->where('id', $row->purchase_id)
@@ -129,6 +129,7 @@ class PurchaseService
                     'updated_at' => now(),
                 ]);
 
+            $this->stockIns->sync((int) $row->id, $userId);
             $this->workflow->synchronize((int) $row->purchase_id, $userId);
         });
     }
@@ -141,9 +142,15 @@ class PurchaseService
                 abort(404);
             }
 
+            $sales = $this->salesDeductingFrom((int) $row->id);
+            if ($sales !== []) {
+                throw ValidationException::withMessages([
+                    'purchase' => 'This purchase cannot be cancelled: '.count($sales).' sale(s) already deducted fuel from it ('.implode(', ', $sales).'). Cancel those sales first.',
+                ]);
+            }
             if ($this->hasDependentActivity($row)) {
                 throw ValidationException::withMessages([
-                    'purchase' => 'This purchase already has dependent activity and cannot be cancelled from Purchases.',
+                    'purchase' => 'This purchase already has lifting activity and cannot be cancelled from Purchases.',
                 ]);
             }
 
@@ -153,6 +160,8 @@ class PurchaseService
                     'status' => 'cancelled',
                     'updated_at' => now(),
                 ]);
+            // Its stock-in is voided with it.
+            $this->stockIns->sync((int) $row->id, $userId);
 
             $this->workflow->transition((int) $row->purchase_id, 'cancelled', $userId);
         });
@@ -412,7 +421,7 @@ class PurchaseService
     {
         return (float) ($row->quantity_hauled_liters ?? 0) > 0
             || DB::table('hauls')->where('purchase_item_id', $row->id)->exists()
-            || DB::table('sale_items')->where('purchase_item_id', $row->id)->orWhere('f1_purchase_item_id', $row->id)->exists()
+            || $this->salesDeductingFrom((int) $row->id) !== []
             || DB::table('inventory_movements')
                 ->where('reference_type', 'purchase_item')
                 ->where('reference_id', $row->id)
@@ -420,15 +429,53 @@ class PurchaseService
     }
 
     /**
+     * Stock-In revisions: a purchase stays editable after sales took from it, within limits. Its quantity can't drop
+     * below what sales already took (delivered or promised) or what its lifts carry, and its fuel and depot stay fixed
+     * once sales or lifts use it (they were recorded against them). Date and cost can always be corrected.
+     *
      * @param  array<string, mixed>  $data
+     *
+     * @throws ValidationException
      */
-    public function changesProtectedFields(object $row, array $data): bool
+    private function assertEditableStock(object $row, array $data): void
     {
-        return (int) $row->depot_id !== (int) $data['depot_id']
-            || (int) $row->fuel_type_id !== (int) $data['fuel_type_id']
-            || (string) $row->purchase_date !== (string) $data['purchase_date']
-            || (float) $row->quantity_ordered_liters !== (float) $data['quantity_ordered_liters']
-            || (float) $row->unit_cost !== (float) $data['unit_cost'];
+        $line = $this->purchaseStock->line((int) $row->id, true);
+        $taken = round((float) ($line->released ?? 0) + (float) ($line->reserved ?? 0), 2);
+        $onLifts = round((float) DB::table('hauls')->where('purchase_item_id', $row->id)->where('status', '!=', 'cancelled')->sum('quantity_liters'), 2);
+        $quantity = round((float) $data['quantity_ordered_liters'], 2);
+        $errors = [];
+
+        if ($quantity < $taken) {
+            $errors['quantity_ordered_liters'] = 'Sales already deducted '.number_format($taken, 2).' L from this purchase, so its quantity cannot be lower than that.';
+        } elseif ($quantity < $onLifts) {
+            $errors['quantity_ordered_liters'] = number_format($onLifts, 2).' L of this purchase is already on lifts, so its quantity cannot be lower than that.';
+        }
+
+        $used = $this->salesDeductingFrom((int) $row->id) !== [] || $onLifts > 0 || (float) ($row->quantity_hauled_liters ?? 0) > 0;
+        if ($used && (int) $row->fuel_type_id !== (int) $data['fuel_type_id']) {
+            $errors['fuel_type_id'] = 'Sales or lifts already use this purchase, so its fuel type cannot be changed.';
+        }
+        if ($used && (int) $row->depot_id !== (int) $data['depot_id']) {
+            $errors['depot_id'] = 'Sales or lifts already use this purchase, so its depot cannot be changed.';
+        }
+
+        if ($errors !== []) {
+            throw ValidationException::withMessages($errors);
+        }
+    }
+
+    /** @return array<int, string> codes of sales (not cancelled) that took fuel from the purchase line */
+    public function salesDeductingFrom(int $purchaseItemId): array
+    {
+        return DB::table('sale_items')
+            ->join('sales', 'sales.id', '=', 'sale_items.sale_id')
+            ->whereNull('sales.deleted_at')
+            ->where('sales.status', '!=', 'cancelled')
+            ->where(fn (Builder $query): Builder => $query->where('sale_items.purchase_item_id', $purchaseItemId)->orWhere('sale_items.f1_purchase_item_id', $purchaseItemId))
+            ->orderBy('sales.sale_code')
+            ->distinct()
+            ->pluck('sales.sale_code')
+            ->all();
     }
 
     public function lineTotal(mixed $quantity, mixed $unitCost): float

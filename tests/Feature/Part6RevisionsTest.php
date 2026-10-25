@@ -121,7 +121,7 @@ class Part6RevisionsTest extends TestCase
             $this->assertStringContainsString('<select name="status" aria-label="Filter by status"', $trucks);
             $this->assertStringNotContainsString('>Filter</button>', $trucks);
             // "+ Add Truck" sits at the end of the filter bar, white like the other "+" buttons.
-            $this->assertMatchesRegularExpression('/<\/select>\s*<button class="btn btn-secondary btn-wide" type="button" data-modal-open="truck-add">\+ Add Truck<\/button>\s*<\/form>/', $trucks);
+            $this->assertMatchesRegularExpression('/<\/select>\s*<button class="btn btn-secondary fleet-add-button" type="button" data-modal-open="truck-add">\+ Add Truck<\/button>\s*<\/form>/', $trucks);
         }
     }
 

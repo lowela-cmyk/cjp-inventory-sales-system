@@ -20,8 +20,6 @@ class TruckAvailabilityService
     /** Every availability a truck can show: the managed statuses plus the ones derived from active lifts. */
     public const DISPLAY_STATUSES = ['available', 'assigned', 'in_use', 'maintenance', 'inactive'];
 
-    public const TRUCK_TYPES = ['hauling', 'delivery', 'mixed'];
-
     /**
      * Next automatic truck code: TRK-NNN after the highest existing TRK number (Part 8 #7).
      * Callers insert with IdempotencyService::retryOnCollision('truck_code', …): the unique index on
@@ -75,8 +73,8 @@ class TruckAvailabilityService
 
     public function assignableTrucks(): Collection
     {
+        // Part 11: any truck can lift or deliver (truck types are retired); only its status and current lifts count.
         return DB::table('trucks')
-            ->whereIn('truck_type', ['hauling', 'mixed'])
             ->whereNotIn('status', ['maintenance', 'inactive'])
             ->whereNotExists(fn (Builder $query): Builder => $this->activeHaulSubquery($query))
             ->orderByRaw('COALESCE(plate_number, truck_code)')
@@ -91,7 +89,6 @@ class TruckAvailabilityService
     ): ?object {
         $truck = DB::table('trucks')
             ->where('id', $truckId)
-            ->whereIn('truck_type', ['hauling', 'mixed'])
             ->whereNotIn('status', ['maintenance', 'inactive'])
             ->lockForUpdate()
             ->first(['id', 'truck_code', 'plate_number', 'name', 'capacity_liters', 'status']);

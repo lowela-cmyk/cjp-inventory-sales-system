@@ -22,7 +22,7 @@
         <section data-tab-panel="ledger" {{ $activeTab !== 'ledger' ? 'hidden' : '' }}>
             <x-filter.bar class="toolbar-ledger" :action="route($ledgerRoutePrefix)">
                 <x-filter.search label="Search ledger" :value="$search" />
-                <x-filter.date name="date" label="Purchase date" :value="$filters['date'] ?? null" />
+                <x-filter.date-select name="date" label="Purchase date" :value="$filters['date'] ?? null" :dates="$filterOptions['purchaseDates']" />
                 <x-filter.select name="depot_id" label="Depot" :options="$filterOptions['depots']" :selected="$filters['depot_id'] ?? null" />
                 <x-filter.select name="fuel_type_id" label="Fuel Type" :options="$filterOptions['fuelTypes']" :selected="$filters['fuel_type_id'] ?? null" />
             </x-filter.bar>
@@ -52,7 +52,7 @@
             <x-filter.bar class="toolbar-ledger" :action="route($ledgerRoutePrefix.'.transactions')">
                 <x-filter.search label="Search ledger transactions" :value="$search" />
                 <x-filter.select name="status" label="Status" :options="$filterOptions['statuses']" :selected="$filters['status'] ?? null" />
-                <x-filter.date name="date" label="Purchase date" :value="$filters['date'] ?? null" />
+                <x-filter.date-select name="date" label="Purchase date" :value="$filters['date'] ?? null" :dates="$filterOptions['purchaseDates']" />
                 <x-filter.select name="depot_id" label="Depot" :options="$filterOptions['depots']" :selected="$filters['depot_id'] ?? null" />
                 <x-filter.select name="fuel_type_id" label="Fuel Type" :options="$filterOptions['fuelTypes']" :selected="$filters['fuel_type_id'] ?? null" />
             </x-filter.bar>

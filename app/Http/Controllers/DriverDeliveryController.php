@@ -4,8 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Rules\ApprovedFuelType;
 use App\Support\DepotLabel;
+use App\Support\FilterDates;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Query\Builder;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -59,7 +61,7 @@ class DriverDeliveryController extends Controller
         ]);
     }
 
-    public function storeWithdrawalReceipt(Request $request, int $haul): RedirectResponse
+    public function storeWithdrawalReceipt(Request $request, int $haul): RedirectResponse|JsonResponse
     {
         $data = $request->validate([
             'withdrawal_receipt' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
@@ -78,9 +80,11 @@ class DriverDeliveryController extends Controller
             ->first(['hauls.id', 'hauls.haul_code', 'hauls.withdrawal_receipt_path']);
 
         if (! $row) {
-            return back()
-                ->withErrors(['withdrawal_receipt' => 'The selected lifting task is not assigned to your driver account or is not ready for receipt upload.'])
-                ->withInput();
+            $message = 'The selected lifting task is not assigned to your driver account or is not ready for receipt upload.';
+
+            return $request->expectsJson()
+                ? response()->json(['message' => $message, 'errors' => ['withdrawal_receipt' => [$message]]], 422)
+                : back()->withErrors(['withdrawal_receipt' => $message])->withInput();
         }
 
         $file = $request->file('withdrawal_receipt');
@@ -99,6 +103,18 @@ class DriverDeliveryController extends Controller
 
         if ($row->withdrawal_receipt_path && Storage::disk('local')->exists($row->withdrawal_receipt_path)) {
             Storage::disk('local')->delete($row->withdrawal_receipt_path);
+        }
+
+        // Part 11: the Schedule modal uploads in the background and updates itself from this answer.
+        if ($request->expectsJson()) {
+            $uploadedAt = now();
+
+            return response()->json([
+                'message' => 'Withdrawal receipt uploaded successfully.',
+                'uploaded_at' => $this->formatDateTime($uploadedAt),
+                'notes' => $data['withdrawal_notes'] ?? null,
+                'url' => route('withdrawal-receipts.show', $row->id).'?v='.$uploadedAt->timestamp,
+            ]);
         }
 
         return redirect()
@@ -253,6 +269,10 @@ class DriverDeliveryController extends Controller
                     'withdrawal_uploaded' => (bool) $row->withdrawal_receipt_path,
                     'withdrawal_uploaded_at' => $row->withdrawal_receipt_uploaded_at ? $this->formatDateTime($row->withdrawal_receipt_uploaded_at) : null,
                     'withdrawal_notes' => $row->withdrawal_receipt_notes ?: null,
+                    // The uploaded image (served privately; the driver of the lift, admins and inventory may view it).
+                    'withdrawal_url' => $row->withdrawal_receipt_path
+                        ? route('withdrawal-receipts.show', $row->id).'?v='.strtotime((string) $row->withdrawal_receipt_uploaded_at)
+                        : null,
                 ];
             })
             ->values();
@@ -297,6 +317,8 @@ class DriverDeliveryController extends Controller
             ->values();
 
         return [
+            // The days this driver has lifts on (From / To date dropdowns).
+            'liftDates' => FilterDates::distinct(DB::table('hauls')->where('driver_user_id', $driverId), 'scheduled_at'),
             'statuses' => self::TASK_STATUSES,
             'fuelTypes' => DB::table('fuel_types')
                 ->when(

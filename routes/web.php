@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AdminBusinessInsightController;
 use App\Http\Controllers\AdminDashboardController;
+use App\Http\Controllers\AdminDashboardExportController;
 use App\Http\Controllers\AdminDashboardInsightController;
 use App\Http\Controllers\AdminMonitoringController;
 use App\Http\Controllers\AdminRevenueInsightController;
@@ -36,7 +37,8 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/dashboard', [AuthController::class, 'redirectToDashboard'])->name('dashboard');
     Route::get('/home', [AuthController::class, 'redirectToDashboard'])->name('home.dashboard');
     Route::get('/withdrawal-receipts/{haul}', [InventoryOfficerPurchaseController::class, 'withdrawalReceipt'])
-        ->middleware('role:admin,inventory_officer')
+        // Part 11: the driver of the lift may view the receipt they uploaded (checked in the controller).
+        ->middleware('role:admin,inventory_officer,driver')
         ->name('withdrawal-receipts.show');
 
     Route::redirect('/admin', '/admin/dashboard')->middleware('role:admin')->name('admin.shortcut');
@@ -44,13 +46,17 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/dashboard', AdminDashboardController::class)->name('dashboard');
         // Part 10: "Insights and A.I Reporting" (the inventory variance explanation is part of it).
         Route::post('/dashboard/insight', AdminDashboardInsightController::class)->name('dashboard.insight');
+        // Part 11: the dashboard's charts, KPI cards and AI insight as one PDF report.
+        Route::post('/dashboard/export', AdminDashboardExportController::class)->name('dashboard.export');
         Route::get('/inventory', [InventoryOfficerPurchaseController::class, 'index'])->name('inventory');
         Route::post('/inventory/purchases', [InventoryOfficerPurchaseController::class, 'store'])->name('inventory.purchases.store');
         Route::patch('/inventory/purchases/{purchaseItem}', [InventoryOfficerPurchaseController::class, 'update'])->name('inventory.purchases.update');
         Route::patch('/inventory/purchases/{purchaseItem}/cancel', [InventoryOfficerPurchaseController::class, 'cancel'])->name('inventory.purchases.cancel');
         // Part 2 revisions: Stock-In (tank receipts) is retired; the old URL opens Purchases.
         Route::get('/inventory/stock-in', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'stock-in')->name('inventory.stock-in');
+        Route::patch('/inventory/stock-in/{purchaseItem}', [InventoryOfficerPurchaseController::class, 'updateStockIn'])->name('inventory.stock-in.update');
         Route::get('/inventory/stock-out', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'stock-out')->name('inventory.stock-out');
+        Route::patch('/inventory/stock-out/{stockOut}', [InventoryOfficerPurchaseController::class, 'updateStockOut'])->name('inventory.stock-out.update');
         Route::post('/inventory/depots', [InventoryOfficerPurchaseController::class, 'storeDepot'])->name('inventory.depots.store');
         Route::get('/inventory/depots', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'depots')->name('inventory.depots');
         Route::get('/ledger', InventoryOfficerLedgerController::class)->name('ledger');
@@ -79,6 +85,7 @@ Route::middleware(['auth'])->group(function () {
         Route::patch('/sales/{sale}', [SalesOfficerCustomerController::class, 'updateSale'])->name('sales.update');
         Route::patch('/sales/{sale}/delivery-status', [SalesOfficerCustomerController::class, 'updateDeliveryStatus'])->name('sales.delivery-status.update');
         Route::patch('/sales/{sale}/cancel', [SalesOfficerCustomerController::class, 'cancelSale'])->name('sales.cancel');
+        Route::delete('/sales/{sale}', [SalesOfficerCustomerController::class, 'destroySale'])->name('sales.destroy');
         Route::get('/reports', AdminSalesReportController::class)->name('reports');
         Route::post('/reports/business-insight', AdminBusinessInsightController::class)->name('reports.business-insight');
         Route::post('/reports/revenue-insight', AdminRevenueInsightController::class)->name('reports.revenue-insight');
@@ -124,7 +131,9 @@ Route::middleware(['auth'])->group(function () {
         Route::patch('/inventory/purchases/{purchaseItem}/cancel', [InventoryOfficerPurchaseController::class, 'cancel'])->name('inventory.purchases.cancel');
         // Part 2 revisions: Stock-In (tank receipts) is retired; the old URL opens Purchases.
         Route::get('/inventory/stock-in', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'stock-in')->name('inventory.stock-in');
+        Route::patch('/inventory/stock-in/{purchaseItem}', [InventoryOfficerPurchaseController::class, 'updateStockIn'])->name('inventory.stock-in.update');
         Route::get('/inventory/stock-out', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'stock-out')->name('inventory.stock-out');
+        Route::patch('/inventory/stock-out/{stockOut}', [InventoryOfficerPurchaseController::class, 'updateStockOut'])->name('inventory.stock-out.update');
         Route::post('/inventory/depots', [InventoryOfficerPurchaseController::class, 'storeDepot'])->name('inventory.depots.store');
         Route::get('/inventory/depots', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'depots')->name('inventory.depots');
         Route::get('/ledger', InventoryOfficerLedgerController::class)->name('ledger');
@@ -141,6 +150,7 @@ Route::middleware(['auth'])->group(function () {
         Route::patch('/sales/{sale}', [SalesOfficerCustomerController::class, 'updateSale'])->name('sales.update');
         Route::patch('/sales/{sale}/delivery-status', [SalesOfficerCustomerController::class, 'updateDeliveryStatus'])->name('sales.delivery-status.update');
         Route::patch('/sales/{sale}/cancel', [SalesOfficerCustomerController::class, 'cancelSale'])->name('sales.cancel');
+        Route::delete('/sales/{sale}', [SalesOfficerCustomerController::class, 'destroySale'])->name('sales.destroy');
         Route::get('/sales/customers', [SalesOfficerCustomerController::class, 'index'])->defaults('state', 'customers')->name('sales.customers');
         Route::post('/sales/customers', [SalesOfficerCustomerController::class, 'store'])->name('sales.customers.store');
         Route::patch('/sales/customers/{customer}', [SalesOfficerCustomerController::class, 'update'])->name('sales.customers.update');

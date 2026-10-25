@@ -13,6 +13,16 @@
 
 @component('layouts.admin', ['title' => 'Dashboard and Analytics', 'active' => 'dashboard'])
     <div class="dash">
+        {{-- Part 11: Export the charts, KPI cards and AI insight as one PDF (see dashboard.js). --}}
+        <div class="dash-actions">
+            <form method="POST" action="{{ route('admin.dashboard.export') }}" data-dashboard-export>
+                @csrf
+                @foreach ($filterQuery as $name => $value)
+                    <input type="hidden" name="{{ $name }}" value="{{ $value }}">
+                @endforeach
+                <button class="btn btn-secondary" type="submit" data-dashboard-export-button>Export</button>
+            </form>
+        </div>
         @if ($errors->any())
             <p class="form-alert" role="alert">{{ $errors->first() }}</p>
         @endif
@@ -192,11 +202,11 @@
                 @if (session('dashboardInsight'))
                     <div class="ai-insight-body" aria-live="polite">
                         @if (session('dashboardInsight.note'))
-                            <p class="dash-insight-note" role="note">{{ session('dashboardInsight.note') }}</p>
+                            <p class="dash-insight-note" role="note" data-insight-note>{{ session('dashboardInsight.note') }}</p>
                         @endif
-                        <div class="ai-insight-text">{!! nl2br(e(session('dashboardInsight.text'))) !!}</div>
-                        <p>{{ session('dashboardInsight.source') === 'ai' ? 'AI-assisted insight from the dashboard totals. Use it to support, not replace, record verification.' : 'Rule-based summary of the dashboard totals.' }}</p>
-                        <span>Generated {{ session('dashboardInsight.generated_at') }}</span>
+                        <div class="ai-insight-text" data-insight-text data-insight-raw="{{ session('dashboardInsight.text') }}">{!! nl2br(e(session('dashboardInsight.text'))) !!}</div>
+                        <p data-insight-source>{{ session('dashboardInsight.source') === 'ai' ? 'AI-assisted insight from the dashboard totals. Use it to support, not replace, record verification.' : 'Rule-based summary of the dashboard totals.' }}</p>
+                        <span data-insight-generated="{{ session('dashboardInsight.generated_at') }}">Generated {{ session('dashboardInsight.generated_at') }}</span>
                     </div>
                 @endif
             </div>

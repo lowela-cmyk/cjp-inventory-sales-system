@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Services\PurchaseStockService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -394,8 +395,10 @@ class SalesOfficerSalesManagementTest extends TestCase
         $this->actingAs($records['salesOfficer'])
             ->get(route('sales-officer.sales'))
             ->assertOk()
-            ->assertSee('Delete this untouched draft sale?')
-            ->assertSee('>Delete<', false);
+            // Part 11: "Delete" is reserved for delivered orders; an untouched draft is discarded.
+            ->assertSee('Discard this untouched draft sale?')
+            ->assertSee('>Discard Draft<', false)
+            ->assertDontSee('Delete order SLS-DRAFT-DELETE');
 
         $this->actingAs($records['salesOfficer'])
             ->patch(route('sales-officer.sales.cancel', $saleId))
@@ -427,7 +430,7 @@ class SalesOfficerSalesManagementTest extends TestCase
         $this->assertNotNull($stockOut);
         $this->assertSame('released', $stockOut->status);
         $this->assertNotNull($stockOut->purchase_item_id);
-        $purchaseStock = fn (): float => (float) app(\App\Services\PurchaseStockService::class)->line((int) $stockOut->purchase_item_id)->on_hand;
+        $purchaseStock = fn (): float => (float) app(PurchaseStockService::class)->line((int) $stockOut->purchase_item_id)->on_hand;
         $deliveredStock = $purchaseStock();
 
         $this->actingAs($records['salesOfficer'])

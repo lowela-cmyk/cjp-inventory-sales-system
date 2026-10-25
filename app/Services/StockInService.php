@@ -128,6 +128,8 @@ class StockInService
                 'stock_ins.*',
                 'purchases.purchase_code',
                 'purchases.payment_status',
+                // When the purchase was recorded (a backfilled stock-in's own created_at is the migration time).
+                'purchases.created_at as recorded_at',
                 'fuel_types.name as fuel_name',
                 'fuel_types.code as fuel_code',
                 'depots.name as depot_name',
@@ -192,7 +194,7 @@ class StockInService
         $portion = fn (string $column, string $quantity, string $name): Builder => DB::table('sale_items')
             ->join('sales', 'sales.id', '=', 'sale_items.sale_id')
             ->join('customers', 'customers.id', '=', 'sales.customer_id')
-            ->whereNull('sales.deleted_at')
+            // A deleted (archived) delivered order keeps its liters deducted, so it stays in this list, marked.
             ->where('sales.status', '!=', 'cancelled')
             ->whereIn("sale_items.$column", $purchaseItemIds)
             ->where("sale_items.$quantity", '>', 0)
@@ -204,6 +206,7 @@ class StockInService
                 'sales.sale_date',
                 'sales.delivery_type',
                 'sales.delivery_status',
+                'sales.deleted_at as sale_deleted_at',
                 'customers.name as customer_name',
                 "sale_items.$quantity as liters",
             ])
@@ -227,7 +230,7 @@ class StockInService
                 $released = $releases->get($line->purchase_item_id.':'.$line->sale_item_id.':'.$line->line_portion, collect());
 
                 return [
-                    'sale_code' => $line->sale_code,
+                    'sale_code' => $line->sale_code.($line->sale_deleted_at ? ' (deleted order)' : ''),
                     'sales_order_number' => $line->sales_order_number,
                     'sale_date' => $line->sale_date,
                     'customer_name' => $line->customer_name,

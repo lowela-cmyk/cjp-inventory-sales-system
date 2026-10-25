@@ -188,3 +188,60 @@ document.querySelectorAll('[data-sales-period]').forEach((select) => {
         select.form?.querySelectorAll('input[name="sales_date_from"], input[name="sales_date_to"]').forEach((input) => input.remove());
     });
 });
+
+// Part 11: Export. Each visible chart is captured with Chart.js toBase64Image() and posted with the AI insight shown on
+// the page; the server adds the KPI figures for the same filters and returns one PDF. No insight yet: the PDF says so.
+document.querySelectorAll('[data-dashboard-export]').forEach((form) => {
+    const button = form.querySelector('[data-dashboard-export-button]');
+
+    const field = (name, value) => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = name;
+        input.value = value;
+        input.dataset.exportField = '';
+        form.append(input);
+    };
+
+    const chartTitle = (canvas) => {
+        const block = canvas.closest('.dash-chart-block');
+        const title = block?.querySelector('.dash-chart-title') || canvas.closest('.dash-section')?.querySelector('.dash-section-title');
+        const period = canvas.closest('[data-dashboard-revenue]')?.querySelector('[data-revenue-period].is-selected');
+
+        return [title?.textContent.trim() || canvas.getAttribute('aria-label') || 'Chart', period ? `(${period.textContent.trim()})` : '']
+            .filter(Boolean).join(' ');
+    };
+
+    form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        form.querySelectorAll('[data-export-field]').forEach((input) => input.remove());
+
+        let index = 0;
+        document.querySelectorAll('.dash canvas').forEach((canvas) => {
+            const chart = Chart.getChart(canvas);
+            if (! chart || canvas.hidden || canvas.offsetParent === null) return;
+            field(`charts[${index}][title]`, chartTitle(canvas));
+            field(`charts[${index}][image]`, chart.toBase64Image('image/png', 1));
+            index += 1;
+        });
+
+        const text = document.querySelector('[data-insight-text]');
+        if (text) {
+            field('insight_text', text.dataset.insightRaw || text.innerText);
+            field('insight_note', document.querySelector('[data-insight-note]')?.textContent.trim() || '');
+            field('insight_source', document.querySelector('[data-insight-source]')?.textContent.trim() || '');
+            field('insight_generated_at', document.querySelector('[data-insight-generated]')?.dataset.insightGenerated || '');
+        }
+
+        // The PDF downloads in place; the button shows it is working for a moment.
+        if (button) {
+            button.disabled = true;
+            button.textContent = 'Exporting…';
+            window.setTimeout(() => {
+                button.disabled = false;
+                button.textContent = 'Export';
+            }, 4000);
+        }
+        form.submit();
+    });
+});

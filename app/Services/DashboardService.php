@@ -611,6 +611,8 @@ class DashboardService
             ->leftJoin('hauls as release_haul', 'release_haul.id', '=', 'release_allocation.haul_id')
             ->leftJoin('purchase_items as release_purchase_item', 'release_purchase_item.id', '=', 'release_haul.purchase_item_id')
             ->leftJoin('purchase_items as stock_purchase_item', 'stock_purchase_item.id', '=', 'stock_outs.purchase_item_id')
+            // A deleted (archived) order leaves the margin with the rest of the sales figures.
+            ->whereNull('sales.deleted_at')
             ->where('stock_outs.status', 'released');
     }
 

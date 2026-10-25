@@ -114,6 +114,9 @@ class InventoryOfficerPurchaseController extends Controller
                 ->orderBy('name')
                 ->get(['id', 'name']),
             'deliveryTypes' => SalesOfficerCustomerController::DELIVERY_TYPES,
+            // Edit Stock-Out Record: a Standard order's own truck and driver (as Record Sales lists them).
+            'deliveryTrucks' => DB::table('trucks')->where('status', '!=', 'inactive')->orderBy('truck_code')->get(['id', 'truck_code', 'plate_number']),
+            'deliveryDrivers' => DB::table('users')->where('role', 'driver')->where('status', 'active')->orderBy('name')->get(['id', 'name']),
             'paymentStatuses' => self::PAYMENT_STATUSES,
             'paymentModes' => PurchaseService::PAYMENT_MODES,
             'banks' => PurchaseService::BANKS,
@@ -162,11 +165,109 @@ class InventoryOfficerPurchaseController extends Controller
             ->with('status', 'Purchase record updated successfully.');
     }
 
-    public function withdrawalReceipt(int $haul)
+    /**
+     * Edit Stock-In Record: corrects the stock fields of the purchase the stock-in mirrors (date, fuel, depot,
+     * quantity, cost) under the same rules as editing the purchase, and keeps its payment details as they are.
+     */
+    public function updateStockIn(Request $request, int $purchaseItem): RedirectResponse
+    {
+        $data = $request->validate([
+            'purchase_date' => ['required', 'date'],
+            'depot_id' => ['required', 'integer', Rule::exists('depots', 'id')->where(fn (Builder $query): Builder => $query->where('status', 'active'))],
+            'fuel_type_id' => ['required', 'integer', ApprovedFuelType::rule()],
+            'quantity_ordered_liters' => ['required', 'numeric', 'gt:0', 'max:1000000'],
+            'unit_cost' => ['required', 'numeric', 'gte:0', 'max:10000'],
+        ]);
+        $purchase = DB::table('purchase_items')
+            ->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
+            ->where('purchase_items.id', $purchaseItem)
+            ->whereNull('purchases.deleted_at')
+            ->first(['purchases.status', 'purchases.payment_status', 'purchases.payment_mode', 'purchases.bank_name']);
+        abort_unless($purchase !== null, 404);
+
+        if ($purchase->status === 'cancelled') {
+            return back()->withErrors(['stock_in' => 'This stock-in is cancelled with its purchase and can no longer be edited.'])->withInput();
+        }
+
+        try {
+            $this->purchaseService->updatePurchase($purchaseItem, $data + [
+                'payment_status' => $purchase->payment_status,
+                'payment_mode' => $purchase->payment_mode,
+                'bank_name' => $purchase->bank_name,
+            ], (int) $request->user()->id);
+        } catch (ValidationException $e) {
+            return back()->withErrors($e->errors())->withInput();
+        }
+
+        return redirect()
+            ->route($this->inventoryRouteName($request, 'stock-in'))
+            ->with('status', 'Stock-in record updated successfully.');
+    }
+
+    /**
+     * Edit Stock-Out Record: corrects what the release itself records (its date and the Cost / Unit it was released
+     * at) and, for a Standard order, the order's own delivery details. Quantity, fuel, purchase and price belong to
+     * the sale (edit or cancel it in Sales); a Depot to Client delivery's truck, driver, ATL and DR belong to its lift.
+     */
+    public function updateStockOut(Request $request, int $stockOut): RedirectResponse
+    {
+        $row = DB::table('stock_outs')
+            ->join('sales', 'sales.id', '=', 'stock_outs.sale_id')
+            ->where('stock_outs.id', $stockOut)
+            ->whereNull('sales.deleted_at')
+            ->first(['stock_outs.id', 'stock_outs.status', 'stock_outs.haul_allocation_id', 'sales.id as sale_id', 'sales.delivery_type']);
+        abort_unless($row !== null, 404);
+
+        // The order's own truck, driver and date apply only when no lift carried the release (the lift's win).
+        $standard = $row->delivery_type === 'standard' && $row->haul_allocation_id === null;
+        $data = $request->validate([
+            'stock_out_at' => ['required', 'date', 'before_or_equal:now'],
+            'unit_cost' => ['required', 'numeric', 'gte:0', 'max:10000'],
+            'delivery_truck_id' => $standard ? ['nullable', 'integer', Rule::exists('trucks', 'id')] : ['exclude'],
+            'delivery_driver_user_id' => $standard ? ['nullable', 'integer', Rule::exists('users', 'id')->where(fn (Builder $query): Builder => $query->where('role', 'driver'))] : ['exclude'],
+            'delivery_date' => $standard ? ['nullable', 'date'] : ['exclude'],
+        ], [
+            'stock_out_at.before_or_equal' => 'The transaction date cannot be in the future.',
+        ], [
+            'stock_out_at' => 'transaction date',
+            'unit_cost' => 'cost / unit',
+            'delivery_truck_id' => 'truck',
+            'delivery_driver_user_id' => 'driver',
+        ]);
+
+        if ($row->status !== 'released') {
+            return back()->withErrors(['stock_out' => 'Only released stock-outs can be edited; this one is '.$this->label($row->status).'.'])->withInput();
+        }
+
+        DB::transaction(function () use ($row, $data, $standard): void {
+            DB::table('stock_outs')->where('id', $row->id)->update([
+                'stock_out_at' => $data['stock_out_at'],
+                'unit_cost' => round((float) $data['unit_cost'], 2),
+                'updated_at' => now(),
+            ]);
+
+            if ($standard) {
+                DB::table('sales')->where('id', $row->sale_id)->update([
+                    'delivery_truck_id' => $data['delivery_truck_id'] ?? null,
+                    'delivery_driver_user_id' => $data['delivery_driver_user_id'] ?? null,
+                    'delivery_date' => $data['delivery_date'] ?? null,
+                    'updated_at' => now(),
+                ]);
+            }
+        });
+
+        return redirect()
+            ->route($this->inventoryRouteName($request, 'stock-out'))
+            ->with('status', 'Stock-out record updated successfully.');
+    }
+
+    public function withdrawalReceipt(Request $request, int $haul)
     {
         $row = DB::table('hauls')
             ->join('purchases', 'purchases.id', '=', 'hauls.purchase_id')
             ->where('hauls.id', $haul)
+            // A driver sees only the receipts of their own lifts.
+            ->when($request->user()->role === 'driver', fn (Builder $query): Builder => $query->where('hauls.driver_user_id', $request->user()->id))
             ->whereNull('purchases.deleted_at')
             ->first(['hauls.haul_code', 'hauls.withdrawal_receipt_path']);
 
@@ -274,7 +375,18 @@ class InventoryOfficerPurchaseController extends Controller
         $paginator = $this->stockIns->paginate($filters, $search);
         $paginator->setCollection($paginator->getCollection()->map(fn (object $row): array => [
             'id' => (int) $row->id,
-            'modal_id' => 'io-stock-in-view-'.$row->id,
+            'modal_id' => 'io-stock-in-edit-'.$row->id,
+            'purchase_item_id' => (int) $row->purchase_item_id,
+            'editable' => $row->status !== 'voided',
+            // The Edit form's current values.
+            'form' => [
+                'purchase_date' => substr((string) $row->stock_in_date, 0, 10),
+                'fuel_type_id' => (int) $row->fuel_type_id,
+                'depot_id' => (int) $row->depot_id,
+                'quantity_ordered_liters' => (float) $row->quantity_liters,
+                'unit_cost' => (float) $row->unit_cost,
+                'sold' => $this->formatLiters($row->stock_out),
+            ],
             'purchase_code' => $row->purchase_code,
             'date' => $this->formatDate($row->stock_in_date),
             'fuel' => $row->fuel_name,
@@ -286,20 +398,20 @@ class InventoryOfficerPurchaseController extends Controller
             'remaining' => $this->formatNumber($row->remaining),
             'status' => $this->label($row->stock_status),
             'details' => [
-                'Purchase ID' => $row->purchase_code,
-                'Date' => $this->formatDate($row->stock_in_date),
-                'Fuel Type' => $row->fuel_name,
+                'Purchase-ID' => $row->purchase_code,
+                'Order Date' => $this->formatDate($row->stock_in_date),
+                'Fuel' => $row->fuel_name,
                 'Depot' => $row->depot_name,
-                'Quantity Purchased' => $this->formatLiters($row->quantity_liters),
-                'Cost/Liter' => $this->formatNumber($row->unit_cost),
+                'QTY Ordered' => $this->formatLiters($row->quantity_liters),
+                'Cost / Liter' => $this->formatNumber($row->unit_cost),
                 'Total Cost' => $this->formatNumber($row->total_cost),
-                'Stock Out' => $this->formatLiters($row->stock_out),
-                'Delivered' => $this->formatLiters($row->delivered),
-                'Awaiting Delivery' => $this->formatLiters($row->reserved),
-                'Remaining' => $this->formatLiters($row->remaining),
+                'Current QTY' => $this->formatLiters($row->remaining),
+                'Sold QTY' => $this->formatLiters($row->stock_out),
+                'Sold and Delivered' => $this->formatLiters($row->delivered),
+                'Sold, Awaiting Delivery' => $this->formatLiters($row->reserved),
                 'Payment Status' => $this->label($row->payment_status),
                 'Recorded By' => $row->created_by_name ?: 'N/A',
-                'Recorded At' => $this->formatDateTime($row->created_at),
+                'Recorded At' => $this->formatDateTime($row->recorded_at ?? $row->created_at),
             ] + ($row->voided_at ? ['Cancelled At' => $this->formatDateTime($row->voided_at)] : []),
             'deductions' => array_map(fn (array $deduction): array => [
                 'order' => $deduction['sale_code'].($deduction['sales_order_number'] ? ' / SO '.$deduction['sales_order_number'] : ''),
@@ -400,6 +512,19 @@ class InventoryOfficerPurchaseController extends Controller
                 'class' => $this->rowClass($row->status),
                 'margin' => $amounts['margin'],
                 'profit' => $amounts['profit'],
+                'id' => (int) $row->id,
+                'modal_id' => 'io-stock-out-edit-'.$row->id,
+                'editable' => $row->status === 'released',
+                // Delivery details editable here: a Standard order's own, when no lift carried it.
+                'standard' => $row->delivery_type === 'standard' && $row->haul_allocation_id === null,
+                // The Edit form's current values.
+                'form' => [
+                    'stock_out_at' => $row->stock_out_at ? date('Y-m-d\\TH:i', strtotime((string) $row->stock_out_at)) : null,
+                    'unit_cost' => $amounts['unit_cost'],
+                    'delivery_truck_id' => $row->delivery_truck_id,
+                    'delivery_driver_user_id' => $row->delivery_driver_user_id,
+                    'delivery_date' => $row->sale_delivery_date ? date('Y-m-d\\TH:i', strtotime((string) $row->sale_delivery_date)) : null,
+                ],
             ];
         });
         $paginator->setCollection($transformed);

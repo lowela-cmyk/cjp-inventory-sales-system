@@ -71,7 +71,6 @@ class DispatchDeliveryController extends Controller
             'truckDirectory' => $this->truckAvailability->directory($truckSearch, $truckFilters['status'] ?? null),
             'truckSearch' => $truckSearch === '' ? null : $truckSearch,
             'truckStatusFilter' => $truckFilters['status'] ?? null,
-            'truckTypes' => TruckAvailabilityService::TRUCK_TYPES,
             'nextTruckCode' => $this->truckAvailability->nextTruckCode(),
             'truckStatuses' => TruckAvailabilityService::DISPLAY_STATUSES,
             'managedStatuses' => TruckAvailabilityService::MANAGED_STATUSES,

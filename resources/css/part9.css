@@ -193,33 +193,22 @@
 .sale-form-card {
     border-color: var(--admin-soft-line);
     border-radius: 8px;
+    padding: 24px;
 }
 
-/* Fuel Type | Quantity Ordered, and Price | F1 Percentage, side by side. The first field lines up with the
-   full-width fields above it (same label column as .form-row). */
+/* Order details use two equal columns with labels stacked above their controls. */
 .sale-pair {
-    display: grid;
-    grid-template-columns: minmax(150px, 190px) minmax(0, 1fr) auto minmax(0, 1fr);
-    gap: 12px;
-    align-items: center;
-}
-
-.sale-pair.has-no-f1,
-.sale-pair:has([data-f1-field][hidden]) {
-    grid-template-columns: minmax(150px, 190px) minmax(0, 1fr);
-}
-
-.sale-pair > .form-row {
     display: contents;
 }
 
-.sale-pair .form-row-message {
-    grid-column: 2 / -1;
+.sale-pair > .form-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 7px;
+    align-content: start;
 }
 
 .sales-item-row [hidden],
-.sale-pair > [hidden],
-.sale-pair > .form-row[hidden],
 [data-f1-field][hidden] {
     display: none !important;
 }
@@ -291,14 +280,6 @@
 }
 
 @media (max-width: 720px) {
-    .sale-pair {
-        grid-template-columns: minmax(0, 1fr);
-    }
-
-    .sale-pair .form-row-message {
-        grid-column: auto;
-    }
-
     .f1-breakdown {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -373,19 +354,47 @@
 /* Part 2 revisions Record Sales: F1 | F1 Price | F1 %, and the Premium / F1 / Line totals under the breakdown. */
 .sale-order-line {
     display: grid;
-    gap: 12px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 32px;
+    row-gap: 20px;
+}
+
+.sale-order-line > .form-row-full,
+.sale-order-line > .sale-f1-row,
+.sale-order-line > .f1-breakdown,
+.sale-order-line > .sale-line-totals,
+.sale-order-line > .form-row-message {
+    grid-column: 1 / -1;
+}
+
+.sale-order-line .form-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 7px;
+    align-content: start;
+}
+
+.sale-order-line .form-row label {
+    line-height: 1.2;
+}
+
+.sale-order-line .form-row-message {
+    margin: -12px 0 0;
 }
 
 /* Part 11 wireframe: "F1 [purchase]" lines up under "Fuel Type [purchase]"; F1 Price and F1 % share the right half. */
 .sale-f1-row {
     display: grid;
-    grid-template-columns: minmax(150px, 190px) minmax(0, 1fr) auto minmax(0, 0.55fr) auto minmax(0, 0.45fr);
-    gap: 12px;
-    align-items: center;
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 20px 24px;
 }
 
 .sale-f1-row > .form-row {
-    display: contents;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 7px;
+    min-width: 0;
 }
 
 .sale-f1-row > .form-row > :is(input, select) {
@@ -427,7 +436,230 @@
 }
 
 @media (max-width: 767px) {
+    .sale-order-line {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .sale-order-line > .form-row-full,
+    .sale-order-line > .sale-f1-row,
+    .sale-order-line > .f1-breakdown,
+    .sale-order-line > .sale-line-totals,
+    .sale-order-line > .form-row-message {
+        grid-column: auto;
+    }
+
     .sale-f1-row {
         grid-template-columns: minmax(0, 1fr);
     }
+}
+
+/* ===== Record Sales Receivables only (.admin-modal-sales-wide; Edit Sales keeps .admin-modal-sales) =====
+   Up to 1400px wide and 92vh tall; the header and the Add Order / Cancel footer stay put while the body scrolls.
+   Layout only: the fields keep their names, ids and DOM order, which reads Customer | Sales Order | Order Date,
+   Qty Ordered | Fuel Type | Fuel Price across three columns on large screens. */
+.admin-modal-sales-wide {
+    width: min(1400px, 90vw);
+    max-height: 92vh;
+}
+
+.admin-modal-sales-wide > .modal-body {
+    padding: 32px;
+}
+
+.admin-modal-sales-wide .sale-form {
+    gap: 16px;
+}
+
+.admin-modal-sales-wide .sale-form-section-title {
+    margin-top: 12px;
+    font-size: 16px;
+}
+
+.admin-modal-sales-wide .sale-form-card {
+    padding: 32px;
+}
+
+.admin-modal-sales-wide .sale-order-line,
+.admin-modal-sales-wide .sale-form-card > .form-grid {
+    column-gap: 32px;
+    row-gap: 24px;
+}
+
+/* F1 | F1 Price | F1 % use the same column gap, so on three columns they line up under the fields above. */
+.admin-modal-sales-wide .sale-f1-row {
+    column-gap: 32px;
+}
+
+/* The summary row stays full width with five even cells. */
+.admin-modal-sales-wide .f1-breakdown-cell {
+    padding: 14px 8px;
+}
+
+/* Fuel Total | F1 Total | LINE TOTAL: one full-width bar under the summary row, same edges as that row.
+   Each section is a small uppercase label over its value; Line Total is dark like the modal header (#080303) and
+   gets the most room. The values stay the <output> elements the existing JS fills (with thousands separators);
+   the peso sign is drawn by CSS, so the calculation code is untouched. */
+.admin-modal-sales-wide .sale-order-line > .sale-line-totals {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1.4fr;
+    justify-self: stretch;
+    width: auto;
+    max-width: none;
+    gap: 0;
+    margin-top: -8px; /* 16px under the summary row (the grid row gap is 24px) */
+    overflow: hidden;
+    border: 1px solid var(--admin-line);
+    border-radius: 6px;
+    padding: 0;
+    background: #fff;
+}
+
+.admin-modal-sales-wide .sale-line-total-row {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    min-width: 0;
+    min-height: 75px; /* the summary row's height */
+    padding: 12px 20px;
+}
+
+/* Thin vertical dividers in the summary row's border colour. */
+.admin-modal-sales-wide .sale-line-total-row + .sale-line-total-row {
+    border-left: 1px solid var(--admin-line);
+}
+
+.admin-modal-sales-wide .sale-line-total-row span {
+    color: var(--admin-muted);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.admin-modal-sales-wide .sale-line-total-row output {
+    color: var(--admin-ink);
+    font-size: 20px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+}
+
+.admin-modal-sales-wide .sale-line-total-row output::before {
+    content: "\20B1\00A0";
+}
+
+/* LINE TOTAL: the final amount, dark like the modal header. */
+.admin-modal-sales-wide .sale-line-total-row.sale-line-total {
+    min-height: 84px;
+    border-left-color: #080303;
+    background: #080303;
+}
+
+.admin-modal-sales-wide .sale-line-total-row.sale-line-total span {
+    color: rgb(255 255 255 / 72%);
+}
+
+.admin-modal-sales-wide .sale-form .sale-line-total output {
+    display: block;
+    width: auto;
+    min-height: 0;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    color: #fff;
+    font-size: 30px;
+    font-weight: 800;
+    line-height: 1.1;
+}
+
+/* Selecting a figure to copy it uses a light brand tint instead of the browser's default purple. */
+.admin-modal-sales-wide .sale-line-totals ::selection {
+    background: rgb(232 69 60 / 25%);
+}
+
+/* The Order Details card ends 24px under the bar (the item row's bottom padding and the card's 32px are trimmed). */
+.admin-modal-sales-wide .sale-form-card[data-sales-items] {
+    padding-bottom: 24px;
+}
+
+.admin-modal-sales-wide .sale-order-line {
+    padding-bottom: 0;
+}
+
+/* Below 768px the three sections stack, full width, Line Total last. */
+@media (max-width: 767px) {
+    .admin-modal-sales-wide .sale-order-line > .sale-line-totals {
+        grid-template-columns: minmax(0, 1fr);
+        margin-top: -8px;
+    }
+
+    .admin-modal-sales-wide .sale-line-total-row + .sale-line-total-row {
+        border-left: 0;
+        border-top: 1px solid var(--admin-line);
+    }
+
+    .admin-modal-sales-wide .sale-line-total-row,
+    .admin-modal-sales-wide .sale-line-total-row.sale-line-total {
+        min-height: 0;
+    }
+}
+
+@media (max-width: 639px) {
+    .admin-modal-sales-wide .sale-form .sale-line-total output {
+        font-size: 26px;
+    }
+}
+
+/* Large screens: three columns for Order, Payment and Delivery Details. */
+@media (min-width: 1280px) {
+    .admin-modal-sales-wide .sale-order-line,
+    .admin-modal-sales-wide .sale-form-card > .form-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+/* 640-767px: keep two columns here (the shared rules switch to one column below 768px). */
+@media (min-width: 640px) and (max-width: 767px) {
+    .admin-modal-sales-wide .sale-order-line,
+    .admin-modal-sales-wide .sale-form-card > .form-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .admin-modal-sales-wide .sale-order-line > .form-row-full,
+    .admin-modal-sales-wide .sale-order-line > .sale-f1-row,
+    .admin-modal-sales-wide .sale-order-line > .f1-breakdown,
+    .admin-modal-sales-wide .sale-order-line > .sale-line-totals,
+    .admin-modal-sales-wide .sale-order-line > .form-row-message {
+        grid-column: 1 / -1;
+    }
+
+    .admin-modal-sales-wide .sale-f1-row {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+/* Phones: one column, the modal fills the screen. */
+@media (max-width: 639px) {
+    .modal-backdrop:has(> .admin-modal-sales-wide) {
+        padding: 0;
+    }
+
+    .admin-modal-sales-wide {
+        width: 100%;
+        height: 100dvh;
+        max-height: 100dvh;
+        border-radius: 0;
+    }
+
+    .admin-modal-sales-wide > .modal-body {
+        padding: 20px 16px;
+    }
+
+    .admin-modal-sales-wide .sale-form-card {
+        padding: 18px;
+    }
+
 }

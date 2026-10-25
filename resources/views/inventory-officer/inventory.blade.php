@@ -111,9 +111,11 @@
             <div class="table-wrap inventory-table-wrap">
                 <table class="admin-table inventory-table inventory-table-actions table-stacked stock-in-table">
                     <thead><tr>
-                        <th>Purchase ID</th><th>Date</th><th>Fuel Type</th><th>Depot</th>
-                        <th>Qty Purchased (L)</th><th>Cost / Liter</th><th>Total Cost</th>
-                        <th>Stock Out (L)</th><th>Remaining (L)</th>
+                        {{-- The original Stock-In columns (August 2026 design), now filled from each purchase's stock-in:
+                             Current QTY = liters left, Sold QTY = liters sales took (delivered + promised). --}}
+                        <th>Purchase-ID</th><th>Order Date</th><th>Fuel</th><th>Depot</th>
+                        <th>QTY Ordered (L)</th><th>Cost / Liter</th><th>Total Cost</th>
+                        <th>Current QTY</th><th>Sold QTY</th>
                         <th class="inventory-status-column">Status</th><th>Actions</th>
                     </tr></thead>
                     <tbody>
@@ -126,12 +128,12 @@
                                 <td class="inventory-number">{{ $row['purchased'] }}</td>
                                 <td class="inventory-number">{{ $row['unit_cost'] }}</td>
                                 <td class="inventory-number">{{ $row['total_cost'] }}</td>
-                                <td class="inventory-number">{{ $row['stock_out'] }}</td>
                                 <td class="inventory-number">{{ $row['remaining'] }}</td>
+                                <td class="inventory-number">{{ $row['stock_out'] }}</td>
                                 <td><x-admin.status-badge :status="$row['status']" /></td>
                                 <td>
                                     <div class="inventory-row-actions">
-                                        <button class="btn btn-secondary" type="button" data-modal-open="{{ $row['modal_id'] }}">View</button>
+                                        <button class="btn btn-secondary" type="button" data-modal-open="{{ $row['modal_id'] }}">Edit</button>
                                     </div>
                                 </td>
                             </tr>
@@ -158,7 +160,7 @@
             <div class="table-wrap inventory-table-wrap">
                 {{-- Part 4 #6 / Part 8 #4: the table fits its frame. Related values share a cell (one export column each);
                      every money value keeps its own column, as on the Part 4 example. --}}
-                <table class="admin-table inventory-table stock-out-table table-stacked">
+                <table class="admin-table inventory-table inventory-table-actions stock-out-table table-stacked">
                     <thead><tr>
                         <th><span class="th-line" data-export-part>Order-ID</span><span class="th-line" data-export-part>Transaction Date</span></th>
                         <th><span class="th-line" data-export-part>Customer Name</span><span class="th-line" data-export-part>Company Name</span></th>
@@ -168,6 +170,7 @@
                         <th class="inventory-status-column">Status</th>
                         <th><span class="th-hint" tabindex="0" title="Margin = Total Price − Total Cost (expected profit once fully paid)">Margin</span></th>
                         <th><span class="th-hint" tabindex="0" title="Realized Profit = Total Paid − Total Cost (negative until payments cover the cost)">Realized Profit</span></th>
+                        <th>Actions</th>
                     </tr></thead>
                     <tbody>
                         @forelse ($stockOut as $row)
@@ -193,9 +196,14 @@
                                 <td><x-admin.status-badge :status="$c[14]" /></td>
                                 <td @class(['inventory-number', 'inventory-profit', 'is-negative' => $negative($row['margin'])])>{{ $c[15] }}</td>
                                 <td @class(['inventory-number', 'inventory-profit', 'is-negative' => $negative($row['profit'])])>{{ $c[16] }}</td>
+                                <td>
+                                    <div class="inventory-row-actions">
+                                        <button class="btn btn-secondary" type="button" data-modal-open="{{ $row['modal_id'] }}">Edit</button>
+                                    </div>
+                                </td>
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="13">No records found.</td></tr>
+                            <tr><td class="empty-cell" colspan="14">No records found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -325,19 +333,45 @@
     @endforeach
 
     @foreach ($stockIn as $row)
-        <x-admin.modal id="{{ $row['modal_id'] }}" title="Stock-In Details" size="xl">
+        @php
+            // Old input and errors belong only to the stock-in whose Edit form was submitted.
+            $isEditedStockIn = (int) old('edit_stock_in_id') === $row['id'];
+            $stockInOld = fn (string $key): mixed => $isEditedStockIn ? old($key, $row['form'][$key]) : $row['form'][$key];
+            $editableFields = ['Order Date', 'Fuel', 'Depot', 'QTY Ordered', 'Cost / Liter'];
+        @endphp
+        <x-admin.modal id="{{ $row['modal_id'] }}" title="Edit Stock-In Record" size="xl">
+            @if ($isEditedStockIn && $errors->any())
+                <span hidden data-open-modal-on-load="{{ $row['modal_id'] }}"></span>
+                <p class="form-alert" role="alert">{{ $errors->first() }}</p>
+            @endif
             <div class="modal-card">
                 <x-admin.status-badge :status="$row['status']" />
                 <p class="detail-id">{{ $row['purchase_code'] }}</p>
+                @if ($row['editable'])
+                    <form id="stock-in-update-{{ $row['id'] }}" method="POST" action="{{ route($inventoryRoutePrefix.'.stock-in.update', $row['purchase_item_id']) }}" data-prevent-double-submit>
+                        @csrf
+                        @method('PATCH')
+                        <input type="hidden" name="edit_stock_in_id" value="{{ $row['id'] }}">
+                    </form>
+                    <div class="form-grid">
+                        <div class="form-row"><label for="si_purchase_date_{{ $row['id'] }}">Order Date</label><input form="stock-in-update-{{ $row['id'] }}" id="si_purchase_date_{{ $row['id'] }}" name="purchase_date" type="date" value="{{ $stockInOld('purchase_date') }}" required></div>
+                        <div class="form-row"><label for="si_fuel_type_id_{{ $row['id'] }}">Fuel</label><select form="stock-in-update-{{ $row['id'] }}" id="si_fuel_type_id_{{ $row['id'] }}" name="fuel_type_id" required>@foreach ($filterOptions['fuelTypes'] as $fuelType)<option value="{{ $fuelType->id }}" @selected((string) $stockInOld('fuel_type_id') === (string) $fuelType->id)>{{ $fuelType->name }}</option>@endforeach</select></div>
+                        <div class="form-row"><label for="si_depot_id_{{ $row['id'] }}">Depot</label><select form="stock-in-update-{{ $row['id'] }}" id="si_depot_id_{{ $row['id'] }}" name="depot_id" required>@foreach ($depots as $depot)<option value="{{ $depot->id }}" @selected((string) $stockInOld('depot_id') === (string) $depot->id)>{{ $depot->name }}</option>@endforeach</select></div>
+                        <div class="form-row"><label for="si_quantity_{{ $row['id'] }}">QTY Ordered (L)</label><input form="stock-in-update-{{ $row['id'] }}" id="si_quantity_{{ $row['id'] }}" name="quantity_ordered_liters" type="number" min="0.01" step="0.01" value="{{ $stockInOld('quantity_ordered_liters') }}" required></div>
+                        <div class="form-row"><label for="si_unit_cost_{{ $row['id'] }}">Cost / Liter</label><input form="stock-in-update-{{ $row['id'] }}" id="si_unit_cost_{{ $row['id'] }}" name="unit_cost" type="number" min="0" step="0.01" value="{{ $stockInOld('unit_cost') }}" required></div>
+                    </div>
+                    <p class="table-help">Saving updates purchase {{ $row['purchase_code'] }} too. QTY Ordered can't go below the Sold QTY ({{ $row['form']['sold'] }}) or what is already on lifts, and Fuel and Depot can't change once sales or lifts use this purchase. Past Stock Out rows keep the cost they were released at.</p>
+                @endif
                 <div class="detail-grid">
                     @foreach ($row['details'] as $label => $value)
+                        @continue($row['editable'] && in_array($label, $editableFields, true))
                         <div class="detail-row">
                             <div class="detail-label">{{ $label }}</div>
                             <div class="detail-value">{{ $value }}</div>
                         </div>
                     @endforeach
                 </div>
-                <h3 class="stock-in-deductions-title">Sales deducted from this purchase</h3>
+                <h3 class="stock-in-deductions-title">Sold QTY: sales deducted from this purchase</h3>
                 @if ($row['deductions'] === [])
                     <p class="table-help">No sales have deducted from this purchase yet.</p>
                 @else
@@ -362,7 +396,85 @@
                 @endif
             </div>
             <x-slot:footer>
-                <button class="btn btn-pill btn-secondary" type="button" data-modal-close>Close</button>
+                @if ($row['editable'])
+                    <button class="btn btn-pill btn-secondary" type="submit" form="stock-in-update-{{ $row['id'] }}">Save Changes</button>
+                @endif
+                <button class="btn btn-pill btn-danger" type="button" data-modal-close>Close</button>
+            </x-slot:footer>
+        </x-admin.modal>
+    @endforeach
+
+    @foreach ($stockOut as $row)
+        @php
+            // Old input and errors belong only to the stock-out whose Edit form was submitted.
+            $isEditedStockOut = (int) old('edit_stock_out_id') === $row['id'];
+            $stockOutOld = fn (string $key): mixed => $isEditedStockOut ? old($key, $row['form'][$key]) : $row['form'][$key];
+            $c = $row['cells'];
+            $d = $row['delivery'];
+        @endphp
+        <x-admin.modal id="{{ $row['modal_id'] }}" title="Edit Stock-Out Record" size="xl">
+            @if ($isEditedStockOut && $errors->any())
+                <span hidden data-open-modal-on-load="{{ $row['modal_id'] }}"></span>
+                <p class="form-alert" role="alert">{{ $errors->first() }}</p>
+            @endif
+            <div class="modal-card">
+                <x-admin.status-badge :status="$c[14]" />
+                <p class="detail-id">{{ $c[0] }}</p>
+                @if ($row['editable'])
+                    <form id="stock-out-update-{{ $row['id'] }}" method="POST" action="{{ route($inventoryRoutePrefix.'.stock-out.update', $row['id']) }}" data-prevent-double-submit>
+                        @csrf
+                        @method('PATCH')
+                        <input type="hidden" name="edit_stock_out_id" value="{{ $row['id'] }}">
+                    </form>
+                    <div class="form-grid">
+                        <div class="form-row"><label for="so_at_{{ $row['id'] }}">Transaction Date</label><input form="stock-out-update-{{ $row['id'] }}" id="so_at_{{ $row['id'] }}" name="stock_out_at" type="datetime-local" value="{{ $stockOutOld('stock_out_at') }}" max="{{ now()->format('Y-m-d\TH:i') }}" required></div>
+                        <div class="form-row"><label for="so_cost_{{ $row['id'] }}">Cost / Unit</label><input form="stock-out-update-{{ $row['id'] }}" id="so_cost_{{ $row['id'] }}" name="unit_cost" type="number" min="0" step="0.01" value="{{ $stockOutOld('unit_cost') }}" required></div>
+                        @if ($row['standard'])
+                            <div class="form-row"><label for="so_truck_{{ $row['id'] }}">Truck</label><select form="stock-out-update-{{ $row['id'] }}" id="so_truck_{{ $row['id'] }}" name="delivery_truck_id"><option value="">Select Truck</option>@foreach ($deliveryTrucks as $truck)<option value="{{ $truck->id }}" @selected((string) $stockOutOld('delivery_truck_id') === (string) $truck->id)>{{ $truck->truck_code }}{{ $truck->plate_number ? ' / '.$truck->plate_number : '' }}</option>@endforeach</select></div>
+                            <div class="form-row"><label for="so_driver_{{ $row['id'] }}">Driver</label><select form="stock-out-update-{{ $row['id'] }}" id="so_driver_{{ $row['id'] }}" name="delivery_driver_user_id"><option value="">Select Driver</option>@foreach ($deliveryDrivers as $driver)<option value="{{ $driver->id }}" @selected((string) $stockOutOld('delivery_driver_user_id') === (string) $driver->id)>{{ $driver->name }}</option>@endforeach</select></div>
+                            <div class="form-row"><label for="so_delivery_date_{{ $row['id'] }}">Delivery Date</label><input form="stock-out-update-{{ $row['id'] }}" id="so_delivery_date_{{ $row['id'] }}" name="delivery_date" type="datetime-local" value="{{ $stockOutOld('delivery_date') }}"></div>
+                        @endif
+                    </div>
+                    <p class="table-help">Cost / Unit recalculates Total Cost, Margin and Realized Profit for this row only.
+                        @if ($row['standard']) Truck, Driver and Delivery Date belong to order {{ $c[0] }} and change on all its stock-out rows. @else Truck, Driver, ATL and DR come from the lift: change them in Fuel Lifting. @endif
+                        Quantity, fuel, purchase and price come from the sale: edit or cancel the sale in Sales.</p>
+                @endif
+                <div class="detail-grid">
+                    @foreach ([
+                        'Transaction Date' => $row['editable'] ? null : $c[1],
+                        'Customer' => $c[2].($c[3] && $c[3] !== $c[2] ? ' — '.$c[3] : ''),
+                        'Delivery Type' => $c[4],
+                        'Fuel' => $c[5],
+                        'Purchase ID' => $c[6],
+                        'QTY Released' => $c[7].' L',
+                        'Cost / Unit' => $row['editable'] ? null : $c[8],
+                        'Total Cost' => $c[9],
+                        'Price / Unit' => $c[10],
+                        'Total Price' => $c[11],
+                        'Total Paid' => $c[12],
+                        'Margin' => $c[15],
+                        'Realized Profit' => $c[16],
+                        'Truck' => $row['editable'] && $row['standard'] ? null : $d['truck'],
+                        'Driver' => $row['editable'] && $row['standard'] ? null : $d['driver'],
+                        'Delivery / Lift Date' => $row['editable'] && $row['standard'] ? null : $d['date'],
+                        'Delivery Status' => $d['status'],
+                        'ATL' => $d['atl'],
+                        'DR Number' => $d['dr'],
+                        'Source' => $c[13],
+                    ] as $label => $value)
+                        @continue($value === null)
+                        <div class="detail-row">
+                            <div class="detail-label">{{ $label }}</div>
+                            <div class="detail-value">{{ $value }}</div>
+                        </div>
+                    @endforeach
+                </div>
+            </div>
+            <x-slot:footer>
+                @if ($row['editable'])
+                    <button class="btn btn-pill btn-secondary" type="submit" form="stock-out-update-{{ $row['id'] }}">Save Changes</button>
+                @endif
+                <button class="btn btn-pill btn-danger" type="button" data-modal-close>Close</button>
             </x-slot:footer>
         </x-admin.modal>
     @endforeach

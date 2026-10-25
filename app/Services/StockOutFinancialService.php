@@ -84,6 +84,12 @@ class StockOutFinancialService
                 DB::raw("CASE WHEN stock_outs.portion = 'f1' AND sale_items.f1_unit_price > 0 THEN sale_items.f1_unit_price ELSE sale_items.unit_price END as unit_price"),
                 'stock_outs.portion',
                 'sales.delivery_type',
+                // Edit Stock-Out Record: the sale it belongs to and the order's own delivery details (Standard).
+                'sales.id as sale_id',
+                'stock_outs.haul_allocation_id',
+                'sales.delivery_truck_id',
+                'sales.delivery_driver_user_id',
+                'sales.delivery_date as sale_delivery_date',
                 'sales.delivery_status',
                 'release_purchase.purchase_code as release_purchase_code',
                 'delivery_truck.truck_code as delivery_truck_code',

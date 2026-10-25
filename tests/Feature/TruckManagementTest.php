@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Services\TruckAvailabilityService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -64,6 +65,35 @@ class TruckManagementTest extends TestCase
             'truck_type' => 'hauling',
             'status' => 'available',
         ])->assertSessionHasErrors('plate_number');
+    }
+
+    public function test_trucks_have_no_type_and_any_truck_can_be_assigned(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin', 'status' => 'active']);
+
+        // Part 11: no Type column, field or filter.
+        $page = $this->actingAs($admin)->get(route('admin.fuel-lifting.trucks'))->assertOk()->getContent();
+        $this->assertStringNotContainsString('<th>Type</th>', $page);
+        $this->assertStringNotContainsString('name="truck_type"', $page);
+
+        // A truck is added without a type (the column is now nullable).
+        $this->actingAs($admin)->post(route('admin.trucks.store'), [
+            'plate_number' => 'NOT-0001', 'name' => 'Any Use Truck', 'capacity_liters' => 30000, 'status' => 'available',
+        ])->assertSessionHasNoErrors()->assertRedirect(route('admin.fuel-lifting.trucks'));
+        $added = DB::table('trucks')->where('plate_number', 'NOT-0001')->first();
+        $this->assertNull($added->truck_type);
+
+        // Editing a truck that had a type leaves the stored value alone.
+        $old = DB::table('trucks')->insertGetId(['truck_code' => 'TRK-900', 'plate_number' => 'OLD-0001', 'name' => 'Old Delivery Truck', 'capacity_liters' => 24000, 'truck_type' => 'delivery', 'status' => 'available', 'created_at' => now(), 'updated_at' => now()]);
+        $this->actingAs($admin)->patch(route('admin.trucks.update', $old), [
+            'plate_number' => 'OLD-0001', 'name' => 'Old Delivery Truck', 'capacity_liters' => 26000, 'status' => 'available',
+        ])->assertSessionHasNoErrors();
+        $this->assertSame(['delivery', 26000.0], [DB::table('trucks')->where('id', $old)->value('truck_type'), (float) DB::table('trucks')->where('id', $old)->value('capacity_liters')]);
+
+        // Every available truck can be assigned to a lift, whatever type it had.
+        $assignable = app(TruckAvailabilityService::class)->assignableTrucks()->pluck('id')->all();
+        $this->assertContains((int) $added->id, $assignable);
+        $this->assertContains($old, $assignable);
     }
 
     public function test_truck_module_rbac_and_activate_deactivate_workflow(): void

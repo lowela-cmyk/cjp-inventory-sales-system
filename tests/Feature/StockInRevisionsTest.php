@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use App\Services\DashboardService;
+use App\Services\StockInService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -150,7 +151,7 @@ class StockInRevisionsTest extends AuditTestCase
         $this->assertMatchesRegularExpression('/<select name="date"[^>]*>.*<option value="2026-10-14"[^>]*>10\/14\/2026<\/option>/s', $panel);
 
         // The table: the agreed columns, no tank or garage fields, no manual Stock-In.
-        foreach (['Purchase ID', 'Date', 'Fuel Type', 'Depot', 'Qty Purchased (L)', 'Cost / Liter', 'Total Cost', 'Stock Out (L)', 'Remaining (L)', 'Status', 'Actions'] as $column) {
+        foreach (['Purchase-ID', 'Order Date', 'Fuel', 'Depot', 'QTY Ordered (L)', 'Cost / Liter', 'Total Cost', 'Current QTY', 'Sold QTY', 'Status', 'Actions'] as $column) {
             $this->assertStringContainsString('<th>'.$column.'</th>', str_replace(' class="inventory-status-column"', '', $panel));
         }
         foreach (['Garage', 'Tank', 'Record Stock-In', 'Add Stock In', 'Pipeline'] as $retired) {
@@ -186,6 +187,92 @@ class StockInRevisionsTest extends AuditTestCase
         // Still at the depot: 40,000 - 3,600 - 5,000 = 31,400 L on both screens (the card used to say 40,000 L).
         $this->assertSame(31400.0, app(DashboardService::class)->inventory()['totals']['remaining_liters']);
         $this->assertSame('31,400 L', $this->cards($a['inventory'])['Unlifted Fuel']);
+    }
+
+    public function test_edit_stock_in_record_updates_its_purchase_under_the_purchase_rules(): void
+    {
+        $a = $this->actors();
+        $premium = $this->purchaseLine($a, 'PREM', 20000, 55);
+        // Purchases recorded before Payment Mode existed have none; editing the stock-in must not require one.
+        $purchaseId = (int) DB::table('purchase_items')->where('id', $premium)->value('purchase_id');
+        DB::table('purchases')->where('id', $purchaseId)->update(['payment_mode' => null, 'payment_status' => 'paid']);
+        $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 6000, 'unit_price' => 65])->assertSessionHasNoErrors();
+        $stockInId = (int) DB::table('stock_ins')->where('purchase_item_id', $premium)->value('id');
+
+        $html = $this->actingAs($a['inventory'])->get(route('inventory-officer.inventory.stock-in'))->assertOk()->getContent();
+        $this->assertStringContainsString('data-modal-open="io-stock-in-edit-'.$stockInId.'">Edit</button>', $html);
+        $this->assertStringContainsString('Edit Stock-In Record', $html);
+
+        $edit = fn (array $changes) => $this->actingAs($a['inventory'])->from(route('inventory-officer.inventory.stock-in'))
+            ->patch(route('inventory-officer.inventory.stock-in.update', $premium), $changes + [
+                'edit_stock_in_id' => $stockInId, 'purchase_date' => '2026-10-14', 'depot_id' => $a['depot'],
+                'fuel_type_id' => $this->fuel('PREM'), 'quantity_ordered_liters' => 20000, 'unit_cost' => 55,
+            ]);
+
+        // Not below the 6,000 L Sold QTY; fuel fixed once sold.
+        $edit(['quantity_ordered_liters' => 5999])->assertSessionHasErrors('quantity_ordered_liters');
+        $edit(['fuel_type_id' => $this->fuel('DSL')])->assertSessionHasErrors('fuel_type_id');
+
+        $edit(['quantity_ordered_liters' => 25000, 'unit_cost' => 54, 'purchase_date' => '2026-10-13'])
+            ->assertSessionHasNoErrors()->assertRedirect(route('inventory-officer.inventory.stock-in'));
+        $row = $this->stockInRow($a['inventory'], (string) DB::table('purchases')->where('id', $purchaseId)->value('purchase_code'));
+        $this->assertSame(['10/13/2026', '25,000.00', '54.00', '1,350,000.00', '19,000.00', '6,000.00'], [$row['date'], $row['purchased'], $row['unit_cost'], $row['total_cost'], $row['remaining'], $row['stock_out']]);
+        // The purchase changed with it; its payment details stayed as they were.
+        $purchase = DB::table('purchases')->where('id', $purchaseId)->first();
+        $this->assertSame([null, 'paid', '2026-10-13'], [$purchase->payment_mode, $purchase->payment_status, substr((string) $purchase->purchase_date, 0, 10)]);
+        $this->assertSame(25000.0, (float) DB::table('purchase_items')->where('id', $premium)->value('quantity_ordered_liters'));
+
+        // A cancelled stock-in can't be edited.
+        $unleaded = $this->purchaseLine($a, 'UNL', 3000);
+        $this->actingAs($a['inventory'])->patch(route('inventory-officer.inventory.purchases.cancel', $unleaded))->assertSessionHasNoErrors();
+        $this->actingAs($a['inventory'])->from(route('inventory-officer.inventory.stock-in'))
+            ->patch(route('inventory-officer.inventory.stock-in.update', $unleaded), [
+                'purchase_date' => '2026-10-14', 'depot_id' => $a['depot'], 'fuel_type_id' => $this->fuel('UNL'), 'quantity_ordered_liters' => 3000, 'unit_cost' => 50,
+            ])->assertSessionHasErrors('stock_in');
+    }
+
+    public function test_edit_stock_out_record_corrects_the_release_and_its_order_delivery_details(): void
+    {
+        $a = $this->actors();
+        $premium = $this->purchaseLine($a, 'PREM', 20000, 55);
+        $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 1000, 'unit_price' => 65], ['delivery_status' => 'delivered', 'sales_order_number' => 'SO-EDIT'])->assertSessionHasNoErrors();
+        $standard = DB::table('stock_outs')->orderByDesc('id')->first();
+
+        $html = $this->actingAs($a['inventory'])->get(route('inventory-officer.inventory.stock-out'))->assertOk()->getContent();
+        $this->assertStringContainsString('data-modal-open="io-stock-out-edit-'.$standard->id.'">Edit</button>', $html);
+        $this->assertStringContainsString('Edit Stock-Out Record', $html);
+
+        $edit = fn (int $id, array $data) => $this->actingAs($a['inventory'])->from(route('inventory-officer.inventory.stock-out'))
+            ->patch(route('inventory-officer.inventory.stock-out.update', $id), $data + ['edit_stock_out_id' => $id]);
+
+        // Not in the future.
+        $edit($standard->id, ['stock_out_at' => '2026-10-20 09:00', 'unit_cost' => 54])->assertSessionHasErrors('stock_out_at');
+
+        // Date and Cost / Unit on the release; truck, driver and date on the Standard order.
+        $edit($standard->id, ['stock_out_at' => '2026-10-13 15:30', 'unit_cost' => 54, 'delivery_truck_id' => $a['truck'], 'delivery_driver_user_id' => $a['driver']->id, 'delivery_date' => '2026-10-13 14:00'])
+            ->assertSessionHasNoErrors()->assertRedirect(route('inventory-officer.inventory.stock-out'));
+        $row = collect($this->viewData($a['inventory'], 'inventory-officer.inventory.stock-out', 'stockOut')->items())->firstWhere('id', (int) $standard->id);
+        // 1,000 L at 54 = 54,000; 65,000 billed and nothing paid yet.
+        $this->assertSame(['10/13/2026 03:30 PM', '54.00', '54,000.00', '11,000.00', '-54,000.00'], [$row['cells'][1], $row['cells'][8], $row['cells'][9], $row['cells'][15], $row['cells'][16]]);
+        $this->assertSame($a['driver']->name, $row['delivery']['driver']);
+        $this->assertStringStartsWith((string) DB::table('trucks')->where('id', $a['truck'])->value('truck_code'), $row['delivery']['truck']);
+        // Quantity, purchase and the stock-in are untouched.
+        $this->assertSame([1000.0, $premium], [(float) DB::table('stock_outs')->where('id', $standard->id)->value('quantity_liters'), (int) DB::table('stock_outs')->where('id', $standard->id)->value('purchase_item_id')]);
+        $this->assertSame(19000.0, app(StockInService::class)->records()->firstWhere('purchase_item_id', $premium)->remaining);
+
+        // A Depot to Client release: its delivery details come from the lift, so only date and cost change here.
+        $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 2000, 'unit_price' => 65], ['delivery_type' => 'depot_to_client'])->assertSessionHasNoErrors();
+        $sale = $this->lastSaleId();
+        $this->scheduleLift($a, [['purchase_item_id' => $premium, 'quantity_liters' => 2000]], [$sale])->assertSessionHasNoErrors();
+        $this->completeLift($a, $this->lastHaulId());
+        $lifted = DB::table('stock_outs')->where('sale_id', $sale)->first();
+        $edit($lifted->id, ['stock_out_at' => '2026-10-14 08:00', 'unit_cost' => 55, 'delivery_truck_id' => $a['truck'], 'delivery_driver_user_id' => $a['driver']->id])->assertSessionHasNoErrors();
+        $this->assertNull(DB::table('sales')->where('id', $sale)->value('delivery_truck_id'));
+
+        // A cancelled stock-out can't be edited.
+        DB::table('stock_outs')->where('id', $lifted->id)->update(['status' => 'cancelled']);
+        $edit($lifted->id, ['stock_out_at' => '2026-10-14 08:00', 'unit_cost' => 50])->assertSessionHasErrors('stock_out');
+        $this->assertSame(55.0, (float) DB::table('stock_outs')->where('id', $lifted->id)->value('unit_cost'));
     }
 
     public function test_purchases_written_outside_purchases_get_their_stock_in(): void

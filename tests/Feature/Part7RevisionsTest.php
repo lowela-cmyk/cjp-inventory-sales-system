@@ -2,9 +2,8 @@
 
 namespace Tests\Feature;
 
-use App\Services\LiftAllocationService;
+use App\Models\User;
 use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Tests\Feature\Audit\AuditTestCase;
@@ -63,9 +62,12 @@ class Part7RevisionsTest extends AuditTestCase
         $url = route('withdrawal-receipts.show', $haulId);
         $this->actingAs($a['inventory'])->get($url)->assertOk()->assertHeader('Content-Type', 'image/png');
         $this->actingAs($a['admin'])->get($url)->assertOk();
-        foreach (['sales', 'dispatch', 'driver'] as $role) {
+        foreach (['sales', 'dispatch'] as $role) {
             $this->actingAs($a[$role])->get($url)->assertForbidden();
         }
+        // Part 11: the driver who uploaded it may view it; any other driver gets nothing.
+        $this->actingAs($a['driver'])->get($url)->assertOk();
+        $this->actingAs(User::factory()->create(['role' => 'driver', 'status' => 'active']))->get($url)->assertNotFound();
         auth()->logout();
         $this->get($url)->assertRedirect(route('login'));
         // Stored on the private disk under a random name, never under public/.

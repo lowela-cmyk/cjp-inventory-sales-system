@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Services\StockInService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -263,14 +264,25 @@ class SystemAnalysisRevisionsTest extends TestCase
             ->assertSee('name="fuel_type_id"', false);
         $this->assertSame(1, substr_count($page->getContent(), 'data-modal-open="io-depot-add"'));
 
-        $this->actingAs($admin)->get(route('admin.inventory', ['depot_id' => $otherDepot]))
-            ->assertOk()->assertSee('PUR-SA-NORTH')->assertDontSee('PUR-SA-SOUTH');
-        $this->actingAs($admin)->get(route('admin.inventory', ['date' => '2026-09-10', 'search' => 'PUR-SA']))
-            ->assertOk()->assertSee('PUR-SA-SOUTH')->assertDontSee('PUR-SA-NORTH');
-        $this->actingAs($admin)->get(route('admin.inventory', ['status' => 'pending', 'fuel_type_id' => $records['fuel'], 'depot_id' => $records['depot']]))
-            ->assertOk()->assertSee('PUR-SA-SOUTH')->assertDontSee('PUR-SA-NORTH');
-        $this->actingAs($admin)->get(route('admin.inventory', ['status' => 'completed']))
-            ->assertOk()->assertDontSee('PUR-SA-SOUTH')->assertDontSee('PUR-SA-NORTH');
+        // Filters narrow the table of the tab that applied them (the other tabs render hidden and unfiltered).
+        $panel = fn (string $route, array $query, string $tab): string => $this->tabPanel($this->actingAs($admin)->get(route($route, $query))->assertOk()->getContent(), $tab);
+        $shows = function (string $html, array $seen, array $hidden): void {
+            foreach ($seen as $code) {
+                $this->assertStringContainsString($code, $html);
+            }
+            foreach ($hidden as $code) {
+                $this->assertStringNotContainsString($code, $html);
+            }
+        };
+        $shows($panel('admin.inventory', ['depot_id' => $otherDepot], 'purchases'), ['PUR-SA-NORTH'], ['PUR-SA-SOUTH']);
+        $shows($panel('admin.inventory', ['date' => '2026-09-10', 'search' => 'PUR-SA'], 'purchases'), ['PUR-SA-SOUTH'], ['PUR-SA-NORTH']);
+        $shows($panel('admin.inventory', ['status' => 'pending', 'fuel_type_id' => $records['fuel'], 'depot_id' => $records['depot']], 'purchases'), ['PUR-SA-SOUTH'], ['PUR-SA-NORTH']);
+        $shows($panel('admin.inventory', ['status' => 'completed'], 'purchases'), [], ['PUR-SA-SOUTH', 'PUR-SA-NORTH']);
+        // Stock-In: Depot, Date (a dropdown of stock-in dates) and Status.
+        $shows($panel('admin.inventory.stock-in', ['depot_id' => $otherDepot], 'stock-in'), ['PUR-SA-NORTH'], ['PUR-SA-SOUTH']);
+        $shows($panel('admin.inventory.stock-in', ['date' => '2026-09-10', 'search' => 'PUR-SA'], 'stock-in'), ['PUR-SA-SOUTH'], ['PUR-SA-NORTH']);
+        $shows($panel('admin.inventory.stock-in', ['status' => 'available', 'search' => 'PUR-SA'], 'stock-in'), ['PUR-SA-SOUTH', 'PUR-SA-NORTH'], []);
+        $shows($panel('admin.inventory.stock-in', ['status' => 'depleted', 'search' => 'PUR-SA'], 'stock-in'), [], ['PUR-SA-SOUTH', 'PUR-SA-NORTH']);
 
         $this->actingAs($admin)->get(route('admin.inventory.depots', ['status' => 'inactive']))
             ->assertOk()->assertViewHas('depotRows', fn ($rows): bool => $rows->count() === 0);
@@ -316,11 +328,15 @@ class SystemAnalysisRevisionsTest extends TestCase
             'created_at' => now(), 'updated_at' => now(),
         ]);
 
-        return DB::table('purchase_items')->insertGetId([
+        $itemId = DB::table('purchase_items')->insertGetId([
             'purchase_id' => $purchase, 'fuel_type_id' => $records['fuel'], 'quantity_ordered_liters' => $quantity,
             'unit_cost' => 50, 'line_total' => $quantity * 50, 'quantity_hauled_liters' => 0, 'status' => 'unlifted',
             'created_at' => now(), 'updated_at' => now(),
         ]);
+        // Recorded through Purchases, a purchase is stocked in at once.
+        app(StockInService::class)->sync($itemId);
+
+        return $itemId;
     }
 
     /**

@@ -59,6 +59,46 @@ class PurchaseReceiptUploadTest extends TestCase
             ->assertSee('Replace Withdrawal Receipt');
     }
 
+    public function test_the_schedule_modal_uploads_in_the_background_and_the_driver_can_view_their_receipt(): void
+    {
+        Storage::fake('local');
+        $records = $this->baseHaulRecords();
+
+        // Part 11: the modal posts with Accept: application/json and updates itself from the answer.
+        $response = $this->actingAs($records['driver'])
+            ->postJson(route('driver.fuel-lifting.hauls.withdrawal-receipt.store', $records['haulId']), [
+                'withdrawal_receipt' => $this->tinyImage('withdrawal.png'),
+                'withdrawal_notes' => 'Depot copy.',
+            ])
+            ->assertOk()
+            ->assertJsonPath('message', 'Withdrawal receipt uploaded successfully.')
+            ->assertJsonPath('notes', 'Depot copy.');
+        $this->assertStringStartsWith(route('withdrawal-receipts.show', $records['haulId']).'?v=', $response->json('url'));
+        $this->assertMatchesRegularExpression('/^[A-Z][a-z]{2} \d{2}, \d{4} \d{2}:\d{2} [AP]M$/', $response->json('uploaded_at'));
+
+        // Stored privately; the lift's driver can open it, another driver cannot.
+        $path = DB::table('hauls')->where('id', $records['haulId'])->value('withdrawal_receipt_path');
+        Storage::disk('local')->assertExists($path);
+        $this->actingAs($records['driver'])->get(route('withdrawal-receipts.show', $records['haulId']))->assertOk();
+        $other = User::factory()->create(['role' => 'driver', 'status' => 'active']);
+        $this->actingAs($other)->get(route('withdrawal-receipts.show', $records['haulId']))->assertNotFound();
+
+        // The page renders the uploaded image with a full-size link.
+        $this->actingAs($records['driver'])->get(route('driver.fuel-lifting.hauled'))->assertOk()
+            ->assertSee('data-withdrawal-upload="'.$records['haulId'].'"', false)
+            ->assertSee('src="'.route('withdrawal-receipts.show', $records['haulId']).'?v=', false);
+
+        // Errors come back as JSON for the modal to show.
+        $this->actingAs($records['driver'])
+            ->postJson(route('driver.fuel-lifting.hauls.withdrawal-receipt.store', $records['haulId']), [
+                'withdrawal_receipt' => UploadedFile::fake()->create('receipt.pdf', 10, 'application/pdf'),
+            ])
+            ->assertStatus(422)->assertJsonValidationErrors('withdrawal_receipt');
+        $this->actingAs($other)
+            ->postJson(route('driver.fuel-lifting.hauls.withdrawal-receipt.store', $records['haulId']), ['withdrawal_receipt' => $this->tinyImage('x.png')])
+            ->assertStatus(422)->assertJsonPath('errors.withdrawal_receipt.0', 'The selected lifting task is not assigned to your driver account or is not ready for receipt upload.');
+    }
+
     public function test_driver_upload_validates_image_type_size_ownership_and_lift_status(): void
     {
         Storage::fake('local');

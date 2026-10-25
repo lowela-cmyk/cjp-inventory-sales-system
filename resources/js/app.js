@@ -210,6 +210,15 @@ document.addEventListener('change', (event) => {
     if (event.target.matches('[data-delivery-type]')) syncDeliveryType(event.target);
 
     if (event.target.closest('[data-sales-item]')) {
+        if (event.target.matches('[data-sale-f1-purchase]')) {
+            const row = event.target.closest('[data-sales-item]');
+            const price = row?.querySelector('[data-sale-f1-price]');
+            const selected = event.target.selectedOptions[0];
+            // Seed the editable F1 price from the purchase cost once; subsequent edits remain user-controlled.
+            if (price && !price.value && selected?.dataset.unitPrice) {
+                price.value = selected.dataset.unitPrice;
+            }
+        }
         updateSalesTotals(event.target.closest('[data-sales-items]'));
     }
 
@@ -328,11 +337,13 @@ function syncSaleItemRow(row) {
 
     set('[data-f1-ordered]', format(quantity));
     set('[data-f1-percent]', `${percent}%`);
-    set('[data-f1-main-label]', `${fuelName} Amount`);
-    set('[data-f1-main]', format(main));
-    set('[data-f1-amount]', format(f1));
-    set('[data-f1-total]', format(main + f1));
-    set('[data-main-total-label]', `${fuelName} Total`);
+    // The breakdown is monetary: quantities are already shown by Ordered Amount and the F1 (L) / Fuel (L) fields.
+    // Keep the labels stable even when the primary fuel itself is F1; otherwise the bar showed “F1 Amount” twice.
+    set('[data-f1-main-label]', 'Fuel Amount');
+    set('[data-f1-main]', format(mainTotal));
+    set('[data-f1-amount]', format(f1Total));
+    set('[data-f1-total]', format(lineTotal));
+    set('[data-main-total-label]', 'Fuel Total');
     set('[data-sales-main-total]', format(mainTotal));
     set('[data-sales-f1-total]', format(f1Total));
     set('[data-sales-line-total]', format(lineTotal));
@@ -641,3 +652,117 @@ document.addEventListener('wheel', (event) => {
     event.preventDefault();
     wrap.scrollLeft += event.deltaY;
 }, { passive: false });
+
+// Part 11: Withdrawal receipt upload (driver Schedule modal). Picking an image previews it; Upload sends it in the
+// background, shows progress and the result, then updates the modal and the table in place (no page refresh).
+// Without JavaScript the form still posts normally.
+const WITHDRAWAL_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const WITHDRAWAL_MAX_BYTES = 5 * 1024 * 1024;
+
+document.querySelectorAll('[data-withdrawal-upload]').forEach((form) => {
+    const input = form.querySelector('input[type="file"]');
+    const button = form.querySelector('[data-upload-button]');
+    const preview = form.querySelector('[data-withdrawal-preview]');
+    const previewImage = form.querySelector('[data-preview-image]');
+    const previewName = form.querySelector('[data-preview-name]');
+    const message = form.querySelector('[data-upload-message]');
+    const modal = form.closest('.modal-backdrop');
+    let previewUrl = null;
+
+    const say = (text, type) => {
+        message.textContent = text;
+        message.className = `withdrawal-upload-message is-${type}`;
+        message.hidden = false;
+    };
+
+    input?.addEventListener('change', () => {
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
+        message.hidden = true;
+        const file = input.files?.[0];
+        if (! file) {
+            preview.hidden = true;
+            return;
+        }
+        if (! WITHDRAWAL_TYPES.includes(file.type)) {
+            say('Choose a JPG, PNG or WEBP image.', 'error');
+            input.value = '';
+            preview.hidden = true;
+            return;
+        }
+        if (file.size > WITHDRAWAL_MAX_BYTES) {
+            say('The image is larger than 5 MB. Choose a smaller one.', 'error');
+            input.value = '';
+            preview.hidden = true;
+            return;
+        }
+        previewUrl = URL.createObjectURL(file);
+        previewImage.src = previewUrl;
+        previewImage.alt = `Selected receipt ${file.name}`;
+        previewName.textContent = `Selected: ${file.name} (${Math.max(1, Math.round(file.size / 1024))} KB)`;
+        preview.hidden = false;
+    });
+
+    form.addEventListener('submit', async (event) => {
+        if (! window.fetch || ! window.FormData) return;
+        event.preventDefault();
+        if (! input?.files?.length) {
+            say('Choose the receipt image first.', 'error');
+            return;
+        }
+
+        const label = button.textContent;
+        button.disabled = true;
+        button.textContent = 'Uploading…';
+        message.hidden = true;
+
+        try {
+            const response = await fetch(form.action, {
+                method: 'POST',
+                body: new FormData(form),
+                headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                credentials: 'same-origin',
+            });
+            const data = await response.json().catch(() => ({}));
+            if (! response.ok) {
+                const first = data.errors ? Object.values(data.errors)[0]?.[0] : null;
+                throw new Error(first || data.message || 'The receipt could not be uploaded. Try again.');
+            }
+
+            // The modal and the table now show the upload.
+            const card = modal?.querySelector('[data-withdrawal-card]');
+            card?.classList.add('is-uploaded');
+            const set = (selector, text) => { const el = modal?.querySelector(selector); if (el) { el.textContent = text; el.hidden = false; } };
+            set('[data-withdrawal-title]', 'Withdrawal receipt: Uploaded');
+            set('[data-withdrawal-uploaded-at]', `Uploaded ${data.uploaded_at}`);
+            const notes = modal?.querySelector('[data-withdrawal-notes]');
+            if (notes) {
+                notes.textContent = data.notes ? `Notes: ${data.notes}` : '';
+                notes.hidden = ! data.notes;
+            }
+            set('[data-detail="withdrawal-receipt"]', 'Uploaded');
+            set('[data-detail="withdrawal-uploaded-at"]', data.uploaded_at);
+            set('[data-detail="withdrawal-notes"]', data.notes || 'N/A');
+            const link = modal?.querySelector('[data-withdrawal-link]');
+            if (link) {
+                link.href = data.url;
+                link.querySelector('[data-withdrawal-image]').src = data.url;
+                link.hidden = false;
+            }
+            document.querySelectorAll(`[data-receipt-status="${form.dataset.withdrawalUpload}"]`).forEach((cell) => {
+                cell.textContent = 'Uploaded';
+                cell.classList.add('is-uploaded');
+            });
+
+            form.reset();
+            preview.hidden = true;
+            form.querySelector('[data-file-label]').textContent = 'Choose replacement image';
+            button.dataset.done = 'Replace Receipt';
+            say(data.message || 'Withdrawal receipt uploaded successfully.', 'success');
+        } catch (error) {
+            say(error.message, 'error');
+        } finally {
+            button.disabled = false;
+            button.textContent = button.dataset.done || label;
+        }
+    });
+});

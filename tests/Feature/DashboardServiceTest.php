@@ -38,9 +38,10 @@ class DashboardServiceTest extends TestCase
         $inventory = $this->dashboard()->inventory();
         $totals = $inventory['totals'];
 
-        // Stock = purchase remaining: P1 20,000 - 2,000 (S_A) + P3 5,000 = 23,000 Premium; P2 10,000 - 4,000 (S_C) = 6,000 Diesel.
-        $this->assertSame(29000.0, $totals['stock_liters']);
-        $this->assertSame(['Premium' => 23000.0, 'Unleaded' => 0.0, 'Diesel' => 6000.0, 'F1' => 0.0], $totals['stock_by_fuel']);
+        // Stock = stock-in remaining: P1 20,000 - 2,000 (S_A) + P3 5,000 = 23,000 Premium; P2 10,000 - 4,000 (S_C) - 1,500
+        // promised to the undelivered S_B (a sale deducts when it is saved) = 4,500 Diesel.
+        $this->assertSame(27500.0, $totals['stock_liters']);
+        $this->assertSame(['Premium' => 23000.0, 'Unleaded' => 0.0, 'Diesel' => 4500.0, 'F1' => 0.0], $totals['stock_by_fuel']);
         // P1, P2, P3 (P4 is cancelled).
         $this->assertSame(3, $totals['purchases']);
         // Still at the depots: P1 20,000 - 12,000 lifted (its scheduled 3,000 is not lifted yet) - 2,000 delivered straight
@@ -48,7 +49,7 @@ class DashboardServiceTest extends TestCase
         $this->assertSame(11000.0, $totals['remaining_liters']);
         // Schedules S1, S2, S3; S4 is cancelled.
         $this->assertSame(3, $totals['lifts']);
-        // Promised to the undelivered order S_B: 1,500 L / 29,000 L = 5.17%.
+        // Promised to the undelivered order S_B: 1,500 L / 29,000 L on hand (not delivered yet) = 5.17%.
         $this->assertSame(1500.0, $totals['pending_order_liters']);
         $this->assertSame(5.17, $totals['stock_out_rate']);
         $this->assertSame(['unlifted' => 1, 'partial' => 1, 'lifted' => 1], $totals['lift_status']);
@@ -58,7 +59,7 @@ class DashboardServiceTest extends TestCase
         $this->assertSame(68.57, $totals['completed_percent']);
 
         $this->assertSame([
-            ['Total Inventory in Stock', '29.00 KL'],
+            ['Total Inventory in Stock', '27.50 KL'],
             ['Total Purchases', '3'],
             ['Fuel Type', 'ALL'],
             ['Depot', 'ALL'],
@@ -93,21 +94,21 @@ class DashboardServiceTest extends TestCase
         $d1 = $this->dashboard()->inventory(['depot_id' => $ids['d1']]);
         $this->assertSame(2, $d1['totals']['purchases']);
         $this->assertSame(6000.0, $d1['totals']['remaining_liters']);
-        $this->assertSame(24000.0, $d1['totals']['stock_liters']);
+        $this->assertSame(22500.0, $d1['totals']['stock_liters']);
         $this->assertSame(1500.0, $d1['totals']['pending_order_liters']);
-        $this->assertSame(['Total Inventory in Stock', '24.00 KL'], $d1['cards'][0]);
+        $this->assertSame(['Total Inventory in Stock', '22.50 KL'], $d1['cards'][0]);
 
         // Fuel Diesel: P2 only, fully lifted; 1,500 / 6,000 = 25%.
         $diesel = $this->dashboard()->inventory(['fuel_type_id' => $ids['fuel']['DSL']]);
         $this->assertSame(1, $diesel['totals']['purchases']);
         $this->assertSame(0.0, $diesel['totals']['remaining_liters']);
         $this->assertSame(1, $diesel['totals']['lifts']);
-        $this->assertSame(6000.0, $diesel['totals']['stock_liters']);
+        $this->assertSame(4500.0, $diesel['totals']['stock_liters']);
         $this->assertSame(25.0, $diesel['totals']['stock_out_rate']);
         $this->assertSame(100.0, $diesel['totals']['completed_percent']);
         $this->assertSame(['Diesel'], $diesel['stockChart']['labels']);
         $this->assertSame('Diesel', $diesel['cards'][2][1]);
-        $this->assertSame([['Total Inventory in Stock', '6.00 KL'], ['Total Purchases', '1']], array_slice($diesel['cards'], 0, 2));
+        $this->assertSame([['Total Inventory in Stock', '4.50 KL'], ['Total Purchases', '1']], array_slice($diesel['cards'], 0, 2));
 
         // Purchase ID search.
         $p3 = $this->dashboard()->inventory(['search' => 'DASH-003']);
@@ -309,7 +310,7 @@ class DashboardServiceTest extends TestCase
         $admin = $this->admin();
 
         $this->actingAs($admin)->get(route('admin.dashboard'))->assertOk()
-            ->assertSeeInOrder(['Total Inventory in Stock', '29.00 KL', 'Total Purchases', '3', 'Remaining Balance in Depots', '11.00 KL'])
+            ->assertSeeInOrder(['Total Inventory in Stock', '27.50 KL', 'Total Purchases', '3', 'Remaining Balance in Depots', '11.00 KL'])
             ->assertSee('Expected Stock Out Rate:')
             ->assertSee('5.17%')
             ->assertSee('PHP 50,000.00')
@@ -350,7 +351,7 @@ class DashboardServiceTest extends TestCase
         Http::assertNothingSent();
 
         $text = session('dashboardInsight.text');
-        $this->assertStringContainsString('Inventory: 29.00 KL in stock (Premium 23.00 KL, Unleaded 0.00 KL, Diesel 6.00 KL, F1 0.00 KL).', $text);
+        $this->assertStringContainsString('Inventory: 27.50 KL in stock (Premium 23.00 KL, Unleaded 0.00 KL, Diesel 4.50 KL, F1 0.00 KL).', $text);
         $this->assertStringContainsString('Missing PHP 50,000.00 (Inventory Variance Rate 11.63%). Check delivered sales whose released liters are less than billed.', $text);
         $this->assertStringContainsString('Gross margin PHP 100,000.00 on 6.00 KL delivered.', $text);
 
@@ -380,7 +381,7 @@ class DashboardServiceTest extends TestCase
             $payload = json_decode(substr($prompt, strpos($prompt, '{')), true);
             $this->assertSame('applied', $payload['filters']['sales']['customer_filter']);
             $this->assertEquals(50000, $payload['stock_out_vs_receivables_delivered_sales']['missing']);
-            $this->assertEquals(29000, $payload['current_inventory']['stock_liters']);
+            $this->assertEquals(27500, $payload['current_inventory']['stock_liters']);
 
             return true;
         });
@@ -398,7 +399,7 @@ class DashboardServiceTest extends TestCase
         $this->actingAs($this->admin())->post(route('admin.dashboard.insight'))
             ->assertSessionHas('dashboardInsight.source', 'rules');
         $this->assertStringStartsWith('The AI provider could not be used (', session('dashboardInsight.note'));
-        $this->assertStringContainsString('Inventory: 29.00 KL in stock', session('dashboardInsight.text'));
+        $this->assertStringContainsString('Inventory: 27.50 KL in stock', session('dashboardInsight.text'));
     }
 
     public function test_no_data_skips_the_ai_call_and_other_roles_cannot_generate_insights(): void
@@ -464,7 +465,6 @@ class DashboardServiceTest extends TestCase
         $haul('LFT-S3', $p1, 3000, 'scheduled');
         $haul('LFT-S4', $p3, 5000, 'cancelled');
 
-
         $sA = $this->sale('SLS-DASH-A', $alpha, '2026-10-05', 'paid', 'delivered', [[$fuel['PREM'], 2000, 70, $p1, 2000]]);
         $sB = $this->sale('SLS-DASH-B', $bravo, '2026-10-10', 'confirmed', 'pending', [[$fuel['DSL'], 1500, 65, $p2]]);
         $sC = $this->sale('SLS-DASH-C', $bravo, '2026-09-15', 'unpaid', 'delivered', [[$fuel['DSL'], 4000, 60, $p2, 4000]], 'depot_to_client');
@@ -481,6 +481,9 @@ class DashboardServiceTest extends TestCase
         // S_C: 4,000 L released straight from the depot by lift H2.
         $direct = DB::table('haul_allocations')->insertGetId(['haul_id' => $h2, 'fuel_type_id' => $fuel['DSL'], 'destination_type' => 'customer', 'customer_id' => $bravo, 'sale_id' => $sC, 'quantity_liters' => 4000, 'status' => 'delivered', 'receive_on_completion' => true, 'created_at' => $now, 'updated_at' => $now]);
         DB::table('stock_outs')->insert(['stock_out_code' => 'SO-C', 'sale_id' => $sC, 'sale_item_id' => (int) DB::table('sale_items')->where('sale_id', $sC)->value('id'), 'customer_id' => $bravo, 'fuel_type_id' => $fuel['DSL'], 'depot_id' => $d1, 'haul_allocation_id' => $direct, 'purchase_item_id' => $p2, 'portion' => 'main', 'source_type' => 'depot', 'quantity_liters' => 4000, 'unit_cost' => 45, 'stock_out_at' => '2026-09-16 08:00:00', 'status' => 'released', 'created_at' => $now, 'updated_at' => $now]);
+
+        // Purchases written straight to the tables get their stock-in as after an import.
+        $this->artisan('stock-in:sync')->assertSuccessful();
 
         return compact('fuel', 'd1', 'd2', 'alpha', 'bravo');
     }

@@ -46,7 +46,10 @@ class DashboardService
     /** @var Collection<string, object>|null */
     private ?Collection $fuels = null;
 
-    public function __construct(private readonly PurchaseStockService $purchaseStock) {}
+    public function __construct(
+        private readonly PurchaseStockService $purchaseStock,
+        private readonly StockInService $stockIns
+    ) {}
 
     /**
      * @param  array<string, mixed>  $inventoryFilters  search, fuel_type_id, depot_id
@@ -79,6 +82,7 @@ class DashboardService
      * - Fuel Lifting Status: purchase lines Unlifted (0 lifted), Partially Lifted, Lifted (lifted >= ordered).
      * - Purchased vs Stock In: Completed = liters that left the depot (lifted or delivered directly); Uncompleted =
      *   liters still at the depot.
+     * - Stock levels: the Remaining of the active stock-ins per fuel (as the Stock-In tab).
      *
      * @param  array<string, mixed>  $filters
      * @return array<string, mixed>
@@ -100,8 +104,13 @@ class DashboardService
             ->selectRaw("COALESCE(SUM(CASE WHEN lift_status = 'lifted' THEN 1 ELSE 0 END), 0) as lifted")
             ->first();
 
-        $lines = $this->purchaseStock->lines($this->matchingPurchaseLines($filters)->pluck('purchase_items.id')->map(fn (mixed $id): int => (int) $id)->all());
-        $stockByFuel = $lines->groupBy('fuel_type_id')->map(fn (Collection $group): float => round((float) $group->sum('on_hand'), 2))->all();
+        $matchingIds = $this->matchingPurchaseLines($filters)->pluck('purchase_items.id')->map(fn (mixed $id): int => (int) $id)->all();
+        $lines = $this->purchaseStock->lines($matchingIds);
+        // Stock-In revisions: the stock chart and Total Inventory read the stock-in records (as the Stock-In tab).
+        $stockIns = $this->stockIns->records(['depot_id' => $filters['depot_id'], 'fuel_type_id' => $filters['fuel_type_id']])
+            ->where('status', 'active')
+            ->whereIn('purchase_item_id', $matchingIds);
+        $stockByFuel = $stockIns->groupBy('fuel_type_id')->map(fn (Collection $group): float => round((float) $group->sum('remaining'), 2))->all();
         $stockFuels = $this->fuels()->only(array_keys(self::STOCK_FUELS))
             ->when($filters['fuel_type_id'], fn (Collection $fuels, int $id): Collection => $fuels->where('id', $id))
             ->sortBy(fn (object $fuel): int => array_search($fuel->code, array_keys(self::STOCK_FUELS), true));
@@ -109,7 +118,9 @@ class DashboardService
         $stock = round((float) $stockValues->sum(), 2);
 
         $pending = round((float) $lines->sum('reserved'), 2);
-        $stockOutRate = $stock > 0 ? round($pending / $stock * 100, 2) : ($pending > 0 ? null : 0.0);
+        // Share of the fuel on hand (not delivered yet) that open orders already took.
+        $onHand = round((float) $lines->sum('on_hand'), 2);
+        $stockOutRate = $onHand > 0 ? round($pending / $onHand * 100, 2) : ($pending > 0 ? null : 0.0);
         $inDepot = round((float) $lines->sum('not_lifted'), 2);
 
         $purchased = round((float) $totals->purchased, 2);
@@ -155,7 +166,7 @@ class DashboardService
                 'data' => $liftCounts,
                 'backgroundColor' => [self::RED, self::ORANGE, self::GREEN],
             ]], yAxis: 'none'),
-            // Mockup: "Completed 68.8%" / "Uncompleted 31.3%" written beside the slices, no legend.
+            // Part 10 wireframe: "Completed 68.8%" / "Uncompleted 31.3%" written beside the slices, no legend.
             'purchasedChart' => $this->chart('pie', 'liters', ['Completed', 'Uncompleted'], [[
                 'label' => 'Purchased',
                 'data' => [$completed, $uncompleted],
@@ -599,6 +610,9 @@ class DashboardService
             ->leftJoin('haul_allocations as release_allocation', 'release_allocation.id', '=', 'stock_outs.haul_allocation_id')
             ->leftJoin('hauls as release_haul', 'release_haul.id', '=', 'release_allocation.haul_id')
             ->leftJoin('purchase_items as release_purchase_item', 'release_purchase_item.id', '=', 'release_haul.purchase_item_id')
+            ->leftJoin('purchase_items as stock_purchase_item', 'stock_purchase_item.id', '=', 'stock_outs.purchase_item_id')
+            // A deleted (archived) order leaves the margin with the rest of the sales figures.
+            ->whereNull('sales.deleted_at')
             ->where('stock_outs.status', 'released');
     }
 
@@ -610,7 +624,7 @@ class DashboardService
 
     private function releaseCostSql(): string
     {
-        return 'COALESCE(stock_outs.unit_cost, release_movement.unit_cost, release_purchase_item.unit_cost)';
+        return 'COALESCE(stock_outs.unit_cost, release_movement.unit_cost, stock_purchase_item.unit_cost, release_purchase_item.unit_cost)';
     }
 
     // ----- Helpers --------------------------------------------------------------------------------------------

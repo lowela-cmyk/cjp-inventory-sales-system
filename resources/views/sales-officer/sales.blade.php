@@ -53,7 +53,7 @@
                 <x-filter.select name="status" label="Status" :options="$filterOptions['receivableStatuses']" :selected="$receivableFilters['status'] ?? null" />
                 <x-filter.select name="delivery_status" label="Delivery Status" :options="$filterOptions['deliveryStatuses']" :selected="$receivableFilters['delivery_status'] ?? null" />
                 <x-filter.select name="delivery_type" label="Delivery Type" :options="$filterOptions['deliveryTypes']" :selected="$receivableFilters['delivery_type'] ?? null" />
-                <x-filter.date name="date" label="Transaction date" :value="$receivableFilters['date'] ?? null" />
+                <x-filter.date-select name="date" label="Transaction date" :value="$receivableFilters['date'] ?? null" :dates="$filterOptions['saleDates']" />
                 <x-filter.select name="fuel_type_id" label="Fuel Type" :options="$fuelTypes->pluck('name', 'id')" :selected="$receivableFilters['fuel_type_id'] ?? null" />
                 <button class="btn btn-secondary btn-wide" type="button" data-modal-open="so-sales-add">+ Record Sales</button>
             </x-filter.bar>
@@ -92,13 +92,22 @@
                                     <div class="sales-row-actions row-actions-stack">
                                         <button class="btn btn-secondary" type="button" data-modal-open="{{ $row['modal_id'] }}">View</button>
                                         @if ($row['correction_action'] === 'delete')
-                                            <form method="POST" action="{{ route($salesRoutePrefix.'.sales.cancel', $row['id']) }}" data-confirm-message="Delete this untouched draft sale? This cannot be undone.">
+                                            {{-- An untouched draft is discarded outright (not the delivered-order Delete below). --}}
+                                            <form method="POST" action="{{ route($salesRoutePrefix.'.sales.cancel', $row['id']) }}" data-confirm-message="Discard this untouched draft sale? This cannot be undone.">
                                                 @csrf
                                                 @method('PATCH')
-                                                <button class="btn btn-danger" type="submit">Delete</button>
+                                                <button class="btn btn-danger" type="submit">Discard Draft</button>
                                             </form>
                                         @elseif ($row['correction_action'] === 'cancel')
                                             <button class="btn btn-danger" type="button" data-modal-open="so-sale-cancel-{{ $row['id'] }}">Cancel</button>
+                                        @endif
+                                        {{-- Part 11: only Delivered orders can be deleted (the server enforces it too). --}}
+                                        @if ($isAdminSales && $row['delivery_status'] === 'delivered')
+                                            <form method="POST" action="{{ route($salesRoutePrefix.'.sales.destroy', $row['id']) }}" data-confirm-message="Delete order {{ $row['sale_code'] }}? It will be removed from Receivables, Stock Out and the sales totals. Its fuel stays deducted from its purchase.">
+                                                @csrf
+                                                @method('DELETE')
+                                                <button class="btn btn-danger" type="submit">Delete</button>
+                                            </form>
                                         @endif
                                     </div>
                                 </td>
@@ -164,7 +173,7 @@
         </section>
     </div>
 
-    <x-admin.modal id="so-sales-add" title="Record Sales Receivables" wide>
+    <x-admin.modal id="so-sales-add" title="Record Sales Receivables" size="sales-wide">
         @if ($recordSaleFailed)
             <span hidden data-open-modal-on-load="so-sales-add"></span>
         @endif
@@ -308,7 +317,7 @@
             $editOld = fn (string $key, mixed $default = null): mixed => $isEditedSale ? old($key, $default) : $default;
             $hasPayments = (float) str_replace(',', '', (string) $row['total_paid']) > 0;
         @endphp
-        <x-admin.modal id="{{ $row['modal_id'] }}" title="Edit Sales Record">
+        <x-admin.modal id="{{ $row['modal_id'] }}" title="Edit Sales Record" size="sales">
             @if ($isEditedSale && $errors->any())
                 <span hidden data-open-modal-on-load="{{ $row['modal_id'] }}"></span>
                 <p class="form-alert" role="alert">{{ $errors->first() }}</p>

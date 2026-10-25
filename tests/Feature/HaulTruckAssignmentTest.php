@@ -57,7 +57,7 @@ class HaulTruckAssignmentTest extends TestCase
         $this->assertDatabaseHas('hauls', ['id' => $haulId, 'truck_id' => $replacementTruckId]);
     }
 
-    public function test_haul_truck_assignment_rejects_capacity_inactive_type_conflict_and_bad_ids(): void
+    public function test_haul_truck_assignment_rejects_capacity_inactive_conflict_and_bad_ids_but_not_truck_type(): void
     {
         $records = $this->baseRecords();
         $haulId = $this->haul($records, ['quantity_liters' => 10000]);
@@ -71,7 +71,7 @@ class HaulTruckAssignmentTest extends TestCase
             'scheduled_at' => '2026-09-01 09:00:00',
         ]);
 
-        foreach ([$smallTruckId, $deliveryTruckId, $inactiveTruckId, $conflictTruckId, 999999] as $truckId) {
+        foreach ([$smallTruckId, $inactiveTruckId, $conflictTruckId, 999999] as $truckId) {
             $this->actingAs($records['dispatchOfficer'])
                 ->from(route('dispatch.fuel-lifting'))
                 ->patch(route('dispatch.fuel-lifting.hauls.truck', $haulId), $this->payload($truckId))
@@ -83,6 +83,13 @@ class HaulTruckAssignmentTest extends TestCase
             'id' => $haulId,
             'truck_id' => $records['currentTruckId'],
         ]);
+
+        // Part 11: truck types are retired; a former "delivery" truck can lift like any other.
+        $this->actingAs($records['dispatchOfficer'])
+            ->from(route('dispatch.fuel-lifting'))
+            ->patch(route('dispatch.fuel-lifting.hauls.truck', $haulId), $this->payload($deliveryTruckId))
+            ->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('hauls', ['id' => $haulId, 'truck_id' => $deliveryTruckId]);
     }
 
     public function test_duplicate_assignment_and_reassignment_after_completion_are_blocked(): void

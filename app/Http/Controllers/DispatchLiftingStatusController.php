@@ -175,7 +175,6 @@ class DispatchLiftingStatusController extends Controller
                 'hauls.status',
                 'purchases.status as purchase_status',
                 'purchase_items.quantity_ordered_liters',
-                'trucks.truck_type',
                 'trucks.status as truck_status',
                 'drivers.role as driver_role',
                 'drivers.status as driver_status',
@@ -190,8 +189,9 @@ class DispatchLiftingStatusController extends Controller
             return 'Cancelled purchases cannot be lifted.';
         }
 
-        if (! in_array($haul->truck_type, ['hauling', 'mixed'], true) || in_array($haul->truck_status, ['maintenance', 'inactive'], true)) {
-            return 'A valid assigned hauling truck is required before updating this lift status.';
+        // Part 11: any truck type may lift; the truck must be assigned and in service.
+        if ($haul->truck_status === null || in_array($haul->truck_status, ['maintenance', 'inactive'], true)) {
+            return 'A valid assigned truck is required before updating this lift status.';
         }
 
         if ($haul->driver_role !== 'driver' || $haul->driver_status !== 'active') {

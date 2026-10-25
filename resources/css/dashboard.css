@@ -5,13 +5,14 @@
     --dash-orange: #e28a22;
     --dash-navy: #0d1424;
     display: grid;
-    gap: 22px;
+    gap: 32px;
     min-width: 0;
 }
 
 .dash-section {
     display: grid;
-    gap: 8px;
+    grid-template-rows: auto 1fr;
+    gap: 12px;
     min-width: 0;
 }
 
@@ -23,11 +24,11 @@
 
 .dash-panel {
     display: grid;
-    gap: 14px;
+    gap: 24px;
     min-width: 0;
     border: 1px solid var(--admin-soft-line);
     border-radius: 8px;
-    padding: 14px;
+    padding: 20px;
     background: #fff;
 }
 
@@ -35,7 +36,7 @@
 .dash-filters {
     display: grid;
     grid-template-columns: minmax(180px, 1fr) repeat(auto-fit, minmax(150px, 190px));
-    gap: 10px;
+    gap: 16px;
 }
 
 .dash-filters-sales {
@@ -58,7 +59,7 @@
 .dash-kpis {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 10px;
+    gap: 16px;
 }
 
 /* Sales Trend's seven cards fit one row on a desktop, as in the mockup. */
@@ -72,7 +73,7 @@
     min-width: 0;
     border: 1px solid var(--admin-soft-line);
     border-radius: 6px;
-    padding: 8px 12px 10px;
+    padding: 10px 14px 12px;
 }
 
 .dash-kpi span {
@@ -90,7 +91,7 @@
 
 .dash-charts {
     display: grid;
-    gap: 14px;
+    gap: 24px;
 }
 
 .dash-charts-3 {
@@ -128,7 +129,7 @@
 
 /* Expected Sales Revenue / Stock Out vs Receivables: the box sits right under the section title. */
 .dash-chart-panel {
-    padding: 14px;
+    padding: 18px;
 }
 
 .dash-notes-stack {
@@ -138,12 +139,12 @@
 
 .dash-chart-canvas {
     position: relative;
-    height: 220px;
+    height: 280px;
     min-width: 0;
 }
 
 .dash-chart-canvas-tall {
-    height: 280px;
+    height: 320px;
 }
 
 .dash-chart-canvas .dashboard-empty-state {
@@ -165,7 +166,8 @@
 .dash-revenue-row {
     display: grid;
     grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
-    gap: 18px;
+    align-items: stretch;
+    gap: 24px;
 }
 
 .dash-chart-footer {
@@ -237,4 +239,34 @@
     .dash-filters-sales {
         grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
     }
+}
+
+/* Part 11 ("Papantay netong charts"): cards in one row share one height. Each chart grows to fill its card above
+   a fixed minimum (280px, 320px for the wide ones), so notes and footers sit at the bottom and titles line up. */
+.dash-charts > .dash-chart-block {
+    grid-template-rows: auto 1fr;
+    align-content: stretch;
+}
+
+.dash-charts .dash-chart,
+.dash-revenue-row .dash-chart-panel {
+    grid-template-rows: minmax(280px, 1fr) auto;
+    align-content: stretch;
+}
+
+.dash-charts .dash-chart-canvas,
+.dash-revenue-row .dash-chart-canvas {
+    height: 100%;
+    min-height: 280px;
+}
+
+.dash-revenue-row .dash-chart-canvas-tall {
+    min-height: 320px;
+}
+
+/* Export (charts + AI insights as a PDF) sits above the sections like the other modules' Export button. */
+.dash-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: -12px;
 }

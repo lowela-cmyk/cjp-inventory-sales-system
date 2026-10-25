@@ -58,8 +58,8 @@
                 <x-filter.search label="Search scheduled lifts" :value="$search" />
                 <x-filter.select name="task_status" label="Status" :selected="$filters['task_status'] ?? null"
                     :options="collect($filterOptions['statuses'])->mapWithKeys(fn (string $status): array => [$status => ucwords(str_replace('_', ' ', $status))])" />
-                <x-filter.date name="date_from" label="From date" :value="$filters['date_from'] ?? null" />
-                <x-filter.date name="date_to" label="To date" :value="$filters['date_to'] ?? null" />
+                <x-filter.date-select name="date_from" label="From date" :value="$filters['date_from'] ?? null" :dates="$filterOptions['liftDates']" />
+                <x-filter.date-select name="date_to" label="To date" :value="$filters['date_to'] ?? null" :dates="$filterOptions['liftDates']" />
                 <x-filter.select name="depot_id" label="Depot" :options="$filterOptions['depots']->pluck('name', 'id')" :selected="$filters['depot_id'] ?? null" />
                 <x-filter.select name="destination_type" label="Destination" :options="['customer' => 'Client']" :selected="$filters['destination_type'] ?? null" />
                 <x-filter.select name="fuel_type_id" label="Fuel Type" :options="$filterOptions['fuelTypes']->pluck('name', 'id')" :selected="$filters['fuel_type_id'] ?? null" />
@@ -88,7 +88,7 @@
                                 @foreach ($row['cells'] as $cell)
                                     <td>@if ($loop->last)<x-admin.status-badge :status="$cell" />@else{{ $cell }}@endif</td>
                                 @endforeach
-                                <td><span class="receipt-status {{ $row['withdrawal_uploaded'] ? 'is-uploaded' : '' }}">{{ $row['withdrawal_uploaded'] ? 'Uploaded' : 'Not uploaded' }}</span></td>
+                                <td><span class="receipt-status {{ $row['withdrawal_uploaded'] ? 'is-uploaded' : '' }}" data-receipt-status="{{ $row['record_id'] }}">{{ $row['withdrawal_uploaded'] ? 'Uploaded' : 'Not uploaded' }}</span></td>
                                 <td>
                                     {{-- The flex wrapper sits inside the cell: a flex <td> stops being a table cell. --}}
                                     <div class="driver-row-actions">
@@ -112,8 +112,8 @@
                 <x-filter.search label="Search hauled lifts" :value="$search" />
                 <x-filter.select name="task_status" label="Status" :selected="$filters['task_status'] ?? null"
                     :options="collect($filterOptions['statuses'])->mapWithKeys(fn (string $status): array => [$status => ucwords(str_replace('_', ' ', $status))])" />
-                <x-filter.date name="date_from" label="From date" :value="$filters['date_from'] ?? null" />
-                <x-filter.date name="date_to" label="To date" :value="$filters['date_to'] ?? null" />
+                <x-filter.date-select name="date_from" label="From date" :value="$filters['date_from'] ?? null" :dates="$filterOptions['liftDates']" />
+                <x-filter.date-select name="date_to" label="To date" :value="$filters['date_to'] ?? null" :dates="$filterOptions['liftDates']" />
                 <x-filter.select name="depot_id" label="Depot" :options="$filterOptions['depots']->pluck('name', 'id')" :selected="$filters['depot_id'] ?? null" />
                 <x-filter.select name="destination_type" label="Destination" :options="['customer' => 'Client']" :selected="$filters['destination_type'] ?? null" />
                 <x-filter.select name="fuel_type_id" label="Fuel Type" :options="$filterOptions['fuelTypes']->pluck('name', 'id')" :selected="$filters['fuel_type_id'] ?? null" />
@@ -142,7 +142,7 @@
                                 @foreach ($row['cells'] as $cell)
                                     <td>@if ($loop->last)<x-admin.status-badge :status="$cell" />@else{{ $cell }}@endif</td>
                                 @endforeach
-                                <td><span class="receipt-status {{ $row['withdrawal_uploaded'] ? 'is-uploaded' : '' }}">{{ $row['withdrawal_uploaded'] ? 'Uploaded' : 'Not uploaded' }}</span></td>
+                                <td><span class="receipt-status {{ $row['withdrawal_uploaded'] ? 'is-uploaded' : '' }}" data-receipt-status="{{ $row['record_id'] }}">{{ $row['withdrawal_uploaded'] ? 'Uploaded' : 'Not uploaded' }}</span></td>
                                 <td>
                                     <div class="driver-row-actions">
                                         <button class="btn btn-secondary" type="button" data-modal-open="{{ $row['id'] }}">View</button>
@@ -171,19 +171,21 @@
                     @foreach ($row['details'] as $label => $value)
                         <div class="detail-row">
                             <div class="detail-label">{{ $label }}</div>
-                            <div class="detail-value">{{ $value }}</div>
+                            {{-- Withdrawal fields update in place after an upload (see app.js). --}}
+                            <div class="detail-value" data-detail="{{ \Illuminate\Support\Str::slug($label) }}">{{ $value }}</div>
                         </div>
                     @endforeach
                 </div>
             </div>
-            <div class="withdrawal-status-card {{ $row['withdrawal_uploaded'] ? 'is-uploaded' : '' }}">
-                <strong>Withdrawal receipt: {{ $row['withdrawal_uploaded'] ? 'Uploaded' : 'Not uploaded' }}</strong>
-                @if ($row['withdrawal_uploaded_at'])
-                    <span>Uploaded {{ $row['withdrawal_uploaded_at'] }}</span>
-                @endif
-                @if ($row['withdrawal_notes'])
-                    <span>Notes: {{ $row['withdrawal_notes'] }}</span>
-                @endif
+            <div class="withdrawal-status-card {{ $row['withdrawal_uploaded'] ? 'is-uploaded' : '' }}" data-withdrawal-card>
+                <strong data-withdrawal-title>Withdrawal receipt: {{ $row['withdrawal_uploaded'] ? 'Uploaded' : 'Not uploaded' }}</strong>
+                <span data-withdrawal-uploaded-at @unless ($row['withdrawal_uploaded_at']) hidden @endunless>Uploaded {{ $row['withdrawal_uploaded_at'] }}</span>
+                <span data-withdrawal-notes @unless ($row['withdrawal_notes']) hidden @endunless>Notes: {{ $row['withdrawal_notes'] }}</span>
+                {{-- The uploaded receipt: click to open it full size in a new tab. --}}
+                <a class="withdrawal-thumb" href="{{ $row['withdrawal_url'] ?? '#' }}" target="_blank" rel="noopener" data-withdrawal-link @unless ($row['withdrawal_url'] ?? null) hidden @endunless>
+                    <img src="{{ $row['withdrawal_url'] ?? '' }}" alt="Uploaded withdrawal receipt for {{ $row['cells'][0] }}" loading="lazy" data-withdrawal-image>
+                    <span>View full size</span>
+                </a>
             </div>
             <div class="modal-actions">
                 @if (($row['kind'] ?? '') === 'Lift' && ! empty($row['allowed_driver_statuses']))
@@ -200,14 +202,20 @@
                     </form>
                 @endif
                 @if (($row['kind'] ?? '') === 'Lift' && ! empty($row['can_upload_withdrawal']))
-                    <form class="withdrawal-upload-form" method="POST" action="{{ route('driver.fuel-lifting.hauls.withdrawal-receipt.store', $row['record_id']) }}" enctype="multipart/form-data">
+                    <form class="withdrawal-upload-form" method="POST" action="{{ route('driver.fuel-lifting.hauls.withdrawal-receipt.store', $row['record_id']) }}" enctype="multipart/form-data" data-withdrawal-upload="{{ $row['record_id'] }}">
                         @csrf
                         <label class="file-button">
-                            <span>{{ $row['withdrawal_uploaded'] ? 'Choose replacement image' : 'Choose receipt image' }}</span>
+                            <span data-file-label>{{ $row['withdrawal_uploaded'] ? 'Choose replacement image' : 'Choose receipt image' }}</span>
                             <input name="withdrawal_receipt" type="file" accept="image/jpeg,image/png,image/webp" required>
                         </label>
                         <input name="withdrawal_notes" type="text" maxlength="1000" placeholder="Optional notes">
-                        <button class="btn btn-pill btn-primary" type="submit">{{ $row['withdrawal_uploaded'] ? 'Replace Receipt' : 'Upload Withdrawal Receipt' }}</button>
+                        <button class="btn btn-pill btn-primary" type="submit" data-upload-button>{{ $row['withdrawal_uploaded'] ? 'Replace Receipt' : 'Upload Withdrawal Receipt' }}</button>
+                        {{-- The chosen file, shown before it is uploaded. --}}
+                        <div class="withdrawal-preview" data-withdrawal-preview hidden>
+                            <img alt="" data-preview-image>
+                            <span data-preview-name></span>
+                        </div>
+                        <p class="withdrawal-upload-message" role="status" aria-live="polite" data-upload-message hidden></p>
                     </form>
                 @endif
                 <button class="btn btn-pill btn-secondary" type="button" data-modal-close>Close</button>

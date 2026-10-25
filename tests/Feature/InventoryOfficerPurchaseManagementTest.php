@@ -111,7 +111,7 @@ class InventoryOfficerPurchaseManagementTest extends TestCase
         $this->assertSame(4200000.0, (float) $item->line_total);
     }
 
-    public function test_purchase_quantity_changes_are_blocked_after_hauling_activity(): void
+    public function test_purchase_edits_after_hauling_keep_lifted_liters_depot_and_fuel(): void
     {
         $records = $this->createPurchaseRecord();
         $truckId = DB::table('trucks')->insertGetId([
@@ -139,21 +139,30 @@ class InventoryOfficerPurchaseManagementTest extends TestCase
             'updated_at' => now(),
         ]);
 
-        $this->actingAs($records['inventoryOfficer'])
-            ->patch(route('inventory-officer.inventory.purchases.update', $records['purchaseItemId']), [
+        $update = fn (array $changes) => $this->actingAs($records['inventoryOfficer'])
+            ->patch(route('inventory-officer.inventory.purchases.update', $records['purchaseItemId']), $changes + [
                 'purchase_date' => '2026-08-20',
                 'depot_id' => $records['depotId'],
                 'fuel_type_id' => $records['fuelTypeId'],
-                'quantity_ordered_liters' => 99999,
+                'quantity_ordered_liters' => 50000,
                 'unit_cost' => 75,
                 'payment_status' => 'partial',
-                'status' => 'partially_hauled',
-            ])
-            ->assertSessionHasErrors('purchase');
+            ]);
+
+        // Stock-In revisions: the quantity can't drop below the 10,000 L already on the lift...
+        $update(['quantity_ordered_liters' => 5000])->assertSessionHasErrors('quantity_ordered_liters');
+        // ...and the depot and fuel stay fixed once a lift uses the purchase.
+        $otherDepot = DB::table('depots')->insertGetId(['depot_code' => 'DEP-OTHER', 'name' => 'Other Depot', 'status' => 'active', 'created_at' => now(), 'updated_at' => now()]);
+        $update(['depot_id' => $otherDepot])->assertSessionHasErrors('depot_id');
 
         $item = DB::table('purchase_items')->where('id', $records['purchaseItemId'])->first();
         $this->assertSame(50000.0, (float) $item->quantity_ordered_liters);
         $this->assertSame(3750000.0, (float) $item->line_total);
+
+        // Raising the quantity and correcting the cost are allowed, and the stock-in follows.
+        $update(['quantity_ordered_liters' => 60000, 'unit_cost' => 80])->assertSessionHasNoErrors();
+        $stockIn = DB::table('stock_ins')->where('purchase_item_id', $records['purchaseItemId'])->first();
+        $this->assertSame([60000.0, 80.0, 4800000.0, 'active'], [(float) $stockIn->quantity_liters, (float) $stockIn->unit_cost, (float) $stockIn->total_cost, $stockIn->status]);
     }
 
     public function test_purchase_search_filters_records(): void

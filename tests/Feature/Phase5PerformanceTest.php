@@ -4,7 +4,6 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use App\Services\PurchaseService;
-use App\Services\StockInService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -155,20 +154,19 @@ class Phase5PerformanceTest extends TestCase
         }
 
         // Page 1 should contain the latest 25 (PUR-PAGE-030 down to PUR-PAGE-006)
-        $responsePage1 = $this->actingAs($officer)
-            ->get(route('inventory-officer.inventory', ['purchases_page' => 1]));
+        // (Checked inside the Purchases panel: the hidden Stock-In panel lists the same purchase codes.)
+        $page1 = $this->tabPanel($this->actingAs($officer)
+            ->get(route('inventory-officer.inventory', ['purchases_page' => 1]))->assertOk()->getContent(), 'purchases');
 
-        $responsePage1->assertOk()
-            ->assertSee('PUR-PAGE-030')
-            ->assertDontSee('PUR-PAGE-005');
+        $this->assertStringContainsString('PUR-PAGE-030', $page1);
+        $this->assertStringNotContainsString('PUR-PAGE-005', $page1);
 
         // Page 2 should contain the remaining 5 (PUR-PAGE-005 down to PUR-PAGE-001)
-        $responsePage2 = $this->actingAs($officer)
-            ->get(route('inventory-officer.inventory', ['purchases_page' => 2]));
+        $page2 = $this->tabPanel($this->actingAs($officer)
+            ->get(route('inventory-officer.inventory', ['purchases_page' => 2]))->assertOk()->getContent(), 'purchases');
 
-        $responsePage2->assertOk()
-            ->assertSee('PUR-PAGE-001')
-            ->assertDontSee('PUR-PAGE-030');
+        $this->assertStringContainsString('PUR-PAGE-001', $page2);
+        $this->assertStringNotContainsString('PUR-PAGE-030', $page2);
     }
 
     public function test_sales_officer_sales_and_customers_are_paginated(): void
@@ -361,5 +359,4 @@ class Phase5PerformanceTest extends TestCase
         $cancelledPurchase = DB::table('purchases')->where('id', $purchase->id)->first();
         $this->assertSame('cancelled', $cancelledPurchase->status);
     }
-
 }

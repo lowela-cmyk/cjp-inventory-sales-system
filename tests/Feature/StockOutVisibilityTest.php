@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use Carbon\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Tests\Concerns\PurchaseFlows;
 use Tests\Feature\Audit\AuditTestCase;
@@ -63,7 +64,10 @@ class StockOutVisibilityTest extends AuditTestCase
         $rows = $this->stockOutRows($a['inventory'], 'inventory-officer.inventory.stock-out', ['delivery_type' => 'depot_to_client']);
         $this->assertSame([$depot->sale_code], $rows->pluck('cells.0')->unique()->values()->all());
         $this->actingAs($a['inventory'])->get(route('inventory-officer.inventory.stock-out'))->assertOk()
-            ->assertSee('<th>Delivery Type</th>', false)->assertSee('<th>Purchase ID</th>', false)->assertSee('Delivery / Lift Date');
+            // Part 4 #6: related values share a column (each still its own export column) so the table fits.
+            ->assertSee('<span class="th-line" data-export-part>Delivery Type</span>', false)
+            ->assertSee('<span class="th-line" data-export-part>Purchase ID</span>', false)
+            ->assertSee('Delivery Date / Status');
 
         // Summary cards follow the purchases: 25,000 L bought, 1,800 + 3,000 Premium and 200 F1 delivered.
         $cards = $this->cards($a['inventory']);
@@ -89,7 +93,7 @@ class StockOutVisibilityTest extends AuditTestCase
 
     /**
      * @param  array<string, mixed>  $query
-     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     * @return Collection<int, array<string, mixed>>
      */
     private function stockOutRows(User $user, string $route, array $query = [])
     {

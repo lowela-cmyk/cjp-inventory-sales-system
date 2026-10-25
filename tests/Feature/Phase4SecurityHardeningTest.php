@@ -293,14 +293,14 @@ class Phase4SecurityHardeningTest extends TestCase
         $guestResponse = $this->get('/withdrawal-receipts/'.$haulId);
         $guestResponse->assertRedirect('/login');
 
-        // 2. Unauthorized roles (driver, sales_officer) -> 403 Forbidden
+        // 2. Another driver -> 404 (Part 11: a driver may view only the receipts of their own lifts); sales -> 403
         $driver = User::factory()->create([
             'role' => 'driver',
             'status' => 'active',
             'approval_status' => 'approved',
         ]);
         $driverResponse = $this->actingAs($driver)->get('/withdrawal-receipts/'.$haulId);
-        $driverResponse->assertForbidden();
+        $driverResponse->assertNotFound();
 
         $salesOfficer = User::factory()->create([
             'role' => 'sales_officer',

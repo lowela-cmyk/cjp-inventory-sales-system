@@ -3,6 +3,7 @@
 namespace Tests;
 
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
+use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Testing\TestResponse;
 use Tests\Concerns\CreatesStockLots;
@@ -60,6 +61,15 @@ abstract class TestCase extends BaseTestCase
 
     protected bool $defaultPaymentMode = true;
 
+    /** The HTML of one tab panel: every tab renders on the page and only the active one is visible. */
+    protected function tabPanel(string $html, string $tab): string
+    {
+        $from = strpos($html, '<section data-tab-panel="'.$tab.'"');
+        $this->assertNotFalse($from, 'Missing the '.$tab.' tab panel');
+
+        return substr($html, $from, strpos($html, '</section>', $from) - $from);
+    }
+
     /**
      * Edits resubmit each existing line's lot, as the Edit form does (see CreatesStockLots).
      *
@@ -69,14 +79,14 @@ abstract class TestCase extends BaseTestCase
     public function patch($uri, array $data = [], array $headers = []): TestResponse
     {
         if ($this->attachStockLots && (isset($data['items']) || isset($data['fuel_type_id']))) {
-            $route = app('router')->getRoutes()->match(\Illuminate\Http\Request::create($uri, 'PATCH'));
+            $route = app('router')->getRoutes()->match(Request::create($uri, 'PATCH'));
             if (str_ends_with((string) $route->getName(), '.sales.update')) {
                 $data = $this->withExistingStockLots((int) $route->parameter('sale'), $data);
             }
         }
 
         if (isset($data['purchase_date'])) {
-            $route = app('router')->getRoutes()->match(\Illuminate\Http\Request::create($uri, 'PATCH'));
+            $route = app('router')->getRoutes()->match(Request::create($uri, 'PATCH'));
             if (str_ends_with((string) $route->getName(), '.inventory.purchases.update')) {
                 $data = $this->withPaymentMode($data);
             }

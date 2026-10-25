@@ -84,6 +84,12 @@ class StockOutFinancialService
                 DB::raw("CASE WHEN stock_outs.portion = 'f1' AND sale_items.f1_unit_price > 0 THEN sale_items.f1_unit_price ELSE sale_items.unit_price END as unit_price"),
                 'stock_outs.portion',
                 'sales.delivery_type',
+                // Edit Stock-Out Record: the sale it belongs to and the order's own delivery details (Standard).
+                'sales.id as sale_id',
+                'stock_outs.haul_allocation_id',
+                'sales.delivery_truck_id',
+                'sales.delivery_driver_user_id',
+                'sales.delivery_date as sale_delivery_date',
                 'sales.delivery_status',
                 'release_purchase.purchase_code as release_purchase_code',
                 'delivery_truck.truck_code as delivery_truck_code',
@@ -92,7 +98,9 @@ class StockOutFinancialService
                 DB::raw('COALESCE(hauls.hauled_at, hauls.scheduled_at, sales.delivery_date, stock_outs.stock_out_at) as delivery_date'),
                 'hauls.atl_number',
                 DB::raw('COALESCE(hauls.dr_number, lifting_schedules.dr_number) as dr_number'),
-                DB::raw('COALESCE(stock_outs.unit_cost, stock_out_movement.unit_cost, source_purchase_item.unit_cost) as cost_unit'),
+                // Cost / Unit is saved on the release when it is posted (the purchase's cost/liter then), so editing the
+                // purchase later never changes a past stock-out. Older rows fall back to their purchase.
+                DB::raw('COALESCE(stock_outs.unit_cost, stock_out_movement.unit_cost, release_purchase_item.unit_cost, source_purchase_item.unit_cost) as cost_unit'),
                 DB::raw('COALESCE(payments_total.total_paid, 0) as sale_paid'),
                 DB::raw('COALESCE(sale_totals.sale_total, 0) as sale_total'),
             ]);

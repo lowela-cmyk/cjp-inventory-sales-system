@@ -145,7 +145,7 @@ class AdminFullAccessTest extends TestCase
         $r = $this->records();
 
         foreach (['admin.dashboard', 'admin.inventory', 'admin.ledger', 'admin.fuel-lifting', 'admin.fuel-lifting.trucks', 'admin.sales', 'admin.sales.customers',
-            'admin.reports', 'admin.alerts', 'admin.account-requests', 'admin.user-management',
+            'admin.alerts', 'admin.account-requests', 'admin.user-management',
             'inventory-officer.inventory', 'sales-officer.sales', 'dispatch.fuel-lifting', 'dispatch.fuel-lifting.trucks', 'driver.fuel-lifting'] as $route) {
             $this->actingAs($r['admin'])->get(route($route))->assertOk();
         }

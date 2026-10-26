@@ -854,6 +854,7 @@ class DashboardSummaryService
         // Fuel has left the depot once its lift is Lifted (or Completed), as PurchaseStockService::not_lifted and the
         // dashboard's Remaining Balance in Depots count it.
         $completedHauls = DB::table('hauls')
+            ->whereNull('deleted_at')
             ->whereIn('status', ['lifted', 'completed'])
             ->selectRaw('purchase_item_id, COALESCE(SUM(quantity_liters), 0) as completed_liters')
             ->groupBy('purchase_item_id');

@@ -143,7 +143,10 @@ class CompliancePhase1Test extends AuditTestCase
         $this->schedule($a, [['purchase_item_id' => $itemId, 'quantity_liters' => 10000, 'garage_liters' => 10000, 'storage_location_id' => $this->tank($a), 'direct_liters' => 0]]);
         $this->driverLifts($a, (int) DB::table('hauls')->value('id'));
 
-        $alerts = DB::table('alerts')->where('type', 'purchase')->orWhere('type', 'haul')->get(['title', 'message']);
+        // Event alerts only (Part 12's computed "not settled" alerts describe a state, not an event).
+        $alerts = DB::table('alerts')->whereIn('type', ['purchase', 'haul'])
+            ->where(fn ($query) => $query->whereNull('deduplication_key')->orWhere('deduplication_key', 'not like', 'sync:%'))
+            ->get(['title', 'message']);
         $this->assertNotEmpty($alerts);
         foreach ($alerts as $alert) {
             // Title "PUR-… Received" must not say "Status: In Transit" in its body.

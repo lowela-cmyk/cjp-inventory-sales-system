@@ -1,5 +1,5 @@
 {{-- Add / View-Edit truck modals for the Fuel Lifting > Trucks tab. --}}
-<x-admin.modal id="truck-add" title="Add Truck" wide>
+<x-admin.modal id="truck-add" reset-on-close title="Add Truck" wide>
     <form method="POST" action="{{ route($truckRoutePrefix.'.store') }}" data-prevent-double-submit>
         @csrf
         @include('trucks.partials.form', ['truck' => null])
@@ -18,7 +18,7 @@
             @method('PATCH')
             @include('trucks.partials.form', ['truck' => $truck])
             <div class="modal-actions">
-                <button class="btn btn-primary" type="submit">Save Changes</button>
+                <button class="btn btn-primary" type="submit">Apply Changes</button>
                 <button class="btn btn-secondary" type="button" data-modal-close>Close</button>
             </div>
         </form>

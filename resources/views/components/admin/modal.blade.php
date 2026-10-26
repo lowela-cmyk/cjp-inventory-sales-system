@@ -1,7 +1,8 @@
-@props(['id', 'title', 'wide' => false, 'size' => null, 'showBrand' => true, 'footer' => null])
+@props(['id', 'title', 'wide' => false, 'size' => null, 'showBrand' => true, 'footer' => null, 'resetOnClose' => false])
 
 {{-- Header and optional footer stay fixed; only the body scrolls (see .admin-modal in app.css). --}}
-<div class="modal-backdrop" id="{{ $id }}" aria-hidden="true">
+{{-- resetOnClose: a create modal that starts blank again whenever it is closed (see app.js). --}}
+<div class="modal-backdrop" id="{{ $id }}" aria-hidden="true" @if ($resetOnClose) data-reset-on-close @endif>
     <div @class(['admin-modal', 'admin-modal-wide' => $wide, 'admin-modal-'.$size => $size]) role="dialog" aria-modal="true" aria-labelledby="{{ $id }}-title">
         <div class="modal-titlebar {{ $showBrand ? '' : 'modal-titlebar-without-brand' }}">
             @if ($showBrand)

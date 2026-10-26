@@ -9,6 +9,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class DispatchLiftingStatusController extends Controller
 {
@@ -138,6 +139,90 @@ class DispatchLiftingStatusController extends Controller
             ->with('status', trim('Lifting status updated successfully. '.implode(' ', $notes)));
     }
 
+    /**
+     * Part 11: delete a lift that is still only Scheduled (Admin and Dispatch). Undoes what scheduling did: its hauls stop
+     * holding the purchases' depot liters, its Depot to Client rows free their orders, the purchases and the truck
+     * re-sync. The lift and its hauls are soft-deleted (deleted_at / deleted_by) and drop out of every list and count.
+     */
+    public function destroy(Request $request, int $haul): RedirectResponse
+    {
+        $code = DB::transaction(function () use ($haul, $request): string {
+            $row = DB::table('hauls')->where('id', $haul)->whereNull('deleted_at')->lockForUpdate()->first(['id', 'lifting_schedule_id', 'haul_code']);
+            abort_if(! $row, 404);
+
+            $schedule = $row->lifting_schedule_id
+                ? DB::table('lifting_schedules')->where('id', $row->lifting_schedule_id)->lockForUpdate()->first(['id', 'schedule_code', 'status'])
+                : null;
+            $hauls = DB::table('hauls')
+                ->when($schedule, fn ($query) => $query->where('lifting_schedule_id', $schedule->id), fn ($query) => $query->where('id', $row->id))
+                ->whereNull('deleted_at')
+                ->lockForUpdate()
+                ->get(['id', 'purchase_id', 'truck_id', 'status', 'hauled_at', 'withdrawal_receipt_path']);
+            $haulIds = $hauls->pluck('id')->map(fn (mixed $id): int => (int) $id)->all();
+
+            $error = $this->deleteBlocker($schedule, $hauls, $haulIds);
+            if ($error) {
+                throw ValidationException::withMessages(['lifting' => $error]);
+            }
+
+            $deleted = [
+                'status' => 'cancelled',
+                'deleted_at' => now(),
+                'deleted_by' => (int) $request->user()->id,
+                'updated_at' => now(),
+            ];
+            DB::table('hauls')->whereIn('id', $haulIds)->update($deleted + [
+                'status_updated_by' => (int) $request->user()->id,
+                'status_updated_at' => now(),
+            ]);
+            if ($schedule) {
+                DB::table('lifting_schedules')->where('id', $schedule->id)->update($deleted);
+            }
+
+            $this->liftAllocations->cancelForHauls($haulIds);
+            foreach ($hauls->pluck('purchase_id')->unique() as $purchaseId) {
+                $this->purchaseWorkflow->synchronize((int) $purchaseId, (int) $request->user()->id, (int) $row->id);
+            }
+            foreach ($hauls->pluck('truck_id')->unique() as $truckId) {
+                $this->truckAvailability->synchronizeStatus((int) $truckId);
+            }
+
+            return $schedule->schedule_code ?? $row->haul_code;
+        });
+
+        return redirect()
+            ->route($this->redirectRoute($request))
+            ->with('status', 'Lift '.$code.' deleted. Its liters, orders and truck are free again.');
+    }
+
+    /**
+     * Only a lift that never left Scheduled can be deleted: no receipt, nothing delivered or released from it.
+     *
+     * @param  \Illuminate\Support\Collection<int, \stdClass>  $hauls
+     * @param  array<int, int>  $haulIds
+     */
+    private function deleteBlocker(?object $schedule, $hauls, array $haulIds): ?string
+    {
+        if (($schedule && $schedule->status === 'cancelled') || $hauls->contains('status', 'cancelled')) {
+            return 'This lift is already cancelled.';
+        }
+
+        if (($schedule && $schedule->status !== 'scheduled') || $hauls->contains(fn (object $haul): bool => $haul->status !== 'scheduled')) {
+            return 'Only a Scheduled lift can be deleted. This lift is already In Transit or done.';
+        }
+
+        if ($hauls->contains(fn (object $haul): bool => $haul->withdrawal_receipt_path || $haul->hauled_at)) {
+            return 'This lift has a withdrawal receipt or a hauled date, so it cannot be deleted.';
+        }
+
+        $allocationIds = DB::table('haul_allocations')->whereIn('haul_id', $haulIds)->pluck('id');
+        $delivered = DB::table('haul_allocations')->whereIn('id', $allocationIds)->whereNotIn('status', ['planned', 'cancelled'])->exists()
+            || DB::table('stock_outs')->whereIn('haul_allocation_id', $allocationIds)->exists()
+            || DB::table('inventory_movements')->where('reference_type', 'haul_allocation')->whereIn('reference_id', $allocationIds)->exists();
+
+        return $delivered ? 'Fuel on this lift was already delivered or released, so it cannot be deleted.' : null;
+    }
+
     private function redirectRoute(Request $request): string
     {
         return str_starts_with((string) $request->route()?->getName(), 'dispatch.')
@@ -155,6 +240,7 @@ class DispatchLiftingStatusController extends Controller
             ->join('trucks', 'trucks.id', '=', 'hauls.truck_id')
             ->join('users as drivers', 'drivers.id', '=', 'hauls.driver_user_id')
             ->where('hauls.id', $haul)
+            ->whereNull('hauls.deleted_at')
             ->whereNull('purchases.deleted_at')
             ->whereColumn('hauls.purchase_id', 'purchase_items.purchase_id')
             ->whereColumn('hauls.depot_id', 'purchases.depot_id')
@@ -172,6 +258,7 @@ class DispatchLiftingStatusController extends Controller
                 'hauls.scheduled_at',
                 'hauls.hauled_at',
                 'hauls.quantity_liters',
+                'hauls.returned_liters',
                 'hauls.status',
                 'purchases.status as purchase_status',
                 'purchase_items.quantity_ordered_liters',
@@ -208,7 +295,8 @@ class DispatchLiftingStatusController extends Controller
 
         $quantity = round((float) $haul->quantity_liters, 2);
 
-        if ($quantity <= 0 || $quantity > round((float) $haul->quantity_ordered_liters, 2)) {
+        // A line whose leftover was all returned to the depot (Part 12) keeps 0 L and can still be completed.
+        if (($quantity <= 0 && (float) $haul->returned_liters <= 0) || $quantity > round((float) $haul->quantity_ordered_liters, 2)) {
             return 'Lift quantity must be positive and cannot exceed the authorized purchase item quantity.';
         }
 

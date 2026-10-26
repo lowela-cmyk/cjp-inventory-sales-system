@@ -31,7 +31,7 @@ class DashboardExportTest extends TestCase
             'inv_fuel_type_id' => $premium,
             'charts' => [['title' => 'Current Stock By Fuel Type (Stock Levels)', 'image' => self::PNG]],
             'insight_text' => 'Inventory: 20.00 KL in stock.',
-            'insight_source' => 'Rule-based summary of the dashboard totals.',
+            'insight_source' => 'Summary generated from current dashboard data.',
             'insight_generated_at' => 'Oct 24, 2026 06:00 PM',
         ]);
 
@@ -57,6 +57,18 @@ class DashboardExportTest extends TestCase
         Pdf::shouldReceive('download')->andReturn(response('%PDF', 200, ['Content-Type' => 'application/pdf']));
 
         $this->actingAs($admin)->post(route('admin.dashboard.export'), ['inv_fuel_type_id' => $premium])->assertOk();
+    }
+
+    public function test_a_pdf_failure_returns_to_the_dashboard_with_an_error_instead_of_a_500(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin', 'status' => 'active']);
+        $premium = (int) DB::table('fuel_types')->where('code', 'PREM')->value('id');
+        // As on a machine where composer install was not run: the PDF class cannot be loaded.
+        Pdf::shouldReceive('loadView')->once()->andThrow(new \Error('Class "Barryvdh\\DomPDF\\Facade\\Pdf" not found'));
+
+        $this->actingAs($admin)->post(route('admin.dashboard.export'), ['inv_fuel_type_id' => $premium, 'insight_text' => 'Inventory: 20.00 KL in stock.'])
+            ->assertRedirect(route('admin.dashboard', ['inv_fuel_type_id' => $premium]))
+            ->assertSessionHasErrors(['export' => 'The dashboard report could not be exported. Please try again or contact the administrator.']);
     }
 
     public function test_only_png_chart_images_are_accepted_and_only_admins_can_export(): void

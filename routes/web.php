@@ -1,13 +1,9 @@
 <?php
 
-use App\Http\Controllers\AdminBusinessInsightController;
 use App\Http\Controllers\AdminDashboardController;
 use App\Http\Controllers\AdminDashboardExportController;
 use App\Http\Controllers\AdminDashboardInsightController;
 use App\Http\Controllers\AdminMonitoringController;
-use App\Http\Controllers\AdminRevenueInsightController;
-use App\Http\Controllers\AdminSalesReportController;
-use App\Http\Controllers\AdminSalesTrendSummaryController;
 use App\Http\Controllers\AdminUserManagementController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DispatchDeliveryController;
@@ -15,6 +11,7 @@ use App\Http\Controllers\DispatchLiftingStatusController;
 use App\Http\Controllers\DriverDeliveryController;
 use App\Http\Controllers\DriverLiftingStatusController;
 use App\Http\Controllers\HaulTruckAssignmentController;
+use App\Http\Controllers\LiftLeftoverController;
 use App\Http\Controllers\InventoryOfficerLedgerController;
 use App\Http\Controllers\InventoryOfficerPurchaseController;
 use App\Http\Controllers\SalesOfficerCustomerController;
@@ -74,6 +71,9 @@ Route::middleware(['auth'])->group(function () {
         Route::patch('/trucks/{truck}/status', [TruckController::class, 'toggleStatus'])->name('trucks.status');
         Route::patch('/fuel-lifting/hauls/{haul}/truck', [HaulTruckAssignmentController::class, 'update'])->name('fuel-lifting.hauls.truck');
         Route::patch('/fuel-lifting/hauls/{haul}/status', [DispatchLiftingStatusController::class, 'updateStatus'])->name('fuel-lifting.hauls.status');
+        Route::delete('/fuel-lifting/hauls/{haul}', [DispatchLiftingStatusController::class, 'destroy'])->name('fuel-lifting.hauls.destroy');
+        Route::post('/fuel-lifting/hauls/{haul}/truck-deliveries', [LiftLeftoverController::class, 'deliver'])->name('fuel-lifting.hauls.truck-deliveries.store');
+        Route::post('/fuel-lifting/hauls/{haul}/return-to-depot', [LiftLeftoverController::class, 'returnToDepot'])->name('fuel-lifting.hauls.return-to-depot');
         // Admin works the full Sales Officer page (sales, payments, customers).
         Route::get('/sales', [SalesOfficerCustomerController::class, 'index'])->name('sales');
         Route::get('/sales/customers', [SalesOfficerCustomerController::class, 'index'])->defaults('state', 'customers')->name('sales.customers');
@@ -86,13 +86,11 @@ Route::middleware(['auth'])->group(function () {
         Route::patch('/sales/{sale}/delivery-status', [SalesOfficerCustomerController::class, 'updateDeliveryStatus'])->name('sales.delivery-status.update');
         Route::patch('/sales/{sale}/cancel', [SalesOfficerCustomerController::class, 'cancelSale'])->name('sales.cancel');
         Route::delete('/sales/{sale}', [SalesOfficerCustomerController::class, 'destroySale'])->name('sales.destroy');
-        Route::get('/reports', AdminSalesReportController::class)->name('reports');
-        Route::post('/reports/business-insight', AdminBusinessInsightController::class)->name('reports.business-insight');
-        Route::post('/reports/revenue-insight', AdminRevenueInsightController::class)->name('reports.revenue-insight');
-        Route::post('/reports/sales-trend-summary', AdminSalesTrendSummaryController::class)->name('reports.sales-trend-summary');
-        Route::get('/reports/export', [AdminSalesReportController::class, 'export'])->name('reports.export');
+        // Part 12: Reports was removed (the Dashboard has Insights and A.I Reporting); old links open the Dashboard.
+        Route::any('/reports/{rest?}', fn () => redirect()->route('admin.dashboard'))->where('rest', '.*')->name('reports.retired');
         Route::get('/alerts', [AdminMonitoringController::class, 'alerts'])->name('alerts');
         Route::patch('/alerts/{alert}/read', [AdminMonitoringController::class, 'markAlertRead'])->name('alerts.read');
+        Route::get('/alerts/{alert}/view', [AdminMonitoringController::class, 'viewAlert'])->name('alerts.view');
         Route::get('/account-requests', [AdminUserManagementController::class, 'accountRequests'])->name('account-requests');
         Route::patch('/account-requests/{user}', [AdminUserManagementController::class, 'updateApproval'])->name('account-requests.update');
         Route::get('/user-management', [AdminUserManagementController::class, 'index'])->name('user-management');
@@ -116,11 +114,15 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/fuel-lifting/hauls', [DispatchDeliveryController::class, 'store'])->name('fuel-lifting.hauls.store');
         Route::patch('/fuel-lifting/hauls/{haul}/truck', [HaulTruckAssignmentController::class, 'update'])->name('fuel-lifting.hauls.truck');
         Route::patch('/fuel-lifting/hauls/{haul}/status', [DispatchLiftingStatusController::class, 'updateStatus'])->name('fuel-lifting.hauls.status');
+        Route::delete('/fuel-lifting/hauls/{haul}', [DispatchLiftingStatusController::class, 'destroy'])->name('fuel-lifting.hauls.destroy');
+        Route::post('/fuel-lifting/hauls/{haul}/truck-deliveries', [LiftLeftoverController::class, 'deliver'])->name('fuel-lifting.hauls.truck-deliveries.store');
+        Route::post('/fuel-lifting/hauls/{haul}/return-to-depot', [LiftLeftoverController::class, 'returnToDepot'])->name('fuel-lifting.hauls.return-to-depot');
         Route::get('/fuel-lifting/hauled', [DispatchDeliveryController::class, 'index'])->defaults('state', 'hauled')->name('fuel-lifting.hauled');
         Route::get('/ledger', InventoryOfficerLedgerController::class)->name('ledger');
         Route::get('/ledger/transactions', InventoryOfficerLedgerController::class)->defaults('state', 'transactions')->name('ledger.transactions');
         Route::get('/alerts', [AdminMonitoringController::class, 'dispatchAlerts'])->name('alerts');
         Route::patch('/alerts/{alert}/read', [AdminMonitoringController::class, 'markAlertRead'])->name('alerts.read');
+        Route::get('/alerts/{alert}/view', [AdminMonitoringController::class, 'viewAlert'])->name('alerts.view');
     });
 
     Route::redirect('/inventory-officer', '/inventory-officer/inventory')->middleware('role:inventory_officer')->name('inventory-officer.shortcut');
@@ -140,6 +142,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/ledger/transactions', InventoryOfficerLedgerController::class)->defaults('state', 'transactions')->name('ledger.transactions');
         Route::get('/alerts', [AdminMonitoringController::class, 'inventoryOfficerAlerts'])->name('alerts');
         Route::patch('/alerts/{alert}/read', [AdminMonitoringController::class, 'markAlertRead'])->name('alerts.read');
+        Route::get('/alerts/{alert}/view', [AdminMonitoringController::class, 'viewAlert'])->name('alerts.view');
     });
 
     Route::redirect('/sales-officer', '/sales-officer/sales')->middleware('role:sales_officer')->name('sales-officer.shortcut');
@@ -157,6 +160,7 @@ Route::middleware(['auth'])->group(function () {
         Route::patch('/sales/customers/{customer}/deactivate', [SalesOfficerCustomerController::class, 'deactivate'])->name('sales.customers.deactivate');
         Route::get('/alerts', [AdminMonitoringController::class, 'salesOfficerAlerts'])->name('alerts');
         Route::patch('/alerts/{alert}/read', [AdminMonitoringController::class, 'markAlertRead'])->name('alerts.read');
+        Route::get('/alerts/{alert}/view', [AdminMonitoringController::class, 'viewAlert'])->name('alerts.view');
     });
 
     Route::redirect('/driver', '/driver/fuel-lifting')->middleware('role:driver')->name('driver.shortcut');

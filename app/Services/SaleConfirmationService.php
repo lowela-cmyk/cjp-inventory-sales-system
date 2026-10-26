@@ -95,21 +95,20 @@ class SaleConfirmationService
 
                 // Part 2 revisions: a Depot to Client order is delivered through its lift; a Standard order by its own
                 // truck. Either way its liters are deducted from the order's purchases here, once.
-                $allocation = null;
-                if ($sale->delivery_type === 'depot_to_client') {
-                    $allocation = DB::table('haul_allocations')
-                        ->join('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')
-                        ->where('haul_allocations.sale_id', $saleId)
-                        ->where('haul_allocations.destination_type', 'customer')
-                        ->where('haul_allocations.status', '!=', 'cancelled')
-                        ->whereIn('hauls.status', ['lifted', 'completed'])
-                        ->orderBy('haul_allocations.id')
-                        ->lockForUpdate()
-                        ->first(['haul_allocations.id', 'haul_allocations.haul_id']);
-
-                    if (! $allocation) {
-                        throw new \RuntimeException('This Depot to Client sale is delivered through its lift. Add it to a lift in Fuel Lifting and complete the lift first.');
-                    }
+                // Part 12: a Standard order can also be delivered from fuel left on a lifted truck; it then has a
+                // delivery row on that lift too and is released through it (so the liters count as off the truck).
+                $allocation = DB::table('haul_allocations')
+                    ->join('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')
+                    ->where('haul_allocations.sale_id', $saleId)
+                    ->where('haul_allocations.destination_type', 'customer')
+                    ->where('haul_allocations.status', '!=', 'cancelled')
+                    ->whereNull('hauls.deleted_at')
+                    ->whereIn('hauls.status', ['lifted', 'completed'])
+                    ->orderBy('haul_allocations.id')
+                    ->lockForUpdate()
+                    ->first(['haul_allocations.id', 'haul_allocations.haul_id']);
+                if ($sale->delivery_type === 'depot_to_client' && ! $allocation) {
+                    throw new \RuntimeException('This Depot to Client sale is delivered through its lift. Add it to a lift in Fuel Lifting and complete the lift first.');
                 }
 
                 $items = DB::table('sale_items')

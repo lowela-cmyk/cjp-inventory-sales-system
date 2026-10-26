@@ -84,10 +84,10 @@ class SalesOfficerCustomerController extends Controller
             'status' => ['nullable', Rule::in($activeTab === 'customers' ? self::ACCOUNT_STATUSES : array_keys(self::RECEIVABLE_FILTER_STATUSES))],
             'delivery_status' => ['nullable', Rule::in(self::DELIVERY_STATUSES)],
             'delivery_type' => ['nullable', Rule::in(array_keys(self::DELIVERY_TYPES))],
-            'date' => ['nullable', 'date'],
             'fuel_type_id' => ['nullable', 'integer', Rule::exists('fuel_types', 'id')],
             'location' => ['nullable', 'string', 'max:255'],
-        ]);
+        ] + FilterDates::rules());
+        $dates = FilterDates::range($data);
 
         $search = trim((string) ($data['search'] ?? ''));
         $normalizedSearch = $search === '' ? null : $search;
@@ -96,7 +96,8 @@ class SalesOfficerCustomerController extends Controller
             'status' => $data['status'] ?? null,
             'delivery_status' => $data['delivery_status'] ?? null,
             'delivery_type' => $data['delivery_type'] ?? null,
-            'date' => $data['date'] ?? null,
+            'date_from' => $dates['from'],
+            'date_to' => $dates['to'],
             'fuel_type_id' => $data['fuel_type_id'] ?? null,
             'location' => $data['location'] ?? null,
         ], fn (mixed $value): bool => $value !== null && $value !== '');
@@ -111,7 +112,6 @@ class SalesOfficerCustomerController extends Controller
                 'deliveryTypes' => self::DELIVERY_TYPES,
                 'accountStatuses' => collect(self::ACCOUNT_STATUSES)->mapWithKeys(fn (string $status): array => [$status => $this->label($status)])->all(),
                 'locations' => DB::table('customers')->whereNotNull('location')->where('location', '!=', '')->distinct()->orderBy('location')->pluck('location', 'location'),
-                'saleDates' => FilterDates::distinct(DB::table('sales')->whereNull('deleted_at'), 'sale_date'),
             ],
             'summaryCards' => $dashboardSummary->salesCards(),
             'sales' => $this->salesRows($normalizedSearch, filters: $activeTab === 'receivables' ? $filters : []),
@@ -411,6 +411,10 @@ class SalesOfficerCustomerController extends Controller
             return back()->withErrors(['sale' => 'Cancelled sales are read-only and remain available for audit history.']);
         }
 
+        if ($row->delivery_status === 'delivered' && ($locked = $this->deliveredSaleChanges($row, $data)) !== []) {
+            throw ValidationException::withMessages($locked);
+        }
+
         $hasDependencies = $this->hasSaleDependentActivity($sale);
         // Once payments exist the status is derived from them (Unpaid / Partially Paid / Paid), so the
         // edit form cannot change it; this keeps fully paid sales editable (order no., due date, etc.).
@@ -425,7 +429,8 @@ class SalesOfficerCustomerController extends Controller
         }
 
         if ($hasDependencies) {
-            if ($this->changesProtectedSaleFields($row, $data)) {
+            // A Delivered sale was checked above (its form sends no order lines).
+            if ($row->delivery_status !== 'delivered' && $this->changesProtectedSaleFields($row, $data)) {
                 return back()
                     ->withInput()
                     ->withErrors(['sale' => 'This sale already has payment, stock-out, inventory release, or haul activity, so customer, fuel, quantity, price, and date cannot be changed.']);
@@ -467,14 +472,14 @@ class SalesOfficerCustomerController extends Controller
                         'payment_method' => $data['payment_method'],
                         'payment_terms' => $data['payment_terms'] ?? $this->defaultPaymentTerms($data['payment_method']),
                         'updated_at' => now(),
-                    ] + ($data['delivery_type'] === 'standard' ? [
-                        // Standard orders: Delivery Details stay editable.
+                    ] + ($data['delivery_type'] === 'standard' && $row->delivery_status !== 'delivered' ? [
+                        // Standard orders: Delivery Details stay editable until the order is Delivered.
                         'delivery_truck_id' => $data['delivery_truck_id'] ?? null,
                         'delivery_driver_user_id' => $data['delivery_driver_user_id'] ?? null,
                         'delivery_date' => $data['delivery_date'] ?? null,
                     ] : []));
 
-                if (! $hasDependencies && $this->changesProtectedSaleFields($row, $data)) {
+                if ($row->delivery_status !== 'delivered' && ! $hasDependencies && $this->changesProtectedSaleFields($row, $data)) {
                     DB::table('sale_items')->where('sale_id', $sale)->delete();
                     // Checked after the old lines are gone, so this sale's own reservation is not counted twice.
                     $this->assertPurchaseStock($items);
@@ -878,7 +883,7 @@ class SalesOfficerCustomerController extends Controller
     }
 
     /**
-     * @param  array{status?: string, delivery_status?: string, date?: string, fuel_type_id?: int|string}  $filters
+     * @param  array{status?: string, delivery_status?: string, date_from?: string, date_to?: string, fuel_type_id?: int|string}  $filters
      */
     private function salesRows(?string $search, ?int $perPage = 25, array $filters = [])
     {
@@ -910,7 +915,7 @@ class SalesOfficerCustomerController extends Controller
                 'sales.payment_method',
                 'receivables.status',
             ]))
-            ->when($filters['date'] ?? null, fn (Builder $query, string $date): Builder => $query->whereDate('sales.sale_date', $date))
+            ->tap(fn (Builder $query): Builder => FilterDates::apply($query, 'sales.sale_date', ['from' => $filters['date_from'] ?? null, 'to' => $filters['date_to'] ?? null]))
             ->when($filters['delivery_status'] ?? null, fn (Builder $query, string $status): Builder => $query->where('sales.delivery_status', $status))
             ->when($filters['delivery_type'] ?? null, fn (Builder $query, string $type): Builder => $query->where('sales.delivery_type', $type))
             ->when($filters['fuel_type_id'] ?? null, fn (Builder $query, mixed $fuelTypeId): Builder => $query->whereExists(
@@ -1312,14 +1317,54 @@ class SalesOfficerCustomerController extends Controller
                 'sales.payment_method',
                 'sales.payment_terms',
                 'sales.status',
+                'sales.delivery_status',
+                'sales.delivery_truck_id',
+                'sales.delivery_driver_user_id',
+                'sales.delivery_date',
             ]);
+    }
+
+    /**
+     * Part 12: once a sale is Delivered its order details are final: customer, transaction date, every line (fuel,
+     * purchase, quantity, F1, prices), the delivery type and the delivery details (truck, driver, delivery date). Only
+     * the sales order number, payment method / terms and due date can still change (and payments can be added).
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, string> field => message for each locked field the request tries to change
+     */
+    private function deliveredSaleChanges(object $row, array $data): array
+    {
+        $message = fn (string $what): string => 'This sale is already Delivered, so its '.$what.' can no longer be changed.';
+        $minute = fn (mixed $value): ?string => $value ? date('Y-m-d H:i', strtotime((string) $value)) : null;
+        $errors = [];
+
+        // The Edit form of a delivered sale sends no order lines (they are read-only); missing lines mean unchanged.
+        $headerChanged = (int) $row->customer_id !== (int) ($data['customer_id'] ?? $row->customer_id)
+            || (string) $row->sale_date !== (string) ($data['sale_date'] ?? $row->sale_date);
+        if ($headerChanged || (! empty($data['items']) && $this->changesProtectedSaleFields($row, $data))) {
+            $errors['sale'] = $message('customer, date, fuel, purchase, quantities, F1 and prices');
+        }
+        if ($row->delivery_type === 'standard') {
+            foreach ([
+                'delivery_truck_id' => ['truck', fn (mixed $value): ?int => $value ? (int) $value : null],
+                'delivery_driver_user_id' => ['driver', fn (mixed $value): ?int => $value ? (int) $value : null],
+                'delivery_date' => ['delivery date', $minute],
+            ] as $field => [$label, $normalize]) {
+                if (array_key_exists($field, $data) && $normalize($data[$field]) !== $normalize($row->{$field})) {
+                    $errors[$field] = $message($label);
+                }
+            }
+        }
+
+        return $errors;
     }
 
     private function hasSaleDependentActivity(int $saleId): bool
     {
         return DB::table('payments')->where('sale_id', $saleId)->exists()
             || DB::table('stock_outs')->where('sale_id', $saleId)->exists()
-            || DB::table('haul_allocations')->where('sale_id', $saleId)->exists()
+            // A deleted lift's delivery rows no longer hold the order.
+            || DB::table('haul_allocations')->join('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')->whereNull('hauls.deleted_at')->where('haul_allocations.sale_id', $saleId)->exists()
             || DB::table('sale_items')->where('sale_id', $saleId)->where('fulfilled_quantity_liters', '>', 0)->exists();
     }
 
@@ -1342,7 +1387,7 @@ class SalesOfficerCustomerController extends Controller
         $dependentIds = collect()
             ->merge(DB::table('payments')->whereIn('sale_id', $ids->all())->pluck('sale_id'))
             ->merge(DB::table('stock_outs')->whereIn('sale_id', $ids->all())->pluck('sale_id'))
-            ->merge(DB::table('haul_allocations')->whereIn('sale_id', $ids->all())->pluck('sale_id'))
+            ->merge(DB::table('haul_allocations')->join('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')->whereNull('hauls.deleted_at')->whereIn('haul_allocations.sale_id', $ids->all())->pluck('haul_allocations.sale_id'))
             ->merge(DB::table('sale_items')->whereIn('sale_id', $ids->all())->where('fulfilled_quantity_liters', '>', 0)->pluck('sale_id'))
             ->map(fn (mixed $id): int => (int) $id)
             ->unique()

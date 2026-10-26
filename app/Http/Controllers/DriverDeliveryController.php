@@ -32,17 +32,16 @@ class DriverDeliveryController extends Controller
                 'integer',
                 ApprovedFuelType::rule(),
             ],
-            'date_from' => ['nullable', 'date'],
-            'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
-        ]);
+        ] + FilterDates::rules(single: null));
+        $dates = FilterDates::range($data, single: null);
         $search = trim((string) ($data['search'] ?? ''));
         $filters = [
             'task_status' => $data['task_status'] ?? null,
             'depot_id' => $data['depot_id'] ?? null,
             'destination_type' => $data['destination_type'] ?? null,
             'fuel_type_id' => $data['fuel_type_id'] ?? null,
-            'date_from' => $data['date_from'] ?? null,
-            'date_to' => $data['date_to'] ?? null,
+            'date_from' => $dates['from'],
+            'date_to' => $dates['to'],
         ];
         $driverId = (int) $request->user()->id;
         $rows = $this->rows($driverId, $search === '' ? null : $search, $filters);
@@ -75,6 +74,7 @@ class DriverDeliveryController extends Controller
             ->join('purchases', 'purchases.id', '=', 'hauls.purchase_id')
             ->where('hauls.id', $haul)
             ->when(! $actingForDriver, fn (Builder $query): Builder => $query->where('hauls.driver_user_id', $actorId))
+            ->whereNull('hauls.deleted_at')
             ->whereNull('purchases.deleted_at')
             ->whereIn('hauls.status', ['lifted', 'completed'])
             ->first(['hauls.id', 'hauls.haul_code', 'hauls.withdrawal_receipt_path']);
@@ -159,6 +159,7 @@ class DriverDeliveryController extends Controller
             ->leftJoin('lifting_schedules', 'lifting_schedules.id', '=', 'hauls.lifting_schedule_id')
             ->leftJoinSub($allocations, 'allocations', 'allocations.haul_id', '=', 'hauls.id')
             ->where('hauls.driver_user_id', $driverId)
+            ->whereNull('hauls.deleted_at')
             ->whereNull('purchases.deleted_at')
             ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
                 'hauls.haul_code',
@@ -307,18 +308,19 @@ class DriverDeliveryController extends Controller
     {
         $fuelIds = DB::table('hauls')
             ->where('driver_user_id', $driverId)
+            ->whereNull('deleted_at')
             ->pluck('fuel_type_id')
             ->unique()
             ->values();
         $depotIds = DB::table('hauls')
             ->where('driver_user_id', $driverId)
+            ->whereNull('deleted_at')
             ->pluck('depot_id')
             ->unique()
             ->values();
 
         return [
             // The days this driver has lifts on (From / To date dropdowns).
-            'liftDates' => FilterDates::distinct(DB::table('hauls')->where('driver_user_id', $driverId), 'scheduled_at'),
             'statuses' => self::TASK_STATUSES,
             'fuelTypes' => DB::table('fuel_types')
                 ->when(
@@ -370,6 +372,7 @@ class DriverDeliveryController extends Controller
     {
         $hauls = DB::table('hauls')
             ->where('driver_user_id', $driverId)
+            ->whereNull('deleted_at')
             ->selectRaw("
                 COUNT(*) as total,
                 SUM(CASE WHEN status = 'scheduled' THEN 1 ELSE 0 END) as scheduled,

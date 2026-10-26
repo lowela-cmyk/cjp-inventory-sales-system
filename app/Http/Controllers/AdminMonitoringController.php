@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\AlertBellService;
+use App\Services\AlertSyncService;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -36,23 +37,112 @@ class AdminMonitoringController extends Controller
 
     public function markAlertRead(Request $request, int $alert): RedirectResponse
     {
-        // The same role → alert types map drives the pages, Mark Read and the header bell.
-        // null = every type (Admin); a role without an Alerts page may mark nothing.
+        $this->visibleAlert($request, $alert);
+        $this->markRead($request, $alert);
+
+        return back()->with('status', 'Alert marked as read.');
+    }
+
+    /**
+     * Part 12: View opens the alert's record in its module and tab, searched so the row is on the first page, and
+     * highlighted (?highlight=CODE, see app.js) until the user clicks it. Viewing marks the alert read. A record that
+     * was deleted since shows a toast on the Alerts page instead of an error.
+     */
+    public function viewAlert(Request $request, int $alert): RedirectResponse
+    {
+        $row = $this->visibleAlert($request, $alert);
+        $this->markRead($request, $alert);
+
+        $target = $this->alertTarget($row, (string) $request->user()->role);
+        if (! $target) {
+            return redirect()
+                ->route(AlertBellService::ROLE_ALERTS[(string) $request->user()->role]['route'])
+                ->with('status', 'This record is no longer available.')
+                ->with('toast_type', 'warning')
+                ->with('toast_title', 'Record not found');
+        }
+
+        [$route, $code] = $target;
+
+        return redirect()->route($route, $code ? ['search' => $code, 'highlight' => $code] : []);
+    }
+
+    /** The alert, when the user's role may see it (the same role → types map drives the pages and the bell). */
+    private function visibleAlert(Request $request, int $alert): object
+    {
+        // null = every type (Admin); a role without an Alerts page may see nothing.
         $role = (string) $request->user()->role;
         $allowedTypes = array_key_exists($role, AlertBellService::ROLE_ALERTS) ? AlertBellService::ROLE_ALERTS[$role]['types'] : [];
-        $query = DB::table('alerts')->where('id', $alert);
-        if (is_array($allowedTypes)) {
-            $query->whereIn('type', $allowedTypes);
-        }
-        abort_unless($query->exists(), 404);
+        $row = DB::table('alerts')->where('id', $alert)
+            ->when(is_array($allowedTypes), fn (Builder $query): Builder => $query->whereIn('type', $allowedTypes))
+            ->first(['id', 'type', 'reference_type', 'reference_id']);
+        abort_unless($row !== null, 404);
 
+        return $row;
+    }
+
+    private function markRead(Request $request, int $alert): void
+    {
         DB::table('alert_reads')->upsert([[
             'alert_id' => $alert,
             'user_id' => $request->user()->id,
             'read_at' => now(),
         ]], ['alert_id', 'user_id'], ['read_at']);
+    }
 
-        return back()->with('status', 'Alert marked as read.');
+    /**
+     * Where an alert's record is listed for this role: [route name, record code to search and highlight], or null when
+     * the record no longer exists. Lifts open on Fuel Lifting (Schedule tab while active, Hauled tab once done); a role
+     * without Fuel Lifting sees the lift's purchase. Purchases open on Inventory > Purchases, sales on Receivables.
+     *
+     * @return array{0: string, 1: ?string}|null
+     */
+    private function alertTarget(object $alert, string $role): ?array
+    {
+        $prefix = match ($role) {
+            'admin' => 'admin',
+            'inventory_officer' => 'inventory-officer',
+            'sales_officer' => 'sales-officer',
+            'dispatch_officer' => 'dispatch',
+            default => null,
+        };
+        if (! $prefix || ! $alert->reference_id) {
+            return null;
+        }
+
+        $purchase = fn (int $purchaseId): ?array => ($code = DB::table('purchases')->where('id', $purchaseId)->whereNull('deleted_at')->value('purchase_code'))
+            ? [in_array($role, ['admin', 'inventory_officer'], true) ? $prefix.'.inventory' : null, $code]
+            : null;
+        $sale = fn (?int $saleId): ?array => $saleId && ($code = DB::table('sales')->where('id', $saleId)->whereNull('deleted_at')->value('sale_code'))
+            ? [in_array($role, ['admin', 'sales_officer'], true) ? $prefix.'.sales' : null, $code]
+            : null;
+
+        $target = match ($alert->reference_type) {
+            'haul' => (function () use ($alert, $prefix, $role, $purchase): ?array {
+                $haul = DB::table('hauls')
+                    ->leftJoin('lifting_schedules', 'lifting_schedules.id', '=', 'hauls.lifting_schedule_id')
+                    ->where('hauls.id', $alert->reference_id)
+                    ->whereNull('hauls.deleted_at')
+                    ->first(['hauls.purchase_id', 'hauls.haul_code', 'hauls.status', 'lifting_schedules.schedule_code']);
+                if (! $haul) {
+                    return null;
+                }
+                if (! in_array($role, ['admin', 'dispatch_officer'], true)) {
+                    return $purchase((int) $haul->purchase_id);
+                }
+
+                return [$prefix.(in_array($haul->status, ['completed', 'cancelled'], true) ? '.fuel-lifting.hauled' : '.fuel-lifting'), $haul->schedule_code ?: $haul->haul_code];
+            })(),
+            'purchase' => $purchase((int) $alert->reference_id),
+            // An order alert takes Dispatch to the Schedule tab (to put the order on a lift).
+            'sale', 'receivable' => $role === 'dispatch_officer'
+                ? (DB::table('sales')->where('id', $alert->reference_id)->whereNull('deleted_at')->exists() ? ['dispatch.fuel-lifting', null] : null)
+                : $sale((int) $alert->reference_id),
+            'payment' => $sale((int) DB::table('payments')->where('id', $alert->reference_id)->value('sale_id')),
+            default => null,
+        };
+
+        return $target && $target[0] ? $target : null;
     }
 
     /**
@@ -69,6 +159,9 @@ class AdminMonitoringController extends Controller
             ->when($types, fn (Builder $query, array $types): Builder => $query->whereIn('type', $types))
             ->when($filters['type'] ?? null, fn (Builder $query, string $type): Builder => $query->where('alerts.type', $type))
             ->when($filters['severity'] ?? null, fn (Builder $query, string $severity): Builder => $query->where('alerts.severity', $severity))
+            // Part 12: resolved alerts leave the list; the Status filter "Resolved" shows them.
+            ->when(($filters['read'] ?? null) === 'resolved', fn (Builder $query): Builder => $query->where('alerts.status', 'resolved'),
+                fn (Builder $query): Builder => $query->where('alerts.status', '!=', 'resolved'))
             ->when(($filters['read'] ?? null) === 'read', fn (Builder $query): Builder => $query->whereNotNull('alert_reads.read_at'))
             ->when(($filters['read'] ?? null) === 'unread', fn (Builder $query): Builder => $query->whereNull('alert_reads.read_at'))
             ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
@@ -87,26 +180,18 @@ class AdminMonitoringController extends Controller
                 'id' => (int) $row->id,
                 'class' => $row->severity === 'critical' ? 'alert-critical' : 'alert-warning',
                 'type' => $row->severity === 'critical' ? 'critical' : 'warning',
-                'title' => $row->alert_code.' - '.$row->title,
+                // Part 12: the alert ID stays searchable but is not shown; neither is the type / reference label.
+                'title' => $row->title,
                 'message' => $row->message,
                 'time' => $this->formatDateTime($row->created_at),
-                'meta' => trim($this->label($row->type).' / '.($row->reference_type ?: '').($row->reference_id ? ' #'.$row->reference_id : '')),
                 'status' => $this->label($row->status),
                 'read' => $row->read_at !== null,
-                'read_state' => $row->read_at ? 'Read' : 'Unread',
-                'action_url' => $this->alertActionUrl($row, $role),
+                'read_state' => $row->status === 'resolved' ? 'Resolved' : ($row->read_at ? 'Read' : 'Unread'),
+                'resolved' => $row->status === 'resolved',
+                'action_url' => $role && isset(AlertBellService::ROLE_ALERTS[$role])
+                    ? route(str_replace('.alerts', '.alerts.view', AlertBellService::ROLE_ALERTS[$role]['route']), $row->id)
+                    : null,
             ]);
-    }
-
-    private function alertActionUrl(object $alert, ?string $role): ?string
-    {
-        return match ($role) {
-            'admin' => $alert->reference_type === 'haul' ? route('admin.fuel-lifting') : route('admin.inventory'),
-            'inventory_officer' => route('inventory-officer.inventory'),
-            'dispatch_officer' => route('dispatch.fuel-lifting'),
-            'sales_officer' => route('sales-officer.sales'),
-            default => $alert->action_url,
-        };
     }
 
     /**
@@ -114,6 +199,7 @@ class AdminMonitoringController extends Controller
      */
     private function alertsPage(Request $request, string $view, ?array $types): View
     {
+        app(AlertSyncService::class)->sync();
         $search = $this->validatedSearch($request);
         $filters = $this->alertFilters($request, $types);
 
@@ -134,7 +220,7 @@ class AdminMonitoringController extends Controller
     private function alertFilters(Request $request, ?array $types): array
     {
         $data = $request->validate([
-            'read' => ['nullable', Rule::in(['read', 'unread'])],
+            'read' => ['nullable', Rule::in(['read', 'unread', 'resolved'])],
             'severity' => ['nullable', Rule::in(['info', 'warning', 'critical'])],
             'type' => ['nullable', Rule::in($types ?? self::ALERT_TYPES)],
         ]);

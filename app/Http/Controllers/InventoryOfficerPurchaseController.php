@@ -51,17 +51,18 @@ class InventoryOfficerPurchaseController extends Controller
         $data = $request->validate([
             'search' => ['nullable', 'string', 'max:100'],
             'status' => ['nullable', Rule::in(self::TAB_FILTER_STATUSES[$activeTab])],
-            'date' => ['nullable', 'date'],
             'depot_id' => ['nullable', 'integer', Rule::exists('depots', 'id')],
             'fuel_type_id' => ['nullable', 'integer', Rule::exists('fuel_types', 'id')],
             'delivery_type' => ['nullable', Rule::in(array_keys(SalesOfficerCustomerController::DELIVERY_TYPES))],
-        ]);
+        ] + FilterDates::rules());
+        $dates = FilterDates::range($data);
 
         $search = trim((string) ($data['search'] ?? ''));
         // Filters belong to the tab whose toolbar submitted them; the other tabs stay unfiltered.
         $filters = [
             'status' => $data['status'] ?? null,
-            'date' => $data['date'] ?? null,
+            'date_from' => $dates['from'],
+            'date_to' => $dates['to'],
             'depot_id' => $data['depot_id'] ?? null,
             'fuel_type_id' => $data['fuel_type_id'] ?? null,
             'delivery_type' => $data['delivery_type'] ?? null,
@@ -81,7 +82,8 @@ class InventoryOfficerPurchaseController extends Controller
                 'depot_id' => $filters['depot_id'],
                 'fuel_type_id' => $filters['fuel_type_id'],
                 'status' => $activeTab === 'stock-in' ? $filters['status'] : null,
-                'date' => $activeTab === 'stock-in' ? $filters['date'] : null,
+                // A one-day range moves the "today" cards to that day.
+                'date' => $activeTab === 'stock-in' && $dates['from'] && $dates['from'] === $dates['to'] ? $dates['from'] : null,
             ])),
             'purchases' => $purchases,
             'stockIn' => $stockIn,
@@ -94,12 +96,6 @@ class InventoryOfficerPurchaseController extends Controller
             'filters' => $filters,
             'filterOptions' => [
                 'statuses' => self::TAB_FILTER_STATUSES,
-                // Important Notes (Part 6): every filter is a dropdown; Date lists the dates each tab has records on.
-                'dates' => [
-                    'purchases' => FilterDates::distinct(DB::table('purchases')->whereNull('deleted_at'), 'purchase_date'),
-                    'stock-in' => $this->stockIns->dates(),
-                    'stock-out' => FilterDates::distinct(DB::table('stock_outs'), 'stock_out_at'),
-                ],
                 'depots' => DB::table('depots')->orderBy('name')->get(['id', 'name']),
                 'fuelTypes' => DB::table('fuel_types')
                     ->where('status', 'active')
@@ -215,13 +211,15 @@ class InventoryOfficerPurchaseController extends Controller
             ->join('sales', 'sales.id', '=', 'stock_outs.sale_id')
             ->where('stock_outs.id', $stockOut)
             ->whereNull('sales.deleted_at')
-            ->first(['stock_outs.id', 'stock_outs.status', 'stock_outs.haul_allocation_id', 'sales.id as sale_id', 'sales.delivery_type']);
+            ->first(['stock_outs.id', 'stock_outs.status', 'stock_outs.haul_allocation_id', 'sales.id as sale_id', 'sales.delivery_type', 'sales.delivery_status']);
         abort_unless($row !== null, 404);
 
+        // Part 12: a Delivered sale's release keeps its date, truck, driver and delivery date; only Cost / Unit changes.
+        $delivered = $row->delivery_status === 'delivered';
         // The order's own truck, driver and date apply only when no lift carried the release (the lift's win).
-        $standard = $row->delivery_type === 'standard' && $row->haul_allocation_id === null;
+        $standard = ! $delivered && $row->delivery_type === 'standard' && $row->haul_allocation_id === null;
         $data = $request->validate([
-            'stock_out_at' => ['required', 'date', 'before_or_equal:now'],
+            'stock_out_at' => $delivered ? ['exclude'] : ['required', 'date', 'before_or_equal:now'],
             'unit_cost' => ['required', 'numeric', 'gte:0', 'max:10000'],
             'delivery_truck_id' => $standard ? ['nullable', 'integer', Rule::exists('trucks', 'id')] : ['exclude'],
             'delivery_driver_user_id' => $standard ? ['nullable', 'integer', Rule::exists('users', 'id')->where(fn (Builder $query): Builder => $query->where('role', 'driver'))] : ['exclude'],
@@ -241,10 +239,9 @@ class InventoryOfficerPurchaseController extends Controller
 
         DB::transaction(function () use ($row, $data, $standard): void {
             DB::table('stock_outs')->where('id', $row->id)->update([
-                'stock_out_at' => $data['stock_out_at'],
                 'unit_cost' => round((float) $data['unit_cost'], 2),
                 'updated_at' => now(),
-            ]);
+            ] + (isset($data['stock_out_at']) ? ['stock_out_at' => $data['stock_out_at']] : []));
 
             if ($standard) {
                 DB::table('sales')->where('id', $row->sale_id)->update([
@@ -268,6 +265,7 @@ class InventoryOfficerPurchaseController extends Controller
             ->where('hauls.id', $haul)
             // A driver sees only the receipts of their own lifts.
             ->when($request->user()->role === 'driver', fn (Builder $query): Builder => $query->where('hauls.driver_user_id', $request->user()->id))
+            ->whereNull('hauls.deleted_at')
             ->whereNull('purchases.deleted_at')
             ->first(['hauls.haul_code', 'hauls.withdrawal_receipt_path']);
 
@@ -462,7 +460,7 @@ class InventoryOfficerPurchaseController extends Controller
     {
         $query = $this->stockOutFinancials->query($search)
             ->when($filters['status'] ?? null, fn (Builder $query, string $status): Builder => $query->where('stock_outs.status', $status))
-            ->when($filters['date'] ?? null, fn (Builder $query, string $date): Builder => $query->whereDate('stock_outs.stock_out_at', $date))
+            ->tap(fn (Builder $query): Builder => FilterDates::apply($query, 'stock_outs.stock_out_at', ['from' => $filters['date_from'] ?? null, 'to' => $filters['date_to'] ?? null]))
             // Garage releases come from pooled tank stock, so only direct depot releases carry a depot.
             ->when($filters['depot_id'] ?? null, fn (Builder $query, mixed $depotId): Builder => $query->where('source_depot.id', (int) $depotId))
             ->when($filters['fuel_type_id'] ?? null, fn (Builder $query, mixed $fuelTypeId): Builder => $query->where('stock_outs.fuel_type_id', (int) $fuelTypeId))
@@ -515,8 +513,10 @@ class InventoryOfficerPurchaseController extends Controller
                 'id' => (int) $row->id,
                 'modal_id' => 'io-stock-out-edit-'.$row->id,
                 'editable' => $row->status === 'released',
-                // Delivery details editable here: a Standard order's own, when no lift carried it.
-                'standard' => $row->delivery_type === 'standard' && $row->haul_allocation_id === null,
+                // Part 12: a Delivered sale's release: only Cost / Unit can change (date and delivery details are final).
+                'delivered' => $row->delivery_status === 'delivered',
+                // Delivery details editable here: a Standard order's own, when no lift carried it (not once Delivered).
+                'standard' => $row->delivery_status !== 'delivered' && $row->delivery_type === 'standard' && $row->haul_allocation_id === null,
                 // The Edit form's current values.
                 'form' => [
                     'stock_out_at' => $row->stock_out_at ? date('Y-m-d\\TH:i', strtotime((string) $row->stock_out_at)) : null,

@@ -28,6 +28,11 @@ class Part7RevisionsTest extends AuditTestCase
         $this->assertTruckSelectable($a, false);
 
         $this->actingAs($a['driver'])->patch(route('driver.fuel-lifting.hauls.status', $haulId), ['idempotency_key' => $this->uuid(), 'lifting_status' => 'lifted']);
+        // Part 12: nothing was delivered, so the 5,000 L stay on the truck: Loaded, not selectable.
+        $this->assertSame('loaded', $this->truckStatus($a));
+        $this->assertTruckSelectable($a, false);
+        // Returning them to the depot frees the truck.
+        $this->actingAs($a['dispatch'])->post(route('dispatch.fuel-lifting.hauls.return-to-depot', $haulId))->assertSessionHasNoErrors();
         $this->assertSame('available', $this->truckStatus($a));
         $this->assertTruckSelectable($a, true);
         $trucksTab = $this->actingAs($a['dispatch'])->get(route('dispatch.fuel-lifting.trucks'))->assertOk()->getContent();

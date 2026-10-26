@@ -96,7 +96,7 @@ class SystemAnalysisRevisionsTest extends TestCase
         $this->actingAs($records['dispatch'])
             ->get(route('dispatch.fuel-lifting', ['lift_date' => '2026-09-20']))
             ->assertOk()
-            ->assertViewHas('filters', fn (array $filters): bool => $filters['lift_date'] === '2026-09-20' && ! array_key_exists('date_from', $filters))
+            ->assertViewHas('filters', fn (array $filters): bool => $filters['lift_date_from'] === '2026-09-20' && $filters['lift_date_to'] === '2026-09-20')
             ->assertViewHas('scheduledRows', fn ($rows): bool => $rows->pluck('cells.0')->all() === [DB::table('lifting_schedules')->where('scheduled_at', '2026-09-20 08:00:00')->value('schedule_code')]);
     }
 
@@ -259,7 +259,8 @@ class SystemAnalysisRevisionsTest extends TestCase
         $page->assertOk()
             ->assertDontSee('@hidden', false)
             ->assertSee('name="status"', false)
-            ->assertSee('name="date"', false)
+            ->assertSee('name="date_from"', false)
+            ->assertSee('name="date_to"', false)
             ->assertSee('name="depot_id"', false)
             ->assertSee('name="fuel_type_id"', false);
         $this->assertSame(1, substr_count($page->getContent(), 'data-modal-open="io-depot-add"'));

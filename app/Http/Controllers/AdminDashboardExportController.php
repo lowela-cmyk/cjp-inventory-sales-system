@@ -6,6 +6,7 @@ use App\Services\DashboardService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -47,6 +48,27 @@ class AdminDashboardExportController extends Controller
         $page = $dashboard->data(AdminDashboardController::inventoryFilters($filters), AdminDashboardController::salesFilters($filters));
         $generatedAt = now()->format('F j, Y g:i A');
 
+        // Part 12: if the PDF cannot be built (e.g. the DomPDF package is not installed: run composer install), the user
+        // gets an error toast on the dashboard instead of a 500 page; the details go to the server log.
+        try {
+            return $this->pdf($generatedAt, $filters, $page, $charts, $data);
+        } catch (\Throwable $exception) {
+            Log::error('Dashboard export failed: '.$exception->getMessage(), ['exception' => $exception]);
+
+            return redirect()
+                ->route('admin.dashboard', array_filter($filters, fn (mixed $value): bool => $value !== null && $value !== ''))
+                ->withErrors(['export' => 'The dashboard report could not be exported. Please try again or contact the administrator.']);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @param  array<string, mixed>  $page
+     * @param  array<int, array{title: string, src: string}>  $charts
+     * @param  array<string, mixed>  $data
+     */
+    private function pdf(string $generatedAt, array $filters, array $page, array $charts, array $data): Response
+    {
         $pdf = Pdf::loadView('admin.dashboard-export', [
             'generatedAt' => $generatedAt,
             'filters' => $this->filterLabels($filters),

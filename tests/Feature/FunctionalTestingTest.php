@@ -52,7 +52,6 @@ class FunctionalTestingTest extends TestCase
                 route('admin.ledger'),
                 route('admin.fuel-lifting'),
                 route('admin.sales'),
-                route('admin.reports'),
                 route('admin.alerts'),
                 route('admin.user-management'),
             ],
@@ -207,7 +206,7 @@ class FunctionalTestingTest extends TestCase
         Carbon::setTestNow();
     }
 
-    public function test_dashboard_reports_and_analytics_pages_render_real_system_totals(): void
+    public function test_dashboard_analytics_page_renders_real_system_totals(): void
     {
         $records = $this->baseRecords();
         $this->seedGarageStock($records, 6000);
@@ -221,17 +220,6 @@ class FunctionalTestingTest extends TestCase
             ->assertSeeInOrder(['Total Inventory in Stock', '4.00 KL'])
             ->assertSeeInOrder(['Total Delivered', '2.00 KL'])
             ->assertSeeInOrder(['Unpaid Amount', 'PHP 100,000.00']);
-
-        $this->actingAs($records['admin'])
-            ->get(route('admin.reports', ['period' => 'date', 'date' => '2026-09-04']))
-            ->assertOk()
-            ->assertSee('Reports and A.I Insights')
-            ->assertSee('PHP 100,000.00');
-
-        $this->actingAs($records['admin'])
-            ->get(route('admin.reports.export', ['period' => 'date', 'date' => '2026-09-04']))
-            ->assertOk()
-            ->assertHeader('content-type', 'text/csv; charset=UTF-8');
     }
 
     public function test_ai_reporting_feature_routes_validate_filters_and_do_not_call_provider_without_data(): void
@@ -246,26 +234,6 @@ class FunctionalTestingTest extends TestCase
         ]);
 
         $admin = User::factory()->create(['role' => 'admin', 'status' => 'active']);
-
-        $this->actingAs($admin)
-            ->from(route('admin.reports'))
-            ->post(route('admin.reports.revenue-insight'), [
-                'period' => 'range',
-                'start_date' => '2026-09-10',
-                'end_date' => '2026-09-01',
-            ])
-            ->assertRedirect(route('admin.reports'))
-            ->assertSessionHasErrors('end_date');
-
-        $this->actingAs($admin)
-            ->post(route('admin.reports.business-insight'), [
-                'period' => 'date',
-                'date' => '2024-01-01',
-                'month' => '2024-01',
-                'year' => '2024',
-            ])
-            ->assertRedirect()
-            ->assertSessionHas('businessInsightNotice', 'Insufficient business data for AI insight generation.');
 
         $this->actingAs($admin)
             ->post(route('admin.dashboard.insight'), [

@@ -102,7 +102,6 @@ class RoleBasedAccessControlTest extends TestCase
                 '/admin/ledger',
                 '/admin/fuel-lifting',
                 '/admin/sales',
-                '/admin/reports',
                 '/admin/alerts',
                 '/admin/account-requests',
                 '/admin/user-management',

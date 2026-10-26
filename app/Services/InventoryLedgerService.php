@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\FilterDates;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -96,6 +97,7 @@ class InventoryLedgerService
     private function purchaseProgressRows(?string $search, array $filters = []): Collection
     {
         $completedLifts = DB::table('hauls')
+            ->whereNull('deleted_at')
             ->whereIn('status', ['lifted', 'completed'])
             ->selectRaw('purchase_item_id, COALESCE(SUM(quantity_liters), 0) as total_lifted_liters')
             ->groupBy('purchase_item_id');
@@ -117,7 +119,7 @@ class InventoryLedgerService
                     $query->orWhere($column, 'like', '%'.$search.'%');
                 }
             }))
-            ->when($filters['date'] ?? null, fn (Builder $query, string $date): Builder => $query->whereDate('purchases.purchase_date', $date))
+            ->tap(fn (Builder $query): Builder => FilterDates::apply($query, 'purchases.purchase_date', ['from' => $filters['date_from'] ?? null, 'to' => $filters['date_to'] ?? null]))
             ->when($filters['depot_id'] ?? null, fn (Builder $query, mixed $depotId): Builder => $query->where('purchases.depot_id', (int) $depotId))
             ->when($filters['fuel_type_id'] ?? null, fn (Builder $query, mixed $fuelTypeId): Builder => $query->where('purchase_items.fuel_type_id', (int) $fuelTypeId))
             ->orderByDesc('purchases.purchase_date')
@@ -149,6 +151,7 @@ class InventoryLedgerService
             ->join('users as drivers', 'drivers.id', '=', 'hauls.driver_user_id')
             ->leftJoin('driver_profiles', 'driver_profiles.user_id', '=', 'drivers.id')
             ->whereIn('hauls.purchase_item_id', $purchaseItemIds)
+            ->whereNull('hauls.deleted_at')
             ->orderBy('hauls.scheduled_at')
             ->orderBy('hauls.id')
             ->get([
@@ -265,6 +268,7 @@ class InventoryLedgerService
 
         $haulCodes = DB::table('hauls')
             ->whereIn('purchase_item_id', $ids)
+            ->whereNull('deleted_at')
             ->orderBy('scheduled_at')
             ->orderBy('id')
             ->get(['purchase_item_id', 'haul_code'])

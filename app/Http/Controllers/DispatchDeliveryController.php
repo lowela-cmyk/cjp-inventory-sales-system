@@ -51,15 +51,16 @@ class DispatchDeliveryController extends Controller
             ],
             'driver_user_id' => ['nullable', 'integer', Rule::exists('users', 'id')->where(fn (Builder $query): Builder => $query->where('role', 'driver'))],
             'truck_id' => ['nullable', 'integer', Rule::exists('trucks', 'id')],
-            'lift_date' => ['nullable', 'date'],
-        ]);
+        ] + FilterDates::rules('lift_date_from', 'lift_date_to', 'lift_date'));
+        $liftDates = FilterDates::range($data, 'lift_date_from', 'lift_date_to', 'lift_date');
         $search = trim((string) ($data['search'] ?? ''));
         $filters = [
             'status' => $data['status'] ?? null,
             'fuel_type_id' => $data['fuel_type_id'] ?? null,
             'driver_user_id' => $data['driver_user_id'] ?? null,
             'truck_id' => $data['truck_id'] ?? null,
-            'lift_date' => $data['lift_date'] ?? null,
+            'lift_date_from' => $liftDates['from'],
+            'lift_date_to' => $liftDates['to'],
         ];
         $rows = $this->haulRows($search === '' ? null : $search, $filters);
 
@@ -255,6 +256,7 @@ class DispatchDeliveryController extends Controller
             ->join('purchases as schedule_purchases', 'schedule_purchases.id', '=', 'schedule_hauls.purchase_id')
             ->join('fuel_types as schedule_fuels', 'schedule_fuels.id', '=', 'schedule_hauls.fuel_type_id')
             ->whereNotNull('schedule_hauls.lifting_schedule_id')
+            ->whereNull('schedule_hauls.deleted_at')
             ->selectRaw('schedule_hauls.lifting_schedule_id, GROUP_CONCAT(DISTINCT schedule_purchases.purchase_code) as purchase_codes, GROUP_CONCAT(DISTINCT schedule_fuels.name) as fuel_names, SUM(schedule_hauls.quantity_liters) as scheduled_quantity_liters')
             ->groupBy('schedule_hauls.lifting_schedule_id');
 
@@ -269,6 +271,7 @@ class DispatchDeliveryController extends Controller
             ->leftJoinSub($scheduleItems, 'schedule_items', 'schedule_items.lifting_schedule_id', '=', 'hauls.lifting_schedule_id')
             ->leftJoin('users as status_updater', 'status_updater.id', '=', 'hauls.status_updated_by')
             ->leftJoin('users as receipt_uploader', 'receipt_uploader.id', '=', 'hauls.withdrawal_receipt_uploaded_by')
+            ->whereNull('hauls.deleted_at')
             ->whereNull('purchases.deleted_at')
             ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
                 'hauls.haul_code',
@@ -287,10 +290,7 @@ class DispatchDeliveryController extends Controller
             ->when($filters['fuel_type_id'] ?? null, fn (Builder $query, mixed $fuelTypeId): Builder => $query->where('hauls.fuel_type_id', (int) $fuelTypeId))
             ->when($filters['driver_user_id'] ?? null, fn (Builder $query, mixed $driverUserId): Builder => $query->where('hauls.driver_user_id', (int) $driverUserId))
             ->when($filters['truck_id'] ?? null, fn (Builder $query, mixed $truckId): Builder => $query->where('hauls.truck_id', (int) $truckId))
-            ->when($filters['lift_date'] ?? null, fn (Builder $query, string $date): Builder => $query->whereBetween('hauls.scheduled_at', [
-                CarbonImmutable::parse($date)->startOfDay()->toDateTimeString(),
-                CarbonImmutable::parse($date)->endOfDay()->toDateTimeString(),
-            ]))
+            ->tap(fn (Builder $query): Builder => FilterDates::apply($query, 'hauls.scheduled_at', ['from' => $filters['lift_date_from'] ?? null, 'to' => $filters['lift_date_to'] ?? null]))
             ->orderByDesc('hauls.scheduled_at')
             ->orderByDesc('hauls.id')
             ->get([
@@ -303,6 +303,9 @@ class DispatchDeliveryController extends Controller
                 'hauls.hauled_at',
                 'hauls.source_location',
                 'hauls.quantity_liters',
+                'hauls.returned_liters',
+                'hauls.purchase_item_id',
+                'hauls.fuel_type_id',
                 'hauls.status',
                 'hauls.truck_id',
                 'hauls.status_updated_at',
@@ -384,6 +387,13 @@ class DispatchDeliveryController extends Controller
                         'lifts' => $liftRows[(int) $row->id] ?? [],
                         'load' => $loads[(int) $row->id] ?? ['delivered' => 0.0, 'remaining' => round((float) $row->quantity_liters, 2)],
                         'can_upload_withdrawal' => in_array($row->status, ['lifted', 'completed'], true),
+                        // Part 11: only a lift that is still Scheduled (no receipt, not hauled) can be deleted.
+                        'deletable' => $row->status === 'scheduled' && ! $row->withdrawal_receipt_path && ! $row->hauled_at,
+                        // Part 12: what fuel left on the truck can still deliver (lifted / completed lines only).
+                        'is_done' => in_array($row->status, ['lifted', 'completed'], true),
+                        'purchase_item_id' => (int) $row->purchase_item_id,
+                        'fuel_type_id' => (int) $row->fuel_type_id,
+                        'returned' => round((float) $row->returned_liters, 2),
                         'withdrawal_uploaded' => (bool) $row->withdrawal_receipt_path,
                         'withdrawal_uploaded_label' => $row->withdrawal_receipt_path
                             ? 'Uploaded '.$this->formatDateTime($row->withdrawal_receipt_uploaded_at).($row->receipt_uploaded_by_name ? ' by '.$row->receipt_uploaded_by_name : '')
@@ -396,16 +406,25 @@ class DispatchDeliveryController extends Controller
             ->map(function ($group): array {
                 $row = $group->first();
                 $row['hauls'] = $group->pluck('haul')->values()->all();
+                $row['can_delete'] = collect($row['hauls'])->every(fn (array $haul): bool => $haul['deletable']);
                 // Delivered (to Depot to Client orders) for the whole schedule; the rest stays on the truck.
                 $load = collect($row['hauls'])->pluck('load');
                 $row['load'] = [
                     'delivered' => $this->formatLiters($load->sum('delivered')),
                     'remaining' => $this->formatLiters($load->sum('remaining')),
                 ];
+                // Part 12: fuel still on the truck after the lift (it keeps the truck Loaded) and what was returned.
+                $lines = collect($row['hauls'])->filter(fn (array $haul): bool => $haul['is_done'] && $haul['load']['remaining'] > 0)
+                    ->map(fn (array $haul): array => ['haul_id' => $haul['id'], 'purchase_item_id' => $haul['purchase_item_id'], 'fuel_type_id' => $haul['fuel_type_id'], 'leftover' => $haul['load']['remaining']])
+                    ->values()->all();
+                $row['truck_leftover'] = round((float) collect($lines)->sum('leftover'), 2);
+                $row['truck_leftover_label'] = $this->formatLiters($row['truck_leftover']);
+                $row['truck_order_options'] = $row['truck_leftover'] > 0 ? $this->liftAllocations->truckOrderOptions($lines) : collect();
+                $returned = round((float) collect($row['hauls'])->sum('returned'), 2);
                 $row['details'] = array_merge($row['details'], [
                     'Delivered Quantity' => $row['load']['delivered'],
                     'Remaining on Truck' => $row['load']['remaining'],
-                ]);
+                ] + ($returned > 0 ? ['Returned to Depot' => $this->formatLiters($returned)] : []));
                 // Keep Status and Last Status Update at the end of the details.
                 foreach (['Status', 'Last Status Update'] as $label) {
                     $value = $row['details'][$label];
@@ -464,7 +483,6 @@ class DispatchDeliveryController extends Controller
             'fuelTypes' => DB::table('fuel_types')->where('status', 'active')->whereIn('code', array_keys(config('fuels.approved', ['F1' => true, 'UNL' => true, 'DSL' => true, 'PREM' => true])))->orderBy('name')->get(['id', 'name']),
             'drivers' => $this->driverOptions(),
             'trucks' => $this->haulTruckOptions(),
-            'liftDates' => FilterDates::distinct(DB::table('hauls'), 'scheduled_at'),
         ];
     }
 

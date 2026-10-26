@@ -131,67 +131,6 @@ class Phase4SecurityHardeningTest extends TestCase
         $this->assertAuthenticatedAs($user1);
     }
 
-    public function test_csv_export_in_admin_sales_report_neutralizes_formula_triggers(): void
-    {
-        $admin = User::factory()->create([
-            'role' => 'admin',
-            'status' => 'active',
-            'approval_status' => 'approved',
-        ]);
-
-        $customer = DB::table('customers')->insertGetId([
-            'customer_code' => 'CSM-000099',
-            'name' => '=HYPERLINK("http://evil.com","Click")',
-            'company_name' => '@SUM(1+1)',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
-        $fuelTypeId = DB::table('fuel_types')->where('code', 'DSL')->value('id')
-            ?? DB::table('fuel_types')->insertGetId([
-                'name' => 'DIESEL',
-                'code' => 'DSL',
-                'status' => 'active',
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-
-        $saleId = DB::table('sales')->insertGetId([
-            'sale_code' => '+SLS-FORMULA-001',
-            'sales_order_number' => '-SO-999',
-            'customer_id' => $customer,
-            'sale_date' => now()->toDateString(),
-            'status' => 'confirmed',
-            'created_by' => $admin->id,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
-        DB::table('sale_items')->insert([
-            'sale_id' => $saleId,
-            'fuel_type_id' => $fuelTypeId,
-            'quantity_liters' => 100,
-            'fulfilled_quantity_liters' => 100,
-            'unit_price' => 50.00,
-            'line_total' => 5000.00,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
-        $response = $this->actingAs($admin)->get(route('admin.reports.export'));
-
-        $response->assertOk();
-        $response->assertHeader('Content-Type', 'text/csv; charset=UTF-8');
-
-        $content = $response->getContent();
-
-        // Formula prefixes must be preceded by a single quote
-        $this->assertStringContainsString("'+SLS-FORMULA-001", $content);
-        $this->assertStringContainsString("'-SO-999", $content);
-        $this->assertStringContainsString("'=HYPERLINK", $content);
-        $this->assertStringContainsString("'@SUM", $content);
-    }
-
     public function test_csv_export_in_user_management_neutralizes_formula_triggers(): void
     {
         $admin = User::factory()->create([

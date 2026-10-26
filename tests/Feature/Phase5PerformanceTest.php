@@ -82,6 +82,8 @@ class Phase5PerformanceTest extends TestCase
             ]);
         }
 
+        // Part 12: the header bell brings computed alerts up to date once after a data change; measure the page itself.
+        app(\App\Services\AlertSyncService::class)->sync();
         DB::flushQueryLog();
         DB::enableQueryLog();
 

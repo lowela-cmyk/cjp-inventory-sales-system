@@ -15,7 +15,8 @@ class AlertBellService
     public const ROLE_ALERTS = [
         'admin' => ['route' => 'admin.alerts', 'types' => null],
         'inventory_officer' => ['route' => 'inventory-officer.alerts', 'types' => ['inventory', 'purchase', 'haul', 'discrepancy']],
-        'sales_officer' => ['route' => 'sales-officer.alerts', 'types' => ['payment', 'receivable']],
+        // Part 12: Sales also sees order alerts (Depot to Client order not on a lift, partially delivered).
+        'sales_officer' => ['route' => 'sales-officer.alerts', 'types' => ['payment', 'receivable', 'delivery']],
         'dispatch_officer' => ['route' => 'dispatch.alerts', 'types' => ['haul', 'delivery']],
     ];
 
@@ -35,7 +36,11 @@ class AlertBellService
             return 0;
         }
 
+        // Part 12: computed alerts are brought up to date first (a no-op unless the data changed).
+        app(AlertSyncService::class)->sync();
+
         return (int) DB::table('alerts')
+            ->where('alerts.status', '!=', 'resolved')
             ->when(self::ROLE_ALERTS[$user->role]['types'], fn ($query, array $types) => $query->whereIn('alerts.type', $types))
             ->whereNotExists(fn ($query) => $query->selectRaw('1')->from('alert_reads')
                 ->whereColumn('alert_reads.alert_id', 'alerts.id')

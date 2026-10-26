@@ -255,11 +255,11 @@ class DashboardService
     }
 
     /**
-     * Stock Out vs Receivables Margin, over delivered sales only (option A):
-     * - Receivables: amount billed for delivered sales (sum of their line totals).
+     * Stock Out vs Receivables Margin, over delivered (stocked-out) sales only. Part 12 (October 26, 2026):
      * - Stock Out: value of the fuel released for those sales = released liters x the sale line's price.
-     * - Missing: Receivables - Stock Out (billed fuel that never left a tank or depot).
-     * - Inventory Variance Rate: Missing / Receivables x 100.
+     * - Receivables: the amount actually collected on those sales (payments received), not the billed total.
+     * - Missing: Stock Out - Collected (delivered fuel not paid for yet).
+     * - Inventory Variance Rate: Missing / Stock Out x 100 (0.00% when nothing was stocked out).
      *
      * @return array<string, mixed>
      */
@@ -271,22 +271,22 @@ class DashboardService
             ->where('delivery_status', 'delivered')
             ->select('id');
 
-        $receivables = round((float) DB::table('sale_items')->whereIn('sale_id', $delivered())->sum('line_total'), 2);
         $stockOut = round((float) $this->releasesQuery()->whereIn('stock_outs.sale_id', $delivered())
             ->sum(DB::raw('stock_outs.quantity_liters * '.$this->releasePriceSql())), 2);
-        $missing = round($receivables - $stockOut, 2);
-        $rate = $receivables > 0 ? round($missing / $receivables * 100, 2) : 0.0;
+        $collected = round((float) DB::table('payments')->whereIn('sale_id', $delivered())->sum('amount'), 2);
+        $missing = round($stockOut - $collected, 2);
+        $rate = $stockOut > 0 ? round($missing / $stockOut * 100, 2) : 0.0;
 
         return [
             'stock_out' => $stockOut,
-            'receivables' => $receivables,
+            'receivables' => $collected,
             'missing' => $missing,
             'variance_rate' => $rate,
             'missingLabel' => $this->money($missing),
             'varianceRateLabel' => $this->percent($rate),
-            'chart' => $this->chart('bar', 'money', ['Stock Out', 'Receivables'], [[
+            'chart' => $this->chart('bar', 'money', ['Stock Out', 'Receivables (Collected)'], [[
                 'label' => 'Delivered sales',
-                'data' => [$stockOut, $receivables],
+                'data' => [$stockOut, $collected],
                 'backgroundColor' => [self::RED, self::GREEN],
             ]], showValues: true, yAxis: 'none'),
         ];
@@ -498,6 +498,7 @@ class DashboardService
     private function purchaseLinesQuery(array $filters): Builder
     {
         $lifted = DB::table('hauls')
+            ->whereNull('deleted_at')
             ->whereIn('status', ['lifted', 'completed'])
             ->groupBy('purchase_item_id')
             ->selectRaw('purchase_item_id, COALESCE(SUM(quantity_liters), 0) as lifted_liters');
@@ -516,6 +517,7 @@ class DashboardService
     private function liftCount(array $filters): int
     {
         $hauls = fn (): Builder => DB::table('hauls')
+            ->whereNull('deleted_at')
             ->where('status', '!=', 'cancelled')
             ->whereIn('purchase_item_id', $this->matchingPurchaseLines($filters)->select('purchase_items.id'));
 

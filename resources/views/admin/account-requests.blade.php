@@ -34,20 +34,25 @@
                         <td>{{ $requestUser->created_at?->format('M d, Y h:i A') ?? 'N/A' }}</td>
                         <td><x-admin.status-badge :status="ucfirst($requestUser->approval_status)" /></td>
                         <td>
-                            <div class="account-request-actions">
-                                <form method="POST" action="{{ route('admin.account-requests.update', $requestUser) }}">
-                                    @csrf
-                                    @method('PATCH')
-                                    <input type="hidden" name="approval_status" value="approved">
-                                    <button class="btn btn-success" type="submit" @disabled($requestUser->approval_status === 'approved')>Approve</button>
-                                </form>
-                                <form method="POST" action="{{ route('admin.account-requests.update', $requestUser) }}">
-                                    @csrf
-                                    @method('PATCH')
-                                    <input type="hidden" name="approval_status" value="rejected">
-                                    <button class="btn btn-danger" type="submit" @disabled($requestUser->approval_status === 'rejected')>Reject</button>
-                                </form>
-                            </div>
+                            {{-- Part 12: only a pending request can be decided; a decided row shows just its status. --}}
+                            @if ($requestUser->approval_status === 'pending')
+                                <div class="account-request-actions">
+                                    <form method="POST" action="{{ route('admin.account-requests.update', $requestUser) }}">
+                                        @csrf
+                                        @method('PATCH')
+                                        <input type="hidden" name="approval_status" value="approved">
+                                        <button class="btn btn-success" type="submit">Approve</button>
+                                    </form>
+                                    <form method="POST" action="{{ route('admin.account-requests.update', $requestUser) }}" data-confirm-message="Reject the account request of {{ $requestUser->name }}? They will not be able to sign in.">
+                                        @csrf
+                                        @method('PATCH')
+                                        <input type="hidden" name="approval_status" value="rejected">
+                                        <button class="btn btn-danger" type="submit">Reject</button>
+                                    </form>
+                                </div>
+                            @else
+                                <span class="account-request-decided" aria-label="No action needed">—</span>
+                            @endif
                         </td>
                     </tr>
                 @empty

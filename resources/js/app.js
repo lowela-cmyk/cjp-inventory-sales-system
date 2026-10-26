@@ -95,7 +95,9 @@ document.addEventListener('click', (event) => {
     }
 
     if (event.target.matches('[data-modal-close]') || event.target.classList.contains('modal-backdrop')) {
-        closeModal(event.target.closest('.modal-backdrop') || event.target);
+        const closing = event.target.closest('.modal-backdrop') || event.target;
+        closeModal(closing);
+        resetCreateModal(closing);
     }
 
     const modalSwap = event.target.closest('[data-modal-swap]');
@@ -233,8 +235,16 @@ const submitButtonsFor = (form) => [
 
 
 // Reopen a modal after a redirect (e.g. Payment History after recording a payment).
-const modalToReopen = document.querySelector('[data-open-modal-on-load]')?.dataset.openModalOnLoad;
-if (modalToReopen) openModal(document.getElementById(modalToReopen));
+// Part 12: success toasts close themselves after 3 seconds (the X still closes them sooner); warnings and errors stay
+// until closed.
+const TOAST_AUTO_DISMISS_MS = 3000;
+document.querySelectorAll('.cjp-toast-success').forEach((toast) => {
+    window.setTimeout(() => {
+        toast.classList.add('is-leaving');
+        window.setTimeout(() => toast.remove(), 200);
+    }, TOAST_AUTO_DISMISS_MS);
+});
+
 
 const updateSalesTotals = (items) => {
     if (!items) {
@@ -369,6 +379,56 @@ function syncDeliveryType(select) {
 
 document.querySelectorAll('[data-delivery-type]').forEach(syncDeliveryType);
 
+// Part 12: a create modal ([data-reset-on-close]: Schedule Lift, Record Purchase, Record Sales, Add Truck, ...) starts
+// blank every time. A blank copy of its body is kept from page load (typed values, added purchase / delivery rows,
+// validation errors and the reopen marker stripped); closing the modal with Cancel, X, the backdrop or Escape puts the
+// copy back. After a successful save the page reloads with an empty form anyway.
+const blankModalBody = (body) => {
+    body.querySelectorAll('.field-error, .form-alert, [data-open-modal-on-load]').forEach((element) => element.remove());
+    body.querySelectorAll('[aria-invalid]').forEach((field) => field.removeAttribute('aria-invalid'));
+    body.querySelectorAll('[data-lifting-items]').forEach((items) => [...items.querySelectorAll('[data-lifting-item]')].slice(1).forEach((row) => row.remove()));
+    body.querySelectorAll('[data-delivery-rows]').forEach((rows) => rows.replaceChildren());
+    body.querySelectorAll('input').forEach((input) => {
+        if (input.type === 'hidden' || input.readOnly) return;
+        if (input.type === 'checkbox' || input.type === 'radio') {
+            input.removeAttribute('checked');
+            return;
+        }
+        if (input.type !== 'file') input.setAttribute('value', input.dataset.default ?? '');
+    });
+    body.querySelectorAll('textarea').forEach((textarea) => { textarea.textContent = ''; });
+    body.querySelectorAll('select').forEach((select) => {
+        const options = [...select.options];
+        options.forEach((option) => option.removeAttribute('selected'));
+        (options.find((option) => select.dataset.default !== undefined && option.value === select.dataset.default) || options[0])?.setAttribute('selected', '');
+    });
+
+    return body;
+};
+
+const blankModalBodies = new Map();
+document.querySelectorAll('.modal-backdrop[data-reset-on-close]').forEach((modal) => {
+    const body = modal.querySelector('.modal-body');
+    if (body) blankModalBodies.set(modal, blankModalBody(body.cloneNode(true)));
+});
+
+const resetCreateModal = (modal) => {
+    const blank = blankModalBodies.get(modal);
+    const body = modal?.querySelector('.modal-body');
+    if (!blank || !body) return;
+
+    const fresh = blank.cloneNode(true);
+    body.replaceWith(fresh);
+    fresh.querySelectorAll('[data-delivery-type]').forEach(syncDeliveryType);
+    fresh.querySelectorAll('[data-payment-mode]').forEach(syncBankSelect);
+    fresh.querySelectorAll('[data-sales-items]').forEach(updateSalesTotals);
+    // Page scripts that derive values from the form (e.g. Fuel Remaining in Truck) recompute them.
+    fresh.querySelectorAll('form').forEach((form) => form.dispatchEvent(new Event('change', { bubbles: true })));
+    document.querySelectorAll(`button[type="submit"][form]`).forEach((button) => {
+        if (fresh.querySelector(`form#${CSS.escape(button.getAttribute('form'))}`)) button.disabled = false;
+    });
+};
+
 const visibleTableFor = (trigger) => {
     const scope = trigger.closest('[data-tabs]') || trigger.closest('section') || document;
     const visiblePanel = [...scope.querySelectorAll('[data-tab-panel]')]
@@ -470,41 +530,25 @@ document.addEventListener('input', (event) => {
     });
 });
 
-// Reports period filter: show only the inputs the chosen period needs, and apply once they are filled in.
-const syncReportPeriodFields = (form) => {
-    const period = form.querySelector('[data-report-period]')?.value;
+// Filter forms marked [data-auto-filter] apply on change (selects/dates) and after a pause in typing (search).
+// Part 12: every filter and search box applies through this one script. A search applies 500 ms after typing stops.
+// Typing again while an earlier search is still loading cancels that load (window.stop()), so a late response can
+// never bring back text the user already deleted (e.g. holding Backspace); only the latest value is ever applied.
+const AUTO_FILTER_FOCUS_KEY = 'cjp:auto-filter-focus';
+const AUTO_FILTER_DELAY_MS = 500;
+let autoFilterTimer = null;
+let autoFilterLoading = false;
 
-    form.querySelectorAll('[data-period-field]').forEach((field) => {
-        const active = field.dataset.periodField === period;
-        field.hidden = !active;
-        field.disabled = !active;
-    });
+const cancelPendingAutoFilter = () => {
+    window.clearTimeout(autoFilterTimer);
+    if (autoFilterLoading) {
+        window.stop();
+        autoFilterLoading = false;
+    }
 };
 
-document.querySelectorAll('form[data-report-filter]').forEach(syncReportPeriodFields);
-
-document.addEventListener('change', (event) => {
-    const form = event.target.closest('form[data-report-filter]');
-    if (!form) {
-        return;
-    }
-
-    if (event.target.matches('[data-report-period]')) {
-        syncReportPeriodFields(form);
-    }
-
-    const fields = [...form.querySelectorAll('[data-period-field]:not([disabled])')];
-    if (fields.every((field) => field.value !== '' && field.checkValidity())) {
-        form.requestSubmit();
-    }
-});
-
-// Filter forms marked [data-auto-filter] apply on change (selects/dates) and after a pause in typing (search).
-const AUTO_FILTER_FOCUS_KEY = 'cjp:auto-filter-focus';
-let autoFilterTimer = null;
-
 const submitAutoFilter = (form, field) => {
-    window.clearTimeout(autoFilterTimer);
+    cancelPendingAutoFilter();
 
     try {
         sessionStorage.setItem(AUTO_FILTER_FOCUS_KEY, JSON.stringify({ action: form.action, name: field?.name || '' }));
@@ -512,8 +556,12 @@ const submitAutoFilter = (form, field) => {
         // Storage unavailable: the filter still applies, focus just isn't restored.
     }
 
+    autoFilterLoading = true;
     form.requestSubmit();
 };
+
+// Coming back from the browser cache (Back button) is not a pending load.
+window.addEventListener('pageshow', () => { autoFilterLoading = false; });
 
 document.addEventListener('change', (event) => {
     const form = event.target.closest('form[data-auto-filter]');
@@ -522,11 +570,21 @@ document.addEventListener('change', (event) => {
     }
 });
 
+// Part 12: Clear on a From / To date range empties both days and applies the filter.
+document.addEventListener('click', (event) => {
+    const clear = event.target.closest('[data-date-range-clear]');
+    const form = clear?.closest('form');
+    if (!clear || !form) return;
+    clear.closest('.filter-date-range')?.querySelectorAll('input[type="date"]').forEach((input) => { input.value = ''; });
+    if (form.matches('[data-auto-filter]')) submitAutoFilter(form, null);
+    else form.requestSubmit();
+});
+
 document.addEventListener('input', (event) => {
     const form = event.target.closest('form[data-auto-filter]');
     if (form && event.target.matches('input[type="search"]')) {
-        window.clearTimeout(autoFilterTimer);
-        autoFilterTimer = window.setTimeout(() => submitAutoFilter(form, event.target), 500);
+        cancelPendingAutoFilter();
+        autoFilterTimer = window.setTimeout(() => submitAutoFilter(form, event.target), AUTO_FILTER_DELAY_MS);
     }
 });
 
@@ -565,7 +623,10 @@ document.addEventListener('keydown', (event) => {
 
     // Escape on an open dropdown list only closes that list (see select-picker.css), not the modal around it.
     if (event.key === 'Escape' && !isOpenSelectList(event.target)) {
-        document.querySelectorAll('.modal-backdrop.is-open').forEach(closeModal);
+        document.querySelectorAll('.modal-backdrop.is-open').forEach((modal) => {
+            closeModal(modal);
+            resetCreateModal(modal);
+        });
         document.body.classList.remove('sidebar-open');
     }
 });
@@ -766,3 +827,30 @@ document.querySelectorAll('[data-withdrawal-upload]').forEach((form) => {
         }
     });
 });
+
+// Part 12: an alert's View link opens the record's page with ?highlight=CODE. The row whose first column holds the code
+// is scrolled into view and highlighted until the user clicks it (or anything in it, e.g. View). The parameter is
+// dropped from the address bar right away, so reloading or navigating back shows no highlight.
+(() => {
+    const url = new URL(window.location.href);
+    const code = url.searchParams.get('highlight')?.trim();
+    if (!code) return;
+
+    url.searchParams.delete('highlight');
+    window.history.replaceState(window.history.state, '', url);
+
+    const rows = [...document.querySelectorAll('[data-tab-panel]:not([hidden]) tbody tr, main tbody tr')]
+        .filter((row) => !row.closest('[hidden], .modal-backdrop') && !row.querySelector('.empty-cell'));
+    const row = rows.find((candidate) => candidate.cells[0]?.textContent.includes(code))
+        || rows.find((candidate) => candidate.textContent.includes(code));
+    if (!row) return;
+
+    row.classList.add('is-highlighted');
+    row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    row.addEventListener('click', () => row.classList.remove('is-highlighted'), { once: true });
+})();
+
+// A modal the server asks to reopen (e.g. after a validation error or a payment) opens last, once every helper above is
+// defined: openModal() uses updateSalesTotals, so calling it earlier stopped the rest of this script on that page.
+const modalToReopen = document.querySelector('[data-open-modal-on-load]')?.dataset.openModalOnLoad;
+if (modalToReopen) openModal(document.getElementById(modalToReopen));

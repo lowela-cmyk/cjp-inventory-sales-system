@@ -271,6 +271,13 @@ class AdminUserManagementController extends Controller
             'approval_status' => ['required', Rule::in(['approved', 'rejected'])],
         ]);
 
+        // Part 12: a request is decided once; an approved or rejected account is managed in User Management.
+        if ($user->approval_status !== 'pending') {
+            return redirect()
+                ->route('admin.account-requests')
+                ->withErrors(['approval_status' => 'This account request was already '.$user->approval_status.'.']);
+        }
+
         if ($data['approval_status'] === 'rejected' && $this->removesFinalActiveAdmin($user, $user->role, $user->status, 'rejected')) {
             return $this->finalAdminError();
         }

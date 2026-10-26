@@ -221,11 +221,47 @@ class LiftAllocationService
     }
 
     /**
-     * Open Depot to Client orders without a lift (planned or delivered), with their purchase and open liters.
+     * Part 12: open customer orders (Depot to Client or Standard, "any customer order") that fuel left on a lifted truck
+     * can deliver: not on a lift yet, supplied from the purchase the lift line carries (or, for an order recorded before
+     * purchases were chosen, of its fuel), and no larger than the liters still on that line.
      *
+     * @param  array<int, array{haul_id: int, purchase_item_id: int, fuel_type_id: int, leftover: float}>  $lines
+     * @return Collection<int, \stdClass> each with haul_id (the lift line it would come from) and label
+     */
+    public function truckOrderOptions(array $lines, bool $lock = false): Collection
+    {
+        if ($lines === []) {
+            return collect();
+        }
+
+        return $this->openDirectSales($lock, ['depot_to_client', 'standard', 'garage_to_client'])
+            ->map(function (object $sale) use ($lines): ?object {
+                foreach ($lines as $line) {
+                    $carries = $sale->purchase_item_id
+                        ? $sale->purchase_item_id === (int) $line['purchase_item_id']
+                        : $sale->fuel_type_id === (int) $line['fuel_type_id'];
+                    if ($carries && $sale->open_liters <= round((float) $line['leftover'], 2)) {
+                        $sale->haul_id = (int) $line['haul_id'];
+                        $sale->label = ($sale->company_name ?: $sale->customer_name).' · '.($sale->sales_order_number ?: $sale->sale_code)
+                            .' · '.mb_strtoupper((string) $sale->fuel_name).' '.number_format($sale->open_liters, 2).' L';
+
+                        return $sale;
+                    }
+                }
+
+                return null;
+            })
+            ->filter()
+            ->values();
+    }
+
+    /**
+     * Open orders of the given delivery types without a lift (planned or delivered), with their purchase and open liters.
+     *
+     * @param  array<int, string>  $deliveryTypes
      * @return Collection<int, \stdClass>
      */
-    private function openDirectSales(bool $lock = false): Collection
+    private function openDirectSales(bool $lock = false, array $deliveryTypes = ['depot_to_client']): Collection
     {
         $onLift = DB::table('haul_allocations')
             ->select('sale_id')
@@ -239,7 +275,7 @@ class LiftAllocationService
             ->join('fuel_types', 'fuel_types.id', '=', 'sale_items.fuel_type_id')
             ->leftJoin('purchase_items', 'purchase_items.id', '=', 'sale_items.purchase_item_id')
             ->leftJoin('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
-            ->where('sales.delivery_type', 'depot_to_client')
+            ->whereIn('sales.delivery_type', $deliveryTypes)
             ->whereNull('sales.deleted_at')
             ->whereIn('sales.status', self::OPEN_SALE_STATUSES)
             ->whereNotIn('sales.delivery_status', ['delivered', 'cancelled'])
@@ -248,7 +284,7 @@ class LiftAllocationService
             ->groupBy('sales.id', 'sales.sale_code', 'sales.sales_order_number', 'sales.customer_id', 'customers.name', 'customers.company_name', 'sales.sale_date')
             ->orderByDesc('sales.sale_date')
             ->orderByDesc('sales.id')
-            ->selectRaw('sales.id as sale_id, sales.sale_code, sales.sales_order_number, sales.customer_id, customers.name as customer_name, customers.company_name')
+            ->selectRaw('sales.id as sale_id, sales.sale_code, sales.sales_order_number, sales.customer_id, customers.name as customer_name, customers.company_name, MIN(sales.delivery_type) as delivery_type')
             ->selectRaw('MIN(sale_items.purchase_item_id) as purchase_item_id, MIN(sale_items.fuel_type_id) as fuel_type_id, MIN(fuel_types.name) as fuel_name, MIN(purchases.purchase_code) as purchase_code')
             ->selectRaw('COALESCE(SUM(sale_items.quantity_liters - sale_items.fulfilled_quantity_liters), 0) as open_liters')
             ->get()

@@ -58,8 +58,7 @@
                 <x-filter.search label="Search scheduled lifts" :value="$search" />
                 <x-filter.select name="task_status" label="Status" :selected="$filters['task_status'] ?? null"
                     :options="collect($filterOptions['statuses'])->mapWithKeys(fn (string $status): array => [$status => ucwords(str_replace('_', ' ', $status))])" />
-                <x-filter.date-select name="date_from" label="From date" :value="$filters['date_from'] ?? null" :dates="$filterOptions['liftDates']" />
-                <x-filter.date-select name="date_to" label="To date" :value="$filters['date_to'] ?? null" :dates="$filterOptions['liftDates']" />
+                <x-filter.date-range label="Lift date" :from-value="$filters['date_from'] ?? null" :to-value="$filters['date_to'] ?? null" />
                 <x-filter.select name="depot_id" label="Depot" :options="$filterOptions['depots']->pluck('name', 'id')" :selected="$filters['depot_id'] ?? null" />
                 <x-filter.select name="destination_type" label="Destination" :options="['customer' => 'Client']" :selected="$filters['destination_type'] ?? null" />
                 <x-filter.select name="fuel_type_id" label="Fuel Type" :options="$filterOptions['fuelTypes']->pluck('name', 'id')" :selected="$filters['fuel_type_id'] ?? null" />
@@ -112,8 +111,7 @@
                 <x-filter.search label="Search hauled lifts" :value="$search" />
                 <x-filter.select name="task_status" label="Status" :selected="$filters['task_status'] ?? null"
                     :options="collect($filterOptions['statuses'])->mapWithKeys(fn (string $status): array => [$status => ucwords(str_replace('_', ' ', $status))])" />
-                <x-filter.date-select name="date_from" label="From date" :value="$filters['date_from'] ?? null" :dates="$filterOptions['liftDates']" />
-                <x-filter.date-select name="date_to" label="To date" :value="$filters['date_to'] ?? null" :dates="$filterOptions['liftDates']" />
+                <x-filter.date-range label="Lift date" :from-value="$filters['date_from'] ?? null" :to-value="$filters['date_to'] ?? null" />
                 <x-filter.select name="depot_id" label="Depot" :options="$filterOptions['depots']->pluck('name', 'id')" :selected="$filters['depot_id'] ?? null" />
                 <x-filter.select name="destination_type" label="Destination" :options="['customer' => 'Client']" :selected="$filters['destination_type'] ?? null" />
                 <x-filter.select name="fuel_type_id" label="Fuel Type" :options="$filterOptions['fuelTypes']->pluck('name', 'id')" :selected="$filters['fuel_type_id'] ?? null" />

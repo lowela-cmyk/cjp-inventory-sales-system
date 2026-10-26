@@ -142,6 +142,7 @@ class DriverLiftingStatusController extends Controller
             ->leftJoin('driver_profiles', 'driver_profiles.user_id', '=', 'drivers.id')
             ->where('hauls.id', $haul)
             ->when($driverId !== null, fn ($query) => $query->where('hauls.driver_user_id', $driverId))
+            ->whereNull('hauls.deleted_at')
             ->whereNull('purchases.deleted_at')
             ->whereColumn('hauls.purchase_id', 'purchase_items.purchase_id')
             ->whereColumn('hauls.depot_id', 'purchases.depot_id')

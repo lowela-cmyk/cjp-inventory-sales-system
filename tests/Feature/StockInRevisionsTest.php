@@ -147,8 +147,9 @@ class StockInRevisionsTest extends AuditTestCase
         $tbody = substr($panel, strpos($panel, '<tbody>'));
         $this->assertStringContainsString('North Depot', $tbody);
         $this->assertStringNotContainsString('Premium', $tbody);
-        // Date is a dropdown of stock-in dates.
-        $this->assertMatchesRegularExpression('/<select name="date"[^>]*>.*<option value="2026-10-14"[^>]*>10\/14\/2026<\/option>/s', $panel);
+        // Part 12: Date is a From / To range of date pickers.
+        $this->assertStringContainsString('<input type="date" name="date_from"', $panel);
+        $this->assertStringContainsString('<input type="date" name="date_to"', $panel);
 
         // The table: the agreed columns, no tank or garage fields, no manual Stock-In.
         foreach (['Purchase-ID', 'Order Date', 'Fuel', 'Depot', 'QTY Ordered (L)', 'Cost / Liter', 'Total Cost', 'Current QTY', 'Sold QTY', 'Status', 'Actions'] as $column) {
@@ -245,17 +246,15 @@ class StockInRevisionsTest extends AuditTestCase
         $edit = fn (int $id, array $data) => $this->actingAs($a['inventory'])->from(route('inventory-officer.inventory.stock-out'))
             ->patch(route('inventory-officer.inventory.stock-out.update', $id), $data + ['edit_stock_out_id' => $id]);
 
-        // Not in the future.
-        $edit($standard->id, ['stock_out_at' => '2026-10-20 09:00', 'unit_cost' => 54])->assertSessionHasErrors('stock_out_at');
-
-        // Date and Cost / Unit on the release; truck, driver and date on the Standard order.
+        // Part 12: the order is Delivered, so only Cost / Unit changes; the date, truck, driver and delivery date stay.
+        $before = DB::table('sales')->where('id', $standard->sale_id)->first(['delivery_truck_id', 'delivery_driver_user_id']);
         $edit($standard->id, ['stock_out_at' => '2026-10-13 15:30', 'unit_cost' => 54, 'delivery_truck_id' => $a['truck'], 'delivery_driver_user_id' => $a['driver']->id, 'delivery_date' => '2026-10-13 14:00'])
             ->assertSessionHasNoErrors()->assertRedirect(route('inventory-officer.inventory.stock-out'));
         $row = collect($this->viewData($a['inventory'], 'inventory-officer.inventory.stock-out', 'stockOut')->items())->firstWhere('id', (int) $standard->id);
         // 1,000 L at 54 = 54,000; 65,000 billed and nothing paid yet.
-        $this->assertSame(['10/13/2026 03:30 PM', '54.00', '54,000.00', '11,000.00', '-54,000.00'], [$row['cells'][1], $row['cells'][8], $row['cells'][9], $row['cells'][15], $row['cells'][16]]);
-        $this->assertSame($a['driver']->name, $row['delivery']['driver']);
-        $this->assertStringStartsWith((string) DB::table('trucks')->where('id', $a['truck'])->value('truck_code'), $row['delivery']['truck']);
+        $this->assertSame(['54.00', '54,000.00', '11,000.00', '-54,000.00'], [$row['cells'][8], $row['cells'][9], $row['cells'][15], $row['cells'][16]]);
+        $this->assertSame((string) $standard->stock_out_at, (string) DB::table('stock_outs')->where('id', $standard->id)->value('stock_out_at'));
+        $this->assertEquals($before, DB::table('sales')->where('id', $standard->sale_id)->first(['delivery_truck_id', 'delivery_driver_user_id']));
         // Quantity, purchase and the stock-in are untouched.
         $this->assertSame([1000.0, $premium], [(float) DB::table('stock_outs')->where('id', $standard->id)->value('quantity_liters'), (int) DB::table('stock_outs')->where('id', $standard->id)->value('purchase_item_id')]);
         $this->assertSame(19000.0, app(StockInService::class)->records()->firstWhere('purchase_item_id', $premium)->remaining);

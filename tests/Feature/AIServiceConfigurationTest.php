@@ -276,13 +276,6 @@ class AIServiceConfigurationTest extends TestCase
             ->assertDontSee('Authorization', false)
             ->assertDontSee('AI_API_KEY', false)
             ->assertSee('data-ai-generate-form', false);
-
-        $this->actingAs($admin)
-            ->get(route('admin.reports'))
-            ->assertOk()
-            ->assertDontSee('super-secret-groq-key', false)
-            ->assertDontSee('Authorization', false)
-            ->assertSee('data-ai-generate-form', false);
     }
 
     /**

@@ -637,7 +637,7 @@
     }
 
     .admin-modal-sales-wide .sale-f1-row {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
 
@@ -662,4 +662,45 @@
         padding: 18px;
     }
 
+}
+
+/* Part 11 (October 26): F1 | F1 Price | F1 % follow the field grid above them: three columns from 1280px, two below
+   (F1 % then wraps under F1), so every input is as wide as Fuel Type / Fuel Price. */
+@media (min-width: 768px) and (max-width: 1279px) {
+    .admin-modal-sales-wide .sale-f1-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+/* Money in the breakdown row carries the peso sign like the totals; Ordered Amount is liters. The values are the
+   <output>s the existing JS fills, so only their display changes. */
+.admin-modal-sales-wide :is([data-f1-main], [data-f1-amount], [data-f1-total])::before {
+    content: "\20B1\00A0";
+}
+
+.admin-modal-sales-wide [data-f1-ordered]::after {
+    content: "\00A0L";
+}
+
+
+/* Part 12: Edit Sales Record is as wide as Record Sales, so the line table (Fuel ... Fulfilled) shows every column
+   at 1280px and up; below that the table scrolls inside its own box. */
+.admin-modal-sales {
+    width: min(1400px, 90vw);
+    max-height: 92vh;
+}
+
+.admin-modal-sales .sales-items-table {
+    overflow-x: auto;
+}
+
+.admin-modal-sales .sales-items-table .admin-table {
+    width: 100%;
+    min-width: 920px;
+}
+
+.admin-modal-sales .sales-items-table .admin-table th,
+.admin-modal-sales .sales-items-table .admin-table td {
+    white-space: nowrap;
+    text-align: center;
 }

@@ -120,6 +120,7 @@ class StockInService
                 }
             }))
             ->when($filters['date'] ?? null, fn (Builder $query, string $date): Builder => $query->whereDate('stock_ins.stock_in_date', $date))
+            ->tap(fn (Builder $query): Builder => FilterDates::apply($query, 'stock_ins.stock_in_date', ['from' => $filters['date_from'] ?? null, 'to' => $filters['date_to'] ?? null]))
             ->when($filters['depot_id'] ?? null, fn (Builder $query, mixed $id): Builder => $query->where('stock_ins.depot_id', (int) $id))
             ->when($filters['fuel_type_id'] ?? null, fn (Builder $query, mixed $id): Builder => $query->where('stock_ins.fuel_type_id', (int) $id))
             ->orderByDesc('stock_ins.stock_in_date')

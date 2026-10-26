@@ -114,6 +114,7 @@ class HaulTruckAssignmentController extends Controller
             ->join('depots', 'depots.id', '=', 'hauls.depot_id')
             ->join('fuel_types', 'fuel_types.id', '=', 'hauls.fuel_type_id')
             ->where('hauls.id', $haul)
+            ->whereNull('hauls.deleted_at')
             ->whereNull('purchases.deleted_at')
             ->where('purchases.status', '!=', 'cancelled')
             ->where('depots.status', 'active')

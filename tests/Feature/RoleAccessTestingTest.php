@@ -85,10 +85,6 @@ class RoleAccessTestingTest extends TestCase
             ])
             ->assertRedirect(route('admin.user-management', ['tab' => 'office']));
 
-        $this->actingAs($records['admin'])
-            ->post(route('admin.reports.business-insight'), ['period' => 'all'])
-            ->assertRedirect();
-
         $approvedFuelId = (int) DB::table('fuel_types')->where('code', 'DSL')->value('id');
 
         $this->actingAs($records['admin'])
@@ -229,12 +225,6 @@ class RoleAccessTestingTest extends TestCase
                     'password' => 'password',
                     'password_confirmation' => 'password',
                 ],
-                'allowed_roles' => ['admin'],
-            ],
-            [
-                'method' => 'POST',
-                'url' => route('admin.reports.revenue-insight'),
-                'payload' => ['period' => 'all'],
                 'allowed_roles' => ['admin'],
             ],
             [

@@ -49,7 +49,10 @@
                         <th>Cost / Liter</th><th>Total Cost</th>
                         <th><span class="th-line" data-export-part>Payment Mode</span><span class="th-line" data-export-part>Bank</span></th>
                         <th>Receipt</th>
-                        <th class="inventory-status-column"><span class="th-line" data-export-part>Inventory Status</span><span class="th-line" data-export-part>Purchase Status</span><span class="th-line" data-export-part>Payment Status</span></th>
+                        {{-- Part 12: one status per column. --}}
+                        <th class="inventory-status-column">Inventory Status</th>
+                        <th class="inventory-status-column">Purchase Status</th>
+                        <th class="inventory-status-column">Payment Status</th>
                         <th>Actions</th>
                     </tr></thead>
                     <tbody>
@@ -75,13 +78,9 @@
                                         <span class="receipt-none" aria-label="No receipt uploaded">-</span>
                                     @endif
                                 </td>
-                                <td>
-                                    <span class="cell-stack cell-stack-badges">
-                                        <span class="cell-line" data-export-part title="Inventory status"><x-admin.status-badge :status="$c[7]" /></span>
-                                        <span class="cell-line" data-export-part title="Purchase status"><x-admin.status-badge :status="$c[11]" /></span>
-                                        <span class="cell-line" data-export-part title="Payment status"><x-admin.status-badge :status="$c[12]" /></span>
-                                    </span>
-                                </td>
+                                <td class="purchase-status-cell"><x-admin.status-badge :status="$c[7]" /></td>
+                                <td class="purchase-status-cell"><x-admin.status-badge :status="$c[11]" /></td>
+                                <td class="purchase-status-cell"><x-admin.status-badge :status="$c[12]" /></td>
                                 <td>
                                     <div class="inventory-row-actions">
                                         <button class="btn btn-secondary" type="button" data-modal-open="{{ $row['modal_id'] }}">Edit</button>
@@ -89,7 +88,7 @@
                                 </td>
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="12">No records found.</td></tr>
+                            <tr><td class="empty-cell" colspan="14">No records found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -163,9 +162,15 @@
                 <table class="admin-table inventory-table inventory-table-actions stock-out-table table-stacked">
                     <thead><tr>
                         <th><span class="th-line" data-export-part>Order-ID</span><span class="th-line" data-export-part>Transaction Date</span></th>
-                        <th><span class="th-line" data-export-part>Customer Name</span><span class="th-line" data-export-part>Company Name</span></th>
+                        {{-- Part 12: customer and company in their own columns. --}}
+                        <th>Customer Name</th>
+                        <th>Company Name</th>
                         <th><span class="th-line" data-export-part>Fuel</span><span class="th-line" data-export-part>Purchase ID</span></th>
-                        <th><span class="th-line" data-export-part>Delivery Type</span><span class="th-line" data-export-part>Truck / Driver</span><span class="th-line" data-export-part>Delivery Date / Status</span><span class="th-line" data-export-part>ATL / DR Number</span><span class="th-line" data-export-part>Source</span></th>
+                        <th>Delivery Type</th>
+                        {{-- Part 12: delivery details live in the Edit Stock-Out modal; these hidden columns keep them in Export. --}}
+                        @foreach (['Truck', 'Driver', 'Delivery Date', 'Delivery Status', 'ATL', 'DR Number', 'Source'] as $exportOnly)
+                            <th class="export-only" hidden>{{ $exportOnly }}</th>
+                        @endforeach
                         <th>QTY Released</th><th>Cost / Unit</th><th>Total Cost</th><th>Price / Unit</th><th>Total Price</th><th>Total Paid</th>
                         <th class="inventory-status-column">Status</th>
                         <th><span class="th-hint" tabindex="0" title="Margin = Total Price − Total Cost (expected profit once fully paid)">Margin</span></th>
@@ -181,15 +186,13 @@
                             @endphp
                             <tr class="{{ $row['class'] }}">
                                 <td><x-table.stack :lines="[['value' => $c[0], 'class' => 'cell-id'], ['value' => $c[1], 'class' => 'is-secondary']]" /></td>
-                                <td class="cell-wrap"><x-table.stack :lines="[['value' => $c[2]], ['value' => $c[3], 'class' => 'is-secondary']]" /></td>
+                                <td class="stock-out-name">{{ $c[2] }}</td>
+                                <td class="stock-out-name">{{ $c[3] }}</td>
                                 <td><x-table.stack :lines="[['value' => $c[5]], ['value' => $c[6], 'class' => 'cell-id is-secondary']]" /></td>
-                                <td class="stock-out-delivery"><x-table.stack :lines="[
-                                    ['value' => $c[4], 'class' => 'is-strong'],
-                                    ['label' => 'Truck', 'value' => $d['truck'].' · '.$d['driver'], 'class' => 'is-secondary'],
-                                    ['label' => 'Date', 'value' => $d['date'].' · '.$d['status'], 'class' => 'is-secondary'],
-                                    ['label' => 'ATL', 'value' => $d['atl'].' · DR '.$d['dr'], 'class' => 'is-secondary'],
-                                    ['label' => 'From', 'value' => $c[13], 'class' => 'is-secondary'],
-                                ]" /></td>
+                                <td>{{ $c[4] }}</td>
+                                @foreach ([$d['truck'], $d['driver'], $d['date'], $d['status'], $d['atl'], $d['dr'], $c[13]] as $exportOnly)
+                                    <td class="export-only" hidden>{{ $exportOnly }}</td>
+                                @endforeach
                                 @foreach ([7, 8, 9, 10, 11, 12] as $i)
                                     <td class="inventory-number">{{ $c[$i] }}</td>
                                 @endforeach
@@ -203,7 +206,7 @@
                                 </td>
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="14">No records found.</td></tr>
+                            <tr><td class="empty-cell" colspan="15">No records found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -249,18 +252,18 @@
         </section>
     </div>
 
-    <x-admin.modal id="io-purchase-add" title="Add Purchase Record" wide>
+    <x-admin.modal id="io-purchase-add" reset-on-close title="Add Purchase Record" wide>
         <form id="purchase-add-form" method="POST" action="{{ route($inventoryRoutePrefix.'.purchases.store') }}">
             @csrf
             <input type="hidden" name="idempotency_key" value="{{ old('idempotency_key', $purchaseIdempotencyKey) }}">
             <div class="modal-card">
                 <div class="form-grid">
-                    <div class="form-row"><label for="purchase_date">Date</label><input id="purchase_date" name="purchase_date" type="date" value="{{ old('purchase_date', now()->toDateString()) }}" required></div>
+                    <div class="form-row"><label for="purchase_date">Date</label><input id="purchase_date" name="purchase_date" type="date" value="{{ old('purchase_date', now()->toDateString()) }}" data-default="{{ now()->toDateString() }}" required></div>
                     <div class="form-row"><label for="fuel_type_id">Fuel Type</label><select id="fuel_type_id" name="fuel_type_id" required><option value="" disabled @selected(! old('fuel_type_id'))>Select Fuel Type</option>@foreach ($fuelTypes as $fuelType)<option value="{{ $fuelType->id }}" @selected((string) old('fuel_type_id') === (string) $fuelType->id)>{{ $fuelType->name }}</option>@endforeach</select></div>
                     <div class="form-row"><label for="depot_id">Depot</label><select id="depot_id" name="depot_id" required><option value="" disabled @selected(! old('depot_id'))>Select Depot</option>@foreach ($depots as $depot)<option value="{{ $depot->id }}" @selected((string) old('depot_id') === (string) $depot->id)>{{ $depot->name }}</option>@endforeach</select></div>
                     <div class="form-row"><label for="quantity_ordered_liters">Quantity (Liters)</label><input id="quantity_ordered_liters" name="quantity_ordered_liters" type="number" min="0.01" step="0.01" placeholder="Enter Quantity (Liters)" value="{{ old('quantity_ordered_liters') }}" required></div>
                     <div class="form-row"><label for="unit_cost">Cost / Liter</label><input id="unit_cost" name="unit_cost" type="number" min="0" step="0.01" placeholder="Enter Cost / Liter" value="{{ old('unit_cost') }}" required></div>
-                    <div class="form-row"><label for="payment_status">Payment Status</label><select id="payment_status" name="payment_status" required>@foreach ($paymentStatuses as $status)<option value="{{ $status }}" @selected(old('payment_status', 'unpaid') === $status)>{{ ucwords($status) }}</option>@endforeach</select></div>
+                    <div class="form-row"><label for="payment_status">Payment Status</label><select id="payment_status" name="payment_status" required data-default="unpaid">@foreach ($paymentStatuses as $status)<option value="{{ $status }}" @selected(old('payment_status', 'unpaid') === $status)>{{ ucwords($status) }}</option>@endforeach</select></div>
                     @include('inventory-officer.partials.purchase-payment-mode', ['idSuffix' => '', 'formId' => null, 'mode' => old('payment_mode'), 'bank' => old('bank_name')])
                     <div class="form-row"><label>Purchase Status</label><x-admin.status-badge status="Pending" /></div>
                 </div>
@@ -322,7 +325,7 @@
                 </div>
             </div>
             <x-slot:footer>
-                <button class="btn btn-pill btn-secondary" type="submit" form="purchase-update-{{ $row['id'] }}">Edit</button>
+                <button class="btn btn-pill btn-secondary" type="submit" form="purchase-update-{{ $row['id'] }}">Apply Changes</button>
                 <form method="POST" action="{{ route($inventoryRoutePrefix.'.purchases.cancel', $row['id']) }}" data-confirm-message="Cancel this purchase? It can no longer be lifted.">
                     @csrf
                     @method('PATCH')
@@ -342,7 +345,7 @@
         <x-admin.modal id="{{ $row['modal_id'] }}" title="Edit Stock-In Record" size="xl">
             @if ($isEditedStockIn && $errors->any())
                 <span hidden data-open-modal-on-load="{{ $row['modal_id'] }}"></span>
-                <p class="form-alert" role="alert">{{ $errors->first() }}</p>
+                @if ($errors->has('stock_in'))<p class="form-alert" role="alert">{{ $errors->first('stock_in') }}</p>@endif
             @endif
             <div class="modal-card">
                 <x-admin.status-badge :status="$row['status']" />
@@ -354,13 +357,12 @@
                         <input type="hidden" name="edit_stock_in_id" value="{{ $row['id'] }}">
                     </form>
                     <div class="form-grid">
-                        <div class="form-row"><label for="si_purchase_date_{{ $row['id'] }}">Order Date</label><input form="stock-in-update-{{ $row['id'] }}" id="si_purchase_date_{{ $row['id'] }}" name="purchase_date" type="date" value="{{ $stockInOld('purchase_date') }}" required></div>
-                        <div class="form-row"><label for="si_fuel_type_id_{{ $row['id'] }}">Fuel</label><select form="stock-in-update-{{ $row['id'] }}" id="si_fuel_type_id_{{ $row['id'] }}" name="fuel_type_id" required>@foreach ($filterOptions['fuelTypes'] as $fuelType)<option value="{{ $fuelType->id }}" @selected((string) $stockInOld('fuel_type_id') === (string) $fuelType->id)>{{ $fuelType->name }}</option>@endforeach</select></div>
-                        <div class="form-row"><label for="si_depot_id_{{ $row['id'] }}">Depot</label><select form="stock-in-update-{{ $row['id'] }}" id="si_depot_id_{{ $row['id'] }}" name="depot_id" required>@foreach ($depots as $depot)<option value="{{ $depot->id }}" @selected((string) $stockInOld('depot_id') === (string) $depot->id)>{{ $depot->name }}</option>@endforeach</select></div>
-                        <div class="form-row"><label for="si_quantity_{{ $row['id'] }}">QTY Ordered (L)</label><input form="stock-in-update-{{ $row['id'] }}" id="si_quantity_{{ $row['id'] }}" name="quantity_ordered_liters" type="number" min="0.01" step="0.01" value="{{ $stockInOld('quantity_ordered_liters') }}" required></div>
-                        <div class="form-row"><label for="si_unit_cost_{{ $row['id'] }}">Cost / Liter</label><input form="stock-in-update-{{ $row['id'] }}" id="si_unit_cost_{{ $row['id'] }}" name="unit_cost" type="number" min="0" step="0.01" value="{{ $stockInOld('unit_cost') }}" required></div>
+                        <div class="form-row"><label for="si_purchase_date_{{ $row['id'] }}">Order Date</label><input form="stock-in-update-{{ $row['id'] }}" id="si_purchase_date_{{ $row['id'] }}" name="purchase_date" type="date" value="{{ $stockInOld('purchase_date') }}" required>@if ($isEditedStockIn)@error('purchase_date')<p class="field-error">{{ $message }}</p>@enderror @endif</div>
+                        <div class="form-row"><label for="si_fuel_type_id_{{ $row['id'] }}">Fuel</label><select form="stock-in-update-{{ $row['id'] }}" id="si_fuel_type_id_{{ $row['id'] }}" name="fuel_type_id" required>@foreach ($filterOptions['fuelTypes'] as $fuelType)<option value="{{ $fuelType->id }}" @selected((string) $stockInOld('fuel_type_id') === (string) $fuelType->id)>{{ $fuelType->name }}</option>@endforeach</select>@if ($isEditedStockIn)@error('fuel_type_id')<p class="field-error">{{ $message }}</p>@enderror @endif</div>
+                        <div class="form-row"><label for="si_depot_id_{{ $row['id'] }}">Depot</label><select form="stock-in-update-{{ $row['id'] }}" id="si_depot_id_{{ $row['id'] }}" name="depot_id" required>@foreach ($depots as $depot)<option value="{{ $depot->id }}" @selected((string) $stockInOld('depot_id') === (string) $depot->id)>{{ $depot->name }}</option>@endforeach</select>@if ($isEditedStockIn)@error('depot_id')<p class="field-error">{{ $message }}</p>@enderror @endif</div>
+                        <div class="form-row"><label for="si_quantity_{{ $row['id'] }}">QTY Ordered (L)</label><input form="stock-in-update-{{ $row['id'] }}" id="si_quantity_{{ $row['id'] }}" name="quantity_ordered_liters" type="number" min="0.01" step="0.01" value="{{ $stockInOld('quantity_ordered_liters') }}" required>@if ($isEditedStockIn)@error('quantity_ordered_liters')<p class="field-error">{{ $message }}</p>@enderror @endif</div>
+                        <div class="form-row"><label for="si_unit_cost_{{ $row['id'] }}">Cost / Liter</label><input form="stock-in-update-{{ $row['id'] }}" id="si_unit_cost_{{ $row['id'] }}" name="unit_cost" type="number" min="0" step="0.01" value="{{ $stockInOld('unit_cost') }}" required>@if ($isEditedStockIn)@error('unit_cost')<p class="field-error">{{ $message }}</p>@enderror @endif</div>
                     </div>
-                    <p class="table-help">Saving updates purchase {{ $row['purchase_code'] }} too. QTY Ordered can't go below the Sold QTY ({{ $row['form']['sold'] }}) or what is already on lifts, and Fuel and Depot can't change once sales or lifts use this purchase. Past Stock Out rows keep the cost they were released at.</p>
                 @endif
                 <div class="detail-grid">
                     @foreach ($row['details'] as $label => $value)
@@ -397,7 +399,7 @@
             </div>
             <x-slot:footer>
                 @if ($row['editable'])
-                    <button class="btn btn-pill btn-secondary" type="submit" form="stock-in-update-{{ $row['id'] }}">Save Changes</button>
+                    <button class="btn btn-pill btn-secondary" type="submit" form="stock-in-update-{{ $row['id'] }}">Apply Changes</button>
                 @endif
                 <button class="btn btn-pill btn-danger" type="button" data-modal-close>Close</button>
             </x-slot:footer>
@@ -415,7 +417,7 @@
         <x-admin.modal id="{{ $row['modal_id'] }}" title="Edit Stock-Out Record" size="xl">
             @if ($isEditedStockOut && $errors->any())
                 <span hidden data-open-modal-on-load="{{ $row['modal_id'] }}"></span>
-                <p class="form-alert" role="alert">{{ $errors->first() }}</p>
+                @if ($errors->has('stock_out'))<p class="form-alert" role="alert">{{ $errors->first('stock_out') }}</p>@endif
             @endif
             <div class="modal-card">
                 <x-admin.status-badge :status="$c[14]" />
@@ -427,21 +429,20 @@
                         <input type="hidden" name="edit_stock_out_id" value="{{ $row['id'] }}">
                     </form>
                     <div class="form-grid">
-                        <div class="form-row"><label for="so_at_{{ $row['id'] }}">Transaction Date</label><input form="stock-out-update-{{ $row['id'] }}" id="so_at_{{ $row['id'] }}" name="stock_out_at" type="datetime-local" value="{{ $stockOutOld('stock_out_at') }}" max="{{ now()->format('Y-m-d\TH:i') }}" required></div>
-                        <div class="form-row"><label for="so_cost_{{ $row['id'] }}">Cost / Unit</label><input form="stock-out-update-{{ $row['id'] }}" id="so_cost_{{ $row['id'] }}" name="unit_cost" type="number" min="0" step="0.01" value="{{ $stockOutOld('unit_cost') }}" required></div>
+                        @unless ($row['delivered'])
+                        <div class="form-row"><label for="so_at_{{ $row['id'] }}">Transaction Date</label><input form="stock-out-update-{{ $row['id'] }}" id="so_at_{{ $row['id'] }}" name="stock_out_at" type="datetime-local" value="{{ $stockOutOld('stock_out_at') }}" max="{{ now()->format('Y-m-d\TH:i') }}" required>@if ($isEditedStockOut)@error('stock_out_at')<p class="field-error">{{ $message }}</p>@enderror @endif</div>
+                        @endunless
+                        <div class="form-row"><label for="so_cost_{{ $row['id'] }}">Cost / Unit</label><input form="stock-out-update-{{ $row['id'] }}" id="so_cost_{{ $row['id'] }}" name="unit_cost" type="number" min="0" step="0.01" value="{{ $stockOutOld('unit_cost') }}" required>@if ($isEditedStockOut)@error('unit_cost')<p class="field-error">{{ $message }}</p>@enderror @endif</div>
                         @if ($row['standard'])
-                            <div class="form-row"><label for="so_truck_{{ $row['id'] }}">Truck</label><select form="stock-out-update-{{ $row['id'] }}" id="so_truck_{{ $row['id'] }}" name="delivery_truck_id"><option value="">Select Truck</option>@foreach ($deliveryTrucks as $truck)<option value="{{ $truck->id }}" @selected((string) $stockOutOld('delivery_truck_id') === (string) $truck->id)>{{ $truck->truck_code }}{{ $truck->plate_number ? ' / '.$truck->plate_number : '' }}</option>@endforeach</select></div>
-                            <div class="form-row"><label for="so_driver_{{ $row['id'] }}">Driver</label><select form="stock-out-update-{{ $row['id'] }}" id="so_driver_{{ $row['id'] }}" name="delivery_driver_user_id"><option value="">Select Driver</option>@foreach ($deliveryDrivers as $driver)<option value="{{ $driver->id }}" @selected((string) $stockOutOld('delivery_driver_user_id') === (string) $driver->id)>{{ $driver->name }}</option>@endforeach</select></div>
-                            <div class="form-row"><label for="so_delivery_date_{{ $row['id'] }}">Delivery Date</label><input form="stock-out-update-{{ $row['id'] }}" id="so_delivery_date_{{ $row['id'] }}" name="delivery_date" type="datetime-local" value="{{ $stockOutOld('delivery_date') }}"></div>
+                            <div class="form-row"><label for="so_truck_{{ $row['id'] }}">Truck</label><select form="stock-out-update-{{ $row['id'] }}" id="so_truck_{{ $row['id'] }}" name="delivery_truck_id"><option value="">Select Truck</option>@foreach ($deliveryTrucks as $truck)<option value="{{ $truck->id }}" @selected((string) $stockOutOld('delivery_truck_id') === (string) $truck->id)>{{ $truck->truck_code }}{{ $truck->plate_number ? ' / '.$truck->plate_number : '' }}</option>@endforeach</select>@if ($isEditedStockOut)@error('delivery_truck_id')<p class="field-error">{{ $message }}</p>@enderror @endif</div>
+                            <div class="form-row"><label for="so_driver_{{ $row['id'] }}">Driver</label><select form="stock-out-update-{{ $row['id'] }}" id="so_driver_{{ $row['id'] }}" name="delivery_driver_user_id"><option value="">Select Driver</option>@foreach ($deliveryDrivers as $driver)<option value="{{ $driver->id }}" @selected((string) $stockOutOld('delivery_driver_user_id') === (string) $driver->id)>{{ $driver->name }}</option>@endforeach</select>@if ($isEditedStockOut)@error('delivery_driver_user_id')<p class="field-error">{{ $message }}</p>@enderror @endif</div>
+                            <div class="form-row"><label for="so_delivery_date_{{ $row['id'] }}">Delivery Date</label><input form="stock-out-update-{{ $row['id'] }}" id="so_delivery_date_{{ $row['id'] }}" name="delivery_date" type="datetime-local" value="{{ $stockOutOld('delivery_date') }}">@if ($isEditedStockOut)@error('delivery_date')<p class="field-error">{{ $message }}</p>@enderror @endif</div>
                         @endif
                     </div>
-                    <p class="table-help">Cost / Unit recalculates Total Cost, Margin and Realized Profit for this row only.
-                        @if ($row['standard']) Truck, Driver and Delivery Date belong to order {{ $c[0] }} and change on all its stock-out rows. @else Truck, Driver, ATL and DR come from the lift: change them in Fuel Lifting. @endif
-                        Quantity, fuel, purchase and price come from the sale: edit or cancel the sale in Sales.</p>
                 @endif
                 <div class="detail-grid">
                     @foreach ([
-                        'Transaction Date' => $row['editable'] ? null : $c[1],
+                        'Transaction Date' => $row['editable'] && ! $row['delivered'] ? null : $c[1],
                         'Customer' => $c[2].($c[3] && $c[3] !== $c[2] ? ' — '.$c[3] : ''),
                         'Delivery Type' => $c[4],
                         'Fuel' => $c[5],
@@ -472,21 +473,21 @@
             </div>
             <x-slot:footer>
                 @if ($row['editable'])
-                    <button class="btn btn-pill btn-secondary" type="submit" form="stock-out-update-{{ $row['id'] }}">Save Changes</button>
+                    <button class="btn btn-pill btn-secondary" type="submit" form="stock-out-update-{{ $row['id'] }}">Apply Changes</button>
                 @endif
                 <button class="btn btn-pill btn-danger" type="button" data-modal-close>Close</button>
             </x-slot:footer>
         </x-admin.modal>
     @endforeach
 
-    <x-admin.modal id="io-depot-add" title="Add Depot">
+    <x-admin.modal id="io-depot-add" reset-on-close title="Add Depot">
         <form id="depot-add-form" method="POST" action="{{ route($inventoryRoutePrefix.'.depots.store') }}">
             @csrf
             <div class="modal-card">
                 <div class="form-grid">
                     <div class="form-row"><label for="depot_code_master">Code</label><input id="depot_code_master" name="depot_code" type="text" maxlength="30" value="{{ old('depot_code') }}" required></div>
                     <div class="form-row"><label for="depot_name_master">Name</label><input id="depot_name_master" name="name" type="text" maxlength="255" value="{{ old('name') }}" required></div>
-                    <div class="form-row"><label for="depot_status_master">Status</label><select id="depot_status_master" name="status" required><option value="active" @selected(old('status', 'active') === 'active')>Active</option><option value="inactive" @selected(old('status') === 'inactive')>Inactive</option></select></div>
+                    <div class="form-row"><label for="depot_status_master">Status</label><select id="depot_status_master" name="status" required data-default="active"><option value="active" @selected(old('status', 'active') === 'active')>Active</option><option value="inactive" @selected(old('status') === 'inactive')>Inactive</option></select></div>
                     <div class="form-row"><label for="depot_phone_master">Phone</label><input id="depot_phone_master" name="phone" type="text" maxlength="30" value="{{ old('phone') }}"></div>
                     <div class="form-row"><label for="depot_contact_master">Contact</label><input id="depot_contact_master" name="contact_person" type="text" maxlength="255" value="{{ old('contact_person') }}"></div>
                     <div class="form-row"><label for="depot_address_master">Address</label><input id="depot_address_master" name="address" type="text" maxlength="255" value="{{ old('address') }}"></div>

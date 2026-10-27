@@ -312,18 +312,6 @@ class FormValidationTest extends TestCase
                 'sales_customer_id',
             ]);
 
-        $this->actingAs($records['admin'])
-            ->from(route('admin.reports'))
-            ->post(route('admin.reports.sales-trend-summary'), [
-                'period' => 'quarter',
-                'date' => 'bad-date',
-                'start_date' => '2026-09-10',
-                'end_date' => '2026-09-01',
-                'month' => '09-2026',
-                'year' => 1999,
-            ])
-            ->assertRedirect(route('admin.reports'))
-            ->assertSessionHasErrors(['period', 'date', 'end_date', 'month', 'year']);
 
         Http::assertNothingSent();
     }

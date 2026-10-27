@@ -4270,3 +4270,333 @@ body.login-page {
     background: #fdecec;
     color: #8a1c1c;
 }
+
+/* Part 11 (October 26): Reports and A.I Insights header. The filter bar shares the title's and the cards' edges
+   (All Time on the left, Export / Print on the right, one row, one height), sits 20px above the first card like the
+   cards' own spacing, and each insight card keeps one header height with its Generate button on the right. */
+.report-intro.report-toolbar {
+    flex-wrap: nowrap;
+    gap: 16px;
+    margin: 2px 0 20px;
+    border-bottom: 0;
+    padding: 0;
+}
+
+.report-toolbar .filter-row {
+    flex-wrap: wrap;
+    gap: 12px;
+    min-width: 0;
+}
+
+.report-toolbar .form-control,
+.report-toolbar .report-actions .btn {
+    height: 38px;
+    min-height: 38px;
+}
+
+.report-toolbar .report-actions {
+    flex-wrap: nowrap;
+    align-items: center;
+    margin-left: auto;
+}
+
+.report-section.ai-insight-panel > .chart-header {
+    min-height: 62px;
+    flex-wrap: nowrap;
+}
+
+.report-section.ai-insight-panel > .chart-header h2 {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.report-section.ai-insight-panel > .chart-header form {
+    flex: 0 0 auto;
+    margin: 0;
+}
+
+.report-section.ai-insight-panel .dashboard-empty-state {
+    text-align: center;
+}
+
+@media (max-width: 639px) {
+    /* Phones: the period filter takes its own line, Export / Print stay right-aligned under it. */
+    .report-intro.report-toolbar {
+        flex-wrap: wrap;
+    }
+
+    .report-toolbar .filter-row {
+        flex: 1 1 100%;
+    }
+}
+
+/* Part 11: Delete a Scheduled lift - red outlined button beside View and in the View modal footer. */
+.btn-danger-outline {
+    background: #fff;
+    border-color: var(--danger);
+    color: var(--danger);
+}
+
+.btn-danger-outline:hover,
+.btn-danger-outline:focus-visible {
+    background: var(--danger);
+    color: #fff;
+}
+
+.dispatch-row-actions {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 8px;
+    align-items: center;
+    justify-content: center;
+}
+
+.lift-delete-form {
+    display: inline-flex;
+    margin: 0;
+}
+
+/* Part 12: a success toast fades out when it closes itself after 3 seconds. */
+.cjp-toast {
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.cjp-toast.is-leaving {
+    opacity: 0;
+    transform: translateY(8px);
+}
+
+/* Part 12: Purchases show Inventory / Purchase / Payment Status in three columns, so each pill is narrower. */
+.inventory-table td.purchase-status-cell .status-badge {
+    width: 128px;
+    min-width: 128px;
+    max-width: 128px;
+}
+
+/* Part 12: Stock Out has Customer Name and Company Name in their own columns; long names wrap between words. */
+.stock-out-table td.stock-out-name {
+    min-width: 120px;
+    max-width: 180px;
+    white-space: normal;
+    overflow-wrap: break-word;
+}
+
+/* Part 12: Date filters are a From / To pair of date pickers with a Clear button (no dropdown of days). */
+.filter-date-range {
+    display: flex;
+    flex: 2 1 330px;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.filter-date-field {
+    display: flex;
+    flex: 1 1 0;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    margin: 0;
+}
+
+.filter-date-field > span {
+    flex: none;
+    color: var(--admin-muted, #475467);
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.toolbar .filter-date-field input[type="date"],
+.filter-row .filter-date-field input[type="date"],
+.filter-date-field input[type="date"] {
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 128px;
+    height: 38px;
+    padding: 0 10px;
+    border: 1px solid var(--admin-ink);
+    border-radius: 4px;
+    background: var(--admin-ink);
+    color: #fff;
+    color-scheme: dark;
+    font-size: 14px;
+}
+
+.toolbar .filter-date-clear,
+.filter-date-clear {
+    flex: none;
+    min-width: 0;
+    height: 38px;
+    padding: 0 12px;
+    border: 1px solid var(--admin-ink);
+    border-radius: 4px;
+    background: #fff;
+    color: var(--admin-ink);
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+@media (max-width: 767px) {
+    .filter-date-range {
+        flex-basis: 100%;
+        flex-wrap: wrap;
+    }
+
+    .filter-date-field {
+        flex-basis: calc(50% - 4px);
+    }
+}
+
+/* Part 12: alert cards. The "!" icon sits centred in its own column; the Read / Unread pill follows the title on the
+   same line; View / Mark Read stay right-aligned. Read alerts are white, grey-edged and muted. */
+.workflow-alert-stack .alert-bar {
+    align-items: center;
+}
+
+.workflow-alert-stack .alert-icon {
+    align-self: center;
+    flex: none;
+}
+
+.workflow-alert-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    min-width: 0;
+}
+
+.workflow-alert-heading .alert-title {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.workflow-alert-heading .status-badge {
+    flex: none;
+}
+
+.workflow-alert-time {
+    display: block;
+    margin-top: 4px;
+    color: #475467;
+    font-size: 12px;
+}
+
+.workflow-alert-stack .alert-bar.is-read {
+    border-left-color: #c3c9d4;
+    background: #fff;
+    opacity: 1;
+}
+
+.workflow-alert-stack .alert-bar.is-read .alert-icon {
+    background: #eef1f5;
+    color: #98a2b3;
+}
+
+.workflow-alert-stack .alert-bar.is-read .alert-title,
+.workflow-alert-stack .alert-bar.is-read .workflow-alert-message {
+    color: #475467;
+    font-weight: 600;
+}
+
+.workflow-alert-stack .alert-bar.is-unread .alert-icon {
+    box-shadow: 0 0 0 2px currentColor inset;
+}
+
+/* Part 12: the row an alert's View link points to, until the user clicks it. */
+.admin-table tbody tr.is-highlighted > td {
+    background: #fff4c2 !important;
+}
+
+.admin-table tbody tr.is-highlighted > td:first-child {
+    box-shadow: inset 4px 0 0 #f2b705;
+}
+
+/* Part 12: Stock Out has 15 columns (Company Name split out, Actions from Part 11). Tighter cells so it fits the frame
+   at 1920px and needs the least sideways scrolling at 1366px; IDs and amounts still never wrap. */
+.stock-out-table {
+    font-size: 13px;
+}
+
+.stock-out-table th,
+.stock-out-table td {
+    padding-right: 6px;
+    padding-left: 6px;
+}
+
+.stock-out-table th {
+    font-size: 12px;
+    line-height: 1.25;
+}
+
+.stock-out-table td.stock-out-name {
+    min-width: 88px;
+    max-width: 130px;
+}
+
+.stock-out-table td.stock-out-delivery {
+    min-width: 160px;
+    max-width: 200px;
+    font-size: 12px;
+}
+
+.inventory-table.stock-out-table .status-badge {
+    width: 92px;
+    min-width: 92px;
+    max-width: 92px;
+}
+
+.stock-out-table td.inventory-number {
+    font-variant-numeric: tabular-nums;
+}
+.sale-locked-note { grid-column: 1 / -1; margin: 0; color: #475467; font-size: 12px; }
+
+/* Part 12: fuel left on a lifted truck (View modal card). */
+.truck-leftover-card {
+    border-left: 4px solid var(--warning, #f59e0b);
+}
+
+.truck-leftover-form .form-row select {
+    width: 100%;
+}
+
+/* Part 12: Stock Out fits the frame at 1366px without sideways scrolling. Delivery details moved to the Edit Stock-Out
+   modal (hidden export-only columns keep them in Export); below 1600px the table uses compact cells. */
+.stock-out-table .export-only[hidden] {
+    display: none;
+}
+
+@media (max-width: 1599px) {
+    .stock-out-table {
+        font-size: 12px;
+    }
+
+    .stock-out-table th {
+        font-size: 11px;
+    }
+
+    .stock-out-table th,
+    .stock-out-table td {
+        padding-right: 4px;
+        padding-left: 4px;
+    }
+
+    .stock-out-table td.stock-out-name {
+        min-width: 68px;
+        max-width: 110px;
+    }
+
+    .inventory-table.stock-out-table .status-badge {
+        width: 76px;
+        min-width: 76px;
+        max-width: 76px;
+        font-size: 10px;
+    }
+
+    .stock-out-table .inventory-row-actions .btn {
+        min-width: 0;
+        padding: 0 10px;
+    }
+}

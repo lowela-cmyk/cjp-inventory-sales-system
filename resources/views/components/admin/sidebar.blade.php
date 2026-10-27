@@ -8,7 +8,6 @@
         ['route' => 'admin.ledger', 'module' => 'ledger', 'label' => 'Ledger'],
         ['route' => 'admin.fuel-lifting', 'module' => 'fuel-lifting', 'label' => 'Fuel Lifting'],
         ['route' => 'admin.sales', 'module' => 'sales', 'label' => 'Sales'],
-        ['route' => 'admin.reports', 'label' => 'Reports'],
         ['route' => 'admin.alerts', 'module' => 'alerts', 'label' => 'Alerts'],
         ['route' => 'admin.account-requests', 'module' => 'account-requests', 'label' => 'Account Requests'],
         ['route' => 'admin.user-management', 'module' => 'user-management', 'label' => 'User Management'],

@@ -182,13 +182,6 @@ document.querySelectorAll('[data-dashboard-revenue]').forEach((root) => {
     show(root.dataset.defaultPeriod || 'month');
 });
 
-// Sales Trend "Date": picking a preset replaces a date range that came from a link.
-document.querySelectorAll('[data-sales-period]').forEach((select) => {
-    select.addEventListener('change', () => {
-        select.form?.querySelectorAll('input[name="sales_date_from"], input[name="sales_date_to"]').forEach((input) => input.remove());
-    });
-});
-
 // Part 11: Export. Each visible chart is captured with Chart.js toBase64Image() and posted with the AI insight shown on
 // the page; the server adds the KPI figures for the same filters and returns one PDF. No insight yet: the PDF says so.
 document.querySelectorAll('[data-dashboard-export]').forEach((form) => {

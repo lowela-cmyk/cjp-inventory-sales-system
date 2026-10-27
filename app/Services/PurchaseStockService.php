@@ -213,6 +213,7 @@ class PurchaseStockService
     private function liftedByPurchase(array $ids): array
     {
         $rows = DB::table('hauls')
+            ->whereNull('deleted_at')
             ->where('status', '!=', 'cancelled')
             ->whereIn('purchase_item_id', $ids ?: [0])
             ->groupBy('purchase_item_id')

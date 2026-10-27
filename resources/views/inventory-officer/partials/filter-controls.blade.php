@@ -11,8 +11,8 @@
         :options="collect($statuses)->mapWithKeys(fn (string $status): array => [$status => ucwords(str_replace('_', ' ', $status))])" />
 @endif
 @if (in_array('date', $fields, true))
-    {{-- Every filter is a dropdown (Important Notes): Date lists the days this tab has records on. --}}
-    <x-filter.date-select name="date" :value="$current['date'] ?? null" :dates="$filterOptions['dates'][$tab] ?? []" />
+    {{-- Part 12: Date is a From / To range of date pickers. --}}
+    <x-filter.date-range :from-value="$current['date_from'] ?? null" :to-value="$current['date_to'] ?? null" />
 @endif
 @if (in_array('depot', $fields, true))
     <x-filter.select name="depot_id" label="Depot" :selected="$current['depot_id'] ?? null" :options="$filterOptions['depots']->pluck('name', 'id')" />

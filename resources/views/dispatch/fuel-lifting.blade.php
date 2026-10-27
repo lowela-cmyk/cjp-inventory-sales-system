@@ -48,7 +48,7 @@
         <section data-tab-panel="schedule" {{ $activeTab !== 'schedule' ? 'hidden' : '' }}>
             <x-filter.bar class="dispatch-fuel-filter" :action="route($liftRoutePrefix)">
                 <x-filter.search label="Search scheduled lifts" :value="$search" />
-                <x-filter.date-select name="lift_date" label="Lift date" :value="$filters['lift_date'] ?? null" :dates="$filterOptions['liftDates']" />
+                <x-filter.date-range label="Lift date" from="lift_date_from" to="lift_date_to" :from-value="$filters['lift_date_from'] ?? null" :to-value="$filters['lift_date_to'] ?? null" />
                 <x-filter.select name="fuel_type_id" label="Fuel Type" :options="$filterOptions['fuelTypes']->pluck('name', 'id')" :selected="$filters['fuel_type_id'] ?? null" />
                 <x-filter.select name="driver_user_id" label="Driver" :options="$filterOptions['drivers']->pluck('name', 'id')" :selected="$filters['driver_user_id'] ?? null" />
                 <x-filter.select name="truck_id" label="Truck" :options="$truckFilterOptions" :selected="$filters['truck_id'] ?? null" />
@@ -80,7 +80,15 @@
                                     <td>{{ $cell }}</td>
                                 @endforeach
                                 <td><x-admin.status-badge :status="$row['status']" /></td>
-                                <td><button class="btn btn-secondary" type="button" data-modal-open="{{ $row['id'] }}">View</button></td>
+                                <td>
+                                    <div class="dispatch-row-actions">
+                                        <button class="btn btn-secondary" type="button" data-modal-open="{{ $row['id'] }}">View</button>
+                                        {{-- Part 11: a lift still Scheduled can be deleted (the server checks it too). --}}
+                                        @if ($row['can_delete'])
+                                            @include('dispatch.partials.lift-delete-form', ['row' => $row])
+                                        @endif
+                                    </div>
+                                </td>
                             </tr>
                         @empty
                             <tr><td class="empty-cell" colspan="12">No records found.</td></tr>
@@ -95,7 +103,7 @@
                 <x-filter.search label="Search hauled lifts" :value="$search" />
                 <x-filter.select name="status" label="Status" :selected="$filters['status'] ?? null"
                     :options="collect($filterOptions['statuses'])->mapWithKeys(fn (string $status): array => [$status => ucwords(str_replace('_', ' ', $status))])" />
-                <x-filter.date-select name="lift_date" label="Lift date" :value="$filters['lift_date'] ?? null" :dates="$filterOptions['liftDates']" />
+                <x-filter.date-range label="Lift date" from="lift_date_from" to="lift_date_to" :from-value="$filters['lift_date_from'] ?? null" :to-value="$filters['lift_date_to'] ?? null" />
                 <x-filter.select name="fuel_type_id" label="Fuel Type" :options="$filterOptions['fuelTypes']->pluck('name', 'id')" :selected="$filters['fuel_type_id'] ?? null" />
                 <x-filter.select name="driver_user_id" label="Driver" :options="$filterOptions['drivers']->pluck('name', 'id')" :selected="$filters['driver_user_id'] ?? null" />
                 <x-filter.select name="truck_id" label="Truck" :options="$truckFilterOptions" :selected="$filters['truck_id'] ?? null" />
@@ -116,6 +124,7 @@
                             <th>Capacity</th>
                             <th>Lifted</th>
                             <th>Delivered Quantity</th>
+                            <th>On Truck</th>
                             <th>Status</th>
                             <th>Actions</th>
                         </tr>
@@ -128,11 +137,13 @@
                                 @endforeach
                                 {{-- Liters delivered to Depot to Client orders from this lift. --}}
                                 <td>{{ $row['load']['delivered'] }}</td>
+                                {{-- Part 12: fuel still on the truck (it keeps the truck Loaded until delivered or returned). --}}
+                                <td @class(['is-due' => $row['truck_leftover'] > 0])>{{ $row['truck_leftover_label'] }}</td>
                                 <td><x-admin.status-badge :status="$row['status']" /></td>
                                 <td><button class="btn btn-secondary" type="button" data-modal-open="{{ $row['id'] }}">View</button></td>
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="13">No records found.</td></tr>
+                            <tr><td class="empty-cell" colspan="14">No records found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -146,7 +157,7 @@
 
     @include('trucks.partials.modals')
 
-    <x-admin.modal id="dispatch-lift-add" title="Schedule Lift" size="xl">
+    <x-admin.modal id="dispatch-lift-add" reset-on-close title="Schedule Lift" size="xl">
         @if ($scheduleFormFailed)
             <span hidden data-open-modal-on-load="dispatch-lift-add"></span>
         @endif
@@ -299,6 +310,34 @@
                     </div>
                 @endforeach
             </div>
+            @if ($row['truck_leftover'] > 0)
+                {{-- Part 12: fuel left on the truck. Deliver more customer orders from it, or return the rest to the depot. --}}
+                <div class="modal-card modal-form-card truck-leftover-card">
+                    <h3 class="lift-section-title">Fuel Left on the Truck: {{ $row['truck_leftover_label'] }}</h3>
+                    <p class="receipt-line-note">The truck stays Loaded (not Available) until this reaches 0.</p>
+                    @if ($row['truck_order_options']->isNotEmpty())
+                        <form class="truck-leftover-form" method="POST" action="{{ route($liftRoutePrefix.'.hauls.truck-deliveries.store', $row['haul_id']) }}" data-prevent-double-submit>
+                            @csrf
+                            <div class="form-row">
+                                <label for="truck_order_{{ $row['haul_id'] }}">Order</label>
+                                <select id="truck_order_{{ $row['haul_id'] }}" name="sale_id" required>
+                                    <option value="">Select an order to deliver from this truck</option>
+                                    @foreach ($row['truck_order_options'] as $order)
+                                        <option value="{{ $order->sale_id }}">{{ $order->label }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <div class="modal-actions"><button class="btn btn-pill btn-secondary" type="submit">Deliver from Truck</button></div>
+                        </form>
+                    @else
+                        <p class="receipt-line-note">No open order of this fuel fits in the liters left.</p>
+                    @endif
+                    <form method="POST" action="{{ route($liftRoutePrefix.'.hauls.return-to-depot', $row['haul_id']) }}" data-confirm-message="Return the {{ $row['truck_leftover_label'] }} left on the truck to the depot? The liters go back to their purchase.">
+                        @csrf
+                        <div class="modal-actions"><button class="btn btn-pill btn-danger-outline" type="submit">Return to Depot</button></div>
+                    </form>
+                </div>
+            @endif
             @if (! empty($row['allowed_statuses']))
                 <form class="modal-card modal-form-card" method="POST" action="{{ route($liftRoutePrefix.'.hauls.status', $row['haul_id']) }}">
                     @csrf
@@ -358,6 +397,9 @@
                 </div>
             @endif
             <x-slot:footer>
+                @if ($row['can_delete'])
+                    @include('dispatch.partials.lift-delete-form', ['row' => $row, 'pill' => true])
+                @endif
                 <button class="btn btn-pill btn-danger" type="button" data-modal-close>Close</button>
             </x-slot:footer>
         </x-admin.modal>

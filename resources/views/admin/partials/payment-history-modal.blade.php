@@ -32,9 +32,10 @@
             <div class="detail-row"><div class="detail-label">Receivable Status</div><div class="detail-value"><x-admin.status-badge :status="$paymentStatus" /></div></div>
         </div>
 
-        @if ($paymentAction)
+        {{-- Part 12: a settled sale (balance 0) offers no payment form at all; the server refuses one too. --}}
+        @if ($paymentAction && $balanceValue > 0)
             <div class="payment-form-toggle-row" @if ($showPaymentForm) hidden @endif data-payment-form-toggle-row>
-                <button class="btn btn-primary" type="button" data-payment-form-toggle @disabled($balanceValue <= 0) title="{{ $balanceValue <= 0 ? 'This sale is fully paid' : 'Record a new payment' }}">+ Add New Payment</button>
+                <button class="btn btn-primary" type="button" data-payment-form-toggle>+ Add New Payment</button>
             </div>
             <form class="payment-entry-form" method="POST" action="{{ $paymentAction }}" @if (! $showPaymentForm) hidden @endif data-payment-form>
                 @csrf

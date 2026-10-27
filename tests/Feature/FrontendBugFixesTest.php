@@ -108,11 +108,11 @@ class FrontendBugFixesTest extends TestCase
         $admin = User::factory()->create(['role' => 'admin', 'status' => 'active']);
 
         $response = $this->actingAs($admin)
-            ->get(route('admin.reports', ['period' => 'month', 'month' => '2026-09', 'year' => 2026]))
+            ->get(route('admin.fuel-lifting.trucks'))
             ->assertOk();
 
         $this->assertMatchesRegularExpression(
-            '/class="side-link is-active" href="[^"]*\/admin\/reports"/',
+            '/class="side-link is-active" href="[^"]*\/admin\/fuel-lifting"/',
             $response->getContent()
         );
     }
@@ -136,13 +136,15 @@ class FrontendBugFixesTest extends TestCase
         $admin = User::factory()->create(['role' => 'admin', 'status' => 'active']);
 
         $this->withSession([
-            'revenueInsight' => [
+            'dashboardInsight' => [
+                'source' => 'ai',
                 'text' => "Revenue Summary\n<script>alert('x')</script>",
+                'note' => null,
                 'generated_at' => 'Sep 04, 2026 10:00 AM',
             ],
         ])
             ->actingAs($admin)
-            ->get(route('admin.reports'))
+            ->get(route('admin.dashboard'))
             ->assertOk()
             ->assertSee('&lt;script&gt;alert(&#039;x&#039;)&lt;/script&gt;', false)
             ->assertDontSee("<script>alert('x')</script>", false);

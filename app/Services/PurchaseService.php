@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\FilterDates;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
@@ -192,11 +193,13 @@ class PurchaseService
     public function purchaseRows(?string $search, int $perPage = 25, string $pageName = 'purchases_page', array $filters = []): LengthAwarePaginator
     {
         $haulTotals = DB::table('hauls')
+            ->whereNull('deleted_at')
             ->where('status', '!=', 'cancelled')
             ->selectRaw('purchase_item_id, COALESCE(SUM(quantity_liters), 0) as hauled_liters')
             ->groupBy('purchase_item_id');
 
         $withdrawalTotals = DB::table('hauls')
+            ->whereNull('deleted_at')
             ->whereNotNull('withdrawal_receipt_path')
             ->selectRaw('purchase_item_id, COUNT(*) as withdrawal_count, MAX(withdrawal_receipt_uploaded_at) as latest_withdrawal_at')
             ->groupBy('purchase_item_id');
@@ -219,6 +222,7 @@ class PurchaseService
             ]))
             ->when($filters['status'] ?? null, fn (Builder $q, string $status): Builder => $q->where('purchases.workflow_status', $status))
             ->when($filters['date'] ?? null, fn (Builder $q, string $date): Builder => $q->whereDate('purchases.purchase_date', $date))
+            ->tap(fn (Builder $q): Builder => FilterDates::apply($q, 'purchases.purchase_date', ['from' => $filters['date_from'] ?? null, 'to' => $filters['date_to'] ?? null]))
             ->when($filters['depot_id'] ?? null, fn (Builder $q, mixed $depotId): Builder => $q->where('purchases.depot_id', (int) $depotId))
             ->when($filters['fuel_type_id'] ?? null, fn (Builder $q, mixed $fuelTypeId): Builder => $q->where('purchase_items.fuel_type_id', (int) $fuelTypeId))
             ->orderByDesc('purchases.purchase_date')
@@ -355,6 +359,7 @@ class PurchaseService
 
         $withdrawals = DB::table('hauls')
             ->whereIn('purchase_item_id', $ids->all())
+            ->whereNull('deleted_at')
             ->whereNotNull('withdrawal_receipt_path')
             ->orderByDesc('withdrawal_receipt_uploaded_at')
             ->orderByDesc('id')
@@ -398,7 +403,7 @@ class PurchaseService
         $dependentIds = $rows
             ->filter(fn (object $row): bool => (float) ($row->quantity_hauled_liters ?? 0) > 0)
             ->pluck('id')
-            ->merge(DB::table('hauls')->whereIn('purchase_item_id', $ids->all())->pluck('purchase_item_id'))
+            ->merge(DB::table('hauls')->whereIn('purchase_item_id', $ids->all())->whereNull('deleted_at')->pluck('purchase_item_id'))
             // Part 2 revisions: orders sell from the purchase (its own fuel or an F1 portion).
             ->merge(DB::table('sale_items')->whereIn('purchase_item_id', $ids->all())->pluck('purchase_item_id'))
             ->merge(DB::table('sale_items')->whereIn('f1_purchase_item_id', $ids->all())->pluck('f1_purchase_item_id'))
@@ -420,7 +425,7 @@ class PurchaseService
     public function hasDependentActivity(object $row): bool
     {
         return (float) ($row->quantity_hauled_liters ?? 0) > 0
-            || DB::table('hauls')->where('purchase_item_id', $row->id)->exists()
+            || DB::table('hauls')->where('purchase_item_id', $row->id)->whereNull('deleted_at')->exists()
             || $this->salesDeductingFrom((int) $row->id) !== []
             || DB::table('inventory_movements')
                 ->where('reference_type', 'purchase_item')
@@ -441,22 +446,22 @@ class PurchaseService
     {
         $line = $this->purchaseStock->line((int) $row->id, true);
         $taken = round((float) ($line->released ?? 0) + (float) ($line->reserved ?? 0), 2);
-        $onLifts = round((float) DB::table('hauls')->where('purchase_item_id', $row->id)->where('status', '!=', 'cancelled')->sum('quantity_liters'), 2);
+        $onLifts = round((float) DB::table('hauls')->where('purchase_item_id', $row->id)->whereNull('deleted_at')->where('status', '!=', 'cancelled')->sum('quantity_liters'), 2);
         $quantity = round((float) $data['quantity_ordered_liters'], 2);
         $errors = [];
 
         if ($quantity < $taken) {
-            $errors['quantity_ordered_liters'] = 'Sales already deducted '.number_format($taken, 2).' L from this purchase, so its quantity cannot be lower than that.';
+            $errors['quantity_ordered_liters'] = "Quantity can't go below the ".number_format($taken, 2).' L already sold.';
         } elseif ($quantity < $onLifts) {
-            $errors['quantity_ordered_liters'] = number_format($onLifts, 2).' L of this purchase is already on lifts, so its quantity cannot be lower than that.';
+            $errors['quantity_ordered_liters'] = "Quantity can't go below the ".number_format($onLifts, 2).' L already on lifts.';
         }
 
         $used = $this->salesDeductingFrom((int) $row->id) !== [] || $onLifts > 0 || (float) ($row->quantity_hauled_liters ?? 0) > 0;
         if ($used && (int) $row->fuel_type_id !== (int) $data['fuel_type_id']) {
-            $errors['fuel_type_id'] = 'Sales or lifts already use this purchase, so its fuel type cannot be changed.';
+            $errors['fuel_type_id'] = "Fuel can't change: sales or lifts already use this purchase.";
         }
         if ($used && (int) $row->depot_id !== (int) $data['depot_id']) {
-            $errors['depot_id'] = 'Sales or lifts already use this purchase, so its depot cannot be changed.';
+            $errors['depot_id'] = "Depot can't change: sales or lifts already use this purchase.";
         }
 
         if ($errors !== []) {

@@ -18,16 +18,17 @@ class InventoryOfficerLedgerController extends Controller
     {
         $data = $request->validate([
             'search' => ['nullable', 'string', 'max:100'],
-            'date' => ['nullable', 'date'],
             'depot_id' => ['nullable', 'integer', Rule::exists('depots', 'id')],
             'fuel_type_id' => ['nullable', 'integer', Rule::exists('fuel_types', 'id')],
             'status' => ['nullable', Rule::in(array_keys(InventoryLedgerService::STATUSES))],
-        ]);
+        ] + FilterDates::rules());
+        $dates = FilterDates::range($data);
 
         $activeTab = $state === 'transactions' ? 'transactions' : 'ledger';
         $search = trim((string) ($data['search'] ?? ''));
         $filters = [
-            'date' => $data['date'] ?? null,
+            'date_from' => $dates['from'],
+            'date_to' => $dates['to'],
             'depot_id' => $data['depot_id'] ?? null,
             'fuel_type_id' => $data['fuel_type_id'] ?? null,
             // The Ledger tab only lists purchases with fuel left to lift, so status filters the Transaction tab.
@@ -47,7 +48,6 @@ class InventoryOfficerLedgerController extends Controller
                     ->orderBy('name')
                     ->pluck('name', 'id'),
                 'statuses' => InventoryLedgerService::STATUSES,
-                'purchaseDates' => FilterDates::distinct(DB::table('purchases')->whereNull('deleted_at'), 'purchase_date'),
             ],
             'ledger' => $rows['ledger'],
             'transactions' => $rows['transactions'],

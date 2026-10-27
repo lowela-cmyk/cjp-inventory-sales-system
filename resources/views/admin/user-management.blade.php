@@ -100,7 +100,7 @@
 
     </div>
 
-    <x-admin.modal id="staff-add" title="Add Staff" wide>
+    <x-admin.modal id="staff-add" reset-on-close title="Add Staff" wide>
         <form method="POST" action="{{ route('admin.user-management.staff.store') }}">
             @csrf
             <div class="modal-card">
@@ -109,7 +109,7 @@
                     <div class="form-row"><label for="staff_role">Position</label><select id="staff_role" name="role" required><option value="" disabled @selected(! old('role'))>Select Position</option>@foreach ($officeRoles as $value => $label)<option value="{{ $value }}" @selected(old('role') === $value)>{{ $label }}</option>@endforeach</select></div>
                     <div class="form-row"><label for="staff_email">Email</label><input id="staff_email" name="email" type="email" placeholder="Enter Email" value="{{ old('email') }}" required></div>
                     <div class="form-row"><label for="staff_phone">Contact Number</label><input id="staff_phone" name="phone" type="tel" placeholder="Enter Contact Number" value="{{ old('phone') }}"></div>
-                    <div class="form-row"><label for="staff_status">Status</label><select id="staff_status" name="status" required>@foreach ($statuses as $status)<option value="{{ $status }}" @selected(old('status', 'active') === $status)>{{ ucfirst($status) }}</option>@endforeach</select></div>
+                    <div class="form-row"><label for="staff_status">Status</label><select id="staff_status" name="status" required data-default="active">@foreach ($statuses as $status)<option value="{{ $status }}" @selected(old('status', 'active') === $status)>{{ ucfirst($status) }}</option>@endforeach</select></div>
                     <div class="form-row"><label for="staff_password">Password</label><input id="staff_password" name="password" type="password" placeholder="Enter Password" required></div>
                     <div class="form-row"><label for="staff_password_confirmation">Confirm Password</label><input id="staff_password_confirmation" name="password_confirmation" type="password" placeholder="Confirm Password" required></div>
                 </div>
@@ -121,7 +121,7 @@
         </form>
     </x-admin.modal>
 
-    <x-admin.modal id="driver-add" title="Add Driver" wide>
+    <x-admin.modal id="driver-add" reset-on-close title="Add Driver" wide>
         <form method="POST" action="{{ route('admin.user-management.drivers.store') }}">
             @csrf
             <input type="hidden" name="role" value="driver">
@@ -131,7 +131,7 @@
                     <div class="form-row"><label for="license_number">License Number</label><input id="license_number" name="license_number" type="text" placeholder="Enter License Number" value="{{ old('license_number') }}"></div>
                     <div class="form-row"><label for="driver_email">Email</label><input id="driver_email" name="email" type="email" placeholder="Enter Email" value="{{ old('email') }}" required></div>
                     <div class="form-row"><label for="driver_phone">Contact Number</label><input id="driver_phone" name="phone" type="tel" placeholder="Enter Contact Number" value="{{ old('phone') }}"></div>
-                    <div class="form-row"><label for="driver_status">Status</label><select id="driver_status" name="status" required>@foreach ($statuses as $status)<option value="{{ $status }}" @selected(old('status', 'active') === $status)>{{ ucfirst($status) }}</option>@endforeach</select></div>
+                    <div class="form-row"><label for="driver_status">Status</label><select id="driver_status" name="status" required data-default="active">@foreach ($statuses as $status)<option value="{{ $status }}" @selected(old('status', 'active') === $status)>{{ ucfirst($status) }}</option>@endforeach</select></div>
                     <div class="form-row"><label for="driver_password">Password</label><input id="driver_password" name="password" type="password" placeholder="Enter Password" required></div>
                     <div class="form-row"><label for="driver_password_confirmation">Confirm Password</label><input id="driver_password_confirmation" name="password_confirmation" type="password" placeholder="Confirm Password" required></div>
                 </div>
@@ -163,7 +163,7 @@
                 </div>
             </div>
             <div class="modal-actions">
-                <button class="btn btn-pill btn-secondary" type="submit" form="staff-update-{{ $row->id }}">Edit</button>
+                <button class="btn btn-pill btn-secondary" type="submit" form="staff-update-{{ $row->id }}">Apply Changes</button>
                 <form method="POST" action="{{ route('admin.user-management.users.status', $row) }}">
                     @csrf
                     @method('PATCH')
@@ -196,7 +196,7 @@
                 </div>
             </div>
             <div class="modal-actions">
-                <button class="btn btn-pill btn-secondary" type="submit" form="driver-update-{{ $row->id }}">Edit</button>
+                <button class="btn btn-pill btn-secondary" type="submit" form="driver-update-{{ $row->id }}">Apply Changes</button>
                 <form method="POST" action="{{ route('admin.user-management.users.status', $row) }}">
                     @csrf
                     @method('PATCH')

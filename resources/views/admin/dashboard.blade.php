@@ -7,8 +7,6 @@
     $keepFilters = fn (string $prefix): array => collect($filterQuery)->reject(fn (mixed $value, string $key): bool => str_starts_with($key, $prefix))->all();
     $margin = $revenue['margin'];
     $peak = $salesTrend['peak'];
-    $salesPeriod = $filterQuery['sales_period'] ?? null;
-    $customRange = ! $salesPeriod && ($salesFilters['date_from'] || $salesFilters['date_to']);
 @endphp
 
 @component('layouts.admin', ['title' => 'Dashboard and Analytics', 'active' => 'dashboard'])
@@ -120,21 +118,9 @@
                     @foreach ($keepFilters('sales_') as $name => $value)
                         <input type="hidden" name="{{ $name }}" value="{{ $value }}">
                     @endforeach
-                    @if ($customRange)
-                        {{-- A date range from a link keeps applying until another Date option is chosen. --}}
-                        <input type="hidden" name="sales_date_from" value="{{ $salesFilters['date_from'] }}">
-                        <input type="hidden" name="sales_date_to" value="{{ $salesFilters['date_to'] }}">
-                    @endif
                     <input type="search" name="sales_search" placeholder="Search by Sales ID" aria-label="Search by Sales ID" value="{{ $salesFilters['search'] }}">
-                    <select name="sales_period" aria-label="Filter sales by date" data-sales-period>
-                        <option value="">Date</option>
-                        @if ($customRange)
-                            <option value="" selected>{{ $salesFilters['date_from'] ?: '…' }} to {{ $salesFilters['date_to'] ?: '…' }}</option>
-                        @endif
-                        @foreach (\App\Http\Controllers\AdminDashboardController::SALES_PERIODS as $value => $periodLabel)
-                            <option value="{{ $value }}" @selected($salesPeriod === $value)>{{ $periodLabel }}</option>
-                        @endforeach
-                    </select>
+                    {{-- Part 12: Date is a From / To range (an older ?sales_period= link shows its days here). --}}
+                    <x-filter.date-range label="Date" from="sales_date_from" to="sales_date_to" :from-value="$salesFilters['date_from']" :to-value="$salesFilters['date_to']" />
                     <select name="sales_fuel_type_id" aria-label="Filter sales by fuel type">
                         <option value="">Fuel Type (All)</option>
                         @foreach ($filterOptions['fuelTypes'] as $fuelType)
@@ -205,7 +191,7 @@
                             <p class="dash-insight-note" role="note" data-insight-note>{{ session('dashboardInsight.note') }}</p>
                         @endif
                         <div class="ai-insight-text" data-insight-text data-insight-raw="{{ session('dashboardInsight.text') }}">{!! nl2br(e(session('dashboardInsight.text'))) !!}</div>
-                        <p data-insight-source>{{ session('dashboardInsight.source') === 'ai' ? 'AI-assisted insight from the dashboard totals. Use it to support, not replace, record verification.' : 'Rule-based summary of the dashboard totals.' }}</p>
+                        <p data-insight-source>{{ session('dashboardInsight.source') === 'ai' ? 'AI-assisted insight from the dashboard totals. Use it to support, not replace, record verification.' : 'Summary generated from current dashboard data.' }}</p>
                         <span data-insight-generated="{{ session('dashboardInsight.generated_at') }}">Generated {{ session('dashboardInsight.generated_at') }}</span>
                     </div>
                 @endif

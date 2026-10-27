@@ -270,3 +270,34 @@
     justify-content: flex-end;
     margin-bottom: -12px;
 }
+
+/* Part 12: Sales Trend "Date" is a From / To range: it gets its own wider column and the dashboard's light fields. */
+@media (min-width: 1024px) {
+    .dash-filters-sales {
+        grid-template-columns: minmax(180px, 1fr) minmax(300px, 380px) repeat(2, minmax(150px, 190px));
+    }
+}
+
+.dash-filters .filter-date-field input[type="date"] {
+    min-width: 0;
+    height: 36px;
+    border: 1px solid var(--admin-soft-line);
+    border-radius: 6px;
+    background: #fff;
+    color: #111;
+    color-scheme: light;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.dash-filters .filter-date-clear {
+    height: 36px;
+    border-color: var(--admin-soft-line);
+    border-radius: 6px;
+}
+
+@media (max-width: 1100px) {
+    .dash-filters .filter-date-range {
+        grid-column: 1 / -1;
+    }
+}

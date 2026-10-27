@@ -41,21 +41,4 @@ class CompliancePhase2Test extends TestCase
         $this->assertDatabaseHas('customers', ['id' => 157, 'status' => 'inactive']);
     }
 
-    public function test_reports_period_filter_shows_only_the_needed_inputs_and_has_no_generate_button(): void
-    {
-        $admin = User::factory()->create(['role' => 'admin', 'status' => 'active', 'approval_status' => 'approved']);
-
-        $html = $this->actingAs($admin)->get(route('admin.reports'))->assertOk()->getContent();
-        $this->assertStringContainsString('data-report-filter', $html);
-        $this->assertDoesNotMatchRegularExpression('#<button[^>]*>\s*Generate\s*</button>#', $html);
-        // "All Time" needs no extra input, so every period input starts hidden and disabled.
-        $this->assertSame(5, preg_match_all('#data-period-field="[a-z]+"\s+hidden disabled#', $html));
-
-        $range = $this->get(route('admin.reports', ['period' => 'range', 'start_date' => '2026-10-01', 'end_date' => '2026-10-15']))->assertOk()->getContent();
-        $this->assertSame(2, preg_match_all('#data-period-field="range"\s*>#', $range), 'Both range inputs are enabled for a range report.');
-        $this->assertSame(3, preg_match_all('#data-period-field="[a-z]+"\s+hidden disabled#', $range));
-
-        // The server still rejects an incomplete period.
-        $this->get(route('admin.reports', ['period' => 'range', 'start_date' => '2026-10-01']))->assertSessionHasErrors('end_date');
-    }
 }

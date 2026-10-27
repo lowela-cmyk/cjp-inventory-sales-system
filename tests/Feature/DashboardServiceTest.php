@@ -11,6 +11,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Tests\TestCase;
 
 /**
@@ -152,20 +153,28 @@ class DashboardServiceTest extends TestCase
         $this->assertSame(237500.0, $week['actual'][9]);
     }
 
-    public function test_stock_out_vs_receivables_counts_delivered_sales_at_sale_price(): void
+    public function test_stock_out_vs_receivables_compares_stock_out_with_the_amount_collected(): void
     {
         $this->seed_();
         $margin = $this->dashboard()->stockOutMargin();
 
-        // Delivered: S_A 140,000 + S_C 240,000 + S_E 50,000 billed = 430,000.
-        $this->assertSame(430000.0, $margin['receivables']);
-        // Released: 2,000 L x 70 (S_A) + 4,000 L x 60 (S_C); S_E has no release.
+        // Released for delivered sales: 2,000 L x 70 (S_A) + 4,000 L x 60 (S_C); S_E has no release.
         $this->assertSame(380000.0, $margin['stock_out']);
-        $this->assertSame(50000.0, $margin['missing']);
-        // 50,000 / 430,000 = 11.63%.
-        $this->assertSame(11.63, $margin['variance_rate']);
-        $this->assertSame('PHP 50,000.00', $margin['missingLabel']);
+        // Part 12: Receivables = collected on delivered sales: S_A 140,000 + S_E 50,000 (S_C unpaid; S_B not delivered).
+        $this->assertSame(190000.0, $margin['receivables']);
+        // Missing = Stock Out - Collected; rate = Missing / Stock Out = 190,000 / 380,000.
+        $this->assertSame(190000.0, $margin['missing']);
+        $this->assertSame(50.0, $margin['variance_rate']);
+        $this->assertSame('PHP 190,000.00', $margin['missingLabel']);
+        $this->assertSame(['Stock Out', 'Receivables (Collected)'], $margin['chart']['labels']);
         $this->assertTrue($margin['chart']['showValues']);
+    }
+
+    public function test_the_variance_rate_is_zero_when_nothing_was_stocked_out(): void
+    {
+        $margin = $this->dashboard()->stockOutMargin();
+
+        $this->assertSame([0.0, 0.0, 0.0, 0.0, '0.00%'], [$margin['stock_out'], $margin['receivables'], $margin['missing'], $margin['variance_rate'], $margin['varianceRateLabel']]);
     }
 
     // ----- Section 3: Sales Trend -------------------------------------------------------------------------
@@ -246,7 +255,7 @@ class DashboardServiceTest extends TestCase
         $this->assertSame(1, $this->dashboard()->salesTrend(['search' => 'DASH-C'], $this->today)['totals']['sales']);
     }
 
-    public function test_the_sales_date_dropdown_applies_its_period(): void
+    public function test_a_sales_period_link_fills_the_date_range(): void
     {
         $this->seed_();
         $admin = $this->admin();
@@ -254,7 +263,9 @@ class DashboardServiceTest extends TestCase
         // This Month (October 2026): S_A + S_B; S_C is September.
         $this->actingAs($admin)->get(route('admin.dashboard', ['sales_period' => 'this_month']))->assertOk()
             ->assertSeeInOrder(['Total Sales', '2', 'Total Profit'])
-            ->assertSee('<option value="this_month" selected>This Month</option>', false);
+            // Part 12: Date is a From / To range; a period link shows its days.
+            ->assertSee('name="sales_date_from" value="2026-10-01"', false)
+            ->assertSee('name="sales_date_to" value="2026-10-31"', false);
         // Last Month (September 2026): S_C only.
         $this->actingAs($admin)->get(route('admin.dashboard', ['sales_period' => 'last_month']))->assertOk()
             ->assertSeeInOrder(['Collected Revenue', 'PHP 0.00', 'Total Delivered', '4.00 KL', 'Total Sales', '1']);
@@ -313,8 +324,8 @@ class DashboardServiceTest extends TestCase
             ->assertSeeInOrder(['Total Inventory in Stock', '27.50 KL', 'Total Purchases', '3', 'Remaining Balance in Depots', '11.00 KL'])
             ->assertSee('Expected Stock Out Rate:')
             ->assertSee('5.17%')
-            ->assertSee('PHP 50,000.00')
-            ->assertSee('11.63%')
+            ->assertSee('PHP 190,000.00')
+            ->assertSee('50.00%')
             ->assertSee('PHP 240,000.00')
             ->assertSee('September')
             ->assertSee('data-dashboard-chart', false)
@@ -338,26 +349,29 @@ class DashboardServiceTest extends TestCase
 
     // ----- Section 4: Insights and A.I Reporting ---------------------------------------------------------------
 
-    public function test_without_an_ai_key_the_insight_is_a_rule_based_summary_with_a_note(): void
+    public function test_without_an_ai_key_the_insight_is_a_rule_based_summary_and_the_reason_is_only_logged(): void
     {
         $this->seed_();
         Http::fake();
+        Log::spy();
         Config::set('services.ai.api_key', '');
 
         $this->actingAs($this->admin())->post(route('admin.dashboard.insight'), ['inv_search' => 'DASH'])
             ->assertRedirect(route('admin.dashboard', ['inv_search' => 'DASH']).'#insights')
-            ->assertSessionHas('dashboardInsight.source', 'rules')
-            ->assertSessionHas('dashboardInsight.note', 'AI is not configured (set AI_API_KEY in .env), so this is a rule-based summary of the dashboard numbers.');
+            ->assertSessionHas('dashboardInsight.source', 'rules');
+        $this->assertNull(session('dashboardInsight.note'));
         Http::assertNothingSent();
+        Log::shouldHaveReceived('warning')->withArgs(fn (string $message): bool => str_contains($message, 'AI is not configured'))->once();
 
         $text = session('dashboardInsight.text');
         $this->assertStringContainsString('Inventory: 27.50 KL in stock (Premium 23.00 KL, Unleaded 0.00 KL, Diesel 4.50 KL, F1 0.00 KL).', $text);
-        $this->assertStringContainsString('Missing PHP 50,000.00 (Inventory Variance Rate 11.63%). Check delivered sales whose released liters are less than billed.', $text);
+        $this->assertStringContainsString('stock out PHP 380,000.00 vs collected PHP 190,000.00; Missing PHP 190,000.00 (Inventory Variance Rate 50.00%). Follow up the unpaid balances of delivered sales.', $text);
         $this->assertStringContainsString('Gross margin PHP 100,000.00 on 6.00 KL delivered.', $text);
 
         $this->actingAs($this->admin())->get(route('admin.dashboard'))->assertOk()
-            ->assertSee('AI is not configured (set AI_API_KEY in .env)')
-            ->assertSee('Rule-based summary of the dashboard totals.');
+            ->assertDontSee('AI is not configured')
+            ->assertDontSee('AI_API_KEY')
+            ->assertSee('Summary generated from current dashboard data.');
     }
 
     public function test_with_an_ai_key_the_ai_gets_totals_only_and_no_customer_details(): void
@@ -380,7 +394,7 @@ class DashboardServiceTest extends TestCase
             $prompt = collect($request->data()['messages'])->last()['content'];
             $payload = json_decode(substr($prompt, strpos($prompt, '{')), true);
             $this->assertSame('applied', $payload['filters']['sales']['customer_filter']);
-            $this->assertEquals(50000, $payload['stock_out_vs_receivables_delivered_sales']['missing']);
+            $this->assertEquals(190000, $payload['stock_out_vs_receivables_delivered_sales']['missing']);
             $this->assertEquals(27500, $payload['current_inventory']['stock_liters']);
 
             return true;
@@ -396,9 +410,12 @@ class DashboardServiceTest extends TestCase
         $this->configureAi();
         Http::fake(['api.groq.com/*' => Http::response(['error' => 'down'], 500)]);
 
+        Log::spy();
         $this->actingAs($this->admin())->post(route('admin.dashboard.insight'))
             ->assertSessionHas('dashboardInsight.source', 'rules');
-        $this->assertStringStartsWith('The AI provider could not be used (', session('dashboardInsight.note'));
+        // Part 12: the provider error is logged, not shown.
+        $this->assertNull(session('dashboardInsight.note'));
+        Log::shouldHaveReceived('warning')->withArgs(fn (string $message): bool => str_contains($message, 'AI provider could not be used'))->once();
         $this->assertStringContainsString('Inventory: 27.50 KL in stock', session('dashboardInsight.text'));
     }
 

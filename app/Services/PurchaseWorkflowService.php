@@ -47,7 +47,7 @@ class PurchaseWorkflowService
             return;
         }
 
-        $hauls = DB::table('hauls')->where('purchase_id', $purchaseId)->where('status', '!=', 'cancelled')->get(['status', 'quantity_liters']);
+        $hauls = DB::table('hauls')->where('purchase_id', $purchaseId)->whereNull('deleted_at')->where('status', '!=', 'cancelled')->get(['status', 'quantity_liters']);
         $ordered = (float) DB::table('purchase_items')->where('purchase_id', $purchaseId)->sum('quantity_ordered_liters');
         $lifted = (float) $hauls->whereIn('status', ['lifted', 'completed'])->sum('quantity_liters');
         $completed = (float) $hauls->where('status', 'completed')->sum('quantity_liters');

@@ -34,7 +34,8 @@ class LiftSchedulingFlowTest extends TestCase
             $this->assertStringNotContainsString('Inactive Driver', $html);
             $this->assertStringContainsString('data-pickup="Batangas Energy Terminal '."\u{2014}".' Shell Tabangao, Batangas City"', $html);
             $this->assertStringNotContainsString("\u{00e2}\u{20ac}", $html, 'Mojibake must not appear anywhere on the page.');
-            $this->assertStringContainsString('PUR-LIFT-1 | 100,000.00 L remaining | Unleaded | Batangas Energy Terminal', $html);
+            // The option shows Purchase | Fuel | Depot; the remaining liters are in the "Fuel / Remaining in Depot" summary.
+            $this->assertMatchesRegularExpression('/data-remaining-label="UNLEADED - 100,000\.00 L"\s*>PUR-LIFT-1 \| Unleaded \| Batangas Energy Terminal<\/option>/', $html);
         }
         $this->assertNotNull($inactive);
     }
@@ -83,7 +84,7 @@ class LiftSchedulingFlowTest extends TestCase
         ])->assertSessionHasNoErrors()->assertRedirect(route('admin.fuel-lifting'));
 
         $this->assertSame(100000.0, (float) DB::table('hauls')->sum('quantity_liters'));
-        $this->actingAs($r['admin'])->get(route('admin.fuel-lifting'))->assertOk()->assertSee('No purchases have remaining unlifted quantity');
+        $this->actingAs($r['admin'])->get(route('admin.fuel-lifting'))->assertOk()->assertSee('No purchases have fuel remaining in the depot.');
     }
 
     /**

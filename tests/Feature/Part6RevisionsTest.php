@@ -50,8 +50,6 @@ class Part6RevisionsTest extends TestCase
         // Part 7: one receipt shows a "View Receipt" button that opens the image-only lightbox.
         $this->assertStringContainsString('-receipts">View Receipt</button>', $purchases);
         $page->assertSee('data-src="'.route('withdrawal-receipts.show', $haulId).'"', false);
-        // Allocation data is kept: it is still shown in the purchase details.
-        $page->assertSee('Direct Client Allocation');
         $this->assertDatabaseHas('purchase_items', ['id' => $withoutReceipt]);
 
         // "+ Record Purchase" is the white (outlined) wide button and "+ Depot" lives only on the Depots tab.

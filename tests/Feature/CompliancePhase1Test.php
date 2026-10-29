@@ -36,44 +36,36 @@ class CompliancePhase1Test extends AuditTestCase
         $this->assertDatabaseHas('user_module_views', ['user_id' => $user->id, 'module' => 'alerts']);
     }
 
-    public function test_stock_out_posts_only_on_delivery_for_garage_sales_and_on_lifted_for_direct_depot_sales(): void
+    public function test_stock_out_posts_once_from_the_depot_only_when_the_sale_becomes_delivered(): void
     {
         $a = $this->actors();
 
-        // Garage path: a lift stocks the tank; the sale posts its stock-out only when it becomes Delivered.
+        // October 22: the garage-tank and direct-depot allocation paths were removed; a sale's fuel is released from
+        // its purchase in the depot. Lifting the purchase posts nothing.
         $itemId = $this->purchase($a, 10000);
-        $tank = $this->tank($a);
-        $this->schedule($a, [['purchase_item_id' => $itemId, 'quantity_liters' => 10000, 'garage_liters' => 10000, 'storage_location_id' => $tank, 'direct_liters' => 0]])
-            ->assertSessionHasNoErrors();
+        $this->schedule($a, [['purchase_item_id' => $itemId, 'quantity_liters' => 10000]])->assertSessionHasNoErrors();
         $this->driverLifts($a, (int) DB::table('hauls')->orderByDesc('id')->value('id'));
+        $this->assertSame(0, DB::table('stock_outs')->count(), 'Lifting must not post a stock-out.');
 
         $saleId = $this->recordSale($a, 2000, 65, 0);
         $this->assertSame(0, DB::table('stock_outs')->where('sale_id', $saleId)->count(), 'Recording a sale must not post a stock-out.');
 
         $this->actingAs($a['sales'])->patch(route('sales-officer.sales.delivery-status.update', $saleId), ['delivery_status' => 'delivered'])
             ->assertSessionHasNoErrors();
-        $this->assertDatabaseHas('stock_outs', ['sale_id' => $saleId, 'source_type' => 'garage', 'quantity_liters' => 2000, 'status' => 'released']);
+        $this->assertDatabaseHas('stock_outs', ['sale_id' => $saleId, 'source_type' => 'depot', 'quantity_liters' => 2000, 'status' => 'released']);
+        $this->assertSame(1, DB::table('stock_outs')->where('sale_id', $saleId)->count());
 
-        // Direct-depot path (lifts scheduled before Part 8 #5 removed it): the direct allocation posts when the
-        // driver marks the lift Lifted. New lifts are garage-only, so the historical shape is seeded here.
-        $directSaleId = $this->recordSale($a, 3000, 65, 0);
-        $directItemId = $this->purchase($a, 3000);
-        $this->schedule($a, [['purchase_item_id' => $directItemId, 'quantity_liters' => 3000, 'storage_location_id' => $this->tank($a)]])
-            ->assertSessionHasNoErrors();
-        $directHaulId = (int) DB::table('hauls')->orderByDesc('id')->value('id');
-        DB::table('haul_allocations')->where('haul_id', $directHaulId)->update([
-            'destination_type' => 'customer', 'storage_location_id' => null, 'customer_id' => $a['customer'], 'sale_id' => $directSaleId,
-        ]);
-        $this->assertSame(0, DB::table('stock_outs')->where('sale_id', $directSaleId)->count(), 'Scheduling alone must not post a stock-out.');
-
-        $this->driverLifts($a, (int) DB::table('hauls')->orderByDesc('id')->value('id'));
-        $this->assertDatabaseHas('stock_outs', ['sale_id' => $directSaleId, 'source_type' => 'depot', 'quantity_liters' => 3000, 'status' => 'released']);
-        $this->assertDatabaseHas('sales', ['id' => $directSaleId, 'delivery_status' => 'delivered']);
+        // Only once: setting Delivered again does not post a second stock-out.
+        $this->actingAs($a['sales'])->patch(route('sales-officer.sales.delivery-status.update', $saleId), ['delivery_status' => 'delivered']);
+        $this->assertSame(1, DB::table('stock_outs')->where('sale_id', $saleId)->count(), 'Delivered must post the stock-out only once.');
+        $this->assertSame(2000.0, (float) DB::table('stock_outs')->where('sale_id', $saleId)->sum('quantity_liters'));
 
         // Both screens explain when Stock-Out is posted; there is still no manual stock-out entry.
-        $note = "Stock-Out is posted automatically when a sale's Delivery Status becomes Delivered.";
-        $this->actingAs($a['sales'])->get(route('sales-officer.sales'))->assertOk()->assertSee($note, false);
-        $this->actingAs($a['inventory'])->get(route('inventory-officer.inventory.stock-out'))->assertOk()->assertSee($note, false)->assertDontSee('Record Stock-Out');
+        // (Notes reworded on October 22 for the two delivery types.)
+        $this->actingAs($a['sales'])->get(route('sales-officer.sales'))->assertOk()
+            ->assertSee("Stock-Out is deducted from the order's purchases when a Standard order is Delivered", false);
+        $this->actingAs($a['inventory'])->get(route('inventory-officer.inventory.stock-out'))->assertOk()
+            ->assertSee('a Standard order when it is Delivered', false)->assertDontSee('Record Stock-Out');
     }
 
     public function test_stock_out_shows_margin_and_realized_profit_with_formula_tooltips(): void

@@ -19,10 +19,9 @@ class RoleAccessTestingTest extends TestCase
         $sale = $this->sale($records, 1000, 50);
         $purchase = $this->purchase($records, 1000);
         $stockOutId = $this->stockOut($records, $sale, 1000);
-        $allocationId = $this->garageAllocation($records, $purchase, 1000);
         $haulId = $this->haul($records, $purchase, 1000);
 
-        foreach ($this->protectedWriteActions($records, $sale, $purchase, $stockOutId, $allocationId, $haulId) as $action) {
+        foreach ($this->protectedWriteActions($records, $sale, $purchase, $stockOutId, $haulId) as $action) {
             $this->call($action['method'], $action['url'], $action['payload'])
                 ->assertRedirect(route('login'));
         }
@@ -37,7 +36,6 @@ class RoleAccessTestingTest extends TestCase
         $sale = $this->sale($records, 1000, 50);
         $purchase = $this->purchase($records, 1000);
         $stockOutId = $this->stockOut($records, $sale, 1000);
-        $allocationId = $this->garageAllocation($records, $purchase, 1000);
         $haulId = $this->haul($records, $purchase, 1000);
 
         $before = $this->tableCounts();
@@ -49,7 +47,7 @@ class RoleAccessTestingTest extends TestCase
             'driver' => $records['driver'],
         ];
 
-        foreach ($this->protectedWriteActions($records, $sale, $purchase, $stockOutId, $allocationId, $haulId) as $action) {
+        foreach ($this->protectedWriteActions($records, $sale, $purchase, $stockOutId, $haulId) as $action) {
             foreach ($roles as $role => $user) {
                 // Admin may perform every role's actions (central rule); covered by AdminFullAccessTest.
                 if ($role === 'admin' || in_array($role, $action['allowed_roles'], true)) {
@@ -211,7 +209,7 @@ class RoleAccessTestingTest extends TestCase
      * @param  array{purchaseId: int, purchaseItemId: int}  $purchase
      * @return array<int, array{method: string, url: string, payload: array<string, mixed>, allowed_roles: array<int, string>}>
      */
-    private function protectedWriteActions(array $records, array $sale, array $purchase, int $stockOutId, int $allocationId, int $haulId): array
+    private function protectedWriteActions(array $records, array $sale, array $purchase, int $stockOutId, int $haulId): array
     {
         return [
             [
@@ -243,17 +241,6 @@ class RoleAccessTestingTest extends TestCase
                 'method' => 'PATCH',
                 'url' => route('inventory-officer.inventory.purchases.cancel', $purchase['purchaseItemId']),
                 'payload' => [],
-                'allowed_roles' => ['inventory_officer'],
-            ],
-            [
-                'method' => 'POST',
-                'url' => route('inventory-officer.inventory.stock-in.store'),
-                'payload' => [
-                    'haul_allocation_id' => $allocationId,
-                    'storage_location_id' => $records['garageId'],
-                    'quantity_liters' => 500,
-                    'movement_date' => '2026-09-04 08:00:00',
-                ],
                 'allowed_roles' => ['inventory_officer'],
             ],
             [
@@ -416,31 +403,6 @@ class RoleAccessTestingTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ], $overrides));
-    }
-
-    /**
-     * @param  array<string, mixed>  $records
-     * @param  array{purchaseId: int, purchaseItemId: int}  $purchase
-     */
-    private function garageAllocation(array $records, array $purchase, float $quantity): int
-    {
-        $haulId = $this->haul($records, $purchase, $quantity, [
-            'haul_code' => 'LFT-ALLOC-RBAC',
-            'status' => 'completed',
-            'hauled_at' => '2026-09-04 08:00:00',
-        ]);
-
-        return DB::table('haul_allocations')->insertGetId([
-            'haul_id' => $haulId,
-            'fuel_type_id' => $records['fuelTypeId'],
-            'destination_type' => 'garage',
-            'storage_location_id' => $records['garageId'],
-            'quantity_liters' => $quantity,
-            'allocated_at' => '2026-09-04 08:30:00',
-            'status' => 'delivered',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
     }
 
     /**

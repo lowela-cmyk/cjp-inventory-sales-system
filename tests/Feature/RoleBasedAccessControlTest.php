@@ -542,15 +542,6 @@ class RoleBasedAccessControlTest extends TestCase
             'updated_at' => now(),
         ]);
 
-        $storageLocationId = DB::table('storage_locations')->insertGetId([
-            'location_code' => 'GAR-TEST',
-            'name' => 'Test Garage',
-            'type' => 'garage',
-            'status' => 'active',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
         $premiumId = DB::table('fuel_types')->where('code', 'PREM')->value('id');
 
         $dieselId = DB::table('fuel_types')->where('code', 'DSL')->value('id');
@@ -615,49 +606,27 @@ class RoleBasedAccessControlTest extends TestCase
             'updated_at' => now(),
         ]);
 
-        DB::table('inventory_movements')->insert([
-            [
-                'movement_code' => 'MOV-IN-PREM',
-                'storage_location_id' => $storageLocationId,
-                'fuel_type_id' => $premiumId,
-                'movement_type' => 'stock_in',
-                'direction' => 'in',
-                'quantity_liters' => 50000,
-                'reference_type' => 'test',
-                'reference_id' => 1,
-                'movement_date' => now(),
-                'created_by' => $admin->id,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ],
-            [
-                'movement_code' => 'MOV-OUT-PREM',
-                'storage_location_id' => $storageLocationId,
-                'fuel_type_id' => $premiumId,
-                'movement_type' => 'stock_out',
-                'direction' => 'out',
-                'quantity_liters' => 10000,
-                'reference_type' => 'test',
-                'reference_id' => 2,
-                'movement_date' => now(),
-                'created_by' => $admin->id,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ],
-            [
-                'movement_code' => 'MOV-IN-DSL',
-                'storage_location_id' => $storageLocationId,
-                'fuel_type_id' => $dieselId,
-                'movement_type' => 'beginning',
-                'direction' => 'in',
-                'quantity_liters' => 1000,
-                'reference_type' => 'test',
-                'reference_id' => 3,
-                'movement_date' => now(),
-                'created_by' => $admin->id,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ],
+        // Stock is the purchases' stock-ins (October 23), not the retired tank ledger: a Diesel purchase of 1,000 L.
+        $dieselPurchaseId = DB::table('purchases')->insertGetId([
+            'purchase_code' => 'PUR-TEST-DSL',
+            'depot_id' => $depotId,
+            'purchase_date' => now()->toDateString(),
+            'payment_status' => 'paid',
+            'status' => 'ordered',
+            'created_by' => $admin->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('purchase_items')->insert([
+            'purchase_id' => $dieselPurchaseId,
+            'fuel_type_id' => $dieselId,
+            'quantity_ordered_liters' => 1000,
+            'unit_cost' => 45,
+            'line_total' => 45000,
+            'quantity_hauled_liters' => 0,
+            'status' => 'unlifted',
+            'created_at' => now(),
+            'updated_at' => now(),
         ]);
 
         $saleId = DB::table('sales')->insertGetId([
@@ -675,10 +644,30 @@ class RoleBasedAccessControlTest extends TestCase
         $saleItemId = DB::table('sale_items')->insertGetId([
             'sale_id' => $saleId,
             'fuel_type_id' => $premiumId,
+            'purchase_item_id' => $purchaseItemId,
             'quantity_liters' => 20000,
+            'main_quantity_liters' => 20000,
             'unit_price' => 90,
             'line_total' => 1800000,
             'fulfilled_quantity_liters' => 5000,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        // 5,000 L of the order delivered so far, released straight from PUR-TEST (a Standard delivery).
+        DB::table('stock_outs')->insert([
+            'stock_out_code' => 'STO-TEST',
+            'sale_id' => $saleId,
+            'sale_item_id' => $saleItemId,
+            'customer_id' => $customerId,
+            'fuel_type_id' => $premiumId,
+            'source_type' => 'depot',
+            'depot_id' => $depotId,
+            'purchase_item_id' => $purchaseItemId,
+            'quantity_liters' => 5000,
+            'stock_out_at' => now(),
+            'status' => 'released',
+            'created_by' => $admin->id,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -694,19 +683,26 @@ class RoleBasedAccessControlTest extends TestCase
             'updated_at' => now(),
         ]);
 
+        // Purchases inserted directly get their stock-ins the way imports do.
+        $this->artisan('stock-in:sync')->assertSuccessful();
+
         $this->actingAs($admin)
             ->get('/admin/dashboard')
             ->assertOk()
-            // Part 10: Premium 50,000 - 10,000 + Diesel 1,000 in stock; 100,000 - 40,000 L still at the depot.
-            ->assertSeeInOrder(['Total Inventory in Stock', '41.00 KL'])
-            ->assertSeeInOrder(['Remaining Balance in Depots', '60.00 KL'])
+            // In stock (stock-in remaining = purchased - released - promised to open orders):
+            //   Premium 100,000 - 5,000 released - (20,000 - 5,000) promised = 80,000; Diesel 1,000. Total 81,000 L.
+            ->assertSeeInOrder(['Total Inventory in Stock', '81.00 KL'])
+            // Still at the depot: Premium 100,000 - 40,000 lifted - 5,000 released straight from the depot = 55,000;
+            //   Diesel 1,000 (not lifted). Total 56,000 L.
+            ->assertSeeInOrder(['Remaining Balance in Depots', '56.00 KL'])
             ->assertSeeInOrder(['Total Lifts', '1'])
-            // 20,000 - 5,000 L still to deliver / 41,000 L in stock.
-            ->assertSeeInOrder(['Expected Stock Out Rate:', '36.59%'])
+            // Promised to undelivered orders / on hand (purchased - released): 15,000 / (95,000 + 1,000) = 15.625%.
+            ->assertSeeInOrder(['Expected Stock Out Rate:', '15.63%'])
             ->assertSeeInOrder(['Collected Revenue', 'PHP 800,000.00'])
             ->assertSeeInOrder(['Unpaid Amount', 'PHP 1,000,000.00'])
             ->assertSeeInOrder(['Month With Highest Sales :', 'August'])
-            ->assertSee('40000')
+            // Current Stock by Fuel Type chart (Premium, Unleaded, Diesel, F1): 80,000, 0, 1,000, 0 (as above).
+            ->assertSee('"label":"Stock","data":[80000,0,1000,0]', false)
             ->assertSee('Premium')
             ->assertSee('Diesel');
 

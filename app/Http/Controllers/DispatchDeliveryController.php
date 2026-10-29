@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Rules\ApprovedFuelType;
+use App\Services\GarageStockService;
 use App\Services\IdempotencyService;
 use App\Services\LiftAllocationService;
 use App\Services\PurchaseStockService;
@@ -33,7 +34,18 @@ class DispatchDeliveryController extends Controller
 
     public function index(Request $request, string $state = 'schedule'): View
     {
-        $activeTab = in_array($state, ['hauled', 'trucks'], true) ? $state : 'schedule';
+        $activeTab = in_array($state, ['hauled', 'trucks', 'garage'], true) ? $state : 'schedule';
+        // Part 13: the Garage tab filters garage lots (fuel, tank, date unloaded).
+        $garageData = $activeTab === 'garage'
+            ? $request->validate([
+                'search' => ['nullable', 'string', 'max:100'],
+                'fuel_type_id' => ['nullable', 'integer', Rule::exists('fuel_types', 'id')],
+                'tank_id' => ['nullable', 'integer', Rule::exists('storage_locations', 'id')],
+            ] + FilterDates::rules('unloaded_from', 'unloaded_to', null))
+            : [];
+        $garageDates = FilterDates::range($garageData, 'unloaded_from', 'unloaded_to', null);
+        $garageFilters = $activeTab === 'garage' ? ['fuel_type_id' => $garageData['fuel_type_id'] ?? null, 'tank_id' => $garageData['tank_id'] ?? null, 'date_from' => $garageDates['from'], 'date_to' => $garageDates['to']] : [];
+        $garageSearch = trim((string) ($garageData['search'] ?? '')) ?: null;
         // The Trucks tab filters the fleet (truck availability), the other tabs filter lifts.
         $truckFilters = $activeTab === 'trucks'
             ? $request->validate([
@@ -41,7 +53,7 @@ class DispatchDeliveryController extends Controller
                 'status' => ['nullable', Rule::in(TruckAvailabilityService::DISPLAY_STATUSES)],
             ])
             : [];
-        $data = $activeTab === 'trucks' ? [] : $request->validate([
+        $data = in_array($activeTab, ['trucks', 'garage'], true) ? [] : $request->validate([
             'search' => ['nullable', 'string', 'max:100'],
             'status' => ['nullable', Rule::in(['scheduled', 'in_transit', 'lifted', 'completed', 'cancelled'])],
             'fuel_type_id' => [
@@ -85,6 +97,11 @@ class DispatchDeliveryController extends Controller
             'purchaseItems' => $this->availablePurchaseItemOptions(),
             // Part 2 revisions: open Depot to Client orders a lift can deliver (Delivery Details).
             'directSaleOptions' => $this->liftAllocations->directSaleOptions(),
+            // Part 13: garage tanks (Tank 1 / Tank 2 per fuel) for Unload to Garage and the Garage tab.
+            'garageTanks' => app(GarageStockService::class)->tanks(),
+            'garage' => app(GarageStockService::class)->tab($garageFilters, $garageSearch),
+            'garageFilters' => $garageFilters,
+            'garageSearch' => $garageSearch,
             'createIdempotencyKey' => (string) Str::uuid(),
             'statusIdempotencyKey' => (string) Str::uuid(),
             'truckAssignmentIdempotencyKey' => (string) Str::uuid(),
@@ -416,6 +433,10 @@ class DispatchDeliveryController extends Controller
                 // Part 12: fuel still on the truck after the lift (it keeps the truck Loaded) and what was returned.
                 $lines = collect($row['hauls'])->filter(fn (array $haul): bool => $haul['is_done'] && $haul['load']['remaining'] > 0)
                     ->map(fn (array $haul): array => ['haul_id' => $haul['id'], 'purchase_item_id' => $haul['purchase_item_id'], 'fuel_type_id' => $haul['fuel_type_id'], 'leftover' => $haul['load']['remaining']])
+                    ->values()->all();
+                // Part 13: the lines with fuel on the truck, for Unload to Garage (each fuel goes to its own two tanks).
+                $row['truck_leftover_lines'] = collect($row['hauls'])->filter(fn (array $haul): bool => $haul['is_done'] && $haul['load']['remaining'] > 0)
+                    ->map(fn (array $haul): array => ['haul_id' => $haul['id'], 'fuel_name' => $haul['fuel_name'], 'fuel_type_id' => $haul['fuel_type_id'], 'purchase_code' => $haul['purchase_code'], 'leftover' => $haul['load']['remaining']])
                     ->values()->all();
                 $row['truck_leftover'] = round((float) collect($lines)->sum('leftover'), 2);
                 $row['truck_leftover_label'] = $this->formatLiters($row['truck_leftover']);

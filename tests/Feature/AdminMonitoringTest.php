@@ -20,7 +20,6 @@ class AdminMonitoringTest extends TestCase
             ->assertOk()
             ->assertSee('PUR-MONITOR')
             ->assertSee('Premium Monitor')
-            ->assertSee('MOV-MONITOR-IN')
             ->assertSee('SLS-MONITOR')
             ->assertSee('Monitor Customer')
             ->assertDontSee('Petron A');
@@ -51,7 +50,8 @@ class AdminMonitoringTest extends TestCase
         $this->actingAs($records['admin'])
             ->get(route('admin.alerts'))
             ->assertOk()
-            ->assertSee('ALT-MONITOR')
+            // Part 12: alert cards show the title and message, not the alert ID.
+            ->assertSee('Monitor alert title')
             ->assertSee('Monitor alert message')
             ->assertDontSee('ALT-000001 - Stock critically low');
     }

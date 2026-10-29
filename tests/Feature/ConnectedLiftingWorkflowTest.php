@@ -204,7 +204,7 @@ class ConnectedLiftingWorkflowTest extends TestCase
             'idempotency_key' => (string) Str::uuid(), 'scheduled_at' => '2026-09-19 08:00:00', 'quantity_liters' => 6000,
         ])->assertRedirect(route('dispatch.fuel-lifting'));
 
-        $this->actingAs($records['dispatch'])->get(route('dispatch.fuel-lifting'))->assertOk()->assertSee('4,000.00 L remaining');
+        $this->actingAs($records['dispatch'])->get(route('dispatch.fuel-lifting'))->assertOk()->assertSee('data-remaining-label="DIESEL - 4,000.00 L"', false);
 
         $this->actingAs($records['dispatch'])->from(route('dispatch.fuel-lifting'))->post(route('dispatch.fuel-lifting.hauls.store'), array_merge($base, [
             'truck_id' => $secondTruck,

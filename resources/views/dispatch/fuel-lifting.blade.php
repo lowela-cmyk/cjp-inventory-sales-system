@@ -1,5 +1,5 @@
 @php
-    $activeTab = in_array($activeTab ?? 'schedule', ['schedule', 'hauled', 'trucks'], true) ? $activeTab : 'schedule';
+    $activeTab = in_array($activeTab ?? 'schedule', ['schedule', 'hauled', 'trucks', 'garage'], true) ? $activeTab : 'schedule';
     $filters = $filters ?? [];
     $filterOptions = $filterOptions ?? ['statuses' => [], 'fuelTypes' => collect(), 'drivers' => collect(), 'trucks' => collect()];
     $summaryCards = $summaryCards ?? [];
@@ -11,7 +11,7 @@
     $liftRoutePrefix = $isAdminLifting ? 'admin.fuel-lifting' : 'dispatch.fuel-lifting';
     $liftLayout = $isAdminLifting ? 'layouts.admin' : 'layouts.dispatch';
     $truckRoutePrefix = $isAdminLifting ? 'admin.trucks' : 'dispatch.trucks';
-    $headings = ['schedule' => 'Schedule', 'hauled' => 'Hauled', 'trucks' => 'Trucks'];
+    $headings = ['schedule' => 'Schedule', 'hauled' => 'Hauled', 'trucks' => 'Trucks', 'garage' => 'Garage'];
     $scheduleFormFailed = old('form_context') === 'schedule-lift' && $errors->any();
     $liftLines = array_values(old('items', [[]])) ?: [[]];
     $oldDeliveries = array_values(old('deliveries', []));
@@ -29,6 +29,7 @@
             <button class="tab-button {{ $activeTab === 'schedule' ? 'is-active' : '' }}" type="button" data-tab-target="schedule" data-tab-url="{{ route($liftRoutePrefix) }}" data-heading="Schedule">Schedule</button>
             <button class="tab-button {{ $activeTab === 'hauled' ? 'is-active' : '' }}" type="button" data-tab-target="hauled" data-tab-url="{{ route($liftRoutePrefix.'.hauled') }}" data-heading="Hauled">Hauled</button>
             <button class="tab-button {{ $activeTab === 'trucks' ? 'is-active' : '' }}" type="button" data-tab-target="trucks" data-tab-url="{{ route($liftRoutePrefix.'.trucks') }}" data-heading="Trucks">Trucks</button>
+            <button class="tab-button {{ $activeTab === 'garage' ? 'is-active' : '' }}" type="button" data-tab-target="garage" data-tab-url="{{ route($liftRoutePrefix.'.garage') }}" data-heading="Garage">Garage</button>
         </div>
         <div class="actions-right">
             <button class="btn btn-secondary" type="button" data-export-table>Export</button>
@@ -152,6 +153,11 @@
 
         <section data-tab-panel="trucks" {{ $activeTab !== 'trucks' ? 'hidden' : '' }}>
             @include('trucks.partials.tab')
+        </section>
+
+        {{-- Part 13: Garage tab: Tank 1 / Tank 2 per fuel and the garage lots. --}}
+        <section data-tab-panel="garage" {{ $activeTab !== 'garage' ? 'hidden' : '' }}>
+            @include('garage.partials.tab', ['garageRoute' => route($liftRoutePrefix.'.garage')])
         </section>
     </div>
 
@@ -332,9 +338,28 @@
                     @else
                         <p class="receipt-line-note">No open order of this fuel fits in the liters left.</p>
                     @endif
-                    <form method="POST" action="{{ route($liftRoutePrefix.'.hauls.return-to-depot', $row['haul_id']) }}" data-confirm-message="Return the {{ $row['truck_leftover_label'] }} left on the truck to the depot? The liters go back to their purchase.">
+                    {{-- Part 13: the rest goes into the fuel's garage tanks (Tank 1 and / or Tank 2), never back to the depot. --}}
+                    <form class="garage-unload-form" method="POST" action="{{ route($liftRoutePrefix.'.hauls.unload-to-garage', $row['haul_id']) }}" data-confirm-message="Unload the entered liters into the garage tanks? Garage fuel can only leave through Garage to Client sales." data-prevent-double-submit>
                         @csrf
-                        <div class="modal-actions"><button class="btn btn-pill btn-danger-outline" type="submit">Return to Depot</button></div>
+                        <h4 class="garage-unload-title">Unload to Garage</h4>
+                        @foreach ($row['truck_leftover_lines'] as $line)
+                            <p class="receipt-line-note">{{ $line['purchase_code'] }} · {{ $line['fuel_name'] }}: {{ number_format($line['leftover'], 2) }} L on the truck</p>
+                            <div class="garage-unload-tanks">
+                                @forelse ($garageTanks->where('fuel_type_id', $line['fuel_type_id']) as $tank)
+                                    <label class="garage-unload-tank" for="unload_{{ $line['haul_id'] }}_{{ $tank->id }}">
+                                        <span class="garage-unload-tank-name">{{ $tank->name }}</span>
+                                        <span class="garage-unload-tank-fill">{{ number_format($tank->contents, 2) }} L / {{ number_format($tank->capacity, 2) }} L — {{ number_format($tank->free, 2) }} L free</span>
+                                        <input id="unload_{{ $line['haul_id'] }}_{{ $tank->id }}" name="unload[{{ $line['haul_id'] }}][{{ $tank->id }}]" type="number" min="0" step="0.01" max="{{ min($tank->free, $line['leftover']) }}" placeholder="Liters" @disabled($tank->free <= 0)>
+                                        @error('unload.'.$line['haul_id'].'.'.$tank->id)<p class="field-error">{{ $message }}</p>@enderror
+                                    </label>
+                                @empty
+                                    <p class="receipt-line-note">No active {{ $line['fuel_name'] }} garage tank.</p>
+                                @endforelse
+                            </div>
+                            @error('unload.'.$line['haul_id'])<p class="field-error">{{ $message }}</p>@enderror
+                        @endforeach
+                        @error('unload')<p class="field-error">{{ $message }}</p>@enderror
+                        <div class="modal-actions"><button class="btn btn-pill btn-secondary" type="submit">Unload to Garage</button></div>
                     </form>
                 </div>
             @endif

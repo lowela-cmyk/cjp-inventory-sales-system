@@ -234,7 +234,8 @@ class LiftAllocationService
             return collect();
         }
 
-        return $this->openDirectSales($lock, ['depot_to_client', 'standard', 'garage_to_client'])
+        // Garage to Client orders sell from garage stock, not from a truck.
+        return $this->openDirectSales($lock, ['depot_to_client', 'standard'])
             ->map(function (object $sale) use ($lines): ?object {
                 foreach ($lines as $line) {
                     $carries = $sale->purchase_item_id

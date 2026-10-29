@@ -19,14 +19,11 @@ class AnalyticsTestingTest extends TestCase
         $records = $this->records();
         $gasolineId = $this->fuelType('ANA-GAS', 'Analytics Gasoline');
 
-        DB::table('inventory_movements')->insert([
-            $this->inventoryMovement($records, 'MOV-ANA-DIESEL-IN', $records['fuelTypeId'], 'in', 80000, '2026-09-04 07:00:00', 'beginning', 1),
-            $this->inventoryMovement($records, 'MOV-ANA-DIESEL-OUT', $records['fuelTypeId'], 'out', 12500, '2026-09-04 09:00:00', 'adjustment', 1),
-            $this->inventoryMovement($records, 'MOV-ANA-GAS-IN', $gasolineId, 'in', 22500, '2026-09-03 07:00:00', 'beginning', 2),
-        ]);
+        // Stock is the purchases' stock-ins (October 23), not the retired tank ledger.
+        $this->purchaseItem($records, 'PUR-ANA-DIESEL-IN', 67500, null, null, 'ordered', '2026-09-04');
+        $this->purchaseItem($records, 'PUR-ANA-GAS-IN', 22500, null, $gasolineId, 'ordered', '2026-09-03');
 
-        $cancelledStockOutId = $this->stockOut($records, $this->saleWithItem($records, 'SLS-ANA-CANCELLED-STOCK', '2026-09-04', 9000, 1, 'cancelled'), 'STO-ANA-CANCELLED', 9000, 'cancelled');
-        DB::table('inventory_movements')->insert($this->inventoryMovement($records, 'MOV-ANA-CANCELLED-OUT', $records['fuelTypeId'], 'out', 9000, '2026-09-04 09:30:00', 'stock_out', $cancelledStockOutId));
+        $this->stockOut($records, $this->saleWithItem($records, 'SLS-ANA-CANCELLED-STOCK', '2026-09-04', 9000, 1, 'cancelled'), 'STO-ANA-CANCELLED', 9000, 'cancelled');
 
         $augustSale = $this->saleWithItem($records, 'SLS-ANA-AUG', '2026-08-20', 30000, 1);
         $septemberPartial = $this->saleWithItem($records, 'SLS-ANA-SEP-PARTIAL', '2026-09-04', 100000, 1, 'partially_paid');
@@ -63,6 +60,7 @@ class AnalyticsTestingTest extends TestCase
             'storage_location_id' => null,
             'depot_id' => $records['depotId'],
             'haul_allocation_id' => $directAllocationId,
+            'purchase_item_id' => $directPurchase['purchaseItemId'],
             'quantity_liters' => 30000,
             'stock_out_at' => '2026-09-04 12:00:00',
             'status' => 'released',
@@ -70,6 +68,9 @@ class AnalyticsTestingTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+
+        // Purchases inserted directly get their stock-ins the way imports do.
+        $this->artisan('stock-in:sync')->assertSuccessful();
 
         /** @var DashboardSummaryService $summary */
         $summary = app(DashboardSummaryService::class);
@@ -81,11 +82,17 @@ class AnalyticsTestingTest extends TestCase
         $receivables = $summary->receivablesMonitoring();
         $monthlyTrend = $summary->salesTrend('month', 2026);
 
+        // Remaining = purchased - released (by purchase) - open orders on it; none of the sales here name a purchase.
+        //   PUR-ANA-DIESEL-IN 67,500 - 0 = 67,500 | PUR-ANA-GAS-IN 22,500 - 0 = 22,500 | PUR-ANA-DIRECT 30,000 - 30,000 (STO-ANA-DIRECT) = 0
+        //   Total 67,500 + 22,500 + 0 = 90,000 L (90 KL); Diesel 67,500 + 0 = 67,500; Unleaded 22,500.
+        // Stock-In Today (2026-09-04): PUR-ANA-DIESEL-IN 67,500 + PUR-ANA-DIRECT 30,000 = 97,500 (PUR-ANA-GAS-IN is 09-03).
+        // Stock-Out Today: released stock-outs on 09-04: STO-ANA-PARTIAL 100,000 + STO-ANA-PAID 40,000 + STO-ANA-DIRECT 30,000
+        //   = 170,000 (STO-ANA-CANCELLED 9,000 is not released).
         $this->assertSame(90000.0, $summary->totalInventoryLiters());
         $this->assertSame('90 KL', $adminSummary['metricCards'][0][1]);
         $this->assertSame('90,000 L', $inventoryCards['Total Inventory']['value']);
-        $this->assertSame('80,000 L', $inventoryCards['Stock-In Today']['value']);
-        $this->assertSame('12,500 L', $inventoryCards['Stock-Out Today']['value']);
+        $this->assertSame('97,500 L', $inventoryCards['Stock-In Today']['value']);
+        $this->assertSame('170,000 L', $inventoryCards['Stock-Out Today']['value']);
         $this->assertSame(67500.0, $stockByFuel['Diesel']['liters']);
         $this->assertSame(22500.0, $stockByFuel['Unleaded']['liters']);
         $this->assertSame([67500.0, 22500.0], $stockLevels['chart']['datasets'][0]['data']);
@@ -318,12 +325,12 @@ class AnalyticsTestingTest extends TestCase
      * @param  array<string, mixed>  $records
      * @return array{purchaseId: int, purchaseItemId: int}
      */
-    private function purchaseItem(array $records, string $code, float $quantity, ?int $depotId = null, ?int $fuelTypeId = null, string $status = 'ordered'): array
+    private function purchaseItem(array $records, string $code, float $quantity, ?int $depotId = null, ?int $fuelTypeId = null, string $status = 'ordered', string $date = '2026-09-04'): array
     {
         $purchaseId = DB::table('purchases')->insertGetId([
             'purchase_code' => $code,
             'depot_id' => $depotId ?: $records['depotId'],
-            'purchase_date' => '2026-09-04',
+            'purchase_date' => $date,
             'payment_status' => 'paid',
             'status' => $status,
             'created_by' => $records['inventoryOfficer']->id,
@@ -450,29 +457,6 @@ class AnalyticsTestingTest extends TestCase
             'method' => 'bank_transfer',
             'reference_number' => $code.'-REF',
             'received_by' => $records['salesOfficer']->id,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ];
-    }
-
-    /**
-     * @param  array<string, mixed>  $records
-     * @return array<string, mixed>
-     */
-    private function inventoryMovement(array $records, string $code, int $fuelTypeId, string $direction, float $quantity, string $date, string $type, int $referenceId): array
-    {
-        return [
-            'movement_code' => $code,
-            'storage_location_id' => $records['garageId'],
-            'fuel_type_id' => $fuelTypeId,
-            'movement_type' => $type,
-            'direction' => $direction,
-            'quantity_liters' => $quantity,
-            'unit_cost' => 50,
-            'reference_type' => $type,
-            'reference_id' => $referenceId,
-            'movement_date' => $date,
-            'created_by' => $records['inventoryOfficer']->id,
             'created_at' => now(),
             'updated_at' => now(),
         ];

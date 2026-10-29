@@ -75,6 +75,20 @@
                         </div>
                     </div>
                 </div>
+                {{-- Part 13: garage stock, each fuel's Tank 1 and Tank 2 (included in Total Inventory in Stock). --}}
+                <div class="dash-garage" aria-label="Garage tanks">
+                    <h3 class="dash-chart-title">Garage Tanks</h3>
+                    <div class="dash-garage-fuels">
+                        @foreach ($inventory['garageFuels'] as $fuel)
+                            <div class="dash-garage-fuel">
+                                <strong>{{ $fuel['fuel_name'] }}</strong>
+                                @foreach ($fuel['tanks'] as $tank)
+                                    <span>Tank {{ $tank->tank_number }}: {{ number_format($tank->contents, 2) }} L ({{ rtrim(rtrim(number_format($tank->percent, 1), '0'), '.') }}%)</span>
+                                @endforeach
+                            </div>
+                        @endforeach
+                    </div>
+                </div>
             </div>
         </section>
 
@@ -149,9 +163,9 @@
                         </div>
                     </div>
                     <div class="dash-chart-block">
-                        <h3 class="dash-chart-title">Payment Status</h3>
+                        <h3 class="dash-chart-title">Payment Status (Customers)</h3>
                         <div class="dash-chart">
-                            @include('admin.partials.dashboard-chart', ['chart' => $salesTrend['paymentChart'], 'label' => 'Sales by payment status'])
+                            @include('admin.partials.dashboard-chart', ['chart' => $salesTrend['paymentChart'], 'label' => 'Customers by payment status'])
                         </div>
                     </div>
                 </div>

@@ -31,8 +31,8 @@ class Part7RevisionsTest extends AuditTestCase
         // Part 12: nothing was delivered, so the 5,000 L stay on the truck: Loaded, not selectable.
         $this->assertSame('loaded', $this->truckStatus($a));
         $this->assertTruckSelectable($a, false);
-        // Returning them to the depot frees the truck.
-        $this->actingAs($a['dispatch'])->post(route('dispatch.fuel-lifting.hauls.return-to-depot', $haulId))->assertSessionHasNoErrors();
+        // Unloading them into the garage (Part 13) frees the truck.
+        $this->actingAs($a['dispatch'])->post(route('dispatch.fuel-lifting.hauls.unload-to-garage', $haulId), ['unload' => [$haulId => [DB::table('storage_locations')->where('type', 'garage')->where('status', 'active')->where('fuel_type_id', DB::table('hauls')->where('id', $haulId)->value('fuel_type_id'))->where('tank_number', 1)->value('id') => 5000]]])->assertSessionHasNoErrors();
         $this->assertSame('available', $this->truckStatus($a));
         $this->assertTruckSelectable($a, true);
         $trucksTab = $this->actingAs($a['dispatch'])->get(route('dispatch.fuel-lifting.trucks'))->assertOk()->getContent();

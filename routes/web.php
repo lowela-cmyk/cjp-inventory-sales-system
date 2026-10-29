@@ -56,6 +56,7 @@ Route::middleware(['auth'])->group(function () {
         Route::patch('/inventory/stock-out/{stockOut}', [InventoryOfficerPurchaseController::class, 'updateStockOut'])->name('inventory.stock-out.update');
         Route::post('/inventory/depots', [InventoryOfficerPurchaseController::class, 'storeDepot'])->name('inventory.depots.store');
         Route::get('/inventory/depots', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'depots')->name('inventory.depots');
+        Route::get('/inventory/garage', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'garage')->name('inventory.garage');
         Route::get('/ledger', InventoryOfficerLedgerController::class)->name('ledger');
         Route::get('/ledger/transactions', InventoryOfficerLedgerController::class)->defaults('state', 'transactions')->name('ledger.transactions');
         // Admin works the full Dispatch page (schedule, edit truck, status, on-behalf driver receipts).
@@ -65,6 +66,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/fuel-lifting/hauls/{haul}/withdrawal-receipt', [DriverDeliveryController::class, 'storeWithdrawalReceipt'])->name('fuel-lifting.hauls.withdrawal-receipt.store');
         // Trucks is a tab of Fuel Lifting; the old page URL keeps working.
         Route::get('/fuel-lifting/trucks', [DispatchDeliveryController::class, 'index'])->defaults('state', 'trucks')->name('fuel-lifting.trucks');
+        Route::get('/fuel-lifting/garage', [DispatchDeliveryController::class, 'index'])->defaults('state', 'garage')->name('fuel-lifting.garage');
         Route::get('/trucks', fn (Request $request) => redirect()->route('admin.fuel-lifting.trucks', $request->query()))->name('trucks');
         Route::post('/trucks', [TruckController::class, 'store'])->name('trucks.store');
         Route::patch('/trucks/{truck}', [TruckController::class, 'update'])->name('trucks.update');
@@ -73,7 +75,7 @@ Route::middleware(['auth'])->group(function () {
         Route::patch('/fuel-lifting/hauls/{haul}/status', [DispatchLiftingStatusController::class, 'updateStatus'])->name('fuel-lifting.hauls.status');
         Route::delete('/fuel-lifting/hauls/{haul}', [DispatchLiftingStatusController::class, 'destroy'])->name('fuel-lifting.hauls.destroy');
         Route::post('/fuel-lifting/hauls/{haul}/truck-deliveries', [LiftLeftoverController::class, 'deliver'])->name('fuel-lifting.hauls.truck-deliveries.store');
-        Route::post('/fuel-lifting/hauls/{haul}/return-to-depot', [LiftLeftoverController::class, 'returnToDepot'])->name('fuel-lifting.hauls.return-to-depot');
+        Route::post('/fuel-lifting/hauls/{haul}/unload-to-garage', [LiftLeftoverController::class, 'unloadToGarage'])->name('fuel-lifting.hauls.unload-to-garage');
         // Admin works the full Sales Officer page (sales, payments, customers).
         Route::get('/sales', [SalesOfficerCustomerController::class, 'index'])->name('sales');
         Route::get('/sales/customers', [SalesOfficerCustomerController::class, 'index'])->defaults('state', 'customers')->name('sales.customers');
@@ -107,6 +109,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/fuel-lifting', [DispatchDeliveryController::class, 'index'])->name('fuel-lifting');
         // Trucks is a tab of Fuel Lifting; the old page URL keeps working.
         Route::get('/fuel-lifting/trucks', [DispatchDeliveryController::class, 'index'])->defaults('state', 'trucks')->name('fuel-lifting.trucks');
+        Route::get('/fuel-lifting/garage', [DispatchDeliveryController::class, 'index'])->defaults('state', 'garage')->name('fuel-lifting.garage');
         Route::get('/trucks', fn (Request $request) => redirect()->route('dispatch.fuel-lifting.trucks', $request->query()))->name('trucks');
         Route::post('/trucks', [TruckController::class, 'store'])->name('trucks.store');
         Route::patch('/trucks/{truck}', [TruckController::class, 'update'])->name('trucks.update');
@@ -116,7 +119,7 @@ Route::middleware(['auth'])->group(function () {
         Route::patch('/fuel-lifting/hauls/{haul}/status', [DispatchLiftingStatusController::class, 'updateStatus'])->name('fuel-lifting.hauls.status');
         Route::delete('/fuel-lifting/hauls/{haul}', [DispatchLiftingStatusController::class, 'destroy'])->name('fuel-lifting.hauls.destroy');
         Route::post('/fuel-lifting/hauls/{haul}/truck-deliveries', [LiftLeftoverController::class, 'deliver'])->name('fuel-lifting.hauls.truck-deliveries.store');
-        Route::post('/fuel-lifting/hauls/{haul}/return-to-depot', [LiftLeftoverController::class, 'returnToDepot'])->name('fuel-lifting.hauls.return-to-depot');
+        Route::post('/fuel-lifting/hauls/{haul}/unload-to-garage', [LiftLeftoverController::class, 'unloadToGarage'])->name('fuel-lifting.hauls.unload-to-garage');
         Route::get('/fuel-lifting/hauled', [DispatchDeliveryController::class, 'index'])->defaults('state', 'hauled')->name('fuel-lifting.hauled');
         Route::get('/ledger', InventoryOfficerLedgerController::class)->name('ledger');
         Route::get('/ledger/transactions', InventoryOfficerLedgerController::class)->defaults('state', 'transactions')->name('ledger.transactions');
@@ -138,6 +141,7 @@ Route::middleware(['auth'])->group(function () {
         Route::patch('/inventory/stock-out/{stockOut}', [InventoryOfficerPurchaseController::class, 'updateStockOut'])->name('inventory.stock-out.update');
         Route::post('/inventory/depots', [InventoryOfficerPurchaseController::class, 'storeDepot'])->name('inventory.depots.store');
         Route::get('/inventory/depots', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'depots')->name('inventory.depots');
+        Route::get('/inventory/garage', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'garage')->name('inventory.garage');
         Route::get('/ledger', InventoryOfficerLedgerController::class)->name('ledger');
         Route::get('/ledger/transactions', InventoryOfficerLedgerController::class)->defaults('state', 'transactions')->name('ledger.transactions');
         Route::get('/alerts', [AdminMonitoringController::class, 'inventoryOfficerAlerts'])->name('alerts');

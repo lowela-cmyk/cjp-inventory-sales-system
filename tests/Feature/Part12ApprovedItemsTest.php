@@ -50,7 +50,7 @@ class Part12ApprovedItemsTest extends AuditTestCase
         $this->actingAs($a['dispatch'])->get(route('dispatch.fuel-lifting.trucks'))->assertOk()->assertSee('7,000.00 L')->assertSee('Loaded');
         $this->actingAs($a['dispatch'])->get(route('dispatch.fuel-lifting'))->assertOk()
             ->assertSee('Fuel Left on the Truck: 7,000.00 L')
-            ->assertSee(route('dispatch.fuel-lifting.hauls.return-to-depot', $haulId), false);
+            ->assertSee(route('dispatch.fuel-lifting.hauls.unload-to-garage', $haulId), false);
 
         // A Standard order of the same purchase is delivered from the truck: one deduction, through the lift's row.
         $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 2000, 'unit_price' => 52], ['sales_order_number' => 'SO-STD'])->assertSessionHasNoErrors();
@@ -74,21 +74,21 @@ class Part12ApprovedItemsTest extends AuditTestCase
         $this->actingAs($a['dispatch'])->from(route('dispatch.fuel-lifting'))
             ->post(route('dispatch.fuel-lifting.hauls.truck-deliveries.store', $haulId), ['sale_id' => $this->lastSaleId()])
             ->assertSessionHasErrors('sale_id');
-        $this->actingAs($a['driver'])->post(route('dispatch.fuel-lifting.hauls.return-to-depot', $haulId))->assertForbidden();
+        $tank1 = DB::table('storage_locations')->where('type', 'garage')->where('status', 'active')->where('fuel_type_id', DB::table('hauls')->where('id', $haulId)->value('fuel_type_id'))->where('tank_number', 1)->value('id');
+        $this->actingAs($a['driver'])->post(route('dispatch.fuel-lifting.hauls.unload-to-garage', $haulId), ['unload' => [$haulId => [$tank1 => 5000]]])->assertForbidden();
 
-        // Return to Depot: the 5,000 L go back to the purchase and the truck is Available.
-        $this->actingAs($a['admin'])->from(route('admin.fuel-lifting.hauled'))->post(route('admin.fuel-lifting.hauls.return-to-depot', $haulId))
+        // Part 13: the 5,000 L are unloaded into Premium Tank 1 (not the depot) and the truck is Available.
+        $this->actingAs($a['admin'])->from(route('admin.fuel-lifting.hauled'))->post(route('admin.fuel-lifting.hauls.unload-to-garage', $haulId), ['unload' => [$haulId => [$tank1 => 5000]]])
             ->assertSessionHasNoErrors();
         $this->assertSame(0.0, $trucks->leftoverOnTruck($a['truck']));
         $this->assertSame('available', DB::table('trucks')->where('id', $a['truck'])->value('status'));
-        $this->assertSame(15000.0, $this->depot($premium));
-        $this->assertDatabaseHas('hauls', ['id' => $haulId, 'quantity_liters' => 5000, 'returned_liters' => 5000, 'returned_by' => $a['admin']->id]);
-        $this->actingAs($a['admin'])->post(route('admin.fuel-lifting.hauls.return-to-depot', $haulId))->assertSessionHasErrors('lifting');
+        $this->assertSame(10000.0, $this->depot($premium));
+        $this->assertDatabaseHas('garage_stocks', ['haul_id' => $haulId, 'storage_location_id' => $tank1, 'liters' => 5000]);
+        $this->actingAs($a['admin'])->post(route('admin.fuel-lifting.hauls.unload-to-garage', $haulId), ['unload' => [$haulId => [$tank1 => 1]]])->assertSessionHasErrors('lifting');
 
         // The lift can still be completed, and the truck can take a new lift.
         $this->actingAs($a['dispatch'])->patch(route('dispatch.fuel-lifting.hauls.status', $haulId), ['idempotency_key' => (string) Str::uuid(), 'status' => 'completed'])
             ->assertSessionHasNoErrors();
-        $this->actingAs($a['dispatch'])->get(route('dispatch.fuel-lifting.hauled'))->assertOk()->assertSee('Returned to Depot');
         $this->scheduleLift($a, [['purchase_item_id' => $premium, 'quantity_liters' => 1000]])->assertSessionHasNoErrors();
     }
 

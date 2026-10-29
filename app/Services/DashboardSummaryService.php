@@ -486,7 +486,11 @@ class DashboardSummaryService
 
     public function totalInventoryLiters(): float
     {
-        return $this->remember('totalInventoryLiters', fn (): float => round(array_sum($this->stockByFuel()), 2));
+        // Active fuels only, as the stock chart and the admin dashboard (a retired fuel's stock is not counted).
+        return $this->remember('totalInventoryLiters', fn (): float => round(array_sum(array_intersect_key(
+            $this->stockByFuel(),
+            array_flip(DB::table('fuel_types')->where('status', 'active')->pluck('id')->map(fn (mixed $id): int => (int) $id)->all())
+        )), 2));
     }
 
     /** @return array<int, float> fuel_type_id => liters remaining in active stock-ins */

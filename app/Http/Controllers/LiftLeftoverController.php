@@ -2,13 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\GarageStockService;
 use App\Services\LiftAllocationService;
-use App\Services\PurchaseWorkflowService;
 use App\Services\SaleConfirmationService;
 use App\Services\TruckAvailabilityService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -17,8 +18,8 @@ use Illuminate\Validation\ValidationException;
  * - Deliver from Truck: an open customer order (Depot to Client or Standard) supplied from a purchase the lift carries,
  *   up to the liters left, gets a delivery row on the lift and is delivered at once; it deducts from its purchase
  *   exactly once, through that row.
- * - Return to Depot: the liters left go back to their purchases (the lift line's quantity goes down by them; the
- *   returned liters, time and user are kept on the line).
+ * - Unload to Garage (Part 13, replaces Return to Depot): the liters left go into the fuel's garage tanks as lots.
+ *   Garage fuel never returns to the depot. Lines returned to the depot before Part 13 keep their returned_liters.
  * The truck becomes Available when nothing is left.
  */
 class LiftLeftoverController extends Controller
@@ -26,7 +27,7 @@ class LiftLeftoverController extends Controller
     public function __construct(
         private readonly LiftAllocationService $liftAllocations,
         private readonly SaleConfirmationService $saleConfirmation,
-        private readonly PurchaseWorkflowService $purchaseWorkflow,
+        private readonly GarageStockService $garageStock,
         private readonly TruckAvailabilityService $truckAvailability
     ) {}
 
@@ -70,39 +71,118 @@ class LiftLeftoverController extends Controller
         return redirect()->back(302, [], route($this->redirectRoute($request)))->with('status', $message);
     }
 
-    public function returnToDepot(Request $request, int $haul): RedirectResponse
+    /**
+     * Part 13: Unload to Garage. The fuel left on the truck goes into its fuel's garage tanks (Tank 1 and / or Tank 2),
+     * as one lot per tank tied to the purchase line. Each tank takes at most its free space (the tanks are locked
+     * while checking); whatever does not fit stays on the truck, which stays Loaded until nothing is left. Garage
+     * fuel never goes back to the depot.
+     */
+    public function unloadToGarage(Request $request, int $haul): RedirectResponse
     {
+        $data = $request->validate([
+            'unload' => ['required', 'array'],
+            'unload.*' => ['array'],
+            'unload.*.*' => ['nullable', 'numeric', 'gte:0', 'max:1000000'],
+        ], [], ['unload.*.*' => 'liters']);
         $userId = (int) $request->user()->id;
 
-        $message = DB::transaction(function () use ($haul, $userId): string {
-            $lines = $this->linesWithFuel($haul);
-            $returned = 0.0;
+        $message = DB::transaction(function () use ($haul, $data, $userId): string {
+            $lines = collect($this->linesWithFuel($haul))->keyBy('haul_id');
+            $tanks = $this->garageStock->tanks($lines->pluck('fuel_type_id')->unique()->values()->all(), true);
+            $errors = [];
+            $plan = [];
 
-            foreach ($lines as $line) {
-                DB::table('hauls')->where('id', $line['haul_id'])->update([
-                    'quantity_liters' => DB::raw('quantity_liters - '.number_format($line['leftover'], 2, '.', '')),
-                    'returned_liters' => DB::raw('returned_liters + '.number_format($line['leftover'], 2, '.', '')),
-                    'returned_at' => now(),
-                    'returned_by' => $userId,
-                    'updated_at' => now(),
-                ]);
-                $this->syncHauledLiters($line['purchase_item_id']);
-                $this->purchaseWorkflow->synchronize($line['purchase_id'], $userId, $line['haul_id']);
-                $returned += $line['leftover'];
+            foreach ($data['unload'] as $haulId => $perTank) {
+                $line = $lines->get((int) $haulId);
+                $total = 0.0;
+                foreach ((array) $perTank as $tankId => $liters) {
+                    $liters = round((float) $liters, 2);
+                    if ($liters <= 0) {
+                        continue;
+                    }
+                    $key = "unload.$haulId.$tankId";
+                    $tank = $tanks->get((int) $tankId);
+                    if (! $line) {
+                        $errors[$key] = 'This lift line has no fuel left on the truck.';
+                    } elseif (! $tank || (int) $tank->fuel_type_id !== $line['fuel_type_id']) {
+                        $errors[$key] = 'Unload '.$line['fuel_name'].' only into a '.$line['fuel_name'].' tank.';
+                    } elseif ($liters > $tank->free) {
+                        $errors[$key] = $tank->name.' has only '.number_format($tank->free, 2).' L free (it holds '.number_format($tank->contents, 2).' L of '.number_format($tank->capacity, 2).' L).';
+                    } else {
+                        $tank->free = round($tank->free - $liters, 2);
+                        $tank->contents = round($tank->contents + $liters, 2);
+                        $total = round($total + $liters, 2);
+                        $plan[] = [$line, $tank, $liters];
+                    }
+                }
+                if ($line && $total > $line['leftover']) {
+                    $errors["unload.$haulId"] = 'Only '.number_format($line['leftover'], 2).' L of '.$line['fuel_name'].' are left on the truck.';
+                }
             }
-            $this->truckAvailability->synchronizeStatus((int) $lines[0]['truck_id']);
+            if ($plan === [] && $errors === []) {
+                $errors['unload'] = 'Enter the liters to unload into Tank 1 and / or Tank 2.';
+            }
+            if ($errors !== []) {
+                throw ValidationException::withMessages($errors);
+            }
 
-            return number_format($returned, 2).' L returned to the depot ('.collect($lines)->pluck('purchase_code')->unique()->implode(', ')
-                .'). The truck is Available again.';
+            $now = now();
+            $unloaded = [];
+            foreach ($plan as [$line, $tank, $liters]) {
+                $rowId = DB::table('haul_allocations')->insertGetId([
+                    'haul_id' => $line['haul_id'],
+                    'fuel_type_id' => $line['fuel_type_id'],
+                    'destination_type' => 'garage',
+                    'storage_location_id' => $tank->id,
+                    'quantity_liters' => $liters,
+                    'allocated_at' => $now,
+                    'status' => 'received',
+                    'receive_on_completion' => false,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+                DB::table('garage_stocks')->insert([
+                    'lot_code' => $this->nextLotCode(),
+                    'storage_location_id' => $tank->id,
+                    'purchase_item_id' => $line['purchase_item_id'],
+                    'fuel_type_id' => $line['fuel_type_id'],
+                    'haul_id' => $line['haul_id'],
+                    'haul_allocation_id' => $rowId,
+                    'truck_id' => $line['truck_id'],
+                    'liters' => $liters,
+                    'unit_cost' => $line['unit_cost'],
+                    'unloaded_at' => $now,
+                    'unloaded_by' => $userId,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+                $unloaded[] = number_format($liters, 2).' L into '.$tank->name;
+            }
+
+            $truckId = (int) $lines->first()['truck_id'];
+            $this->truckAvailability->synchronizeStatus($truckId);
+            $left = $this->truckAvailability->leftoverOnTruck($truckId);
+
+            return 'Unloaded '.implode(' and ', $unloaded).'. '
+                .($left > 0 ? number_format($left, 2).' L stay on the truck (Loaded).' : 'The truck is empty and Available again.');
         });
 
         return redirect()->back(302, [], route($this->redirectRoute($request)))->with('status', $message);
     }
 
+    private function nextLotCode(): string
+    {
+        do {
+            $code = 'GRG-'.now()->format('ymd').'-'.Str::upper(Str::random(5));
+        } while (DB::table('garage_stocks')->where('lot_code', $code)->exists());
+
+        return $code;
+    }
+
     /**
      * The lifted / completed lines of the lift (all lines of its schedule) that still have fuel on the truck, locked.
      *
-     * @return array<int, array{haul_id: int, purchase_id: int, purchase_item_id: int, purchase_code: string, fuel_type_id: int, truck_id: int, driver_user_id: int, leftover: float}>
+     * @return array<int, array{haul_id: int, purchase_id: int, purchase_item_id: int, purchase_code: string, fuel_type_id: int, fuel_name: string, unit_cost: float, truck_id: int, driver_user_id: int, leftover: float}>
      */
     private function linesWithFuel(int $haul): array
     {
@@ -111,12 +191,14 @@ class LiftLeftoverController extends Controller
 
         $hauls = DB::table('hauls')
             ->join('purchases', 'purchases.id', '=', 'hauls.purchase_id')
+            ->join('purchase_items', 'purchase_items.id', '=', 'hauls.purchase_item_id')
+            ->join('fuel_types', 'fuel_types.id', '=', 'hauls.fuel_type_id')
             ->when($row->lifting_schedule_id, fn ($query) => $query->where('hauls.lifting_schedule_id', $row->lifting_schedule_id), fn ($query) => $query->where('hauls.id', $row->id))
             ->whereNull('hauls.deleted_at')
             ->whereIn('hauls.status', ['lifted', 'completed'])
             ->orderBy('hauls.id')
             ->lockForUpdate()
-            ->get(['hauls.id', 'hauls.purchase_id', 'hauls.purchase_item_id', 'hauls.fuel_type_id', 'hauls.truck_id', 'hauls.driver_user_id', 'purchases.purchase_code']);
+            ->get(['hauls.id', 'hauls.purchase_id', 'hauls.purchase_item_id', 'hauls.fuel_type_id', 'hauls.truck_id', 'hauls.driver_user_id', 'purchases.purchase_code', 'purchase_items.unit_cost', 'fuel_types.name as fuel_name']);
         $loads = $this->liftAllocations->loadSummaryByHaul($hauls->pluck('id')->map(fn (mixed $id): int => (int) $id)->all());
 
         $lines = $hauls->map(fn (object $haul): array => [
@@ -125,6 +207,8 @@ class LiftLeftoverController extends Controller
             'purchase_item_id' => (int) $haul->purchase_item_id,
             'purchase_code' => (string) $haul->purchase_code,
             'fuel_type_id' => (int) $haul->fuel_type_id,
+            'fuel_name' => (string) $haul->fuel_name,
+            'unit_cost' => round((float) $haul->unit_cost, 2),
             'truck_id' => (int) $haul->truck_id,
             'driver_user_id' => (int) $haul->driver_user_id,
             'leftover' => round((float) ($loads[(int) $haul->id]['remaining'] ?? 0), 2),
@@ -135,24 +219,6 @@ class LiftLeftoverController extends Controller
         }
 
         return $lines;
-    }
-
-    /** Hauled liters of a purchase line = its completed lifts (a return lowers them), as when a lift is completed. */
-    private function syncHauledLiters(int $purchaseItemId): void
-    {
-        $item = DB::table('purchase_items')->where('id', $purchaseItemId)->lockForUpdate()->first(['id', 'quantity_ordered_liters']);
-        $completed = (float) DB::table('hauls')->where('purchase_item_id', $purchaseItemId)->whereNull('deleted_at')->where('status', 'completed')->sum('quantity_liters');
-        $hauled = min(round((float) $item->quantity_ordered_liters, 2), round($completed, 2));
-
-        DB::table('purchase_items')->where('id', $purchaseItemId)->update([
-            'quantity_hauled_liters' => $hauled,
-            'status' => match (true) {
-                $hauled <= 0 => 'unlifted',
-                $hauled >= round((float) $item->quantity_ordered_liters, 2) => 'lifted',
-                default => 'partial',
-            },
-            'updated_at' => now(),
-        ]);
     }
 
     private function redirectRoute(Request $request): string

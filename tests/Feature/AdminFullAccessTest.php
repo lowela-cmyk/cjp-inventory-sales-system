@@ -33,14 +33,6 @@ class AdminFullAccessTest extends TestCase
         ])->assertSessionHasNoErrors();
         $this->assertDatabaseHas('purchases', ['created_by' => $r['admin']->id]);
 
-        // Stock-in with tank assignment (pending garage receipt from a completed lift).
-        $allocationId = $this->completedGarageLift($r, 8000);
-        $this->actingAs($r['admin'])->post(route('admin.inventory.stock-in.store'), [
-            'idempotency_key' => (string) Str::uuid(), 'haul_allocation_id' => $allocationId, 'storage_location_id' => $r['garage'],
-            'quantity_liters' => 8000, 'movement_date' => '2026-10-12 08:00:00',
-        ])->assertSessionHasNoErrors()->assertRedirect(route('admin.inventory.stock-in'));
-        $this->assertDatabaseHas('inventory_movements', ['reference_id' => $allocationId, 'direction' => 'in', 'created_by' => $r['admin']->id]);
-
         // Stock-out is recorded automatically by the sale; there is no manual stock-out entry.
         $this->actingAs($r['admin'])->get(route('admin.inventory.stock-out'))->assertOk()->assertDontSee('+ Record Stock-Out');
         $this->actingAs($r['admin'])->post('/admin/inventory/stock-out', ['quantity_liters' => 500])->assertStatus(405);
@@ -243,16 +235,6 @@ class AdminFullAccessTest extends TestCase
             'fuel_type_id' => $r['fuel'], 'truck_id' => $r['truck'], 'driver_user_id' => $r['driver']->id, 'scheduled_at' => '2026-10-11 07:00:00',
             'hauled_at' => $status === 'completed' ? '2026-10-11 10:00:00' : null, 'quantity_liters' => $quantity, 'status' => $status,
             'created_at' => now(), 'updated_at' => now(),
-        ]);
-    }
-
-    private function completedGarageLift(array $r, float $quantity): int
-    {
-        $haulId = $this->haul($r, $this->purchaseItem($r, 'PUR-GARAGE-'.Str::upper(Str::random(4)), $quantity), $quantity, 'completed');
-
-        return DB::table('haul_allocations')->insertGetId([
-            'haul_id' => $haulId, 'fuel_type_id' => $r['fuel'], 'destination_type' => 'garage', 'storage_location_id' => $r['garage'],
-            'quantity_liters' => $quantity, 'allocated_at' => '2026-10-11 10:00:00', 'status' => 'planned', 'created_at' => now(), 'updated_at' => now(),
         ]);
     }
 }

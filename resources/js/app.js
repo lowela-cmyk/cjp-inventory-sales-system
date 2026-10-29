@@ -375,6 +375,23 @@ function syncDeliveryType(select) {
         section.hidden = !standard;
         section.querySelectorAll('select, input').forEach((field) => { field.disabled = !standard; });
     });
+
+    // Part 13: Garage to Client sells from garage tanks ("garage" options); the other types from the depot. The F1
+    // dropdown of a Garage to Client line lists F1 garage tanks next to F1 purchases.
+    const garage = select.value === 'garage_to_client';
+    form?.querySelectorAll('[data-sale-purchase], [data-sale-f1-purchase]').forEach((stock) => {
+        const isF1 = stock.matches('[data-sale-f1-purchase]');
+        [...stock.options].forEach((option) => {
+            if (!option.dataset.source) return;
+            const show = option.dataset.source === 'garage' ? garage : (isF1 || !garage);
+            option.hidden = !show;
+            option.disabled = !show;
+        });
+        if (stock.selectedOptions[0]?.disabled) {
+            stock.value = '';
+            stock.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+    });
 }
 
 document.querySelectorAll('[data-delivery-type]').forEach(syncDeliveryType);

@@ -155,6 +155,10 @@ class DashboardService
                 ['Remaining Balance in Depots', $this->kl($inDepot)],
                 ['Total Lifts', number_format($this->liftCount($filters))],
             ],
+            // Part 13: garage stock per tank (Tank 1 and Tank 2 of each fuel); it is part of Total Inventory in Stock and
+            // not of the Remaining Balance in Depots.
+            'garageFuels' => app(GarageStockService::class)->tab()['fuels']
+                ->when($filters['fuel_type_id'], fn (Collection $fuels, int $id): Collection => $fuels->where('fuel_type_id', $id))->values(),
             'stockOutRateLabel' => $stockOutRate === null ? 'N/A (no stock on hand)' : $this->percent($stockOutRate),
             'stockChart' => $this->chart('bar', 'liters', $stockFuels->pluck('name')->values()->all(), [[
                 'label' => 'Stock',
@@ -304,8 +308,8 @@ class DashboardService
      *   without a recorded cost are left out.
      * - Unpaid Amount: sum of (total - paid) per sale where something is still owed.
      * - Paid / Unpaid Customers: customers whose matching sales are all paid, vs customers owing on any.
-     * - Payment Status: Paid (paid >= total), Partially Paid (some paid), Unpaid (nothing paid); overdue sales fall
-     *   under Unpaid or Partially Paid by what was paid.
+     * - Payment Status (Customers), Part 13: the same customers split into Paid, Partially Paid (owes, paid something)
+     *   and Unpaid (owes, paid nothing); the three add up to every customer with a matching sale.
      * - Fuel Sold: ordered liters per fuel (a line with an F1 % counts under its own fuel).
      * - Peak Demands: liters sold per month of the selected year (the year of the date filter, else this year).
      *
@@ -332,11 +336,18 @@ class DashboardService
             ->selectRaw('COALESCE(SUM(CASE WHEN ROUND(paid, 2) > 0 AND ROUND(paid, 2) < ROUND(total, 2) THEN 1 ELSE 0 END), 0) as partial_count')
             ->selectRaw('COALESCE(SUM(CASE WHEN ROUND(paid, 2) <= 0 AND ROUND(total, 2) > 0 THEN 1 ELSE 0 END), 0) as unpaid_count')
             ->first();
+        // Part 13: customers, for both the KPI cards and the Payment Status chart (same sales, same filters):
+        // Paid = every sale fully paid; Partially Paid = still owes and made at least one payment; Unpaid = still owes
+        // and paid nothing. Unpaid Customers = Partially Paid + Unpaid.
         $customers = DB::query()->fromSub(
             DB::query()->fromSub($perSale, 'per_sale')->groupBy('customer_id')
-                ->selectRaw('customer_id, SUM(CASE WHEN ROUND(total, 2) > ROUND(paid, 2) THEN 1 ELSE 0 END) as open_sales'),
+                ->selectRaw('customer_id, SUM(CASE WHEN ROUND(total, 2) > ROUND(paid, 2) THEN 1 ELSE 0 END) as open_sales, COALESCE(SUM(paid), 0) as paid_total'),
             'per_customer'
-        )->selectRaw('COALESCE(SUM(CASE WHEN open_sales = 0 THEN 1 ELSE 0 END), 0) as paid, COALESCE(SUM(CASE WHEN open_sales > 0 THEN 1 ELSE 0 END), 0) as unpaid')->first();
+        )->selectRaw('COALESCE(SUM(CASE WHEN open_sales = 0 THEN 1 ELSE 0 END), 0) as paid')
+            ->selectRaw('COALESCE(SUM(CASE WHEN open_sales > 0 AND ROUND(paid_total, 2) > 0 THEN 1 ELSE 0 END), 0) as partial')
+            ->selectRaw('COALESCE(SUM(CASE WHEN open_sales > 0 AND ROUND(paid_total, 2) <= 0 THEN 1 ELSE 0 END), 0) as unpaid_only')
+            ->selectRaw('COALESCE(SUM(CASE WHEN open_sales > 0 THEN 1 ELSE 0 END), 0) as unpaid')
+            ->first();
 
         $releases = $this->releasesQuery()
             ->whereNull('sales.deleted_at')
@@ -351,7 +362,7 @@ class DashboardService
         $delivered = round((float) $releases->delivered, 2);
         $profit = round((float) $releases->profit, 2);
         $unpaid = round((float) $sums->unpaid, 2);
-        $paymentCounts = [(int) $sums->paid_count, (int) $sums->unpaid_count, (int) $sums->partial_count];
+        $paymentCounts = [(int) $customers->paid, (int) $customers->unpaid_only, (int) $customers->partial];
 
         $soldByFuel = $this->matchingSaleLines($filters)->groupBy('sale_items.fuel_type_id')
             ->selectRaw('sale_items.fuel_type_id, COALESCE(SUM(sale_items.quantity_liters), 0) as liters')
@@ -390,10 +401,11 @@ class DashboardService
                 'data' => $soldFuels->map(fn (object $fuel): float => round((float) ($soldByFuel[$fuel->id] ?? 0), 2))->values()->all(),
                 'backgroundColor' => self::ORANGE,
             ]], yAxis: 'grid'),
+            // Part 13: the same colors as the status pills.
             'paymentChart' => $this->chart('bar', 'count', ['Paid', 'Unpaid', 'Partially Paid'], [[
-                'label' => 'Sales',
+                'label' => 'Customers',
                 'data' => $paymentCounts,
-                'backgroundColor' => self::RED,
+                'backgroundColor' => [self::GREEN, self::RED, self::ORANGE],
             ]], yAxis: 'grid'),
             'peak' => $peak,
         ];

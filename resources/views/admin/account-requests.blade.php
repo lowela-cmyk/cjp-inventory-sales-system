@@ -1,10 +1,5 @@
 @php
     $accountId = fn ($user) => strtoupper(substr((string) $user->role, 0, 3)).'-'.str_pad((string) $user->id, 6, '0', STR_PAD_LEFT);
-    $rowClass = fn ($status) => match ($status) {
-        'approved' => 'row-success',
-        'rejected' => 'row-danger',
-        default => 'row-warning',
-    };
 @endphp
 
 @component('layouts.admin', ['title' => 'Account Requests', 'active' => 'account-requests'])
@@ -25,7 +20,8 @@
             </thead>
             <tbody>
                 @forelse ($requests as $requestUser)
-                    <tr class="{{ $rowClass($requestUser->approval_status) }}">
+                    {{-- Part 13: rows are plain white; the status pill shows Approved / Rejected / Pending. --}}
+                    <tr>
                         <td>
                             <strong>{{ $requestUser->name }}</strong>
                             <span>{{ $requestUser->email }}</span>

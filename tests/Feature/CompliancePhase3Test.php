@@ -61,9 +61,10 @@ class CompliancePhase3Test extends TestCase
 
         $this->assertStringNotContainsString(".admin-table tbody tr td:last-child {\n    background: inherit;", $styles);
         $this->assertMatchesRegularExpression('/\.admin-table tbody td:last-child \{\s*background: #fff;/', $styles);
-        foreach (['danger', 'warning', 'success'] as $tone) {
-            $this->assertMatchesRegularExpression('/\.admin-table \.row-'.$tone.' td:last-child \{\s*background: var\(--'.$tone.'-soft\);/', $styles);
-        }
+        // Part 13: only the red tint (Unpaid / Cancelled rows) is left; there are no green or orange row tints.
+        $this->assertMatchesRegularExpression('/\.admin-table \.row-danger td:last-child \{\s*background: var\(--danger-soft\);/', $styles);
+        $this->assertStringNotContainsString('.row-warning', $styles);
+        $this->assertStringNotContainsString('.row-success', $styles);
     }
 
     public function test_purchases_sales_and_stock_out_keep_every_requested_value_visible(): void
@@ -73,7 +74,8 @@ class CompliancePhase3Test extends TestCase
         $headers = [
             'admin.inventory' => ['Purchase-ID', 'Date', 'Fuel', 'Depot', 'Purchased (L)', 'Cost / Liter', 'Total Cost', 'Receipt', 'Inventory Status', 'Purchase Status', 'Payment Status', 'Actions'],
             'admin.sales' => ['Order-ID', 'Sales Order No.', 'Transaction Date', 'Customer Name', 'Company Name', 'Fuel', 'QTY', 'Price / Liter', 'Total', 'Total Paid', 'Balance', 'Due Date', 'Latest Payment', 'Delivery Status', 'Status', 'Actions'],
-            'admin.inventory.stock-out' => ['Order-ID', 'Transaction Date', 'Customer Name', 'Company Name', 'Fuel', 'QTY Released', 'Cost / Unit', 'Total Cost', 'Price / Unit', 'Total Price', 'Total Paid', 'Source', 'Status', 'Margin', 'Realized Profit'],
+            // Part 12: Source and the other delivery details are export-only columns (before QTY Released); Actions added.
+            'admin.inventory.stock-out' => ['Order-ID', 'Transaction Date', 'Customer Name', 'Company Name', 'Fuel', 'Purchase ID', 'Delivery Type', 'Source', 'QTY Released', 'Cost / Unit', 'Total Cost', 'Price / Unit', 'Total Price', 'Total Paid', 'Status', 'Margin', 'Realized Profit', 'Actions'],
         ];
 
         foreach ($headers as $route => $expected) {
@@ -88,13 +90,15 @@ class CompliancePhase3Test extends TestCase
         $this->assertStringContainsString('<th>Cost / Liter</th><th>Total Cost</th>', $purchasesTable);
 
         $stockOut = $this->get(route('admin.inventory.stock-out'))->getContent();
-        $this->assertStringContainsString('<th>Cost / Unit</th><th>Total Cost</th>', $stockOut);
-        $this->assertStringNotContainsString('stock-out-table table-stacked', $stockOut);
+        // Part 12 stacks only Order-ID/Date and Fuel/Purchase ID; every money value keeps its own column.
+        $this->assertStringContainsString('<th>QTY Released</th><th>Cost / Unit</th><th>Total Cost</th><th>Price / Unit</th><th>Total Price</th><th>Total Paid</th>', $stockOut);
+        $this->assertStringContainsString('<th class="export-only" hidden>Source</th>', $stockOut);
 
         $styles = File::get(resource_path('css/app.css'));
         $this->assertMatchesRegularExpression('/\.cell-line \{\s*white-space: nowrap;/', $styles);
         $this->assertMatchesRegularExpression('/\.admin-table td\.cell-id \{\s*white-space: nowrap;/', $styles);
-        $this->assertMatchesRegularExpression('/\.stock-out-table th,\s*\.stock-out-table td \{\s*padding-right: 14px;\s*padding-left: 14px;/', $styles);
+        // Part 12 tightened the Stock Out cells (15 columns) to 6px side padding.
+        $this->assertMatchesRegularExpression('/Part 12: Stock Out has 15 columns.*?\.stock-out-table th,\s*\.stock-out-table td \{\s*padding-right: 6px;\s*padding-left: 6px;/s', $styles);
         $this->assertStringContainsString("parts.length > 0 ? [...parts].map(csvValue) : [csvValue(cell)]", File::get(resource_path('js/app.js')));
     }
 

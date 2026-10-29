@@ -29,15 +29,18 @@ class DashboardSummaryCardsTest extends TestCase
         $this->actingAs($records['inventoryOfficer'])
             ->get(route('inventory-officer.inventory'))
             ->assertOk()
-            ->assertSee('Total Inventory')
-            ->assertSee('45,000 L')
-            ->assertSee('Stock-In Today')
-            ->assertSee('50,000 L')
-            ->assertSee('Stock-Out Today')
-            ->assertSee('10,000 L')
-            ->assertSee('Unlifted Fuel')
-            ->assertSee('50,000 L')
-            ->assertSee('Open Purchases');
+            // Stock-ins (dashboardData): PUR-DASH-OPEN 80,000 (08-30) - 0 out = 80,000; PUR-DASH-TODAY 50,000 (09-01)
+            //   - 1,000 released (STO-DASH-TODAY) = 49,000; PUR-DASH-CANCELLED is voided = 0. Total 80,000 + 49,000 = 129,000.
+            // Stock-In Today (09-01): PUR-DASH-TODAY 50,000. Stock-Out Today: STO-DASH-TODAY 1,000.
+            // Unlifted: PUR-DASH-OPEN 80,000 - 30,000 lifted = 50,000; PUR-DASH-TODAY 50,000 - 1,000 released straight
+            //   from the depot = 49,000; total 99,000 (the cancelled purchase is not counted).
+            ->assertSeeInOrder([
+                'Total Inventory', '129,000 L',
+                'Stock-In Today', '50,000 L',
+                'Stock-Out Today', '1,000 L',
+                'Unlifted Fuel', '99,000 L',
+                'Open Purchases',
+            ]);
 
         $this->actingAs($records['salesOfficer'])
             ->get(route('sales-officer.sales'))
@@ -140,7 +143,7 @@ class DashboardSummaryCardsTest extends TestCase
         Carbon::setTestNow();
     }
 
-    public function test_stock_level_chart_uses_authoritative_inventory_movements_by_fuel_type(): void
+    public function test_stock_level_chart_uses_authoritative_stock_ins_by_fuel_type(): void
     {
         Carbon::setTestNow('2026-09-01 10:00:00');
         $records = $this->records();
@@ -166,58 +169,28 @@ class DashboardSummaryCardsTest extends TestCase
             'updated_at' => now(),
         ]);
 
-        DB::table('inventory_movements')->insert([
-            $this->inventoryMovement($records, 'MOV-STOCK-DIESEL-IN', 'in', 50000, '2026-09-01 08:00:00'),
-            array_merge($this->inventoryMovement($records, 'MOV-STOCK-GAS-IN', 'in', 20000, '2026-09-01 08:15:00'), [
-                'fuel_type_id' => $gasolineFuelId,
-            ]),
-            array_merge($this->inventoryMovement($records, 'MOV-STOCK-RETIRED-IN', 'in', 999999, '2026-09-01 08:30:00'), [
-                'fuel_type_id' => $retiredFuelId,
-            ]),
-        ]);
+        // Stock is the purchases' stock-ins (October 23), not the retired tank ledger.
+        [, $dieselItemId] = $this->purchaseItem($records, 'PUR-STOCK-DIESEL', 50000, null, null, 'ordered', '2026-09-01');
+        $this->purchaseItem($records, 'PUR-STOCK-GAS', 20000, null, $gasolineFuelId, 'ordered', '2026-09-01');
+        $this->purchaseItem($records, 'PUR-STOCK-RETIRED', 999999, null, $retiredFuelId, 'ordered', '2026-09-01');
+        // A cancelled purchase's stock-in is voided: it holds nothing.
+        $this->purchaseItem($records, 'PUR-STOCK-CANCELLED', 888888, null, null, 'cancelled', '2026-09-01');
 
         $saleId = $this->sale($records, 'SLS-STOCK-DASH', '2026-09-01', 'confirmed', 120000);
-        $saleItemId = DB::table('sale_items')->where('sale_id', $saleId)->value('id');
-        $releasedStockOutId = $this->stockOut($records, $saleId, (int) $saleItemId, 'STO-STOCK-RELEASED', 10000, 'released');
-        $cancelledStockOutId = $this->stockOut($records, $saleId, (int) $saleItemId, 'STO-STOCK-CANCELLED', 9000, 'cancelled');
+        $saleItemId = (int) DB::table('sale_items')->where('sale_id', $saleId)->value('id');
+        $this->depotStockOut($records, $saleId, $saleItemId, $dieselItemId, 'STO-STOCK-RELEASED', 10000, 'released');
+        $this->depotStockOut($records, $saleId, $saleItemId, $dieselItemId, 'STO-STOCK-CANCELLED', 9000, 'cancelled');
 
-        DB::table('inventory_movements')->insert([
-            array_merge($this->inventoryMovement($records, 'MOV-STOCK-RELEASED-OUT', 'out', 10000, '2026-09-01 09:00:00'), [
-                'reference_type' => 'stock_out',
-                'reference_id' => $releasedStockOutId,
-            ]),
-            array_merge($this->inventoryMovement($records, 'MOV-STOCK-CANCELLED-OUT', 'out', 9000, '2026-09-01 09:15:00'), [
-                'reference_type' => 'stock_out',
-                'reference_id' => $cancelledStockOutId,
-            ]),
-        ]);
+        $this->artisan('stock-in:sync')->assertSuccessful();
 
-        $purchaseId = DB::table('purchases')->insertGetId([
-            'purchase_code' => 'PUR-STOCK-NOT-RECEIVED',
-            'depot_id' => $records['depotId'],
-            'purchase_date' => '2026-09-01',
-            'payment_status' => 'paid',
-            'status' => 'ordered',
-            'created_by' => $records['inventoryOfficer']->id,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-        DB::table('purchase_items')->insert([
-            'purchase_id' => $purchaseId,
-            'fuel_type_id' => $records['fuelTypeId'],
-            'quantity_ordered_liters' => 888888,
-            'unit_cost' => 50,
-            'line_total' => 44444400,
-            'quantity_hauled_liters' => 0,
-            'status' => 'unlifted',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
         /** @var DashboardSummaryService $summary */
         $summary = app(DashboardSummaryService::class);
         $stockLevels = $summary->stockLevels();
         $stockByLabel = collect($stockLevels['rows'])->keyBy('label');
 
+        // Diesel: PUR-STOCK-DIESEL 50,000 - 10,000 released (the cancelled 9,000 is not deducted) = 40,000.
+        // Gasoline: PUR-STOCK-GAS 20,000. E10: no purchase = 0. PUR-STOCK-CANCELLED is voided = 0.
+        // The retired (inactive) fuel is left out: total 40,000 + 0 + 20,000 = 60,000.
         $this->assertSame(60000.0, $summary->totalInventoryLiters());
         $this->assertSame(60000.0, $stockLevels['totalLiters']);
         $this->assertSame(40000.0, $stockByLabel['Dashboard Diesel']['liters']);
@@ -507,11 +480,8 @@ class DashboardSummaryCardsTest extends TestCase
      */
     private function dashboardData(array $records): void
     {
-        DB::table('inventory_movements')->insert([
-            $this->inventoryMovement($records, 'MOV-DASH-IN', 'in', 50000, '2026-09-01 08:00:00'),
-            $this->inventoryMovement($records, 'MOV-DASH-OUT', 'out', 10000, '2026-09-01 09:00:00'),
-            $this->inventoryMovement($records, 'MOV-DASH-OLD', 'in', 5000, '2026-08-31 09:00:00'),
-        ]);
+        // Stock is the purchases' stock-ins (October 23), not the retired tank ledger.
+        [, $todayItemId] = $this->purchaseItem($records, 'PUR-DASH-TODAY', 50000, null, null, 'ordered', '2026-09-01');
 
         $purchaseId = DB::table('purchases')->insertGetId([
             'purchase_code' => 'PUR-DASH-OPEN',
@@ -568,28 +538,11 @@ class DashboardSummaryCardsTest extends TestCase
             $this->payment($records, $cancelledSaleId, 'PAY-DASH-CANCELLED', 999999),
         ]);
 
-    }
+        // Today's order is delivered from PUR-DASH-TODAY (a Standard release straight from the depot).
+        $this->depotStockOut($records, $todaySaleId, (int) DB::table('sale_items')->where('sale_id', $todaySaleId)->value('id'), $todayItemId, 'STO-DASH-TODAY', 1000, 'released');
 
-    /**
-     * @param  array<string, mixed>  $records
-     */
-    private function inventoryMovement(array $records, string $code, string $direction, float $quantity, string $date): array
-    {
-        return [
-            'movement_code' => $code,
-            'storage_location_id' => $records['garageId'],
-            'fuel_type_id' => $records['fuelTypeId'],
-            'movement_type' => $direction === 'in' ? 'stock_in' : 'stock_out',
-            'direction' => $direction,
-            'quantity_liters' => $quantity,
-            'unit_cost' => 50,
-            'reference_type' => 'dashboard_test',
-            'reference_id' => 1,
-            'movement_date' => $date,
-            'created_by' => $records['inventoryOfficer']->id,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ];
+        // Purchases inserted directly get their stock-ins the way imports do.
+        $this->artisan('stock-in:sync')->assertSuccessful();
     }
 
     /**
@@ -660,6 +613,31 @@ class DashboardSummaryCardsTest extends TestCase
             'customer_id' => $records['customerId'],
             'fuel_type_id' => $records['fuelTypeId'],
             'storage_location_id' => $records['garageId'],
+            'quantity_liters' => $quantity,
+            'stock_out_at' => '2026-09-01 09:00:00',
+            'status' => $status,
+            'created_by' => $records['inventoryOfficer']->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    /**
+     * A release from a purchase in the depot (a Standard delivery), the shape StockOutReleaseService writes.
+     *
+     * @param  array<string, mixed>  $records
+     */
+    private function depotStockOut(array $records, int $saleId, int $saleItemId, int $purchaseItemId, string $code, float $quantity, string $status, ?int $fuelTypeId = null): int
+    {
+        return DB::table('stock_outs')->insertGetId([
+            'stock_out_code' => $code,
+            'sale_id' => $saleId,
+            'sale_item_id' => $saleItemId,
+            'customer_id' => $records['customerId'],
+            'fuel_type_id' => $fuelTypeId ?: $records['fuelTypeId'],
+            'source_type' => 'depot',
+            'depot_id' => $records['depotId'],
+            'purchase_item_id' => $purchaseItemId,
             'quantity_liters' => $quantity,
             'stock_out_at' => '2026-09-01 09:00:00',
             'status' => $status,
@@ -914,12 +892,12 @@ class DashboardSummaryCardsTest extends TestCase
      * @param  array<string, mixed>  $records
      * @return array{0: int, 1: int}
      */
-    private function purchaseItem(array $records, string $code, float $quantity, ?int $depotId = null, ?int $fuelTypeId = null, string $status = 'ordered'): array
+    private function purchaseItem(array $records, string $code, float $quantity, ?int $depotId = null, ?int $fuelTypeId = null, string $status = 'ordered', string $date = '2026-08-30'): array
     {
         $purchaseId = DB::table('purchases')->insertGetId([
             'purchase_code' => $code,
             'depot_id' => $depotId ?: $records['depotId'],
-            'purchase_date' => '2026-08-30',
+            'purchase_date' => $date,
             'payment_status' => 'paid',
             'status' => $status,
             'created_by' => $records['inventoryOfficer']->id,

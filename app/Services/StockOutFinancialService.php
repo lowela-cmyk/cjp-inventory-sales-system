@@ -35,6 +35,10 @@ class StockOutFinancialService
             ->leftJoin('purchase_items as source_purchase_item', 'source_purchase_item.id', '=', 'hauls.purchase_item_id')
             // Where the fuel physically left from: a garage tank, or the depot of a direct release.
             ->leftJoin('storage_locations as source_garage', 'source_garage.id', '=', 'stock_outs.storage_location_id')
+            // Part 13: the garage lot a Garage to Client release left (its code and the lift that unloaded it).
+            ->leftJoin('garage_stocks', 'garage_stocks.id', '=', 'stock_outs.garage_stock_id')
+            ->leftJoin('hauls as garage_haul', 'garage_haul.id', '=', 'garage_stocks.haul_id')
+            ->leftJoin('lifting_schedules as garage_lift', 'garage_lift.id', '=', 'garage_haul.lifting_schedule_id')
             // The stock lot a sale line was sold from (Part 8 #8): its purchase code names the source. The lot covers
             // releases of the line's own fuel only; the F1 portion of a line (Part 9) is a pooled F1 release.
             ->leftJoin('inventory_movements as lot_movement', function ($join): void {
@@ -72,6 +76,8 @@ class StockOutFinancialService
                 'stock_outs.status',
                 'stock_outs.source_type',
                 'source_garage.name as garage_name',
+                'garage_stocks.lot_code as garage_lot_code',
+                DB::raw('COALESCE(garage_lift.schedule_code, garage_haul.haul_code) as garage_lift_code'),
                 'lot_purchase.purchase_code as lot_code',
                 'lot_movement.id as lot_id',
                 'source_depot.id as source_depot_id',

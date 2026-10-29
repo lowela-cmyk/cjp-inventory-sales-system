@@ -212,7 +212,6 @@ class Phase3OperationalAcceptanceTest extends TestCase
         $truck = DB::table('trucks')->where('status', 'available')->first();
         $customer = DB::table('customers')->where('status', 'active')->first();
         $diesel = DB::table('fuel_types')->where('code', 'DSL')->first();
-        $tank = DB::table('storage_locations')->where('fuel_type_id', $diesel->id)->where('type', 'garage')->first();
 
         // 1. HTTP Purchase
         $this->actingAs($inventoryOfficer)
@@ -256,29 +255,12 @@ class Phase3OperationalAcceptanceTest extends TestCase
                 ->assertRedirect(route('dispatch.fuel-lifting'));
         }
 
-        // Scheduling created the garage allocation (audit C01): the whole lift on the fuel's default tank,
-        // waiting for the Inventory Officer to confirm it under Pending Garage Receipts.
-        $allocation = DB::table('haul_allocations')->where('haul_id', $haul->id)->first();
-        $this->assertNotNull($allocation);
-        $this->assertSame('garage', $allocation->destination_type);
-        $this->assertSame(20000.0, (float) $allocation->quantity_liters);
-        $allocationId = (int) $allocation->id;
-        $tank = DB::table('storage_locations')->where('id', $allocation->storage_location_id)->first();
+        // October 22: scheduling no longer creates a garage allocation and there is no manual Stock-In; the lifted
+        // purchase is the stock (fuel only enters a garage tank through Unload to Garage, Part 13).
+        $this->assertSame(0, DB::table('haul_allocations')->where('haul_id', $haul->id)->count());
+        $this->assertSame(20000.0, (float) DB::table('hauls')->where('id', $haul->id)->value('quantity_liters'));
 
-        // 3. HTTP Stock-In
-        $this->actingAs($inventoryOfficer)
-            ->post(route('inventory-officer.inventory.stock-in.store'), [
-                'haul_allocation_id' => $allocationId,
-                'storage_location_id' => $tank->id,
-                'quantity_liters' => '20000',
-                'movement_date' => '2026-09-15 14:00:00',
-            ])
-            ->assertRedirect(route('inventory-officer.inventory.stock-in'));
-
-        $this->assertDatabaseHas('haul_allocations', [
-            'id' => $allocationId,
-            'status' => 'received',
-        ]);
+        // 3. (removed: HTTP garage Stock-In)
 
         // 4. HTTP sale creation remains pending until delivery is completed.
         $this->actingAs($salesOfficer)
@@ -308,20 +290,15 @@ class Phase3OperationalAcceptanceTest extends TestCase
             ->patch(route('sales-officer.sales.delivery-status.update', $sale->id), ['delivery_status' => 'delivered'])
             ->assertRedirect(route('sales-officer.sales'));
 
-        // Delivered creates the released garage stock-out and inventory movement.
+        // Delivered creates one released depot stock-out from the purchase; the retired tank ledger is not written.
         $this->assertDatabaseHas('stock_outs', [
             'sale_id' => $sale->id,
-            'source_type' => 'garage',
+            'source_type' => 'depot',
             'status' => 'released',
             'quantity_liters' => '5000.00',
         ]);
-
-        $this->assertDatabaseHas('inventory_movements', [
-            'storage_location_id' => $tank->id,
-            'movement_type' => 'stock_out',
-            'direction' => 'out',
-            'quantity_liters' => '5000.00',
-        ]);
+        $this->assertSame(1, DB::table('stock_outs')->where('sale_id', $sale->id)->count());
+        $this->assertSame(0, DB::table('inventory_movements')->where('movement_type', 'stock_out')->count());
 
         // 5. HTTP Payment
         $this->actingAs($salesOfficer)

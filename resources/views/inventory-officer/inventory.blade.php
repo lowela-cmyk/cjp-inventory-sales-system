@@ -1,8 +1,8 @@
 @php
-    $activeTab = in_array($activeTab ?? 'purchases', ['purchases', 'stock-in', 'stock-out', 'depots'], true) ? $activeTab : 'purchases';
+    $activeTab = in_array($activeTab ?? 'purchases', ['purchases', 'stock-in', 'stock-out', 'depots', 'garage'], true) ? $activeTab : 'purchases';
     $inventoryRoutePrefix = request()->routeIs('admin.inventory*') ? 'admin.inventory' : 'inventory-officer.inventory';
     $inventoryLayout = request()->routeIs('admin.inventory*') ? 'layouts.admin' : 'layouts.inventory-officer';
-    $headings = ['purchases' => 'Purchases', 'stock-in' => 'Stock-In', 'stock-out' => 'Stock-Out', 'depots' => 'Depots'];
+    $headings = ['purchases' => 'Purchases', 'stock-in' => 'Stock-In', 'stock-out' => 'Stock-Out', 'depots' => 'Depots', 'garage' => 'Garage'];
     $stockIn = $stockIn ?? collect();
     $filters = $filters ?? [];
     $filterOptions = $filterOptions ?? ['statuses' => [], 'depots' => collect(), 'fuelTypes' => collect()];
@@ -19,6 +19,7 @@
             <button class="tab-button {{ $activeTab === 'stock-in' ? 'is-active' : '' }}" type="button" data-tab-target="stock-in" data-tab-url="{{ route($inventoryRoutePrefix.'.stock-in') }}" data-heading="Stock-In">Stock In</button>
             <button class="tab-button {{ $activeTab === 'stock-out' ? 'is-active' : '' }}" type="button" data-tab-target="stock-out" data-tab-url="{{ route($inventoryRoutePrefix.'.stock-out') }}" data-heading="Stock-Out">Stock Out</button>
             <button class="tab-button {{ $activeTab === 'depots' ? 'is-active' : '' }}" type="button" data-tab-target="depots" data-tab-url="{{ route($inventoryRoutePrefix.'.depots') }}" data-heading="Depots">Depots</button>
+            <button class="tab-button {{ $activeTab === 'garage' ? 'is-active' : '' }}" type="button" data-tab-target="garage" data-tab-url="{{ route($inventoryRoutePrefix.'.garage') }}" data-heading="Garage">Garage</button>
         </div>
         <div class="actions-right"><button class="btn btn-secondary" type="button" data-export-table>Export</button></div>
 
@@ -249,6 +250,11 @@
                     {{ $depotRows->links() }}
                 </div>
             @endif
+        </section>
+
+        {{-- Part 13: Garage tab: Tank 1 / Tank 2 per fuel and the garage lots. --}}
+        <section data-tab-panel="garage" @if ($activeTab !== 'garage') hidden @endif>
+            @include('garage.partials.tab', ['garageRoute' => route($inventoryRoutePrefix.'.garage'), 'garageSearch' => $activeTab === 'garage' ? $search : null])
         </section>
     </div>
 

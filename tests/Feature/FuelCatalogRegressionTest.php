@@ -95,7 +95,9 @@ class FuelCatalogRegressionTest extends TestCase
     public function test_sale_validation_rejects_inactive_or_unapproved_fuel_type(): void
     {
         $salesOfficer = User::factory()->create(['role' => 'sales_officer', 'status' => 'active']);
-        $customerId = DB::table('customers')->where('status', 'active')->value('id');
+        // A real customer, so the only thing wrong with each payload below is its fuel line.
+        $customerId = DB::table('customers')->where('status', 'active')->value('id')
+            ?: DB::table('customers')->insertGetId(['customer_code' => 'CUS-FUEL', 'name' => 'Fuel Customer', 'company_name' => 'Fuel Co.', 'payment_status' => 'clear', 'status' => 'active', 'created_at' => now(), 'updated_at' => now()]);
 
         $inactiveFuelId = DB::table('fuel_types')->insertGetId([
             'code' => 'OLD_DIESEL',
@@ -105,7 +107,7 @@ class FuelCatalogRegressionTest extends TestCase
             'updated_at' => now(),
         ]);
 
-        // Top-level fuel_type_id
+        // The flat (non-items) sale payload is retired: it is rejected for having no order line and creates no sale.
         $this->actingAs($salesOfficer)
             ->post(route('sales-officer.sales.store'), [
                 'idempotency_key' => (string) Str::uuid(),
@@ -118,7 +120,9 @@ class FuelCatalogRegressionTest extends TestCase
                 'payment_method' => 'cash_on_delivery',
                 'status' => 'confirmed',
             ])
-            ->assertSessionHasErrors('fuel_type_id');
+            ->assertSessionHasErrors('items')
+            ->assertSessionDoesntHaveErrors('customer_id');
+        $this->assertSame(0, DB::table('sales')->count());
 
         // Nested items.*.fuel_type_id
         $this->actingAs($salesOfficer)

@@ -32,21 +32,27 @@ class SaleDeleteTest extends AuditTestCase
         $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 1000, 'unit_price' => 60], ['sales_order_number' => 'SO-PENDING'])->assertSessionHasNoErrors();
         $pending = DB::table('sales')->where('sales_order_number', 'SO-PENDING')->first();
 
-        // The button shows on the delivered order only.
-        $html = $this->actingAs($a['sales'])->get(route('sales-officer.sales'))->assertOk()->getContent();
+        // Part 11: only Admin deletes orders. The button shows for Admin on the delivered order only.
+        $html = $this->actingAs($a['admin'])->get(route('admin.sales'))->assertOk()->getContent();
         $this->assertStringContainsString('data-confirm-message="Delete order '.$sale->sale_code, $html);
         $this->assertStringNotContainsString('data-confirm-message="Delete order '.$pending->sale_code, $html);
 
+        // The Sales Officer sees no Delete button and the server refuses their request.
+        $html = $this->actingAs($a['sales'])->get(route('sales-officer.sales'))->assertOk()->getContent();
+        $this->assertStringNotContainsString('data-confirm-message="Delete order', $html);
+        $this->actingAs($a['sales'])->delete(route('sales-officer.sales.destroy', $sale->id))->assertForbidden();
+        $this->assertNull(DB::table('sales')->where('id', $sale->id)->value('deleted_at'));
+
         // The server refuses anything not delivered.
-        $this->actingAs($a['sales'])->from(route('sales-officer.sales'))->delete(route('sales-officer.sales.destroy', $pending->id))
+        $this->actingAs($a['admin'])->from(route('admin.sales'))->delete(route('admin.sales.destroy', $pending->id))
             ->assertSessionHasErrors(['sale' => 'Only delivered orders can be deleted. '.$pending->sale_code.' is Pending.']);
         $this->assertNull(DB::table('sales')->where('id', $pending->id)->value('deleted_at'));
 
         $remaining = fn (): float => app(StockInService::class)->records()->firstWhere('purchase_item_id', $premium)->remaining;
         $this->assertSame(15000.0, $remaining());
 
-        $this->actingAs($a['sales'])->from(route('sales-officer.sales'))->delete(route('sales-officer.sales.destroy', $sale->id))
-            ->assertRedirect(route('sales-officer.sales'))
+        $this->actingAs($a['admin'])->from(route('admin.sales'))->delete(route('admin.sales.destroy', $sale->id))
+            ->assertRedirect(route('admin.sales'))
             ->assertSessionHas('status', 'Order '.$sale->sale_code.' deleted. Its fuel stays deducted from its purchase.');
 
         // Soft-deleted; payments, receivable and stock-outs kept; the fuel stays deducted.
@@ -68,6 +74,6 @@ class SaleDeleteTest extends AuditTestCase
         ), 'sale_code'));
 
         // Deleting it again: it no longer exists.
-        $this->actingAs($a['sales'])->delete(route('sales-officer.sales.destroy', $sale->id))->assertNotFound();
+        $this->actingAs($a['admin'])->delete(route('admin.sales.destroy', $sale->id))->assertNotFound();
     }
 }

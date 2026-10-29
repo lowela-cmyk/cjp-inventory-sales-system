@@ -111,8 +111,8 @@ class LiftDeleteTest extends AuditTestCase
         $this->actingAs($a['admin'])->patch(route('admin.fuel-lifting.hauls.status', $inTransit), ['idempotency_key' => (string) Str::uuid(), 'status' => 'completed'])->assertSessionHasNoErrors();
         $this->actingAs($a['admin'])->deleteJson(route('admin.fuel-lifting.hauls.destroy', $inTransit))->assertStatus(422);
         $this->assertDatabaseHas('hauls', ['id' => $inTransit, 'status' => 'completed', 'deleted_at' => null]);
-        // Part 12: its 5,000 L are still on the truck (Loaded); returning them frees the truck for the next lift.
-        $this->actingAs($a['admin'])->post(route('admin.fuel-lifting.hauls.return-to-depot', $inTransit))->assertSessionHasNoErrors();
+        // Part 12: its 5,000 L are still on the truck (Loaded); unloading them to the garage (Part 13) frees the truck.
+        $this->actingAs($a['admin'])->post(route('admin.fuel-lifting.hauls.unload-to-garage', $inTransit), ['unload' => [$inTransit => [DB::table('storage_locations')->where('type', 'garage')->where('status', 'active')->where('fuel_type_id', DB::table('hauls')->where('id', $inTransit)->value('fuel_type_id'))->where('tank_number', 1)->value('id') => 5000]]])->assertSessionHasNoErrors();
 
         // Cancelled: refused, and no Delete button.
         $this->scheduleLift($a, [['purchase_item_id' => $premium, 'quantity_liters' => 5000]])->assertSessionHasNoErrors();

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Rules\ApprovedFuelType;
 use App\Services\DashboardSummaryService;
+use App\Services\GarageStockService;
 use App\Services\IdempotencyService;
 use App\Services\PurchaseService;
 use App\Services\StockInService;
@@ -26,7 +27,8 @@ class InventoryOfficerPurchaseController extends Controller
         private readonly IdempotencyService $idempotencyService,
         private readonly PurchaseService $purchaseService,
         private readonly StockOutFinancialService $stockOutFinancials,
-        private readonly StockInService $stockIns
+        private readonly StockInService $stockIns,
+        private readonly GarageStockService $garageStock
     ) {}
 
     private const PURCHASE_STATUSES = ['draft', 'ordered', 'partially_hauled', 'hauled', 'cancelled'];
@@ -35,7 +37,7 @@ class InventoryOfficerPurchaseController extends Controller
 
     private const STOCK_OUT_REFERENCE_TYPE = 'stock_out';
 
-    private const TABS = ['purchases', 'stock-in', 'stock-out', 'depots'];
+    private const TABS = ['purchases', 'stock-in', 'stock-out', 'depots', 'garage'];
 
     /** Status filter options per inventory tab (tanks are retired; Stock-In is one record per purchase). */
     private const TAB_FILTER_STATUSES = [
@@ -43,6 +45,8 @@ class InventoryOfficerPurchaseController extends Controller
         'stock-in' => StockInService::STATUSES,
         'stock-out' => ['released', 'cancelled'],
         'depots' => ['active', 'inactive'],
+        // Part 13: the Garage tab filters by fuel, tank and date unloaded (no status).
+        'garage' => [],
     ];
 
     public function index(Request $request, DashboardSummaryService $dashboardSummary, string $state = 'purchases'): View
@@ -54,7 +58,9 @@ class InventoryOfficerPurchaseController extends Controller
             'depot_id' => ['nullable', 'integer', Rule::exists('depots', 'id')],
             'fuel_type_id' => ['nullable', 'integer', Rule::exists('fuel_types', 'id')],
             'delivery_type' => ['nullable', Rule::in(array_keys(SalesOfficerCustomerController::DELIVERY_TYPES))],
-        ] + FilterDates::rules());
+            'tank_id' => ['nullable', 'integer', Rule::exists('storage_locations', 'id')],
+        ] + FilterDates::rules() + FilterDates::rules('unloaded_from', 'unloaded_to', null));
+        $unloaded = FilterDates::range($data, 'unloaded_from', 'unloaded_to', null);
         $dates = FilterDates::range($data);
 
         $search = trim((string) ($data['search'] ?? ''));
@@ -93,6 +99,9 @@ class InventoryOfficerPurchaseController extends Controller
                 ->orderBy('name')
                 ->get(['id', 'name']),
             'depotRows' => $this->depotRows($search === '' ? null : $search, $filtersFor('depots')),
+            // Part 13: Garage tab (tank cards per fuel and garage lots).
+            'garage' => $this->garageStock->tab($activeTab === 'garage' ? ['fuel_type_id' => $data['fuel_type_id'] ?? null, 'tank_id' => $data['tank_id'] ?? null, 'date_from' => $unloaded['from'], 'date_to' => $unloaded['to']] : [], $activeTab === 'garage' && $search !== '' ? $search : null),
+            'garageFilters' => $activeTab === 'garage' ? ['fuel_type_id' => $data['fuel_type_id'] ?? null, 'tank_id' => $data['tank_id'] ?? null, 'date_from' => $unloaded['from'], 'date_to' => $unloaded['to']] : [],
             'filters' => $filters,
             'filterOptions' => [
                 'statuses' => self::TAB_FILTER_STATUSES,
@@ -217,7 +226,7 @@ class InventoryOfficerPurchaseController extends Controller
         // Part 12: a Delivered sale's release keeps its date, truck, driver and delivery date; only Cost / Unit changes.
         $delivered = $row->delivery_status === 'delivered';
         // The order's own truck, driver and date apply only when no lift carried the release (the lift's win).
-        $standard = ! $delivered && $row->delivery_type === 'standard' && $row->haul_allocation_id === null;
+        $standard = ! $delivered && $row->delivery_type !== 'depot_to_client' && $row->haul_allocation_id === null;
         $data = $request->validate([
             'stock_out_at' => $delivered ? ['exclude'] : ['required', 'date', 'before_or_equal:now'],
             'unit_cost' => ['required', 'numeric', 'gte:0', 'max:10000'],
@@ -516,7 +525,7 @@ class InventoryOfficerPurchaseController extends Controller
                 // Part 12: a Delivered sale's release: only Cost / Unit can change (date and delivery details are final).
                 'delivered' => $row->delivery_status === 'delivered',
                 // Delivery details editable here: a Standard order's own, when no lift carried it (not once Delivered).
-                'standard' => $row->delivery_status !== 'delivered' && $row->delivery_type === 'standard' && $row->haul_allocation_id === null,
+                'standard' => $row->delivery_status !== 'delivered' && $row->delivery_type !== 'depot_to_client' && $row->haul_allocation_id === null,
                 // The Edit form's current values.
                 'form' => [
                     'stock_out_at' => $row->stock_out_at ? date('Y-m-d\\TH:i', strtotime((string) $row->stock_out_at)) : null,
@@ -593,6 +602,11 @@ class InventoryOfficerPurchaseController extends Controller
             return 'Depot'.($row->depot_name ? ' — '.$row->depot_name : '');
         }
 
+        // Part 13: "Garage — Diesel Tank 1 · GRG-… · LFT-…" (the garage lot and the lift that unloaded it).
+        if ($row->garage_lot_code ?? null) {
+            return 'Garage — '.$row->garage_name.' · '.$row->garage_lot_code.' · '.$row->garage_lift_code;
+        }
+
         $lot = $row->lot_id ? ' · '.($row->lot_code ?: 'Opening stock') : '';
 
         return 'Garage'.($row->garage_name ? ' — '.$row->garage_name : '').$lot;
@@ -601,9 +615,8 @@ class InventoryOfficerPurchaseController extends Controller
     private function rowClass(?string $status): string
     {
         return match ($status) {
+            // Part 13: only Unpaid and Cancelled rows are tinted (red).
             'unpaid', 'cancelled' => 'row-danger',
-            'partial' => 'row-warning',
-            'paid' => 'row-success',
             default => '',
         };
     }

@@ -85,8 +85,10 @@ class Part8RevisionsTest extends AuditTestCase
         $sales = collect($this->actingAs($a['sales'])->get(route('sales-officer.sales'))->viewData('sales')->items())->keyBy('id');
         $ids = DB::table('sales')->orderBy('id')->pluck('id')->all();
         $this->assertSame('', $sales[$ids[0]]['class']);
-        $this->assertSame('row-danger', $sales[$ids[1]]['class']);
-        $this->assertSame('', $sales[$ids[2]]['class']);
+        // Part 13: a partially paid sale is white too; only a fully Unpaid sale is red.
+        $this->assertSame('', $sales[$ids[1]]['class']);
+        // Part 13: a cancelled sale is red too.
+        $this->assertSame('row-danger', $sales[$ids[2]]['class']);
     }
 
     public function test_header_bell_counts_unread_alerts_each_role_can_see(): void

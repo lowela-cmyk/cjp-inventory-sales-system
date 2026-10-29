@@ -19,7 +19,8 @@ class StockOutReleaseService
 {
     public function __construct(
         private readonly IdempotencyService $idempotencyService,
-        private readonly PurchaseStockService $purchaseStock
+        private readonly PurchaseStockService $purchaseStock,
+        private readonly GarageStockService $garageStock
     ) {}
 
     /**
@@ -41,6 +42,8 @@ class StockOutReleaseService
                 'sale_items.fuel_type_id',
                 'sale_items.purchase_item_id',
                 'sale_items.f1_purchase_item_id',
+                'sale_items.garage_stock_id',
+                'sale_items.f1_garage_stock_id',
                 'sale_items.quantity_liters',
                 'sale_items.f1_quantity_liters',
                 'sales.customer_id',
@@ -76,13 +79,13 @@ class StockOutReleaseService
             if (! $mainPurchaseId) {
                 return 'No purchase of '.$item->fuel_name.' has the '.number_format($mainDue, 2).' L of order '.$item->sale_code.' left.';
             }
-            $portions[] = ['main', (int) $mainPurchaseId, (int) $item->fuel_type_id, $mainDue];
+            $portions[] = ['main', (int) $mainPurchaseId, (int) $item->fuel_type_id, $mainDue, $item->garage_stock_id ? (int) $item->garage_stock_id : null];
         }
         if ($f1Due > 0) {
             if (! $f1PurchaseId) {
                 return 'No F1 purchase has the '.number_format($f1Due, 2).' L F1 portion of order '.$item->sale_code.' left.';
             }
-            $portions[] = ['f1', (int) $f1PurchaseId, $f1FuelId, $f1Due];
+            $portions[] = ['f1', (int) $f1PurchaseId, $f1FuelId, $f1Due, $item->f1_garage_stock_id ? (int) $item->f1_garage_stock_id : null];
         }
         if ($portions === []) {
             return null;
@@ -90,6 +93,22 @@ class StockOutReleaseService
 
         // Check every portion before writing anything, so a short purchase leaves the line untouched.
         $lines = $this->purchaseStock->lines(array_column($portions, 1), true, true);
+        // Part 13: a Garage to Client portion leaves its garage lot (locked); it must still hold the liters.
+        $lots = $this->garageStock->lots(['with_empty' => true], null, array_values(array_filter(array_column($portions, 4))) ?: [0], true);
+        $neededFromLot = [];
+        foreach ($portions as [$portion, , , $liters, $lotId]) {
+            if (! $lotId) {
+                continue;
+            }
+            $lot = $lots->get($lotId);
+            $neededFromLot[$lotId] = round(($neededFromLot[$lotId] ?? 0) + $liters, 2);
+            if (! $lot) {
+                return 'The garage stock of order '.$item->sale_code.' is no longer available.';
+            }
+            if ($neededFromLot[$lotId] > $lot->in_garage) {
+                return $lot->tank_name.' ('.$lot->purchase_code.') has only '.number_format($lot->in_garage, 2).' L left for the '.number_format($liters, 2).' L of order '.$item->sale_code.'.';
+            }
+        }
         $needed = [];
         foreach ($portions as [$portion, $purchaseItemId, , $liters]) {
             $line = $lines->get($purchaseItemId);
@@ -102,9 +121,9 @@ class StockOutReleaseService
             }
         }
 
-        foreach ($portions as [$portion, $purchaseItemId, $fuelTypeId, $liters]) {
+        foreach ($portions as [$portion, $purchaseItemId, $fuelTypeId, $liters, $lotId]) {
             $line = $lines->get($purchaseItemId);
-            $this->insertRelease($item, $portion, $line, $fuelTypeId, $liters, $stockOutAt, $createdBy, $allocation, $remarks);
+            $this->insertRelease($item, $portion, $line, $fuelTypeId, $liters, $stockOutAt, $createdBy, $allocation, $remarks, $lotId ? $lots->get($lotId) : null);
         }
 
         // Keep the purchases a line recorded without them was deducted from.
@@ -129,7 +148,7 @@ class StockOutReleaseService
         return $line ? (int) $line->id : null;
     }
 
-    private function insertRelease(object $item, string $portion, object $line, int $fuelTypeId, float $liters, string $stockOutAt, int $createdBy, ?object $allocation, ?string $remarks): void
+    private function insertRelease(object $item, string $portion, object $line, int $fuelTypeId, float $liters, string $stockOutAt, int $createdBy, ?object $allocation, ?string $remarks, ?object $lot = null): void
     {
         DB::table('stock_outs')
             ->where('sale_item_id', $item->id)
@@ -141,7 +160,7 @@ class StockOutReleaseService
             'updated_at' => now(),
         ]);
 
-        $this->idempotencyService->retryOnCollision('stock_out_code', function () use ($item, $portion, $line, $fuelTypeId, $liters, $stockOutAt, $createdBy, $allocation): void {
+        $this->idempotencyService->retryOnCollision('stock_out_code', function () use ($item, $portion, $line, $fuelTypeId, $liters, $stockOutAt, $createdBy, $allocation, $lot): void {
             DB::table('stock_outs')->insert([
                 'stock_out_code' => $this->nextCode(),
                 'sale_id' => $item->sale_id,
@@ -149,14 +168,17 @@ class StockOutReleaseService
                 'customer_id' => $item->customer_id,
                 'fuel_type_id' => $fuelTypeId,
                 'portion' => $portion,
-                'source_type' => 'depot',
+                // Part 13: a garage lot's liters leave the garage (its tank and the lift row that unloaded it).
+                'source_type' => $lot ? 'garage' : 'depot',
                 'depot_id' => $line->depot_id,
-                'storage_location_id' => null,
-                // The lift row that carried the order (Depot to Client), when there is one.
-                'haul_allocation_id' => $allocation?->id,
+                'storage_location_id' => $lot?->storage_location_id,
+                // The lift row that carried the order (Depot to Client), when there is one. A garage release has none
+                // (the stock-out shape rule): its lot already names the lift row that unloaded it.
+                'haul_allocation_id' => $lot ? null : $allocation?->id,
+                'garage_stock_id' => $lot?->id,
                 'purchase_item_id' => $line->id,
                 'quantity_liters' => $liters,
-                'unit_cost' => $line->unit_cost,
+                'unit_cost' => $lot ? $lot->unit_cost : $line->unit_cost,
                 'stock_out_at' => $stockOutAt,
                 'status' => 'released',
                 'created_by' => $createdBy,

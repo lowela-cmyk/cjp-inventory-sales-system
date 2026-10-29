@@ -38,8 +38,8 @@ class StockInRevisionsTest extends AuditTestCase
         $row = $this->stockInRow($a['inventory'], $code);
         $this->assertSame(['10/14/2026', 'Premium', '60,000.00', '55.00', '3,300,000.00', '0.00', '60,000.00', 'Available'], [$row['date'], $row['fuel'], $row['purchased'], $row['unit_cost'], $row['total_cost'], $row['stock_out'], $row['remaining'], $row['status']]);
 
-        // 2. Record Sales lists it as "PUR-… – PREMIUM – 60,000 L in stock – ₱55.00/L".
-        $this->actingAs($a['sales'])->get(route('sales-officer.sales'))->assertOk()->assertSee($code.' – PREMIUM – 60,000 L in stock – ₱55.00/L');
+        // 2. Record Sales lists it as "PUR-… – PREMIUM – 60,000 L in depot – ₱55.00/L".
+        $this->actingAs($a['sales'])->get(route('sales-officer.sales'))->assertOk()->assertSee($code.' – PREMIUM – 60,000 L in depot – ₱55.00/L');
 
         // 3. A sale deducts when it is saved (Standard, not delivered yet)...
         $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 10000, 'unit_price' => 65], ['sales_order_number' => 'SO-STD'])->assertSessionHasNoErrors();

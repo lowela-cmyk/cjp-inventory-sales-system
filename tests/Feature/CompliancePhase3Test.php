@@ -61,9 +61,10 @@ class CompliancePhase3Test extends TestCase
 
         $this->assertStringNotContainsString(".admin-table tbody tr td:last-child {\n    background: inherit;", $styles);
         $this->assertMatchesRegularExpression('/\.admin-table tbody td:last-child \{\s*background: #fff;/', $styles);
-        foreach (['danger', 'warning', 'success'] as $tone) {
-            $this->assertMatchesRegularExpression('/\.admin-table \.row-'.$tone.' td:last-child \{\s*background: var\(--'.$tone.'-soft\);/', $styles);
-        }
+        // Part 13: only the red tint (Unpaid / Cancelled rows) is left; there are no green or orange row tints.
+        $this->assertMatchesRegularExpression('/\.admin-table \.row-danger td:last-child \{\s*background: var\(--danger-soft\);/', $styles);
+        $this->assertStringNotContainsString('.row-warning', $styles);
+        $this->assertStringNotContainsString('.row-success', $styles);
     }
 
     public function test_purchases_sales_and_stock_out_keep_every_requested_value_visible(): void

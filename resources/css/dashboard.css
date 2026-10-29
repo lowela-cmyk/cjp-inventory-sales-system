@@ -301,3 +301,27 @@
         grid-column: 1 / -1;
     }
 }
+
+/* Part 13: Garage Tanks strip under Current Inventory (Tank 1 / Tank 2 per fuel). */
+.dash-garage {
+    margin-top: 16px;
+}
+
+.dash-garage-fuels {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+    gap: 12px;
+}
+
+.dash-garage-fuel {
+    display: grid;
+    gap: 2px;
+    border: 1px solid var(--admin-soft-line);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 12px;
+}
+
+.dash-garage-fuel strong {
+    font-size: 13px;
+}

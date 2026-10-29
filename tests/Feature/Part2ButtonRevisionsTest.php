@@ -63,10 +63,10 @@ class Part2ButtonRevisionsTest extends AuditTestCase
         $this->withoutStockLots();
 
         $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 6000, 'unit_price' => 50])
-            ->assertSessionHasErrors(['items.0.quantity_liters' => 'Only 5,000.00 L of '.$this->code($premium).' (Premium) is available.']);
+            ->assertSessionHasErrors(['items.0.quantity_liters' => 'Only 5,000.00 L of '.$this->code($premium).' (Premium) are left in the depot for this order.']);
         // 10% of 4,000 = 400 L of F1, but the F1 purchase has 300 L.
         $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 4000, 'unit_price' => 50, 'f1_percentage' => 10, 'f1_purchase_item_id' => $f1, 'f1_unit_price' => 40])
-            ->assertSessionHasErrors(['items.0.f1_purchase_item_id' => 'Only 300.00 L of F1 is available in '.$this->code($f1).' for the 400.00 L F1 portion.']);
+            ->assertSessionHasErrors(['items.0.f1_purchase_item_id' => 'Only 300.00 L of '.$this->code($f1).' (F1) are left in the depot for the 400.00 L F1 portion.']);
         // An F1 portion needs its F1 purchase and its F1 Price.
         $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 1000, 'unit_price' => 50, 'f1_percentage' => 10])
             ->assertSessionHasErrors(['items.0.f1_purchase_item_id', 'items.0.f1_unit_price']);
@@ -75,7 +75,7 @@ class Part2ButtonRevisionsTest extends AuditTestCase
         // Liters promised to an undelivered order are not available to the next one.
         $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 3000, 'unit_price' => 50])->assertSessionHasNoErrors();
         $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 2500, 'unit_price' => 50])
-            ->assertSessionHasErrors(['items.0.quantity_liters' => 'Only 2,000.00 L of '.$this->code($premium).' (Premium) is available.']);
+            ->assertSessionHasErrors(['items.0.quantity_liters' => 'Only 2,000.00 L of '.$this->code($premium).' (Premium) are left in the depot for this order.']);
         $this->assertSame(5000.0, $this->remaining($premium), 'Nothing is deducted before delivery.');
     }
 
@@ -134,18 +134,21 @@ class Part2ButtonRevisionsTest extends AuditTestCase
         $this->assertSame(8000.0, $this->remaining($diesel));
     }
 
-    public function test_the_old_garage_to_client_value_is_saved_as_standard(): void
+    public function test_garage_to_client_is_the_garage_delivery_type_and_needs_garage_stock(): void
     {
         $a = $this->actors();
         $diesel = $this->purchaseLine($a, 'DSL', 8000);
 
-        $this->recordOrder($a, ['purchase_item_id' => $diesel, 'quantity_liters' => 500, 'unit_price' => 60], ['delivery_type' => 'garage_to_client'])->assertSessionHasNoErrors();
-        $this->assertDatabaseHas('sales', ['id' => $this->lastSaleId(), 'delivery_type' => 'standard']);
+        // Part 13: "garage_to_client" is no longer an alias of Standard; it sells from a garage tank only.
+        $this->recordOrder($a, ['purchase_item_id' => $diesel, 'quantity_liters' => 500, 'unit_price' => 60], ['delivery_type' => 'garage_to_client'])
+            ->assertSessionHasErrors('items.0.garage_stock_id');
+        $this->assertSame(0, DB::table('sales')->count());
 
         $html = $this->actingAs($a['sales'])->get(route('sales-officer.sales'))->assertOk()->getContent();
         $this->assertStringContainsString('<option value="depot_to_client"', $html);
-        $this->assertStringContainsString('<option value="standard" selected>Standard</option>', $html);
-        $this->assertStringNotContainsString('Garage to Client', $html);
+        // (The rejected Garage to Client order keeps its type selected in the reopened form.)
+        $this->assertStringContainsString('<option value="standard"', $html);
+        $this->assertStringContainsString('<option value="garage_to_client" selected>Garage to Client</option>', $html);
         $this->assertStringContainsString('<th>Delivery Type</th>', $html);
     }
 

@@ -198,7 +198,9 @@ class DashboardServiceTest extends TestCase
         // Alpha: S_A, S_E paid. Bravo: S_B partial, S_C unpaid.
         $this->assertSame(1, $totals['paid_customers']);
         $this->assertSame(1, $totals['unpaid_customers']);
-        $this->assertSame(['paid' => 2, 'unpaid' => 1, 'partial' => 1], $totals['payment_status']);
+        // Part 13: the chart counts customers too. Alpha is paid; Bravo owes but paid something (S_B), so Partially Paid.
+        $this->assertSame(['paid' => 1, 'unpaid' => 0, 'partial' => 1], $totals['payment_status']);
+        $this->assertSame($totals['paid_customers'] + $totals['unpaid_customers'], array_sum($totals['payment_status']));
         // F1 is not shown: none of it was sold.
         $this->assertSame(['Unleaded' => 1000.0, 'Premium' => 2000.0, 'Diesel' => 5500.0], $totals['fuel_sold']);
 

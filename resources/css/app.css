@@ -643,14 +643,6 @@ form[aria-busy="true"] {
     background: var(--danger-soft);
 }
 
-.admin-table .row-warning td:last-child {
-    background: var(--warning-soft);
-}
-
-.admin-table .row-success td:last-child {
-    background: var(--success-soft);
-}
-
 /* Center status chips/badges in all tables */
 .admin-table th:has(.status-badge),
 .admin-table td:has(.status-badge),
@@ -996,14 +988,6 @@ table td:has(.status-badge) {
 
 .row-danger td {
     background: var(--danger-soft);
-}
-
-.row-warning td {
-    background: var(--warning-soft);
-}
-
-.row-success td {
-    background: var(--success-soft);
 }
 
 .status-badge {
@@ -4599,4 +4583,145 @@ body.login-page {
         min-width: 0;
         padding: 0 10px;
     }
+}
+
+/* Part 13: Garage tab. One card per fuel, its Tank 1 and Tank 2 side by side (liters, fill bar, free space). */
+.garage-fuels {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+    gap: 16px;
+    margin: 0 0 20px;
+}
+
+.garage-fuel-card {
+    border: 1px solid var(--admin-line);
+    border-radius: 8px;
+    background: #fff;
+    padding: 14px 16px;
+}
+
+.garage-fuel-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 4px 12px;
+    margin-bottom: 10px;
+}
+
+.garage-fuel-head h3 {
+    margin: 0;
+    font-size: 16px;
+}
+
+.garage-fuel-head span {
+    color: #475467;
+    font-size: 12px;
+}
+
+.garage-tanks {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.garage-tank {
+    min-width: 0;
+    border: 1px solid var(--admin-line);
+    border-radius: 6px;
+    padding: 10px 12px;
+}
+
+.garage-tank-name {
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.garage-tank-liters {
+    margin: 4px 0 6px;
+    font-size: 18px;
+    font-weight: 800;
+}
+
+.garage-tank-liters small {
+    color: #475467;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.garage-tank-bar {
+    height: 8px;
+    border-radius: 4px;
+    background: #eef1f5;
+    overflow: hidden;
+}
+
+.garage-tank-bar span {
+    display: block;
+    height: 100%;
+    background: var(--admin-ink);
+}
+
+.garage-tank-free {
+    margin-top: 6px;
+    color: #475467;
+    font-size: 12px;
+}
+
+.garage-toolbar {
+    margin-bottom: 16px;
+}
+
+/* Part 13: Unload to Garage in the lift's View modal: the fuel's two tanks, each with its own liters field. */
+.garage-unload-title {
+    margin: 14px 0 6px;
+    font-size: 14px;
+}
+
+.garage-unload-tanks {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.garage-unload-tank {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+    border: 1px solid var(--admin-line);
+    border-radius: 6px;
+    padding: 8px 10px;
+}
+
+.garage-unload-tank-name {
+    font-weight: 800;
+}
+
+.garage-unload-tank-fill {
+    color: #475467;
+    font-size: 12px;
+}
+
+.garage-unload-tank input {
+    width: 100%;
+}
+
+@media (max-width: 640px) {
+    .garage-tanks,
+    .garage-unload-tanks {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+/* Part 13: the Garage lot table fits its frame; "From Lift" (lift ID / truck) and the unload date wrap. */
+.admin-table.garage-table td:nth-child(6),
+.admin-table.garage-table td:nth-child(7) {
+    min-width: 120px;
+    white-space: normal;
+}
+
+.admin-table.garage-table {
+    width: 100%;
 }

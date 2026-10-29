@@ -12,17 +12,33 @@
     $name = fn (string $field): string => "items[$index][$field]";
     $id = fn (string $field): string => $idPrefix.'_'.$field.'_'.$index;
     $err = fn (string $field): ?string => $lineError ? $lineError($field) : null;
-    $selectedPurchase = (string) ($item['purchase_item_id'] ?? '');
-    $selectedF1 = (string) ($item['f1_purchase_item_id'] ?? '');
+    // Part 13: a Garage to Client line sells from a garage lot ("garage:<lot>"); $lineDeliveryType (edit modal) keeps
+    // only the options of the sale's type, Record Sales shows them by the Delivery Type picked (app.js).
+    $lineDeliveryType = $lineDeliveryType ?? null;
+    $garageOptions = $garageOptions ?? collect();
+    $f1GarageOptions = $f1GarageOptions ?? collect();
+    $selectedPurchase = ($item['garage_stock_id'] ?? null) ? 'garage:'.$item['garage_stock_id'] : (string) ($item['purchase_item_id'] ?? '');
+    $selectedF1 = ($item['f1_garage_stock_id'] ?? null) ? 'garage:'.$item['f1_garage_stock_id'] : (string) ($item['f1_purchase_item_id'] ?? '');
+    $showDepot = $lineDeliveryType !== 'garage_to_client';
+    $showGarage = in_array($lineDeliveryType, [null, 'garage_to_client'], true);
 @endphp
 <div class="sale-pair">
     <div class="form-row">
         <label for="{{ $id('purchase_item_id') }}">Fuel Type</label>
         <select {!! $formAttr !!} id="{{ $id('purchase_item_id') }}" name="{{ $name('purchase_item_id') }}" data-sale-purchase @if (! ($item['legacy'] ?? false)) required @endif @if ($err('purchase_item_id')) aria-invalid="true" @endif>
             <option value="">{{ ($item['legacy'] ?? false) ? ($item['fuel_name'] ?? 'Fuel').' (no purchase recorded)' : ($purchaseOptions->isEmpty() ? 'No purchases with stock' : 'Select Fuel Type') }}</option>
-            @foreach ($purchaseOptions as $purchase)
-                <option value="{{ $purchase->id }}" data-fuel-code="{{ $purchase->fuel_code }}" data-fuel-name="{{ $purchase->fuel_name }}" data-available="{{ $purchase->available }}" @selected($selectedPurchase === (string) $purchase->id)>{{ $purchase->option_label }}</option>
-            @endforeach
+            @if ($showDepot)
+                @foreach ($purchaseOptions as $purchase)
+                    <option value="{{ $purchase->id }}" data-source="depot" data-fuel-code="{{ $purchase->fuel_code }}" data-fuel-name="{{ $purchase->fuel_name }}" data-available="{{ $purchase->available }}" @selected($selectedPurchase === (string) $purchase->id)>{{ $purchase->option_label }}</option>
+                @endforeach
+            @endif
+            @if ($showGarage)
+                @foreach ($garageOptions as $lot)
+                    {{-- A lot whose liters are all promised to open orders is not offered (it stays on its own order). --}}
+                    @continue($lot->available <= 0 && $selectedPurchase !== 'garage:'.$lot->id)
+                    <option value="garage:{{ $lot->id }}" data-source="garage" data-fuel-code="{{ $lot->fuel_code }}" data-fuel-name="{{ $lot->fuel_name }}" data-available="{{ $lot->available }}" @selected($selectedPurchase === 'garage:'.$lot->id)>{{ $lot->option_label }}</option>
+                @endforeach
+            @endif
         </select>
         @if ($item['legacy'] ?? false)
             <input {!! $formAttr !!} type="hidden" name="{{ $name('fuel_type_id') }}" value="{{ $item['fuel_type_id'] }}" data-legacy-fuel data-fuel-code="{{ $item['fuel_code'] ?? '' }}" data-fuel-name="{{ $item['fuel_name'] ?? '' }}">
@@ -40,8 +56,15 @@
         <select {!! $formAttr !!} id="{{ $id('f1_purchase_item_id') }}" name="{{ $name('f1_purchase_item_id') }}" data-sale-f1-purchase @if ($err('f1_purchase_item_id')) aria-invalid="true" @endif>
             <option value="">{{ $f1PurchaseOptions->isEmpty() ? 'No F1 purchases with stock' : 'Select F1' }}</option>
             @foreach ($f1PurchaseOptions as $purchase)
-                <option value="{{ $purchase->id }}" data-available="{{ $purchase->available }}" data-unit-price="{{ $purchase->unit_cost }}" @selected($selectedF1 === (string) $purchase->id)>{{ $purchase->option_label }}</option>
+                <option value="{{ $purchase->id }}" data-source="depot" data-available="{{ $purchase->available }}" data-unit-price="{{ $purchase->unit_cost }}" @selected($selectedF1 === (string) $purchase->id)>{{ $purchase->option_label }}</option>
             @endforeach
+            {{-- Part 13: a Garage to Client F1 portion may also come from an F1 garage tank. --}}
+            @if ($showGarage)
+                @foreach ($f1GarageOptions as $lot)
+                    @continue($lot->available <= 0 && $selectedF1 !== 'garage:'.$lot->id)
+                    <option value="garage:{{ $lot->id }}" data-source="garage" data-garage-f1 data-available="{{ $lot->available }}" data-unit-price="{{ $lot->unit_cost }}" @selected($selectedF1 === 'garage:'.$lot->id)>{{ $lot->option_label }}</option>
+                @endforeach
+            @endif
         </select>
         @if ($err('f1_purchase_item_id'))<p class="field-error form-row-message">{{ $err('f1_purchase_item_id') }}</p>@endif
     </div>

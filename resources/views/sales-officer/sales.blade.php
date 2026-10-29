@@ -8,7 +8,7 @@
     $addCustomerFailed = old('form_context') === 'add-customer' && $errors->any();
     // Part 2 revisions: Record Sales has one order line (items[0]).
     $recordItem = array_values(old('items', [[]]))[0] ?? [];
-    $recordDeliveryType = old('delivery_type', 'standard') === 'depot_to_client' ? 'depot_to_client' : 'standard';
+    $recordDeliveryType = in_array(old('delivery_type'), ['depot_to_client', 'garage_to_client'], true) ? old('delivery_type') : 'standard';
     $recordLineError = fn (string $field): ?string => old('form_context') === 'record-sale' && $errors->has("items.0.$field") ? $errors->first("items.0.$field") : null;
     $fuelCodes = $fuelTypes->pluck('code', 'id');
     $filters = $filters ?? [];
@@ -391,6 +391,8 @@
                                     'purchase_item_id' => $editOld("items.$itemIndex.purchase_item_id", $item['purchase_item_id']),
                                     'unit_price' => $editOld("items.$itemIndex.unit_price", $item['unit_price']),
                                     'f1_purchase_item_id' => $editOld("items.$itemIndex.f1_purchase_item_id", $item['f1_purchase_item_id']),
+                                    'garage_stock_id' => $item['garage_stock_id'],
+                                    'f1_garage_stock_id' => $item['f1_garage_stock_id'],
                                     'f1_unit_price' => $editOld("items.$itemIndex.f1_unit_price", $item['f1_unit_price']),
                                     'f1_percentage' => $editOld("items.$itemIndex.f1_percentage", $item['f1_percentage']),
                                     // A line recorded before purchases were chosen keeps its fuel until a purchase is picked.
@@ -403,7 +405,7 @@
                             @endphp
                             <div class="sales-item-row" data-sales-item>
                                 <div class="form-row"><label for="sale_qty_{{ $row['id'] }}_{{ $itemIndex }}">Qty Ordered</label><input form="sale-update-{{ $row['id'] }}" id="sale_qty_{{ $row['id'] }}_{{ $itemIndex }}" name="items[{{ $itemIndex }}][quantity_liters]" type="number" min="0.01" step="0.01" value="{{ $editOld("items.$itemIndex.quantity_liters", $item['quantity_liters']) }}" data-sale-quantity required></div>
-                                @include('sales-officer.partials.order-line', ['index' => $itemIndex, 'item' => $editItem, 'formId' => 'sale-update-'.$row['id'], 'idPrefix' => 'sale_'.$row['id'], 'lineError' => $editLineError])
+                                @include('sales-officer.partials.order-line', ['index' => $itemIndex, 'item' => $editItem, 'formId' => 'sale-update-'.$row['id'], 'idPrefix' => 'sale_'.$row['id'], 'lineError' => $editLineError, 'lineDeliveryType' => $row['delivery_type']])
                             </div>
                         @endforeach
                     </div>

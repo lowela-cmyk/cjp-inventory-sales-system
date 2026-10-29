@@ -14,7 +14,12 @@ use Illuminate\Support\Facades\DB;
  * - on_hand ("Remaining"): ordered - released. This is the stock.
  * - reserved: liters promised to sales not delivered yet (their own fuel from purchase_item_id, their F1 portion
  *   from f1_purchase_item_id), less what was already released for them.
- * - available: on_hand - reserved. A new sale may only take available liters.
+ * - available (Part 13): liters in the depot a new Standard or Depot to Client order may take = remaining_in_depot -
+ *   depot promises (open orders that will take the purchase's fuel from the depot: not a garage lot, and for a Depot
+ *   to Client order's own fuel, not already on a lift). Garage to Client orders sell from garage lots instead.
+ * - on_truck (Part 13): liters on lifts that are neither delivered nor unloaded to the garage (scheduled lifts
+ *   included); in_garage: liters of the purchase's garage lots. Purchased = remaining_in_depot + on_truck + in_garage
+ *   + released (delivered).
  * - remaining_in_depot: liters a new lift may take = ordered - lifts not cancelled (scheduled ones included) - liters
  *   delivered straight from the depot without a lift of this purchase (Standard deliveries, or an F1 portion that
  *   rode on another purchase's lift).
@@ -60,27 +65,32 @@ class PurchaseStockService
 
         $ids = $lines->pluck('id')->map(fn (mixed $id): int => (int) $id)->all();
         $released = $this->releasedByPurchase($ids);
-        $reserved = $this->reservedByPurchase($ids);
+        [$reserved, $reservedDepot] = $this->reservedByPurchase($ids);
         [$lifted, $physicallyLifted] = $this->liftedByPurchase($ids);
         $directFromDepot = $this->releasedWithoutOwnLift($ids);
+        $offLifts = $this->leftLiftsByPurchase($ids);
+        $inGarage = app(GarageStockService::class)->inGarageByPurchase($ids);
 
-        return $lines->mapWithKeys(function (object $line) use ($released, $reserved, $lifted, $physicallyLifted, $directFromDepot): array {
+        return $lines->mapWithKeys(function (object $line) use ($released, $reserved, $reservedDepot, $lifted, $physicallyLifted, $directFromDepot, $offLifts, $inGarage): array {
             $id = (int) $line->id;
             $ordered = round((float) $line->quantity_ordered_liters, 2);
             $line->ordered = $ordered;
             $line->released = round((float) ($released[$id] ?? 0), 2);
             $line->reserved = round((float) ($reserved[$id] ?? 0), 2);
             $line->on_hand = round(max(0, $ordered - $line->released), 2);
-            $line->available = round(max(0, $line->on_hand - $line->reserved), 2);
             $line->lifted = round((float) ($lifted[$id] ?? 0), 2);
             $line->remaining_in_depot = round(max(0, $ordered - $line->lifted - (float) ($directFromDepot[$id] ?? 0)), 2);
+            $line->reserved_depot = round((float) ($reservedDepot[$id] ?? 0), 2);
+            $line->available = round(max(0, $line->remaining_in_depot - $line->reserved_depot), 2);
+            $line->in_garage = round((float) ($inGarage[$id] ?? 0), 2);
+            $line->on_truck = round(max(0, $line->lifted - (float) ($offLifts[$id] ?? 0)), 2);
             $line->not_lifted = round(max(0, $ordered - (float) ($physicallyLifted[$id] ?? 0) - (float) ($directFromDepot[$id] ?? 0)), 2);
             $line->label = $line->purchase_code.' · '.mb_strtoupper((string) $line->fuel_name);
             // Record Sales dropdowns: "PUR-002 – PREMIUM – 60,000 L in stock – ₱55.00/L".
             $line->option_label = implode(' – ', [
                 $line->purchase_code,
                 mb_strtoupper((string) $line->fuel_name),
-                number_format($line->available, fmod($line->available, 1.0) === 0.0 ? 0 : 2).' L in stock',
+                number_format($line->available, fmod($line->available, 1.0) === 0.0 ? 0 : 2).' L in depot',
                 '₱'.number_format((float) $line->unit_cost, 2).'/L',
             ]);
 
@@ -99,7 +109,7 @@ class PurchaseStockService
     {
         return [
             'released' => $this->releasedByPurchase($purchaseItemIds),
-            'reserved' => $purchaseItemIds === [] ? [] : $this->reservedByPurchase($purchaseItemIds),
+            'reserved' => $purchaseItemIds === [] ? [] : $this->reservedByPurchase($purchaseItemIds)[0],
         ];
     }
 
@@ -165,10 +175,11 @@ class PurchaseStockService
     }
 
     /**
-     * Undelivered liters of open sale lines, per purchase: their own fuel and their F1 portion.
+     * Undelivered liters of open sale lines, per purchase: their own fuel and their F1 portion. Returns [all promises,
+     * promises taken from the depot].
      *
      * @param  array<int, int>  $ids
-     * @return array<int, float>
+     * @return array{0: array<int, float>, 1: array<int, float>}
      */
     private function reservedByPurchase(array $ids): array
     {
@@ -187,21 +198,37 @@ class PurchaseStockService
             ->whereIn("sale_items.$column", $ids ?: [0])
             ->groupBy("sale_items.$column");
 
-        $main = $open('purchase_item_id')
-            ->selectRaw('sale_items.purchase_item_id as purchase_item_id, COALESCE(SUM(CASE WHEN sale_items.main_quantity_liters - COALESCE(released.main_released, 0) > 0 THEN sale_items.main_quantity_liters - COALESCE(released.main_released, 0) ELSE 0 END), 0) as liters')
-            ->pluck('liters', 'purchase_item_id');
-        $f1 = $open('f1_purchase_item_id')
-            ->selectRaw('sale_items.f1_purchase_item_id as purchase_item_id, COALESCE(SUM(CASE WHEN sale_items.f1_quantity_liters - COALESCE(released.f1_released, 0) > 0 THEN sale_items.f1_quantity_liters - COALESCE(released.f1_released, 0) ELSE 0 END), 0) as liters')
-            ->pluck('liters', 'purchase_item_id');
+        // Depot promises leave out what is not taken from the depot: garage lots (Garage to Client) and the own fuel of
+        // a Depot to Client order already on a lift (its liters are in the lift).
+        $onLift = DB::table('haul_allocations')
+            ->join('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')
+            ->whereNull('hauls.deleted_at')
+            ->where('haul_allocations.destination_type', 'customer')
+            ->where('haul_allocations.status', '!=', 'cancelled')
+            ->whereNotNull('haul_allocations.sale_id')
+            ->select('haul_allocations.sale_id');
+        $mainLiters = 'COALESCE(SUM(CASE WHEN sale_items.main_quantity_liters - COALESCE(released.main_released, 0) > 0 THEN sale_items.main_quantity_liters - COALESCE(released.main_released, 0) ELSE 0 END), 0)';
+        $f1Liters = 'COALESCE(SUM(CASE WHEN sale_items.f1_quantity_liters - COALESCE(released.f1_released, 0) > 0 THEN sale_items.f1_quantity_liters - COALESCE(released.f1_released, 0) ELSE 0 END), 0)';
 
-        $reserved = [];
-        foreach ([$main, $f1] as $totals) {
-            foreach ($totals as $id => $liters) {
-                $reserved[(int) $id] = ($reserved[(int) $id] ?? 0) + (float) $liters;
+        $main = $open('purchase_item_id')->selectRaw("sale_items.purchase_item_id as purchase_item_id, {$mainLiters} as liters")->pluck('liters', 'purchase_item_id');
+        $f1 = $open('f1_purchase_item_id')->selectRaw("sale_items.f1_purchase_item_id as purchase_item_id, {$f1Liters} as liters")->pluck('liters', 'purchase_item_id');
+        $mainDepot = $open('purchase_item_id')->whereNull('sale_items.garage_stock_id')->whereNotIn('sales.id', $onLift)
+            ->selectRaw("sale_items.purchase_item_id as purchase_item_id, {$mainLiters} as liters")->pluck('liters', 'purchase_item_id');
+        $f1Depot = $open('f1_purchase_item_id')->whereNull('sale_items.f1_garage_stock_id')
+            ->selectRaw("sale_items.f1_purchase_item_id as purchase_item_id, {$f1Liters} as liters")->pluck('liters', 'purchase_item_id');
+
+        $sum = function (array $sets): array {
+            $total = [];
+            foreach ($sets as $totals) {
+                foreach ($totals as $id => $liters) {
+                    $total[(int) $id] = ($total[(int) $id] ?? 0) + (float) $liters;
+                }
             }
-        }
 
-        return $reserved;
+            return $total;
+        };
+
+        return [$sum([$main, $f1]), $sum([$mainDepot, $f1Depot])];
     }
 
     /**
@@ -224,6 +251,46 @@ class PurchaseStockService
             $rows->mapWithKeys(fn (object $row): array => [(int) $row->purchase_item_id => (float) $row->assigned])->all(),
             $rows->mapWithKeys(fn (object $row): array => [(int) $row->purchase_item_id => (float) $row->lifted])->all(),
         ];
+    }
+
+    /**
+     * Liters that left the lifts of each purchase: releases through a delivery row of a lift of the same purchase
+     * (garage sales excluded; they leave the garage, not a lift) and the lifts' garage rows (unloads to the garage, and
+     * the retired pre-October 22 garage rows).
+     *
+     * @param  array<int, int>  $ids
+     * @return array<int, float>
+     */
+    private function leftLiftsByPurchase(array $ids): array
+    {
+        $released = DB::table('stock_outs')
+            ->join('haul_allocations', 'haul_allocations.id', '=', 'stock_outs.haul_allocation_id')
+            ->join('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')
+            ->where('stock_outs.status', 'released')
+            ->whereNull('stock_outs.garage_stock_id')
+            ->whereColumn('hauls.purchase_item_id', 'stock_outs.purchase_item_id')
+            ->whereIn('stock_outs.purchase_item_id', $ids ?: [0])
+            ->groupBy('stock_outs.purchase_item_id')
+            ->selectRaw('stock_outs.purchase_item_id, COALESCE(SUM(stock_outs.quantity_liters), 0) as liters')
+            ->pluck('liters', 'purchase_item_id');
+        $toGarage = DB::table('haul_allocations')
+            ->join('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')
+            ->whereNull('hauls.deleted_at')
+            ->where('haul_allocations.destination_type', 'garage')
+            ->where('haul_allocations.status', '!=', 'cancelled')
+            ->whereIn('hauls.purchase_item_id', $ids ?: [0])
+            ->groupBy('hauls.purchase_item_id')
+            ->selectRaw('hauls.purchase_item_id, COALESCE(SUM(haul_allocations.quantity_liters), 0) as liters')
+            ->pluck('liters', 'purchase_item_id');
+
+        $left = [];
+        foreach ([$released, $toGarage] as $totals) {
+            foreach ($totals as $id => $liters) {
+                $left[(int) $id] = ($left[(int) $id] ?? 0) + (float) $liters;
+            }
+        }
+
+        return $left;
     }
 
     /**

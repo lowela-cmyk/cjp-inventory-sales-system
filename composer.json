@@ -50,6 +50,11 @@
             "@php artisan config:clear --ansi",
             "@php artisan test"
         ],
+        "test:mariadb": [
+            "@php artisan config:clear --ansi",
+            "@php -r \"(new PDO('mysql:host=127.0.0.1;port=3306', 'root', ''))->exec('CREATE DATABASE IF NOT EXISTS cjp_test_mariadb CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci');\"",
+            "@php artisan test --configuration=phpunit.mariadb.xml"
+        ],
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
             "@php artisan package:discover --ansi"

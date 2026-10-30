@@ -280,11 +280,11 @@ class StockInRevisionsTest extends AuditTestCase
         $lot = $this->stockLot($this->fuel('UNL'), 9000);
         $this->assertFalse(DB::table('stock_ins')->where('purchase_item_id', $lot)->exists());
 
-        // Page loads never write: the stock-in comes from `php artisan stock-in:sync` (idempotent).
+        // October 31: reading stock-ins repairs them, so the Stock-In tab lists it right away (no new purchase or
+        // command needed); `php artisan stock-in:sync` stays for manual repair and then finds nothing to do.
         $this->actingAs($a['inventory'])->get(route('inventory-officer.inventory.stock-in'))->assertOk();
-        $this->assertFalse(DB::table('stock_ins')->where('purchase_item_id', $lot)->exists());
-        $this->artisan('stock-in:sync')->expectsOutputToContain('Created 1 stock-in record(s)')->assertSuccessful();
-        $this->artisan('stock-in:sync')->expectsOutputToContain('Created 0 stock-in record(s)')->assertSuccessful();
+        $this->assertTrue(DB::table('stock_ins')->where('purchase_item_id', $lot)->exists());
+        $this->artisan('stock-in:sync')->expectsOutputToContain('Created 0 stock-in record(s); voided 0; refreshed 0.')->assertSuccessful();
 
         $this->assertSame(1, DB::table('stock_ins')->where('purchase_item_id', $lot)->count());
         $this->assertSame(9000.0, (float) DB::table('stock_ins')->where('purchase_item_id', $lot)->value('quantity_liters'));

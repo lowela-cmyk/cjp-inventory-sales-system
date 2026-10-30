@@ -5,6 +5,7 @@ namespace Tests;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 use Tests\Concerns\CreatesStockLots;
 
@@ -26,6 +27,30 @@ abstract class TestCase extends BaseTestCase
         Carbon::setTestNow(Carbon::parse(getenv('TEST_NOW') ?: self::FIXED_NOW, self::FIXED_TIMEZONE));
 
         parent::setUp();
+    }
+
+    /**
+     * Tests rebuild their database. Checked on the connection Laravel actually resolved (a DB_DATABASE set in the shell
+     * reaches $_SERVER and wins over a phpunit force="true"), after the app boots and before any trait such as
+     * RefreshDatabase runs (a trait's own beforeRefreshingDatabase() would replace a hook defined here): only SQLite or a
+     * dedicated *_test / *_test_mariadb database may ever be refreshed, never the real one.
+     *
+     * @return array<class-string, class-string>
+     */
+    protected function setUpTraits()
+    {
+        self::assertTestDatabase();
+
+        return parent::setUpTraits();
+    }
+
+    public static function assertTestDatabase(): void
+    {
+        $connection = DB::connection();
+        $database = (string) $connection->getDatabaseName();
+        if ($connection->getDriverName() !== 'sqlite' && ! preg_match('/_test(_mariadb)?$/', $database)) {
+            throw new \RuntimeException("Refusing to refresh database \"{$database}\" ({$connection->getDriverName()}) in tests: use phpunit.xml (SQLite) or phpunit.mariadb.xml (cjp_test_mariadb).");
+        }
     }
 
     /**

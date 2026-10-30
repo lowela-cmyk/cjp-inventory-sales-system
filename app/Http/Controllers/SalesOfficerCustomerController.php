@@ -129,6 +129,7 @@ class SalesOfficerCustomerController extends Controller
             // Part 2 revisions: the purchases an order's fuel and its F1 portion are deducted from.
             'purchaseOptions' => $purchaseOptions = $this->purchaseStock->saleOptions($this->purchaseIdsOnSales()),
             'f1PurchaseOptions' => $purchaseOptions->where('fuel_code', F1Split::F1_CODE)->values(),
+            'stockHints' => $this->stockHints(),
             // Part 13: garage lots (tanks) a Garage to Client line, and its F1 portion, can sell from.
             'garageOptions' => $garageOptions = app(GarageStockService::class)->saleOptions($this->garageIdsOnSales()),
             'f1GarageOptions' => $garageOptions->where('fuel_code', F1Split::F1_CODE)->values(),
@@ -1969,6 +1970,23 @@ class SalesOfficerCustomerController extends Controller
             ->selectRaw('sale_items.garage_stock_id as lot_id')->whereNotNull('sale_items.garage_stock_id')
             ->union(DB::table('sale_items')->whereNotNull('f1_garage_stock_id')->selectRaw('f1_garage_stock_id as lot_id'))
             ->pluck('lot_id')->map(fn (mixed $id): int => (int) $id)->unique()->values()->all();
+    }
+
+    /**
+     * Record Sales hints: purchases with no liters left to sell from the depot whose fuel is in the garage or on a truck.
+     *
+     * @return array<int, string>
+     */
+    private function stockHints(): array
+    {
+        return $this->purchaseStock->lines()
+            ->filter(fn (object $line): bool => $line->available <= 0 && ($line->in_garage > 0 || $line->on_truck > 0))
+            ->map(fn (object $line): string => $line->purchase_code.' has 0 L in the depot but '.implode(' and ', array_filter([
+                $line->in_garage > 0 ? number_format($line->in_garage, fmod($line->in_garage, 1.0) === 0.0 ? 0 : 2).' L in the garage' : null,
+                $line->on_truck > 0 ? number_format($line->on_truck, fmod($line->on_truck, 1.0) === 0.0 ? 0 : 2).' L on a truck' : null,
+            ]))." \u{2014} ".($line->in_garage > 0 ? 'use Garage to Client.' : 'deliver it from the truck in Fuel Lifting.'))
+            ->values()
+            ->all();
     }
 
     private function purchaseIdsOnSales(): array

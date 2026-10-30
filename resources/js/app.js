@@ -379,6 +379,8 @@ function syncDeliveryType(select) {
     // Part 13: Garage to Client sells from garage tanks ("garage" options); the other types from the depot. The F1
     // dropdown of a Garage to Client line lists F1 garage tanks next to F1 purchases.
     const garage = select.value === 'garage_to_client';
+    // "0 L in the depot but … in the garage" hints are for the depot delivery types only.
+    form?.querySelectorAll('[data-depot-only]').forEach((hint) => { hint.hidden = garage; });
     form?.querySelectorAll('[data-sale-purchase], [data-sale-f1-purchase]').forEach((stock) => {
         const isF1 = stock.matches('[data-sale-f1-purchase]');
         [...stock.options].forEach((option) => {

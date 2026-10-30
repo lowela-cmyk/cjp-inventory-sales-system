@@ -19,6 +19,9 @@
     $f1GarageOptions = $f1GarageOptions ?? collect();
     $selectedPurchase = ($item['garage_stock_id'] ?? null) ? 'garage:'.$item['garage_stock_id'] : (string) ($item['purchase_item_id'] ?? '');
     $selectedF1 = ($item['f1_garage_stock_id'] ?? null) ? 'garage:'.$item['f1_garage_stock_id'] : (string) ($item['f1_purchase_item_id'] ?? '');
+    // A purchase with no liters left in the depot is not offered (it stays on the order that already uses it).
+    $purchaseOptions = $purchaseOptions->filter(fn (object $purchase): bool => $purchase->available > 0 || $selectedPurchase === (string) $purchase->id);
+    $f1PurchaseOptions = $f1PurchaseOptions->filter(fn (object $purchase): bool => $purchase->available > 0 || $selectedF1 === (string) $purchase->id);
     $showDepot = $lineDeliveryType !== 'garage_to_client';
     $showGarage = in_array($lineDeliveryType, [null, 'garage_to_client'], true);
 @endphp
@@ -44,6 +47,14 @@
             <input {!! $formAttr !!} type="hidden" name="{{ $name('fuel_type_id') }}" value="{{ $item['fuel_type_id'] }}" data-legacy-fuel data-fuel-code="{{ $item['fuel_code'] ?? '' }}" data-fuel-name="{{ $item['fuel_name'] ?? '' }}">
         @endif
         @if ($err('purchase_item_id'))<p class="field-error form-row-message">{{ $err('purchase_item_id') }}</p>@endif
+        {{-- Record Sales: purchases with no liters in the depot but fuel in the garage or on a truck (not for Garage to Client). --}}
+        @if (($stockHints ?? []) !== [])
+            <ul class="sale-stock-hints" data-depot-only role="note">
+                @foreach ($stockHints as $hint)
+                    <li>{{ $hint }}</li>
+                @endforeach
+            </ul>
+        @endif
     </div>
     <div class="form-row">
         <label for="{{ $id('unit_price') }}">Fuel Price</label>

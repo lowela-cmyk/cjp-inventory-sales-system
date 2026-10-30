@@ -4758,3 +4758,18 @@ body.login-page {
 .form-row .form-locked-value + input[type="hidden"] + .field-error {
     grid-column: 2;
 }
+
+/* Record Sales: purchases with 0 L in the depot but fuel in the garage or on a truck. */
+.sale-stock-hints {
+    margin: 6px 0 0;
+    padding: 8px 12px 8px 28px;
+    border-left: 4px solid var(--warning);
+    border-radius: 6px;
+    background: #fff7ec;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.sale-stock-hints li + li {
+    margin-top: 4px;
+}

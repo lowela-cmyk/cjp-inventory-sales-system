@@ -23,6 +23,8 @@ class StockInService
 {
     public const STATUSES = ['available', 'partially_used', 'depleted', 'cancelled'];
 
+    private bool $repaired = false;
+
     public function __construct(private readonly PurchaseStockService $purchaseStock) {}
 
     /** Creates or refreshes the stock-in of a purchase line from the purchase (voided when it is cancelled or deleted). */
@@ -102,6 +104,44 @@ class StockInService
     }
 
     /**
+     * Repairs the stock-ins of purchase lines written outside Purchases (seeders, phpMyAdmin, imports): creates the
+     * missing ones, voids those of cancelled or deleted purchases, and refreshes those whose purchase was changed
+     * directly (date, fuel, depot, quantity or cost). It only reads unless something is wrong, and re-syncs just those
+     * lines, so running it any number of times never double counts. Runs before stock-in records are read, from the
+     * October 31 backfill migration and from `php artisan stock-in:sync`.
+     *
+     * @return array{created: int, voided: int, refreshed: int}
+     */
+    public function repair(): array
+    {
+        $missing = DB::table('purchase_items')
+            ->whereNotExists(fn (Builder $query): Builder => $query->selectRaw('1')->from('stock_ins')->whereColumn('stock_ins.purchase_item_id', 'purchase_items.id'))
+            ->exists();
+        $result = $missing ? $this->syncAll() : ['created' => 0, 'voided' => 0];
+
+        $stale = DB::table('stock_ins')
+            ->join('purchase_items', 'purchase_items.id', '=', 'stock_ins.purchase_item_id')
+            ->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
+            ->where(function (Builder $query): void {
+                $voided = "(purchases.status = 'cancelled' OR purchases.deleted_at IS NOT NULL)";
+                $query->whereColumn('stock_ins.quantity_liters', '!=', 'purchase_items.quantity_ordered_liters')
+                    ->orWhereColumn('stock_ins.unit_cost', '!=', 'purchase_items.unit_cost')
+                    ->orWhereColumn('stock_ins.fuel_type_id', '!=', 'purchase_items.fuel_type_id')
+                    ->orWhereColumn('stock_ins.depot_id', '!=', 'purchases.depot_id')
+                    ->orWhereColumn('stock_ins.purchase_id', '!=', 'purchase_items.purchase_id')
+                    ->orWhereRaw('DATE(stock_ins.stock_in_date) <> DATE(purchases.purchase_date)')
+                    ->orWhereRaw("stock_ins.status = 'active' AND $voided")
+                    ->orWhereRaw("stock_ins.status = 'voided' AND NOT $voided");
+            })
+            ->pluck('stock_ins.purchase_item_id');
+        foreach ($stale as $purchaseItemId) {
+            $this->sync((int) $purchaseItemId);
+        }
+
+        return $result + ['refreshed' => $stale->count()];
+    }
+
+    /**
      * Stock-in records with their liters out, remaining and status, newest first.
      *
      * @param  array{status?: ?string, date?: ?string, depot_id?: mixed, fuel_type_id?: mixed}  $filters
@@ -109,6 +149,12 @@ class StockInService
      */
     public function records(array $filters = [], ?string $search = null): Collection
     {
+        // Purchases written outside Purchases get (or refresh) their stock-in first, once per service instance.
+        if (! $this->repaired) {
+            $this->repair();
+            $this->repaired = true;
+        }
+
         $rows = DB::table('stock_ins')
             ->join('purchases', 'purchases.id', '=', 'stock_ins.purchase_id')
             ->join('fuel_types', 'fuel_types.id', '=', 'stock_ins.fuel_type_id')

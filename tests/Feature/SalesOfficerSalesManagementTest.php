@@ -41,7 +41,7 @@ class SalesOfficerSalesManagementTest extends TestCase
 
         $sale = DB::table('sales')->where('sales_order_number', 'SO-CJP-1001')->first();
         $this->assertNotNull($sale);
-        $this->assertMatchesRegularExpression('/^SLS-\d{6}-[A-Z0-9]{5}$/', $sale->sale_code);
+        $this->assertMatchesRegularExpression('/^SLS-(PREM|UNL|DSL|F1)-\d{3,}$/', $sale->sale_code);
         $this->assertSame($records['salesOfficer']->id, (int) $sale->created_by);
         $this->assertSame('SO-CJP-1001', $sale->sales_order_number);
         $this->assertSame('cheque', $sale->payment_method);
@@ -121,7 +121,7 @@ class SalesOfficerSalesManagementTest extends TestCase
         $this->assertSame(2, $sales->pluck('sale_code')->unique()->count());
         $this->assertNotContains('CLIENT-SUPPLIED-ID', $sales->pluck('sale_code')->all());
         foreach ($sales as $sale) {
-            $this->assertMatchesRegularExpression('/^SLS-\d{6}-[A-Z0-9]{5}$/', $sale->sale_code);
+            $this->assertMatchesRegularExpression('/^SLS-(PREM|UNL|DSL|F1)-\d{3,}$/', $sale->sale_code);
         }
 
         $this->actingAs($records['salesOfficer'])

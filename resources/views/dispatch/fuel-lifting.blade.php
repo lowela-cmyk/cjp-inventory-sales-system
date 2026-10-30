@@ -16,7 +16,7 @@
     $liftLines = array_values(old('items', [[]])) ?: [[]];
     $oldDeliveries = array_values(old('deliveries', []));
     $directSaleOptions = $directSaleOptions ?? collect();
-    $truckFilterOptions = $filterOptions['trucks']->mapWithKeys(fn (object $truck): array => [$truck->id => $truck->truck_code.($truck->plate_number ? ' / '.$truck->plate_number : '')]);
+    $truckFilterOptions = $filterOptions['trucks']->mapWithKeys(fn (object $truck): array => [$truck->id => \App\Support\TruckLabel::make($truck->name, $truck->truck_code)]);
 @endphp
 
 @component($liftLayout, ['title' => 'Fuel Lifting Operations', 'active' => 'fuel-lifting'])
@@ -185,7 +185,7 @@
                         <select id="dispatch_truck_id" name="truck_id" required @error('truck_id') aria-invalid="true" @enderror>
                             <option value="">Select Truck</option>
                             @foreach ($trucks as $truck)
-                                <option value="{{ $truck->id }}" data-capacity="{{ $truck->capacity_liters }}" @selected((string) old('truck_id') === (string) $truck->id)>{{ $truck->plate_number ?: 'No plate' }} – {{ $truck->truck_code }} – {{ number_format((float) $truck->capacity_liters, 2) }} L – Available</option>
+                                <option value="{{ $truck->id }}" data-capacity="{{ $truck->capacity_liters }}" @selected((string) old('truck_id') === (string) $truck->id)>{{ \App\Support\TruckLabel::make($truck->name, $truck->truck_code) }} – {{ number_format((float) $truck->capacity_liters, 2) }} L – Available</option>
                             @endforeach
                         </select>
                         @error('truck_id')<p class="field-error">{{ $message }}</p>@enderror
@@ -216,7 +216,7 @@
                                     <select id="dispatch_purchase_{{ $index }}" name="items[{{ $index }}][purchase_item_id]" data-lifting-purchase required>
                                         <option value="">{{ $purchaseItems->isEmpty() ? 'No purchases in the depot' : 'Select Purchase ID' }}</option>
                                         @foreach ($purchaseItems as $purchaseItem)
-                                            <option value="{{ $purchaseItem->id }}" data-depot-id="{{ $purchaseItem->depot_id }}" data-pickup="{{ $purchaseItem->pickup_label }}" data-fuel="{{ $purchaseItem->fuel_name }}" data-fuel-type-id="{{ $purchaseItem->fuel_type_id }}" data-remaining="{{ $purchaseItem->remaining_liters }}" data-remaining-label="{{ $purchaseItem->remaining_label }}" @selected((string) ($oldItem['purchase_item_id'] ?? '') === (string) $purchaseItem->id)>{{ $purchaseItem->label }}</option>
+                                            <option value="{{ $purchaseItem->id }}" data-depot-id="{{ $purchaseItem->depot_id }}" data-pickup="{{ $purchaseItem->pickup_label }}" data-fuel="{{ $purchaseItem->fuel_name }}" data-fuel-type-id="{{ $purchaseItem->fuel_type_id }}" @if ((int) $purchaseItem->fuel_type_id === \App\Support\F1Split::f1FuelId()) data-f1 @endif data-remaining="{{ $purchaseItem->remaining_liters }}" data-remaining-label="{{ $purchaseItem->remaining_label }}" @selected((string) ($oldItem['purchase_item_id'] ?? '') === (string) $purchaseItem->id)>{{ $purchaseItem->label }}</option>
                                         @endforeach
                                     </select>
                                     @error("items.$index.purchase_item_id")<p class="field-error">{{ $message }}</p>@enderror
@@ -246,6 +246,9 @@
                         </div>
                     @endforeach
                 </div>
+
+                {{-- Part 15: shown when changing the first purchase's fuel cleared the other purchase rows. --}}
+                <p class="lifting-empty-note" role="status" data-lifting-fuel-note hidden></p>
 
                 {{-- Kept at the client's request (not on the mockup). --}}
                 <div class="lift-fields lift-fields-3">
@@ -391,7 +394,7 @@
                                 <option value="{{ $row['truck_id'] }}" selected>{{ $row['details']['Truck-ID'] }} (current)</option>
                             @endif
                             @foreach ($trucks as $truck)
-                                <option value="{{ $truck->id }}" @selected((int) $row['truck_id'] === (int) $truck->id)>{{ $truck->plate_number ?: 'No plate' }} – {{ $truck->truck_code }} – {{ number_format((float) $truck->capacity_liters, 2) }} L – Available</option>
+                                <option value="{{ $truck->id }}" @selected((int) $row['truck_id'] === (int) $truck->id)>{{ \App\Support\TruckLabel::make($truck->name, $truck->truck_code) }} – {{ number_format((float) $truck->capacity_liters, 2) }} L – Available</option>
                             @endforeach
                         </select>
                     </div>

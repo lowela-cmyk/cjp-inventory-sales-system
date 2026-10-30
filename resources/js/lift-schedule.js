@@ -37,10 +37,39 @@ const update = (form) => {
     const capacity = Number(truckOption?.dataset.capacity || 0);
     const purchases = new Map();
     const fuels = new Set();
+    const mainFuels = new Set();
     let total = 0;
     let depotId = null;
     let depotLabel = '';
     let error = '';
+
+    // Part 15: one lift carries one fuel (plus F1, the blend portion) from one pickup depot. Once the first Purchase ID
+    // is chosen, the other rows list only purchases of its fuel (and F1) and depot; a row holding another fuel (the first
+    // one changed) is cleared. An F1 first row restricts the depot only.
+    const first = rows[0]?.querySelector('[data-lifting-purchase]')?.selectedOptions?.[0];
+    const firstFuel = first?.value && !('f1' in first.dataset) ? first.dataset.fuelTypeId : '';
+    const firstDepot = first?.value ? first.dataset.depotId : '';
+    let cleared = false;
+    rows.slice(1).forEach((row) => {
+        const select = row.querySelector('[data-lifting-purchase]');
+        if (!select) return;
+        [...select.options].forEach((option) => {
+            if (!option.value) return;
+            const otherFuel = Boolean(firstFuel) && option.dataset.fuelTypeId !== firstFuel && !('f1' in option.dataset);
+            const other = Boolean(firstDepot) && (otherFuel || option.dataset.depotId !== firstDepot);
+            option.hidden = other;
+            option.disabled = other;
+        });
+        if (select.selectedOptions[0]?.disabled) {
+            select.value = '';
+            cleared = true;
+        }
+    });
+    const fuelNote = form.querySelector('[data-lifting-fuel-note]');
+    if (fuelNote) {
+        if (cleared) fuelNote.textContent = 'The other purchases were cleared: a lift carries one fuel type. Choose them again.';
+        fuelNote.hidden = !cleared && (fuelNote.hidden || rows.slice(1).every((row) => row.querySelector('[data-lifting-purchase]')?.value));
+    }
 
     rows.forEach((row) => {
         const option = row.querySelector('[data-lifting-purchase]')?.selectedOptions?.[0];
@@ -53,7 +82,9 @@ const update = (form) => {
             if (purchases.has(option.value)) error ||= 'The same Purchase ID cannot be added twice.';
             purchases.set(option.value, (purchases.get(option.value) || 0) + quantity);
             fuels.add(option.dataset.fuelTypeId);
+            if (!('f1' in option.dataset)) mainFuels.add(option.dataset.fuelTypeId);
             if (depotId && option.dataset.depotId !== depotId) error ||= 'All purchases must use the same pickup depot.';
+            if (mainFuels.size > 1) error ||= 'All purchases in one lift must be the same fuel type (F1 may be added).';
             depotId ||= option.dataset.depotId;
             depotLabel ||= option.dataset.pickup || '';
             const remaining = Number(option.dataset.remaining || 0);

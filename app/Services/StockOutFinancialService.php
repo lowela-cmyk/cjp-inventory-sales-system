@@ -99,7 +99,7 @@ class StockOutFinancialService
                 'sales.delivery_status',
                 'release_purchase.purchase_code as release_purchase_code',
                 'delivery_truck.truck_code as delivery_truck_code',
-                'delivery_truck.plate_number as delivery_truck_plate',
+                'delivery_truck.name as delivery_truck_name',
                 'delivery_driver.name as delivery_driver_name',
                 DB::raw('COALESCE(hauls.hauled_at, hauls.scheduled_at, sales.delivery_date, stock_outs.stock_out_at) as delivery_date'),
                 'hauls.atl_number',

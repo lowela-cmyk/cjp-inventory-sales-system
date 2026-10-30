@@ -10,7 +10,9 @@ use App\Services\PurchaseService;
 use App\Services\StockInService;
 use App\Services\StockOutFinancialService;
 use App\Support\FilterDates;
+use App\Support\TruckLabel;
 use Illuminate\Database\Query\Builder;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -120,7 +122,7 @@ class InventoryOfficerPurchaseController extends Controller
                 ->get(['id', 'name']),
             'deliveryTypes' => SalesOfficerCustomerController::DELIVERY_TYPES,
             // Edit Stock-Out Record: a Standard order's own truck and driver (as Record Sales lists them).
-            'deliveryTrucks' => DB::table('trucks')->where('status', '!=', 'inactive')->orderBy('truck_code')->get(['id', 'truck_code', 'plate_number']),
+            'deliveryTrucks' => DB::table('trucks')->where('status', '!=', 'inactive')->orderByRaw(TruckLabel::orderSql())->get(['id', 'truck_code', 'name']),
             'deliveryDrivers' => DB::table('users')->where('role', 'driver')->where('status', 'active')->orderBy('name')->get(['id', 'name']),
             'paymentStatuses' => self::PAYMENT_STATUSES,
             'paymentModes' => PurchaseService::PAYMENT_MODES,
@@ -160,14 +162,14 @@ class InventoryOfficerPurchaseController extends Controller
         $data = $this->validatedPurchaseData($request);
 
         try {
-            $this->purchaseService->updatePurchase($purchaseItem, $data, (int) $request->user()->id);
+            $newCode = $this->purchaseService->updatePurchase($purchaseItem, $data, (int) $request->user()->id);
         } catch (ValidationException $e) {
             return back()->withErrors($e->errors())->withInput();
         }
 
         return redirect()
             ->route($this->inventoryRouteName($request))
-            ->with('status', 'Purchase record updated successfully.');
+            ->with('status', 'Purchase record updated successfully.'.($newCode ? ' New Purchase ID: '.$newCode.'.' : ''));
     }
 
     /**
@@ -195,7 +197,7 @@ class InventoryOfficerPurchaseController extends Controller
         }
 
         try {
-            $this->purchaseService->updatePurchase($purchaseItem, $data + [
+            $newCode = $this->purchaseService->updatePurchase($purchaseItem, $data + [
                 'payment_status' => $purchase->payment_status,
                 'payment_mode' => $purchase->payment_mode,
                 'bank_name' => $purchase->bank_name,
@@ -206,7 +208,7 @@ class InventoryOfficerPurchaseController extends Controller
 
         return redirect()
             ->route($this->inventoryRouteName($request, 'stock-in'))
-            ->with('status', 'Stock-in record updated successfully.');
+            ->with('status', 'Stock-in record updated successfully.'.($newCode ? ' New Purchase ID: '.$newCode.'.' : ''));
     }
 
     /**
@@ -294,12 +296,18 @@ class InventoryOfficerPurchaseController extends Controller
         ]);
     }
 
-    public function cancel(Request $request, int $purchaseItem): RedirectResponse
+    /**
+     * Part 15: Cancel Purchase (Pending and unused purchases only; the request is kept in the audit log by
+     * RecordActivity). A refusal is a 422 for JSON clients and the field error on the page for the form.
+     */
+    public function cancel(Request $request, int $purchaseItem): RedirectResponse|JsonResponse
     {
         try {
             $this->purchaseService->cancelPurchase($purchaseItem, (int) $request->user()->id);
         } catch (ValidationException $e) {
-            return back()->withErrors($e->errors())->withInput();
+            return $request->expectsJson()
+                ? response()->json(['message' => collect($e->errors())->flatten()->first(), 'errors' => $e->errors()], 422)
+                : back()->withErrors($e->errors())->withInput();
         }
 
         return redirect()
@@ -380,11 +388,14 @@ class InventoryOfficerPurchaseController extends Controller
     private function stockInRows(?string $search, array $filters = []): LengthAwarePaginator
     {
         $paginator = $this->stockIns->paginate($filters, $search);
+        // Part 15: a lifted purchase's stock fields are locked, so its stock-in is shown read-only.
+        $lifted = $this->purchaseService->liftedIds($paginator->getCollection()->pluck('purchase_item_id')->map(fn (mixed $id): int => (int) $id)->all());
         $paginator->setCollection($paginator->getCollection()->map(fn (object $row): array => [
             'id' => (int) $row->id,
             'modal_id' => 'io-stock-in-edit-'.$row->id,
             'purchase_item_id' => (int) $row->purchase_item_id,
-            'editable' => $row->status !== 'voided',
+            'editable' => $row->status !== 'voided' && ! in_array((int) $row->purchase_item_id, $lifted, true),
+            'locked' => in_array((int) $row->purchase_item_id, $lifted, true),
             // The Edit form's current values.
             'form' => [
                 'purchase_date' => substr((string) $row->stock_in_date, 0, 10),
@@ -509,7 +520,7 @@ class InventoryOfficerPurchaseController extends Controller
                 ],
                 // Delivery Details: the lift (Depot to Client) or the order's own delivery (Standard).
                 'delivery' => [
-                    'truck' => $row->delivery_truck_code ? trim($row->delivery_truck_code.($row->delivery_truck_plate ? ' / '.$row->delivery_truck_plate : '')) : 'N/A',
+                    'truck' => $row->delivery_truck_code ? TruckLabel::make($row->delivery_truck_name, $row->delivery_truck_code) : 'N/A',
                     'driver' => $row->delivery_driver_name ?: 'N/A',
                     'date' => $row->delivery_date ? $this->formatDateTime($row->delivery_date) : 'N/A',
                     'status' => $this->label($row->delivery_status),

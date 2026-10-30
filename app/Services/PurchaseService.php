@@ -7,11 +7,12 @@ use Illuminate\Database\Query\Builder;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class PurchaseService
 {
+    public const LOCKED_MESSAGE = 'Locked: this purchase has been lifted.';
+
     private const STOCK_IN_REFERENCE_TYPE = 'haul_allocation';
 
     /** Part 9: how a purchase was paid. A bank is chosen for Bank Transfer and Cheque only. */
@@ -24,7 +25,8 @@ class PurchaseService
         private readonly WorkflowAlertService $alerts,
         private readonly PurchaseWorkflowService $workflow,
         private readonly PurchaseStockService $purchaseStock,
-        private readonly StockInService $stockIns
+        private readonly StockInService $stockIns,
+        private readonly RecordCodeService $codes
     ) {}
 
     /**
@@ -42,7 +44,7 @@ class PurchaseService
         return DB::transaction(function () use ($data, $userId): int {
             $purchaseId = $this->idempotencyService->retryOnCollision('purchase_code', function () use ($data, $userId): int {
                 return (int) DB::table('purchases')->insertGetId([
-                    'purchase_code' => $this->nextCode('purchases', 'purchase_code', 'PUR'),
+                    'purchase_code' => $this->codes->next(RecordCodeService::PURCHASE, (int) $data['fuel_type_id']),
                     'depot_id' => $data['depot_id'],
                     'purchase_date' => $data['purchase_date'],
                     'receipt_reference' => null,
@@ -91,7 +93,10 @@ class PurchaseService
     /**
      * @param  array<string, mixed>  $data
      */
-    public function updatePurchase(int $purchaseItemId, array $data, ?int $userId = null): void
+    /**
+     * @return string|null the purchase's new ID when a fuel change gave it one (Part 15 #6)
+     */
+    public function updatePurchase(int $purchaseItemId, array $data, ?int $userId = null): ?string
     {
         $lineTotal = $this->lineTotal($data['quantity_ordered_liters'], $data['unit_cost']);
         if ($lineTotal > 999999999999.99) {
@@ -100,13 +105,17 @@ class PurchaseService
             ]);
         }
 
-        DB::transaction(function () use ($purchaseItemId, $data, $userId): void {
+        return DB::transaction(function () use ($purchaseItemId, $data, $userId): ?string {
             $row = $this->purchaseItemForUpdate($purchaseItemId);
             if (! $row) {
                 abort(404);
             }
 
             $this->assertEditableStock($row, $data);
+            // Part 15 #6: a fuel change (allowed only while nothing uses the purchase) gives it the next ID of the new fuel.
+            $newCode = (int) $row->fuel_type_id !== (int) $data['fuel_type_id']
+                ? $this->codes->recode(RecordCodeService::PURCHASE, 'purchase', (int) $row->purchase_id, (int) $data['fuel_type_id'])
+                : null;
 
             DB::table('purchases')
                 ->where('id', $row->purchase_id)
@@ -132,6 +141,8 @@ class PurchaseService
 
             $this->stockIns->sync((int) $row->id, $userId);
             $this->workflow->synchronize((int) $row->purchase_id, $userId);
+
+            return $newCode;
         });
     }
 
@@ -143,15 +154,19 @@ class PurchaseService
                 abort(404);
             }
 
+            // Part 15: only a Pending purchase that nothing uses yet can be cancelled.
+            if ($row->purchase_status === 'cancelled' || $row->legacy_status === 'cancelled') {
+                throw ValidationException::withMessages(['purchase' => 'This purchase is already cancelled.']);
+            }
             $sales = $this->salesDeductingFrom((int) $row->id);
             if ($sales !== []) {
                 throw ValidationException::withMessages([
                     'purchase' => 'This purchase cannot be cancelled: '.count($sales).' sale(s) already deducted fuel from it ('.implode(', ', $sales).'). Cancel those sales first.',
                 ]);
             }
-            if ($this->hasDependentActivity($row)) {
+            if ($row->purchase_status !== 'pending' || $this->cancelBlockedIds([(int) $row->id]) !== []) {
                 throw ValidationException::withMessages([
-                    'purchase' => 'This purchase already has lifting activity and cannot be cancelled from Purchases.',
+                    'purchase' => 'This purchase is already scheduled for a lift or used by sales, stock-outs or the garage, so it cannot be cancelled.',
                 ]);
             }
 
@@ -184,7 +199,73 @@ class PurchaseService
                 'purchase_items.unit_cost',
                 'purchases.depot_id',
                 'purchases.purchase_date',
+                'purchases.workflow_status as purchase_status',
+                'purchases.status as legacy_status',
             ]);
+    }
+
+    /**
+     * Part 15: purchase lines Cancel Purchase must refuse: on a lift (not cancelled), sold from (own fuel or F1
+     * portion), released by a stock-out, unloaded into the garage, or hauled.
+     *
+     * @param  array<int, int>  $ids
+     * @return array<int, int>
+     */
+    public function cancelBlockedIds(array $ids): array
+    {
+        return $this->usage($ids)['blocked'];
+    }
+
+    /**
+     * Part 15: purchase lines with fuel already lifted (a Lifted or Completed lift, or a garage lot made from it).
+     * Their Date, Fuel Type, Depot, Quantity and Cost / Liter are locked.
+     *
+     * @param  array<int, int>  $ids
+     * @return array<int, int>
+     */
+    public function liftedIds(array $ids): array
+    {
+        return $this->usage($ids)['lifted'];
+    }
+
+    /**
+     * Both Part 15 checks for a page of purchase lines, with one lift query.
+     *
+     * @param  array<int, int>  $ids
+     * @return array{blocked: array<int, int>, lifted: array<int, int>}
+     */
+    public function usage(array $ids): array
+    {
+        if ($ids === []) {
+            return ['blocked' => [], 'lifted' => []];
+        }
+
+        $lifts = DB::table('hauls')
+            ->whereIn('purchase_item_id', $ids)
+            ->whereNull('deleted_at')
+            ->where('status', '!=', 'cancelled')
+            ->groupBy('purchase_item_id')
+            ->selectRaw("purchase_item_id, SUM(CASE WHEN status IN ('lifted', 'completed') THEN 1 ELSE 0 END) as lifted")
+            ->pluck('lifted', 'purchase_item_id');
+        $garage = DB::table('garage_stocks')->whereIn('purchase_item_id', $ids)->distinct()->pluck('purchase_item_id');
+        $hauled = DB::table('purchase_items')->whereIn('id', $ids)->where('quantity_hauled_liters', '>', 0)->pluck('id');
+        $openSales = fn (string $column): Builder => DB::table('sale_items')
+            ->join('sales', 'sales.id', '=', 'sale_items.sale_id')
+            ->where('sales.status', '!=', 'cancelled')
+            ->whereIn("sale_items.$column", $ids)
+            ->select("sale_items.$column as id");
+        $used = $openSales('purchase_item_id')
+            ->union($openSales('f1_purchase_item_id'))
+            ->union(DB::table('stock_outs')->whereIn('purchase_item_id', $ids)->where('status', 'released')->select('purchase_item_id as id'))
+            ->pluck('id');
+
+        $ints = fn ($values): array => collect($values)->map(fn (mixed $id): int => (int) $id)->unique()->values()->all();
+        $lifted = $ints($lifts->filter(fn (mixed $count): bool => (int) $count > 0)->keys()->merge($garage)->merge($hauled));
+
+        return [
+            'blocked' => $ints($lifts->keys()->merge($used)->merge($garage)->merge($hauled)),
+            'lifted' => $lifted,
+        ];
     }
 
     /**
@@ -263,7 +344,9 @@ class PurchaseService
         // Part 2 revisions: the purchase is the stock (ordered - delivered).
         $stock = $this->purchaseStock->lines($rawRows->pluck('id')->map(fn (mixed $id): int => (int) $id)->all(), false, true);
 
-        $transformed = $rawRows->map(function (object $row) use ($dependencyMap, $withdrawalsMap, $stock): array {
+        ['blocked' => $cancelBlocked, 'lifted' => $lifted] = $this->usage($rawRows->pluck('id')->map(fn (mixed $id): int => (int) $id)->all());
+
+        $transformed = $rawRows->map(function (object $row) use ($dependencyMap, $withdrawalsMap, $stock, $cancelBlocked, $lifted): array {
             $line = $stock->get((int) $row->id);
             $released = (float) ($line->released ?? 0);
             $onHand = (float) ($line->on_hand ?? $row->quantity_ordered_liters);
@@ -289,7 +372,12 @@ class PurchaseService
                 'bank_name' => $row->bank_name,
                 'purchase_status' => $row->purchase_status,
                 'has_dependencies' => $dependencyMap[(int) $row->id] ?? false,
-                'class' => $this->rowClass($row->payment_status),
+                // Part 15: Cancel Purchase only while Pending and unused; stock fields locked once lifted.
+                'can_cancel' => $row->purchase_status === 'pending' && $row->legacy_purchase_status !== 'cancelled' && ! in_array((int) $row->id, $cancelBlocked, true),
+                'stock_locked' => in_array((int) $row->id, $lifted, true),
+                'fuel_name' => $row->fuel_name,
+                'depot_name' => $row->depot_name,
+                'class' => $this->rowClass($row->payment_status, $row->purchase_status),
                 'cells' => [
                     $row->purchase_code,
                     $this->formatDate($row->purchase_date),
@@ -444,6 +532,21 @@ class PurchaseService
      */
     private function assertEditableStock(object $row, array $data): void
     {
+        // Part 15: once fuel is lifted, the stock fields stay as recorded (payment fields remain editable).
+        if ($this->liftedIds([(int) $row->id]) !== []) {
+            $changed = [
+                'purchase_date' => substr((string) $row->purchase_date, 0, 10) !== substr((string) $data['purchase_date'], 0, 10),
+                'fuel_type_id' => (int) $row->fuel_type_id !== (int) $data['fuel_type_id'],
+                'depot_id' => (int) $row->depot_id !== (int) $data['depot_id'],
+                'quantity_ordered_liters' => round((float) $row->quantity_ordered_liters, 2) !== round((float) $data['quantity_ordered_liters'], 2),
+                'unit_cost' => round((float) $row->unit_cost, 2) !== round((float) $data['unit_cost'], 2),
+            ];
+            $errors = array_map(fn (): string => self::LOCKED_MESSAGE, array_filter($changed));
+            if ($errors !== []) {
+                throw ValidationException::withMessages($errors);
+            }
+        }
+
         $line = $this->purchaseStock->line((int) $row->id, true);
         $taken = round((float) ($line->released ?? 0) + (float) ($line->reserved ?? 0), 2);
         $onLifts = round((float) DB::table('hauls')->where('purchase_item_id', $row->id)->whereNull('deleted_at')->where('status', '!=', 'cancelled')->sum('quantity_liters'), 2);
@@ -497,19 +600,11 @@ class PurchaseService
         };
     }
 
-    private function nextCode(string $table, string $column, string $prefix): string
-    {
-        do {
-            $code = $prefix.'-'.now()->format('ymd').'-'.Str::upper(Str::random(5));
-        } while (DB::table($table)->where($column, $code)->exists());
-
-        return $code;
-    }
-
     /** Purchases rows are white; only an Unpaid purchase is tinted red (Part 8 #3). */
-    private function rowClass(?string $paymentStatus): string
+    private function rowClass(?string $paymentStatus, ?string $purchaseStatus = null): string
     {
-        return $paymentStatus === 'unpaid' ? 'row-danger' : '';
+        // Part 13: only Unpaid or Cancelled rows are tinted red.
+        return $paymentStatus === 'unpaid' || $purchaseStatus === 'cancelled' ? 'row-danger' : '';
     }
 
     private function label(?string $value): string

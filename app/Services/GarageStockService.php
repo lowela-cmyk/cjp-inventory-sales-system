@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Support\FilterDates;
+use App\Support\TruckLabel;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -77,7 +78,7 @@ class GarageStockService
             ->when($filters['storage_location_id'] ?? null, fn (Builder $query, mixed $id): Builder => $query->where('garage_stocks.storage_location_id', (int) $id))
             ->tap(fn (Builder $query): Builder => FilterDates::apply($query, 'garage_stocks.unloaded_at', ['from' => $filters['date_from'] ?? null, 'to' => $filters['date_to'] ?? null]))
             ->when($search, fn (Builder $query, string $term): Builder => $query->where(function (Builder $query) use ($term): void {
-                foreach (['garage_stocks.lot_code', 'purchases.purchase_code', 'fuel_types.name', 'storage_locations.name', 'lifting_schedules.schedule_code', 'hauls.haul_code', 'trucks.truck_code', 'trucks.plate_number'] as $column) {
+                foreach (['garage_stocks.lot_code', 'purchases.purchase_code', 'fuel_types.name', 'storage_locations.name', 'lifting_schedules.schedule_code', 'hauls.haul_code', 'trucks.truck_code', 'trucks.name'] as $column) {
                     $query->orWhere($column, 'like', '%'.$term.'%');
                 }
             }))
@@ -89,7 +90,7 @@ class GarageStockService
                 'garage_stocks.fuel_type_id', 'garage_stocks.haul_id', 'garage_stocks.haul_allocation_id', 'garage_stocks.truck_id',
                 'garage_stocks.liters', 'garage_stocks.unit_cost', 'garage_stocks.unloaded_at',
                 'storage_locations.name as tank_name', 'storage_locations.tank_number', 'fuel_types.name as fuel_name', 'fuel_types.code as fuel_code',
-                'purchases.purchase_code', 'lifting_schedules.schedule_code', 'hauls.haul_code', 'trucks.truck_code', 'trucks.plate_number',
+                'purchases.purchase_code', 'lifting_schedules.schedule_code', 'hauls.haul_code', 'trucks.truck_code', 'trucks.name as truck_name',
             ]);
 
         $lotIds = $lots->pluck('id')->map(fn (mixed $id): int => (int) $id)->all();
@@ -105,7 +106,7 @@ class GarageStockService
                 $lot->in_garage = round(max(0, $lot->liters - $lot->released), 2);
                 $lot->reserved = round((float) ($reserved[$id] ?? 0), 2);
                 $lot->available = round(max(0, $lot->in_garage - $lot->reserved), 2);
-                $lot->lift_label = trim(($lot->schedule_code ?: $lot->haul_code).' / '.$lot->truck_code.($lot->plate_number ? ' · '.$lot->plate_number : ''), ' /');
+                $lot->lift_label = trim(($lot->schedule_code ?: $lot->haul_code).' / '.($lot->truck_code ? TruckLabel::make($lot->truck_name, $lot->truck_code) : ''), ' /');
                 // Record Sales dropdown: "PUR-002 · DIESEL · Diesel Tank 2 · 6,000 L · ₱55.00/L".
                 $lot->option_label = implode(' · ', [
                     $lot->purchase_code,

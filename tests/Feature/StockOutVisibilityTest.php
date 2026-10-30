@@ -50,14 +50,15 @@ class StockOutVisibilityTest extends AuditTestCase
 
             $main = $rows->first(fn (array $row): bool => $row['cells'][0] === $standard && $row['cells'][5] === 'Premium');
             $this->assertSame(['Standard', 'Premium', $codes[$premium], '1,800.00'], [$main['cells'][4], $main['cells'][5], $main['cells'][6], $main['cells'][7]]);
-            $this->assertSame(['TRK-AUD / ABC-123', $a['driver']->name, '10/21/2026 02:00 PM', 'Delivered'], [$main['delivery']['truck'], $main['delivery']['driver'], $main['delivery']['date'], $main['delivery']['status']]);
+            // Part 15: the truck has no name, so its code is shown; the plate number is not.
+            $this->assertSame(['TRK-AUD', $a['driver']->name, '10/21/2026 02:00 PM', 'Delivered'], [$main['delivery']['truck'], $main['delivery']['driver'], $main['delivery']['date'], $main['delivery']['status']]);
             // The F1 portion names its F1 purchase and is priced at the F1 Price.
             $f1Row = $rows->first(fn (array $row): bool => $row['cells'][0] === $standard && $row['cells'][5] === 'F1 (F1 portion)');
             $this->assertSame([$codes[$f1], '200.00', '40.00', '8,000.00'], [$f1Row['cells'][6], $f1Row['cells'][7], $f1Row['cells'][10], $f1Row['cells'][11]]);
 
             $lifted = $rows->first(fn (array $row): bool => $row['cells'][0] === $depot->sale_code);
             $this->assertSame(['Depot to Client', $codes[$premium], '3,000.00'], [$lifted['cells'][4], $lifted['cells'][6], $lifted['cells'][7]]);
-            $this->assertSame(['TRK-AUD / ABC-123', $a['driver']->name, 'ATL-7788', 'DR-2026-001', 'Delivered'], [$lifted['delivery']['truck'], $lifted['delivery']['driver'], $lifted['delivery']['atl'], $lifted['delivery']['dr'], $lifted['delivery']['status']]);
+            $this->assertSame(['TRK-AUD', $a['driver']->name, 'ATL-7788', 'DR-2026-001', 'Delivered'], [$lifted['delivery']['truck'], $lifted['delivery']['driver'], $lifted['delivery']['atl'], $lifted['delivery']['dr'], $lifted['delivery']['status']]);
         }
 
         // The Delivery Type filter.

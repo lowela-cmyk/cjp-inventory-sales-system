@@ -33,7 +33,7 @@ class SalesInitialPaymentTest extends TestCase
             $sale = DB::table('sales')->where('sales_order_number', $case['number'])->first();
 
             $this->assertNotNull($sale);
-            $this->assertMatchesRegularExpression('/^SLS-\d{6}-[A-Z0-9]{5}$/', $sale->sale_code);
+            $this->assertMatchesRegularExpression('/^SLS-(PREM|UNL|DSL|F1)-\d{3,}$/', $sale->sale_code);
             $this->assertSame($case['sale_status'], $sale->status);
             $this->assertSame('pending', $sale->delivery_status);
             $this->assertDatabaseHas('sale_items', [

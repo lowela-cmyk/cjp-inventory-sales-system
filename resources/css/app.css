@@ -4725,3 +4725,36 @@ body.login-page {
 .admin-table.garage-table {
     width: 100%;
 }
+
+/* Part 15: Edit Purchase Record — once fuel is lifted, Date, Fuel Type, Depot, Quantity and Cost / Liter are read-only text. */
+.form-row .form-label {
+    font-size: 16px;
+    font-weight: 800;
+}
+
+.form-locked-note {
+    grid-column: 1 / -1;
+    margin: 0;
+    padding: 8px 12px;
+    border-left: 4px solid var(--warning);
+    border-radius: 6px;
+    background: #fff7ec;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.form-locked-value {
+    margin: 0;
+    min-height: 42px;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    border-radius: 8px;
+    background: #f1f1f1;
+    color: #333;
+    font-weight: 600;
+}
+
+.form-row .form-locked-value + input[type="hidden"] + .field-error {
+    grid-column: 2;
+}

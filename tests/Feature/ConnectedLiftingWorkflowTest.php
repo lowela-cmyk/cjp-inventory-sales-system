@@ -113,9 +113,12 @@ class ConnectedLiftingWorkflowTest extends TestCase
 
         $page = $this->actingAs($records['dispatch'])->get(route('dispatch.fuel-lifting'));
         $page->assertOk()
-            ->assertDontSee('CW-0001 – TRK-CW – 30,000.00 L – Available')
-            ->assertSee('CW-0002 – TRK-CW-AVAILABLE – 25,000.00 L – Available')
-            ->assertDontSee('CW-0003 – TRK-CW-MAINT');
+            // Part 15: trucks are listed by name (no plate number).
+            ->assertDontSee('Workflow Tanker – 30,000.00 L – Available')
+            ->assertSee('Available Tanker – 25,000.00 L – Available')
+            ->assertDontSee('Maintenance Tanker – 25,000.00 L')
+            // The plate stays only in the Trucks tab table and the truck's View / Edit modal.
+            ->assertDontSee('CW-0002 –');
 
         $haulId = (int) DB::table('hauls')->value('id');
         $this->actingAs($records['dispatch'])->patch(route('dispatch.fuel-lifting.hauls.status', $haulId), [
@@ -124,7 +127,7 @@ class ConnectedLiftingWorkflowTest extends TestCase
         $this->assertDatabaseHas('trucks', ['id' => $records['truck'], 'status' => 'available']);
 
         $this->actingAs($records['dispatch'])->get(route('dispatch.fuel-lifting'))
-            ->assertOk()->assertSee('CW-0001 – TRK-CW – 30,000.00 L – Available');
+            ->assertOk()->assertSee('Workflow Tanker – 30,000.00 L – Available');
         $this->assertDatabaseHas('trucks', ['id' => $availableTruck, 'status' => 'available']);
     }
 

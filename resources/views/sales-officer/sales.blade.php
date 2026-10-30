@@ -268,7 +268,7 @@
                                 <select id="sale_delivery_truck_id" name="delivery_truck_id" @disabled($recordDeliveryType === 'depot_to_client') @error('delivery_truck_id') aria-invalid="true" @enderror>
                                     <option value="">Select Truck</option>
                                     @foreach ($deliveryTrucks as $truck)
-                                        <option value="{{ $truck->id }}" @selected((string) old('delivery_truck_id') === (string) $truck->id)>{{ $truck->truck_code }}{{ $truck->plate_number ? ' / '.$truck->plate_number : '' }}</option>
+                                        <option value="{{ $truck->id }}" @selected((string) old('delivery_truck_id') === (string) $truck->id)>{{ \App\Support\TruckLabel::make($truck->name, $truck->truck_code) }}</option>
                                     @endforeach
                                 </select>
                                 @error('delivery_truck_id')<p class="field-error form-row-message">{{ $message }}</p>@enderror
@@ -424,7 +424,7 @@
                             <select form="sale-update-{{ $row['id'] }}" id="sale_delivery_truck_{{ $row['id'] }}" name="delivery_truck_id">
                                 <option value="">Select Truck</option>
                                 @foreach ($deliveryTrucks as $truck)
-                                    <option value="{{ $truck->id }}" @selected((string) $editOld('delivery_truck_id', $row['delivery_truck_id']) === (string) $truck->id)>{{ $truck->truck_code }}{{ $truck->plate_number ? ' / '.$truck->plate_number : '' }}</option>
+                                    <option value="{{ $truck->id }}" @selected((string) $editOld('delivery_truck_id', $row['delivery_truck_id']) === (string) $truck->id)>{{ \App\Support\TruckLabel::make($truck->name, $truck->truck_code) }}</option>
                                 @endforeach
                             </select>
                         </div>

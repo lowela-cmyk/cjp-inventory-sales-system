@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Rules\ApprovedFuelType;
 use App\Support\DepotLabel;
 use App\Support\FilterDates;
+use App\Support\TruckLabel;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\JsonResponse;
@@ -167,7 +168,7 @@ class DriverDeliveryController extends Controller
                 'fuel_types.name',
                 'depots.name',
                 'trucks.truck_code',
-                'trucks.plate_number',
+                'trucks.name',
                 'hauls.status',
                 'allocations.destination_names',
                 'allocations.sale_codes',
@@ -204,7 +205,7 @@ class DriverDeliveryController extends Controller
                 'fuel_types.name as fuel_name',
                 'lifting_schedules.schedule_code',
                 'trucks.truck_code',
-                'trucks.plate_number',
+                'trucks.name as truck_name',
                 'trucks.capacity_liters',
                 'allocations.destination_names',
                 'allocations.sale_codes',
@@ -216,7 +217,7 @@ class DriverDeliveryController extends Controller
         return $rows
             ->map(function (object $row) use ($f1Loads): array {
                 $truck = $row->truck_code
-                    ? trim($row->truck_code.($row->plate_number ? ' / '.$row->plate_number : ''))
+                    ? TruckLabel::make($row->truck_name, $row->truck_code)
                     : 'N/A';
                 $destination = $row->destination_names ?: 'N/A';
 

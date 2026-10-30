@@ -8,9 +8,12 @@ use App\Services\IdempotencyService;
 use App\Services\LiftAllocationService;
 use App\Services\PurchaseStockService;
 use App\Services\PurchaseWorkflowService;
+use App\Services\RecordCodeService;
 use App\Services\TruckAvailabilityService;
 use App\Support\DepotLabel;
+use App\Support\F1Split;
 use App\Support\FilterDates;
+use App\Support\TruckLabel;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -27,7 +30,8 @@ class DispatchDeliveryController extends Controller
         private readonly PurchaseWorkflowService $purchaseWorkflow,
         private readonly TruckAvailabilityService $truckAvailability,
         private readonly LiftAllocationService $liftAllocations,
-        private readonly PurchaseStockService $purchaseStock
+        private readonly PurchaseStockService $purchaseStock,
+        private readonly RecordCodeService $codes
     ) {}
 
     private const ACTIVE_HAUL_STATUSES = ['scheduled', 'in_transit', 'lifted'];
@@ -189,6 +193,12 @@ class DispatchDeliveryController extends Controller
                     if ($purchaseItems->pluck('depot_id')->unique()->count() !== 1) {
                         throw new \RuntimeException('All purchases in one lifting schedule must use the same pickup depot.');
                     }
+                    // Part 15: one lift carries one fuel type (Premium, Unleaded or Diesel); F1 purchases may ride with it
+                    // as the blend portion of its orders.
+                    $mainFuels = $purchaseItems->pluck('fuel_type_id')->map(fn (mixed $id): int => (int) $id)->reject(fn (int $id): bool => $id === F1Split::f1FuelId())->unique();
+                    if ($mainFuels->count() > 1) {
+                        throw new \RuntimeException('All purchases in one lift must be the same fuel type (F1 may be added).');
+                    }
 
                     $totalQuantity = round((float) $purchaseItems->sum('scheduled_quantity_liters'), 2);
                     if ($totalQuantity <= 0 || $totalQuantity > round((float) $truck->capacity_liters, 2)) {
@@ -204,7 +214,8 @@ class DispatchDeliveryController extends Controller
                         }
                     }
 
-                    $scheduleCode = $this->nextCode('lifting_schedules', 'schedule_code', 'LFT');
+                    // Part 15 #6: LFT-FUEL-NUMBER for the lift's fuel; its haul lines are LFT-FUEL-NUMBER-01, -02, ...
+                    $scheduleCode = $this->codes->next(RecordCodeService::LIFT, $this->codes->liftFuel($purchaseItems->pluck('fuel_type_id')));
                     $scheduleId = DB::table('lifting_schedules')->insertGetId([
                         'schedule_code' => $scheduleCode,
                         'depot_id' => $purchaseItems->first()->depot_id,
@@ -298,7 +309,7 @@ class DispatchDeliveryController extends Controller
                 'depots.name',
                 'fuel_types.name',
                 'trucks.truck_code',
-                'trucks.plate_number',
+                'trucks.name',
                 'drivers.name',
                 'drivers.phone',
                 'hauls.status',
@@ -340,7 +351,7 @@ class DispatchDeliveryController extends Controller
                 'schedule_items.fuel_names',
                 'schedule_items.scheduled_quantity_liters',
                 'trucks.truck_code',
-                'trucks.plate_number',
+                'trucks.name as truck_name',
                 'trucks.capacity_liters',
                 'drivers.name as driver_name',
                 'drivers.phone as driver_phone',
@@ -351,7 +362,7 @@ class DispatchDeliveryController extends Controller
 
         return $rows
             ->map(function (object $row) use ($liftRows, $loads): array {
-                $truck = trim($row->truck_code.($row->plate_number ? ' / '.$row->plate_number : ''));
+                $truck = TruckLabel::make($row->truck_name, $row->truck_code);
 
                 return [
                     'id' => 'dispatch-haul-'.$row->id,
@@ -647,14 +658,5 @@ class DispatchDeliveryController extends Controller
     private function formatNumber(mixed $value): string
     {
         return number_format((float) ($value ?? 0), 2);
-    }
-
-    private function nextCode(string $table, string $column, string $prefix): string
-    {
-        do {
-            $code = $prefix.'-'.now()->format('ymd').'-'.Str::upper(Str::random(5));
-        } while (DB::table($table)->where($column, $code)->exists());
-
-        return $code;
     }
 }

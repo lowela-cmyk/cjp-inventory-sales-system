@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Support\FilterDates;
+use App\Support\TruckLabel;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -164,14 +165,14 @@ class InventoryLedgerService
                 'hauls.hauled_at',
                 'hauls.status',
                 'trucks.truck_code',
-                'trucks.plate_number',
+                'trucks.name as truck_name',
                 'trucks.capacity_liters',
                 'drivers.name as driver_name',
                 'driver_profiles.driver_code',
             ])
             ->groupBy('purchase_item_id')
             ->map(fn (Collection $rows): Collection => $rows->values()->map(function (object $row, int $index): array {
-                $truck = trim($row->truck_code.($row->plate_number ? ' / '.$row->plate_number : ''));
+                $truck = TruckLabel::make($row->truck_name, $row->truck_code);
                 $details = [
                     'Lift ID' => $row->haul_code,
                     'Date Lifted' => $row->hauled_at ? $this->formatDateTime($row->hauled_at) : (in_array($row->status, ['lifted', 'completed'], true) ? 'Date unavailable' : 'Not yet lifted'),

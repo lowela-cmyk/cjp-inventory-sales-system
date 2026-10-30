@@ -109,7 +109,8 @@ class Phase5PerformanceTest extends TestCase
         });
 
         // Part 2 revisions: the purchase stock (Remaining) adds one batched lift total for the page.
-        $this->assertLessThanOrEqual(6, $haulQueries->count());
+        // Part 15: Cancel Purchase / locked fields add one more batched lift query for the page (not one per row).
+        $this->assertLessThanOrEqual(7, $haulQueries->count());
     }
 
     public function test_inventory_officer_purchases_are_paginated_at_twenty_five_per_page(): void

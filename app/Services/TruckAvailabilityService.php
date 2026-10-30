@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\TruckLabel;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Collection;
@@ -89,7 +90,7 @@ class TruckAvailabilityService
             ->whereNotExists(fn (Builder $query): Builder => $this->activeHaulSubquery($query))
             // A loaded truck (fuel still on it from a lift) cannot take a new lift.
             ->whereNotIn('id', $this->leftoverByTruck()->select('hauls.truck_id'))
-            ->orderByRaw('COALESCE(plate_number, truck_code)')
+            ->orderByRaw(TruckLabel::orderSql())
             ->get(['id', 'truck_code', 'plate_number', 'name', 'capacity_liters'])
             ->each(fn (object $truck) => $truck->effective_status = 'available');
     }

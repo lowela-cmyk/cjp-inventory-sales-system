@@ -7,10 +7,12 @@ use App\Services\DashboardSummaryService;
 use App\Services\GarageStockService;
 use App\Services\IdempotencyService;
 use App\Services\PurchaseStockService;
+use App\Services\RecordCodeService;
 use App\Services\SaleConfirmationService;
 use App\Services\SaleCorrectionService;
 use App\Support\F1Split;
 use App\Support\FilterDates;
+use App\Support\TruckLabel;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
@@ -28,7 +30,8 @@ class SalesOfficerCustomerController extends Controller
         private readonly SaleConfirmationService $saleConfirmationService,
         private readonly IdempotencyService $idempotencyService,
         private readonly SaleCorrectionService $saleCorrectionService,
-        private readonly PurchaseStockService $purchaseStock
+        private readonly PurchaseStockService $purchaseStock,
+        private readonly RecordCodeService $codes
     ) {}
 
     public const PAYMENT_STATUSES = ['clear', 'pending', 'partial', 'unpaid'];
@@ -130,7 +133,7 @@ class SalesOfficerCustomerController extends Controller
             'garageOptions' => $garageOptions = app(GarageStockService::class)->saleOptions($this->garageIdsOnSales()),
             'f1GarageOptions' => $garageOptions->where('fuel_code', F1Split::F1_CODE)->values(),
             'newOrderDeliveryStatuses' => self::NEW_ORDER_DELIVERY_STATUSES,
-            'deliveryTrucks' => DB::table('trucks')->where('status', '!=', 'inactive')->orderBy('truck_code')->get(['id', 'truck_code', 'plate_number']),
+            'deliveryTrucks' => DB::table('trucks')->where('status', '!=', 'inactive')->orderByRaw(TruckLabel::orderSql())->get(['id', 'truck_code', 'name']),
             'deliveryDrivers' => DB::table('users')->where('role', 'driver')->where('status', 'active')->orderBy('name')->get(['id', 'name']),
             'paymentStatuses' => self::PAYMENT_STATUSES,
             'accountStatuses' => self::ACCOUNT_STATUSES,
@@ -316,7 +319,7 @@ class SalesOfficerCustomerController extends Controller
                 (int) $request->user()->id,
                 function () use ($request, $data, $items, $requestedStatus, $initialAmountPaid, $initialReference): array {
                     return $this->idempotencyService->retryOnCollision('sale_code', function () use ($request, $data, $items, $requestedStatus, $initialAmountPaid, $initialReference): array {
-                        $saleCode = $this->saleCode();
+                        $saleCode = $this->saleCode($items);
 
                         $saleId = DB::table('sales')->insertGetId([
                             'sale_code' => $saleCode,
@@ -466,7 +469,8 @@ class SalesOfficerCustomerController extends Controller
         }
 
         try {
-            DB::transaction(function () use ($sale, $row, $data, $items, $hasDependencies, $request, $requestedStatus): void {
+            $newCode = null;
+            DB::transaction(function () use ($sale, $row, $data, $items, $hasDependencies, $request, $requestedStatus, &$newCode): void {
 
                 DB::table('sales')
                     ->where('id', $sale)
@@ -485,6 +489,7 @@ class SalesOfficerCustomerController extends Controller
                     ] : []));
 
                 if ($row->delivery_status !== 'delivered' && ! $hasDependencies && $this->changesProtectedSaleFields($row, $data)) {
+                    $firstFuelBefore = (int) DB::table('sale_items')->where('sale_id', $sale)->orderBy('id')->value('fuel_type_id');
                     DB::table('sale_items')->where('sale_id', $sale)->delete();
                     // Checked after the old lines are gone, so this sale's own reservation is not counted twice.
                     $this->assertPurchaseStock($items, (string) $data['delivery_type']);
@@ -492,6 +497,12 @@ class SalesOfficerCustomerController extends Controller
                     $now = now();
                     foreach ($items as $item) {
                         DB::table('sale_items')->insert($this->saleItemRow($sale, $item, $now));
+                    }
+
+                    // Part 15 #6: nothing depends on the sale yet, so a new first-line fuel gives it the next ID of that fuel.
+                    $firstFuel = (int) ($items[0]['fuel_type_id'] ?? 0);
+                    if ($firstFuel > 0 && $firstFuel !== $firstFuelBefore) {
+                        $newCode = $this->codes->recode(RecordCodeService::SALE, 'sale', $sale, $firstFuel);
                     }
                 }
 
@@ -521,7 +532,7 @@ class SalesOfficerCustomerController extends Controller
 
         return redirect()
             ->route($this->salesRedirectRoute($request))
-            ->with('status', 'Sale record updated successfully.');
+            ->with('status', 'Sale record updated successfully.'.($newCode ? ' New Order ID: '.$newCode.'.' : ''));
     }
 
     /**
@@ -957,7 +968,7 @@ class SalesOfficerCustomerController extends Controller
             'sales.delivery_driver_user_id',
             'sales.delivery_date',
             'delivery_trucks.truck_code as delivery_truck_code',
-            'delivery_trucks.plate_number as delivery_truck_plate',
+            'delivery_trucks.name as delivery_truck_name',
             'delivery_drivers.name as delivery_driver_name',
         ];
 
@@ -1002,7 +1013,7 @@ class SalesOfficerCustomerController extends Controller
                 $correctionAction = $this->saleCorrectionService->correctionMode($saleId);
                 $deliveryType = self::DELIVERY_TYPES[$row->delivery_type] ?? self::DELIVERY_TYPES['standard'];
                 $isStandard = $row->delivery_type !== 'depot_to_client';
-                $deliveryTruck = $row->delivery_truck_code ? trim($row->delivery_truck_code.($row->delivery_truck_plate ? ' / '.$row->delivery_truck_plate : '')) : 'N/A';
+                $deliveryTruck = $row->delivery_truck_code ? TruckLabel::make($row->delivery_truck_name, $row->delivery_truck_code) : 'N/A';
                 // Part 9: Payment Status is read-only and follows the recorded payments.
                 $paymentStatus = self::PAYMENT_STATUS_LABELS[$this->salePaymentStatus($saleTotal, $paid)];
                 $f1Summary = collect($saleItems)->filter(fn (array $item): bool => $item['f1_quantity_liters'] > 0)
@@ -1504,9 +1515,14 @@ class SalesOfficerCustomerController extends Controller
             || $existingItems !== $submittedItems;
     }
 
-    private function saleCode(): string
+    /**
+     * Part 15 #6: SLS-FUEL-NUMBER, FUEL being the main fuel of the first order line (F1 portions don't change it).
+     *
+     * @param  array<int, array<string, mixed>>  $items
+     */
+    private function saleCode(array $items): string
     {
-        return $this->nextCode('sales', 'sale_code', 'SLS');
+        return $this->codes->next(RecordCodeService::SALE, (int) ($items[0]['fuel_type_id'] ?? 0));
     }
 
     private function blankToNull(mixed $value): ?string

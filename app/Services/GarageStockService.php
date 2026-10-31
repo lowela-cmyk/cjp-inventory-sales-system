@@ -123,10 +123,10 @@ class GarageStockService
 
     /**
      * Garage tab (Inventory and Fuel Lifting): per-fuel tank cards (Tank 1 and Tank 2 side by side, each with its
-     * liters, free space and fill) and the lots with liters in the garage, filtered.
+     * liters, free space and fill), one row per tank (Part 16 #5) and the lots with liters in the garage, filtered.
      *
      * @param  array{fuel_type_id?: ?int, tank_id?: ?int, date_from?: ?string, date_to?: ?string}  $filters
-     * @return array{fuels: Collection<int, array<string, mixed>>, lots: Collection<int, \stdClass>, tankOptions: array<int, string>, fuelOptions: array<int, string>}
+     * @return array{fuels: Collection<int, array<string, mixed>>, tankRows: Collection<int, \stdClass>, lots: Collection<int, \stdClass>, tankOptions: array<int, string>, fuelOptions: array<int, string>}
      */
     public function tab(array $filters = [], ?string $search = null): array
     {
@@ -139,14 +139,46 @@ class GarageStockService
             'capacity' => round((float) $fuelTanks->sum('capacity'), 2),
         ])->values();
 
+        $lotFilters = [
+            'fuel_type_id' => $filters['fuel_type_id'] ?? null,
+            'storage_location_id' => $filters['tank_id'] ?? null,
+            'date_from' => $filters['date_from'] ?? null,
+            'date_to' => $filters['date_to'] ?? null,
+        ];
+        $search = trim((string) $search) ?: null;
+
+        // Part 16 #5: one row per tank. Search and the Date Unloaded range keep the tanks with a matching lot (search
+        // also matches the tank name); Fuel Type and Tank narrow the tanks. Each tank carries all its lots, newest first
+        // (emptied ones too, so recent unloads stay visible), and its stock by purchase.
+        $history = $this->lots(['with_empty' => true])->values();
+        $narrowed = $search !== null || ($filters['date_from'] ?? null) || ($filters['date_to'] ?? null);
+        $matchingTanks = $narrowed ? $this->lots($lotFilters + ['with_empty' => true], $search)->pluck('storage_location_id')->map(fn (mixed $id): int => (int) $id)->unique()->all() : null;
+        $tankRows = $tanks
+            ->when($filters['fuel_type_id'] ?? null, fn (Collection $tanks, mixed $id): Collection => $tanks->where('fuel_type_id', (int) $id))
+            ->when($filters['tank_id'] ?? null, fn (Collection $tanks, mixed $id): Collection => $tanks->where('id', (int) $id))
+            ->filter(fn (object $tank): bool => $matchingTanks === null || in_array((int) $tank->id, $matchingTanks, true)
+                || ($search !== null && ! ($filters['date_from'] ?? null) && ! ($filters['date_to'] ?? null) && stripos((string) $tank->name, $search) !== false))
+            ->map(function (object $tank) use ($history): object {
+                $row = clone $tank;
+                $row->lots = $history->where('storage_location_id', $tank->id)->values();
+                $row->purchases = $row->lots->filter(fn (object $lot): bool => $lot->in_garage > 0)
+                    ->groupBy('purchase_code')
+                    ->map(fn (Collection $lots, string $code): array => [
+                        'purchase_code' => $code,
+                        'liters' => round((float) $lots->sum('in_garage'), 2),
+                        'percent' => $tank->contents > 0 ? round((float) $lots->sum('in_garage') / $tank->contents * 100, 1) : 0.0,
+                    ])
+                    ->sortByDesc('liters')
+                    ->values();
+
+                return $row;
+            })
+            ->values();
+
         return [
             'fuels' => $fuels,
-            'lots' => $this->lots([
-                'fuel_type_id' => $filters['fuel_type_id'] ?? null,
-                'storage_location_id' => $filters['tank_id'] ?? null,
-                'date_from' => $filters['date_from'] ?? null,
-                'date_to' => $filters['date_to'] ?? null,
-            ], $search)->values(),
+            'tankRows' => $tankRows,
+            'lots' => $this->lots($lotFilters, $search)->values(),
             'tankOptions' => $tanks->mapWithKeys(fn (object $tank): array => [(int) $tank->id => $tank->name])->all(),
             'fuelOptions' => $fuels->mapWithKeys(fn (array $fuel): array => [$fuel['fuel_type_id'] => $fuel['fuel_name']])->all(),
         ];

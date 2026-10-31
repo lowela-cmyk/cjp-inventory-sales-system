@@ -4715,11 +4715,61 @@ body.login-page {
     }
 }
 
-/* Part 13: the Garage lot table fits its frame; "From Lift" (lift ID / truck) and the unload date wrap. */
-.admin-table.garage-table td:nth-child(6),
-.admin-table.garage-table td:nth-child(7) {
+/* Part 13: the Garage lot table fits its frame; "From Lift" (lift ID / truck) and the unload date wrap.
+   Part 16: the lots are listed in the tank's View modal. */
+.admin-table.garage-lot-table td:nth-child(4),
+.admin-table.garage-lot-table td:nth-child(5) {
     min-width: 120px;
     white-space: normal;
+}
+
+.admin-table.garage-lot-table {
+    width: 100%;
+}
+
+/* Part 16 #5: View Tank Stock — quantity and remaining capacity, then the stock split by purchase. */
+.garage-tank-figures {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 8px 24px;
+    margin: 6px 0 14px;
+    padding: 10px 14px;
+    border: 1px solid #d9d9d9;
+    border-radius: 6px;
+    font-size: 14px;
+}
+
+.garage-tank-split {
+    display: flex;
+    min-height: 92px;
+    margin-bottom: 14px;
+    overflow: hidden;
+    border-radius: 6px;
+    background: #f1f1f1;
+}
+
+.garage-tank-share {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 2px;
+    min-width: 96px;
+    padding: 8px;
+    color: #fff;
+    font-size: 13px;
+    text-align: center;
+    background: #8f1d2c;
+}
+
+.garage-tank-share:nth-child(even) {
+    background: #b3283c;
+}
+
+.garage-tank-share-code {
+    font-weight: 700;
+    word-break: break-all;
 }
 
 .admin-table.garage-table {
@@ -4759,17 +4809,20 @@ body.login-page {
     grid-column: 2;
 }
 
-/* Record Sales: purchases with 0 L in the depot but fuel in the garage or on a truck. */
-.sale-stock-hints {
-    margin: 6px 0 0;
-    padding: 8px 12px 8px 28px;
-    border-left: 4px solid var(--warning);
-    border-radius: 6px;
+/* Part 16 #2 Record Sales: one compact full-width line under Fuel Type (outside the field grid, so no cell grows):
+   the selected fuel's garage / truck stock, or the summary while no fuel is selected. */
+.sale-order-line > .sale-stock-hint {
+    grid-column: 1 / -1;
+    margin: -12px 0 0;
+    padding: 6px 10px;
+    border-left: 3px solid var(--warning);
+    border-radius: 4px;
     background: #fff7ec;
-    font-size: 13px;
+    font-size: 12.5px;
     font-weight: 600;
+    line-height: 1.35;
 }
 
-.sale-stock-hints li + li {
-    margin-top: 4px;
+.sale-order-line > .sale-stock-hint.is-empty {
+    display: none;
 }

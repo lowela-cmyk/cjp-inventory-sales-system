@@ -58,7 +58,10 @@ class SaleStockOptionsTest extends AuditTestCase
         $this->assertStringNotContainsString('<option value="'.$sold.'" data-source="depot"', $form);
         $this->assertStringNotContainsString('<option value="'.$lifted.'" data-source="depot"', $form);
         $code = (string) DB::table('purchase_items')->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')->where('purchase_items.id', $lifted)->value('purchase_code');
-        $this->assertStringContainsString('<li>'.$code.' has 0 L in the depot but 10,000 L on a truck — deliver it from the truck in Fuel Lifting.</li>', $form);
+        // Part 16 #2: one line per fuel (shown for the selected fuel) and a one-line summary while none is selected.
+        $this->assertStringContainsString('<span data-stock-hint-fuel="UNL" hidden>Unleaded: 10,000 L on a truck ('.$code.', 0 L in the depot) — deliver it from the truck in Fuel Lifting.</span>', $form);
+        $this->assertStringContainsString('<span data-stock-hint-summary>Not in the depot: Unleaded 10,000 L (garage / truck) — pick a fuel for details, or use Garage to Client.</span>', $form);
+        $this->assertSame(1, substr_count($form, 'data-stock-hint '), 'one hint line, outside the field cells');
         // The order that already uses the 0-L purchase keeps it in its Edit modal.
         $this->assertMatchesRegularExpression('/<option value="'.$sold.'" data-source="depot"[^>]*selected/', $this->actingAs($a['sales'])->get(route('sales-officer.sales'))->getContent());
 
@@ -66,7 +69,7 @@ class SaleStockOptionsTest extends AuditTestCase
         $this->actingAs($a['admin'])->get(route('admin.inventory'))->assertOk();
         $tank = (int) DB::table('storage_locations')->where('type', 'garage')->where('status', 'active')->where('fuel_type_id', $this->fuel('UNL'))->where('tank_number', 1)->value('id');
         $this->actingAs($a['admin'])->from(route('admin.fuel-lifting'))->post(route('admin.fuel-lifting.hauls.unload-to-garage', $haulId), ['unload' => [$haulId => [$tank => 6000]]])->assertSessionHasNoErrors();
-        $this->assertStringContainsString('<li>'.$code.' has 0 L in the depot but 6,000 L in the garage and 4,000 L on a truck — use Garage to Client.</li>', $this->recordSalesForm($a));
+        $this->assertStringContainsString('>Unleaded: 6,000 L in the garage and 4,000 L on a truck ('.$code.', 0 L in the depot) — use Garage to Client.</span>', $this->recordSalesForm($a));
 
         // The server still refuses a depot order from it.
         $this->recordOrder($a, ['purchase_item_id' => $lifted, 'quantity_liters' => 100, 'unit_price' => 60])->assertSessionHasErrors();
@@ -136,8 +139,8 @@ class SaleStockOptionsTest extends AuditTestCase
 
         // Sellable through Garage to Client, and the hint points there.
         $form = $this->recordSalesForm($a);
-        $this->assertSame(2, substr_count($form, 'data-source="garage"'));
-        $this->assertStringContainsString('<li>PUR-LEGACY has 0 L in the depot but 25,000 L in the garage — use Garage to Client.</li>', $form);
+        $this->assertSame(2, substr_count($form, 'data-source="garage" data-fuel-code="DSL"'));
+        $this->assertStringContainsString('>Diesel: 25,000 L in the garage (PUR-LEGACY, 0 L in the depot) — use Garage to Client.</span>', $form);
 
         $migration->down();
         $this->assertSame(0, DB::table('garage_stocks')->count());

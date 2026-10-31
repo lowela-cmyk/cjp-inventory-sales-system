@@ -1,14 +1,18 @@
-{{-- Part 2 revisions: one Depot to Client order delivered by the lift. Ordered Quantity fills from the order. --}}
+{{-- Part 2 revisions: one Depot to Client order delivered by the lift. Ordered Quantity fills from the order.
+     Inside lift-form: $prefix keeps ids unique per form, $fieldError shows only the submitted form's errors. --}}
+@php
+    $deliveryError = isset($fieldError) ? $fieldError("deliveries.$deliveryIndex.sale_id") : null;
+@endphp
 <div class="lift-row lift-delivery-row" data-delivery-row>
     <div class="lift-field">
-        <label for="dispatch_delivery_sale_{{ $deliveryIndex }}">Order ID / Sales Order</label>
-        <select id="dispatch_delivery_sale_{{ $deliveryIndex }}" name="deliveries[{{ $deliveryIndex }}][sale_id]" data-delivery-sale required @error("deliveries.$deliveryIndex.sale_id") aria-invalid="true" @enderror>
+        <label for="{{ $prefix ?? 'dispatch' }}_delivery_sale_{{ $deliveryIndex }}">Order ID / Sales Order</label>
+        <select id="{{ $prefix ?? 'dispatch' }}_delivery_sale_{{ $deliveryIndex }}" name="deliveries[{{ $deliveryIndex }}][sale_id]" data-delivery-sale required @if ($deliveryError) aria-invalid="true" @endif>
             <option value="">Select Order ID</option>
             @foreach ($directSaleOptions as $directSale)
                 <option value="{{ $directSale->sale_id }}" data-purchase-item-id="{{ $directSale->purchase_item_id }}" data-fuel-type-id="{{ $directSale->fuel_type_id }}" data-liters="{{ $directSale->open_liters }}" data-ordered="{{ $directSale->ordered_label }}" @selected((string) $selectedSale === (string) $directSale->sale_id)>{{ $directSale->label }}</option>
             @endforeach
         </select>
-        @error("deliveries.$deliveryIndex.sale_id")<p class="field-error">{{ $message }}</p>@enderror
+        @if ($deliveryError)<p class="field-error">{{ $deliveryError }}</p>@endif
     </div>
     <div class="lift-field">
         <span class="lift-field-label">Ordered Quantity</span>

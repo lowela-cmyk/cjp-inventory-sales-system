@@ -72,6 +72,8 @@ Route::middleware(['auth'])->group(function () {
         Route::patch('/trucks/{truck}', [TruckController::class, 'update'])->name('trucks.update');
         Route::patch('/trucks/{truck}/status', [TruckController::class, 'toggleStatus'])->name('trucks.status');
         Route::patch('/fuel-lifting/hauls/{haul}/truck', [HaulTruckAssignmentController::class, 'update'])->name('fuel-lifting.hauls.truck');
+        // Part 16 #4: edit a lift while it is still Scheduled.
+        Route::patch('/fuel-lifting/hauls/{haul}/lift', [DispatchDeliveryController::class, 'updateLift'])->name('fuel-lifting.hauls.lift');
         Route::patch('/fuel-lifting/hauls/{haul}/status', [DispatchLiftingStatusController::class, 'updateStatus'])->name('fuel-lifting.hauls.status');
         Route::delete('/fuel-lifting/hauls/{haul}', [DispatchLiftingStatusController::class, 'destroy'])->name('fuel-lifting.hauls.destroy');
         Route::post('/fuel-lifting/hauls/{haul}/truck-deliveries', [LiftLeftoverController::class, 'deliver'])->name('fuel-lifting.hauls.truck-deliveries.store');
@@ -116,6 +118,8 @@ Route::middleware(['auth'])->group(function () {
         Route::patch('/trucks/{truck}/status', [TruckController::class, 'toggleStatus'])->name('trucks.status');
         Route::post('/fuel-lifting/hauls', [DispatchDeliveryController::class, 'store'])->name('fuel-lifting.hauls.store');
         Route::patch('/fuel-lifting/hauls/{haul}/truck', [HaulTruckAssignmentController::class, 'update'])->name('fuel-lifting.hauls.truck');
+        // Part 16 #4: edit a lift while it is still Scheduled.
+        Route::patch('/fuel-lifting/hauls/{haul}/lift', [DispatchDeliveryController::class, 'updateLift'])->name('fuel-lifting.hauls.lift');
         Route::patch('/fuel-lifting/hauls/{haul}/status', [DispatchLiftingStatusController::class, 'updateStatus'])->name('fuel-lifting.hauls.status');
         Route::delete('/fuel-lifting/hauls/{haul}', [DispatchLiftingStatusController::class, 'destroy'])->name('fuel-lifting.hauls.destroy');
         Route::post('/fuel-lifting/hauls/{haul}/truck-deliveries', [LiftLeftoverController::class, 'deliver'])->name('fuel-lifting.hauls.truck-deliveries.store');

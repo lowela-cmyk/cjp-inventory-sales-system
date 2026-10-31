@@ -1369,9 +1369,9 @@ class SalesOfficerCustomerController extends Controller
             $f1Lot = ($item['f1_garage_stock_id'] ?? null) ? $lots->get((int) $item['f1_garage_stock_id']) : null;
             $f1Line = $item['f1_purchase_item_id'] ? $lines->get($item['f1_purchase_item_id']) : null;
             $f1Portion = 'the '.number_format($item['f1_quantity_liters'], 2).' L F1 portion';
-            if ($f1Lot && ! $isGarage) {
-                $errors["items.$index.f1_purchase_item_id"] = 'Only a Garage to Client order takes its F1 portion from garage stock.';
-            } elseif (! $f1Line || (int) $f1Line->fuel_type_id !== $f1FuelId || ($f1Lot && (int) $f1Lot->fuel_type_id !== $f1FuelId)) {
+            // Part 16 #1: the F1 portion may come from an F1 purchase in the depot or an F1 garage tank, whatever the
+            // delivery type (it is blended in, so it does not ride with the order's own fuel).
+            if (! $f1Line || (int) $f1Line->fuel_type_id !== $f1FuelId || ($f1Lot && (int) $f1Lot->fuel_type_id !== $f1FuelId)) {
                 $errors["items.$index.f1_purchase_item_id"] = 'Select the F1 purchase or F1 garage tank for '.$f1Portion.'.';
             } else {
                 $take("items.$index.f1_purchase_item_id", $f1Lot, $f1Line, $item['f1_quantity_liters'], $f1Portion);
@@ -1973,20 +1973,35 @@ class SalesOfficerCustomerController extends Controller
     }
 
     /**
-     * Record Sales hints: purchases with no liters left to sell from the depot whose fuel is in the garage or on a truck.
+     * Record Sales hint (Part 16 #2): fuel whose purchases have no liters left to sell from the depot but have fuel in
+     * the garage or on a truck. One compact line per fuel (shown for the selected fuel) and one summary line (shown
+     * while no fuel is selected).
      *
-     * @return array<int, string>
+     * @return array{summary: ?string, fuels: array<string, string>}
      */
     private function stockHints(): array
     {
-        return $this->purchaseStock->lines()
+        $liters = fn (float $value): string => number_format($value, fmod($value, 1.0) === 0.0 ? 0 : 2).' L';
+        $byFuel = $this->purchaseStock->lines()
             ->filter(fn (object $line): bool => $line->available <= 0 && ($line->in_garage > 0 || $line->on_truck > 0))
-            ->map(fn (object $line): string => $line->purchase_code.' has 0 L in the depot but '.implode(' and ', array_filter([
-                $line->in_garage > 0 ? number_format($line->in_garage, fmod($line->in_garage, 1.0) === 0.0 ? 0 : 2).' L in the garage' : null,
-                $line->on_truck > 0 ? number_format($line->on_truck, fmod($line->on_truck, 1.0) === 0.0 ? 0 : 2).' L on a truck' : null,
-            ]))." \u{2014} ".($line->in_garage > 0 ? 'use Garage to Client.' : 'deliver it from the truck in Fuel Lifting.'))
-            ->values()
-            ->all();
+            ->groupBy('fuel_code');
+
+        $fuels = $byFuel->map(function ($lines) use ($liters): string {
+            $garage = round((float) $lines->sum('in_garage'), 2);
+            $truck = round((float) $lines->sum('on_truck'), 2);
+
+            return $lines->first()->fuel_name.': '.implode(' and ', array_filter([
+                $garage > 0 ? $liters($garage).' in the garage' : null,
+                $truck > 0 ? $liters($truck).' on a truck' : null,
+            ])).' ('.$lines->pluck('purchase_code')->implode(', ').", 0 L in the depot) \u{2014} "
+                .($garage > 0 ? 'use Garage to Client.' : 'deliver it from the truck in Fuel Lifting.');
+        })->all();
+
+        $summary = $byFuel->isEmpty() ? null : 'Not in the depot: '.$byFuel
+            ->map(fn ($lines): string => $lines->first()->fuel_name.' '.$liters(round((float) $lines->sum('in_garage') + (float) $lines->sum('on_truck'), 2)))
+            ->implode(', ')." (garage / truck) \u{2014} pick a fuel for details, or use Garage to Client.";
+
+        return ['summary' => $summary, 'fuels' => $fuels];
     }
 
     private function purchaseIdsOnSales(): array

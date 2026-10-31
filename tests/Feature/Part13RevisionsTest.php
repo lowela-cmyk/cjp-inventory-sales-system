@@ -146,11 +146,17 @@ class Part13RevisionsTest extends AuditTestCase
             $this->assertStringContainsString('data-garage-tank="'.$t2.'"', $page);
             $this->assertStringContainsString('24,000.00 L <small>(100%)</small>', $page);
             $this->assertStringContainsString('6,000.00 L <small>(25%)</small>', $page);
-            // Four lots: 20,000 + 4,000 (first unload), 4,000 + 2,000 (second).
-            $this->assertSame(4, substr_count($page, '<td>Diesel Tank'));
+            // Part 16 #5: one row per tank (8), each with a View; the lots are in the tank's View modal:
+            // Tank 1: 20,000 + 4,000 (first and second unload), Tank 2: 4,000 + 2,000.
+            $this->assertSame(8, substr_count($page, 'data-modal-open="garage-tank-'));
+            $this->assertStringContainsString('<td><strong>Diesel Tank 1</strong></td>', $page);
+            foreach ([$t1 => 2, $t2 => 2] as $tank => $lots) {
+                $modal = substr($page, strpos($page, 'id="garage-tank-'.$tank.'"'), 6000);
+                $this->assertSame($lots, substr_count(substr($modal, 0, strpos($modal, '</tbody>')), '<td class="cell-id">'));
+            }
             $filtered = $this->actingAs($user)->get(route($route, ['tank_id' => $t2]))->assertOk()->getContent();
-            $this->assertSame(2, substr_count($filtered, '<td>Diesel Tank 2</td>'));
-            $this->assertSame(0, substr_count($filtered, '<td>Diesel Tank 1</td>'));
+            $this->assertSame(1, substr_count($filtered, 'data-modal-open="garage-tank-'));
+            $this->assertStringContainsString('<td><strong>Diesel Tank 2</strong></td>', $filtered);
         }
         $this->actingAs($a['admin'])->get(route('admin.dashboard'))->assertOk()->assertSee('Garage Tanks')->assertSee('Tank 1: 24,000.00 L (100%)')->assertSee('Tank 2: 6,000.00 L (25%)');
         $this->actingAs($a['driver'])->get('/dispatch/fuel-lifting/garage')->assertForbidden();
@@ -246,9 +252,13 @@ class Part13RevisionsTest extends AuditTestCase
         $this->assertSame(['depot', null, 100.0], [$f1Out->source_type, $f1Out->garage_stock_id, (float) $f1Out->quantity_liters]);
         $this->assertSame(1900.0, app(GarageStockService::class)->lot($f1Lot)->in_garage);
 
-        // A Standard order cannot take a garage tank, not even for its F1 portion.
-        $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 1000, 'unit_price' => 50, 'f1_percentage' => 10, 'f1_purchase_item_id' => 'garage:'.$f1Lot, 'f1_unit_price' => 40])
-            ->assertSessionHasErrors('items.0.f1_purchase_item_id');
+        // Part 16 #1: a Standard order may take its F1 portion from an F1 garage tank too; on delivery it leaves the tank.
+        $depotPremium = $this->purchaseLine($a, 'PREM', 5000);
+        $this->recordOrder($a, ['purchase_item_id' => $depotPremium, 'quantity_liters' => 1000, 'unit_price' => 50, 'f1_percentage' => 10, 'f1_purchase_item_id' => 'garage:'.$f1Lot, 'f1_unit_price' => 40])
+            ->assertSessionHasNoErrors();
+        $this->deliverOrder($a, $this->lastSaleId())->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('stock_outs', ['sale_id' => $this->lastSaleId(), 'portion' => 'f1', 'source_type' => 'garage', 'garage_stock_id' => $f1Lot, 'quantity_liters' => 100]);
+        $this->assertSame(1800.0, app(GarageStockService::class)->lot($f1Lot)->in_garage);
     }
 
     /**

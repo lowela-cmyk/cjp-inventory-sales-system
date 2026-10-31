@@ -31,11 +31,12 @@ class LiftAllocationService
      * Open Depot to Client orders not on a lift yet: "Customer · Sales Order No.", with the purchase they come from
      * and their Ordered Quantity ("PREMIUM - 4,000.00 L").
      *
+     * @param  array<int, int>  $exceptHaulIds  a lift being edited: its own orders are listed too
      * @return Collection<int, \stdClass>
      */
-    public function directSaleOptions(): Collection
+    public function directSaleOptions(array $exceptHaulIds = []): Collection
     {
-        return $this->openDirectSales()
+        return $this->openDirectSales(false, ['depot_to_client'], $exceptHaulIds)
             ->map(function (object $sale): object {
                 $sale->label = ($sale->customer_name ?: $sale->company_name).' · '.($sale->sales_order_number ?: $sale->sale_code);
                 $sale->ordered_label = mb_strtoupper((string) $sale->fuel_name).' - '.number_format($sale->open_liters, 2).' L';
@@ -52,15 +53,16 @@ class LiftAllocationService
      * @param  array<int, array<string, mixed>>  $deliveries  each with sale_id
      * @param  array<int, array{purchase_item_id: int, quantity_liters: float}>  $lines  the lift's purchases
      * @param  array<int, int>  $fuelTypeByItem  purchase_item_id => fuel_type_id
+     * @param  array<int, int>  $exceptHaulIds  the lift being edited: its own orders count as open
      * @return array<int, array<int, array{sale_id: int, customer_id: int, quantity_liters: float}>> line index => rows
      *
      * @throws ValidationException
      */
-    public function resolveDeliveries(array $deliveries, array $lines, array $fuelTypeByItem): array
+    public function resolveDeliveries(array $deliveries, array $lines, array $fuelTypeByItem, array $exceptHaulIds = []): array
     {
         $errors = [];
         $resolved = [];
-        $open = $this->openDirectSales(true)->keyBy('sale_id');
+        $open = $this->openDirectSales(true, ['depot_to_client'], $exceptHaulIds)->keyBy('sale_id');
         $seen = [];
         $total = 0.0;
 
@@ -260,15 +262,18 @@ class LiftAllocationService
      * Open orders of the given delivery types without a lift (planned or delivered), with their purchase and open liters.
      *
      * @param  array<int, string>  $deliveryTypes
+     * @param  array<int, int>  $exceptHaulIds
      * @return Collection<int, \stdClass>
      */
-    private function openDirectSales(bool $lock = false, array $deliveryTypes = ['depot_to_client']): Collection
+    private function openDirectSales(bool $lock = false, array $deliveryTypes = ['depot_to_client'], array $exceptHaulIds = []): Collection
     {
+        // Part 16 #4: editing a lift, its own orders stay selectable ($exceptHaulIds are the lift's hauls).
         $onLift = DB::table('haul_allocations')
             ->select('sale_id')
             ->where('destination_type', 'customer')
             ->where('status', '!=', 'cancelled')
-            ->whereNotNull('sale_id');
+            ->whereNotNull('sale_id')
+            ->when($exceptHaulIds !== [], fn ($query) => $query->whereNotIn('haul_id', $exceptHaulIds));
 
         return DB::table('sales')
             ->join('customers', 'customers.id', '=', 'sales.customer_id')

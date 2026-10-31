@@ -49,18 +49,23 @@ const update = (form) => {
     const first = rows[0]?.querySelector('[data-lifting-purchase]')?.selectedOptions?.[0];
     const firstFuel = first?.value && !('f1' in first.dataset) ? first.dataset.fuelTypeId : '';
     const firstDepot = first?.value ? first.dataset.depotId : '';
+    // Part 16 #3: a Purchase ID chosen in one row is not offered in the others (it comes back when that row changes or
+    // is removed).
+    const chosenPurchases = rows.map((row) => row.querySelector('[data-lifting-purchase]')?.value || '');
     let cleared = false;
-    rows.slice(1).forEach((row) => {
+    rows.forEach((row, index) => {
         const select = row.querySelector('[data-lifting-purchase]');
         if (!select) return;
         [...select.options].forEach((option) => {
             if (!option.value) return;
-            const otherFuel = Boolean(firstFuel) && option.dataset.fuelTypeId !== firstFuel && !('f1' in option.dataset);
-            const other = Boolean(firstDepot) && (otherFuel || option.dataset.depotId !== firstDepot);
-            option.hidden = other;
-            option.disabled = other;
+            const otherFuel = index > 0 && Boolean(firstFuel) && option.dataset.fuelTypeId !== firstFuel && !('f1' in option.dataset);
+            const otherDepot = index > 0 && Boolean(firstDepot) && option.dataset.depotId !== firstDepot;
+            const takenElsewhere = chosenPurchases.some((value, other) => other !== index && value === option.value);
+            const hide = otherFuel || otherDepot || takenElsewhere;
+            option.hidden = hide;
+            option.disabled = hide;
         });
-        if (select.selectedOptions[0]?.disabled) {
+        if (index > 0 && select.selectedOptions[0]?.disabled) {
             select.value = '';
             cleared = true;
         }

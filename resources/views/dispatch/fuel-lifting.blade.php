@@ -5,6 +5,7 @@
     $summaryCards = $summaryCards ?? [];
     $purchaseItems = $purchaseItems ?? collect();
     $directSaleOptions = $directSaleOptions ?? collect();
+    $liftEdits = $liftEdits ?? [];
     $truckAssignmentIdempotencyKey = $truckAssignmentIdempotencyKey ?? (string) \Illuminate\Support\Str::uuid();
     // The same page serves Dispatch Officers and Admin (who may also act on behalf of drivers).
     $isAdminLifting = request()->routeIs('admin.*');
@@ -163,131 +164,57 @@
 
     @include('trucks.partials.modals')
 
+    {{-- Part 16 #4: Edit Lift (a lift still Scheduled), the Schedule Lift form with the lift's current values. --}}
+    @foreach ($liftEdits as $rowId => $edit)
+        @php
+            $editContext = 'edit-'.$rowId;
+            $editFailed = old('form_context') === $editContext && $errors->any();
+            $editHaulId = (int) substr($rowId, strlen('dispatch-haul-'));
+        @endphp
+        <x-admin.modal id="{{ $rowId }}-edit" title="Edit Lift" size="xl">
+            @if ($editFailed)
+                <span hidden data-open-modal-on-load="{{ $rowId }}-edit"></span>
+            @endif
+            @include('dispatch.partials.lift-form', [
+                'formId' => $rowId.'-edit-form',
+                'action' => route($liftRoutePrefix.'.hauls.lift', $editHaulId),
+                'method' => 'PATCH',
+                'prefix' => $rowId.'_edit',
+                'formContext' => $editContext,
+                'idempotencyKey' => null,
+                'values' => $editFailed
+                    ? ['truck_id' => old('truck_id'), 'driver_user_id' => old('driver_user_id'), 'scheduled_at' => old('scheduled_at'), 'dr_number' => old('dr_number')]
+                    : $edit['values'],
+                'lines' => $editFailed ? (array_values(old('items', [])) ?: [[]]) : $edit['lines'],
+                'deliveries' => $editFailed ? array_values(old('deliveries', [])) : $edit['deliveries'],
+                'trucks' => $edit['trucks'],
+                'purchaseItems' => $edit['purchaseItems'],
+                'directSaleOptions' => $edit['directSaleOptions'],
+                'showErrors' => $editFailed,
+            ])
+            <x-slot:footer>
+                <button class="btn btn-pill btn-secondary" type="submit" form="{{ $rowId }}-edit-form">Apply Changes</button>
+                <button class="btn btn-pill btn-danger" type="button" data-modal-close>Close</button>
+            </x-slot:footer>
+        </x-admin.modal>
+    @endforeach
+
     <x-admin.modal id="dispatch-lift-add" reset-on-close title="Schedule Lift" size="xl">
         @if ($scheduleFormFailed)
             <span hidden data-open-modal-on-load="dispatch-lift-add"></span>
         @endif
-        <form id="lift-schedule-form" class="lift-form" method="POST" action="{{ route($liftRoutePrefix.'.hauls.store') }}" data-prevent-double-submit data-lifting-schedule-form>
-            @csrf
-            <input type="hidden" name="idempotency_key" value="{{ $createIdempotencyKey }}">
-            <input type="hidden" name="form_context" value="schedule-lift">
-
-            @error('lift')
-                <p class="form-alert" role="alert">{{ $message }}</p>
-            @enderror
-
-            {{-- Part 2 revisions (mockup): Lift Details (truck, driver, date, purchases), then Delivery Details. --}}
-            <h3 class="lift-section-title">Lift Details</h3>
-            <section class="lift-form-section lift-header-card" aria-label="Lift details">
-                <div class="lift-fields lift-fields-3">
-                    <div class="lift-field">
-                        <label for="dispatch_truck_id">Truck ID</label>
-                        <select id="dispatch_truck_id" name="truck_id" required @error('truck_id') aria-invalid="true" @enderror>
-                            <option value="">Select Truck</option>
-                            @foreach ($trucks as $truck)
-                                <option value="{{ $truck->id }}" data-capacity="{{ $truck->capacity_liters }}" @selected((string) old('truck_id') === (string) $truck->id)>{{ \App\Support\TruckLabel::make($truck->name, $truck->truck_code) }} – {{ number_format((float) $truck->capacity_liters, 2) }} L – Available</option>
-                            @endforeach
-                        </select>
-                        @error('truck_id')<p class="field-error">{{ $message }}</p>@enderror
-                    </div>
-                    <div class="lift-field">
-                        <label for="dispatch_driver_user_id">Driver</label>
-                        <select id="dispatch_driver_user_id" name="driver_user_id" required @error('driver_user_id') aria-invalid="true" @enderror>
-                            <option value="">{{ $drivers->isEmpty() ? 'No active drivers available' : 'Select Driver' }}</option>
-                            @foreach ($drivers as $driver)
-                                <option value="{{ $driver->id }}" @selected((string) old('driver_user_id') === (string) $driver->id)>{{ $driver->name }}{{ $driver->driver_code ? ' / '.$driver->driver_code : '' }}</option>
-                            @endforeach
-                        </select>
-                        @error('driver_user_id')<p class="field-error">{{ $message }}</p>@enderror
-                    </div>
-                    <div class="lift-field">
-                        <label for="dispatch_scheduled_at">Lift Date</label>
-                        <input id="dispatch_scheduled_at" name="scheduled_at" type="datetime-local" value="{{ old('scheduled_at') }}" required @error('scheduled_at') aria-invalid="true" @enderror>
-                        @error('scheduled_at')<p class="field-error">{{ $message }}</p>@enderror
-                    </div>
-                </div>
-
-                <div class="lift-lines" data-lifting-items>
-                    @foreach ($liftLines as $index => $oldItem)
-                        <div class="lift-line" data-lifting-item>
-                            <div class="lift-fields lift-fields-3">
-                                <div class="lift-field">
-                                    <label for="dispatch_purchase_{{ $index }}">Purchase ID</label>
-                                    <select id="dispatch_purchase_{{ $index }}" name="items[{{ $index }}][purchase_item_id]" data-lifting-purchase required>
-                                        <option value="">{{ $purchaseItems->isEmpty() ? 'No purchases in the depot' : 'Select Purchase ID' }}</option>
-                                        @foreach ($purchaseItems as $purchaseItem)
-                                            <option value="{{ $purchaseItem->id }}" data-depot-id="{{ $purchaseItem->depot_id }}" data-pickup="{{ $purchaseItem->pickup_label }}" data-fuel="{{ $purchaseItem->fuel_name }}" data-fuel-type-id="{{ $purchaseItem->fuel_type_id }}" @if ((int) $purchaseItem->fuel_type_id === \App\Support\F1Split::f1FuelId()) data-f1 @endif data-remaining="{{ $purchaseItem->remaining_liters }}" data-remaining-label="{{ $purchaseItem->remaining_label }}" @selected((string) ($oldItem['purchase_item_id'] ?? '') === (string) $purchaseItem->id)>{{ $purchaseItem->label }}</option>
-                                        @endforeach
-                                    </select>
-                                    @error("items.$index.purchase_item_id")<p class="field-error">{{ $message }}</p>@enderror
-                                </div>
-                                <div class="lift-field">
-                                    <span class="lift-field-label">Fuel / Remaining in Depot</span>
-                                    <p class="lift-line-summary-text" data-purchase-summary>Select Purchase ID</p>
-                                </div>
-                                <div class="lift-field">
-                                    <label for="dispatch_quantity_{{ $index }}">Amount to Lift</label>
-                                    <div class="input-suffix">
-                                        <input id="dispatch_quantity_{{ $index }}" name="items[{{ $index }}][quantity_liters]" data-lifting-quantity type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="Enter Amount" value="{{ $oldItem['quantity_liters'] ?? '' }}" required>
-                                        <span aria-hidden="true">L</span>
-                                    </div>
-                                    @error("items.$index.quantity_liters")<p class="field-error">{{ $message }}</p>@enderror
-                                </div>
-                                <div class="lift-field lift-span-2">
-                                    <label for="dispatch_atl_{{ $index }}">Authority to Load</label>
-                                    <input id="dispatch_atl_{{ $index }}" name="items[{{ $index }}][atl_number]" type="text" maxlength="100" placeholder="Enter ATL" value="{{ $oldItem['atl_number'] ?? '' }}" @error("items.$index.atl_number") aria-invalid="true" @enderror>
-                                    @error("items.$index.atl_number")<p class="field-error">{{ $message }}</p>@enderror
-                                </div>
-                                <div class="lift-purchase-buttons">
-                                    <button class="btn btn-secondary" type="button" data-lifting-item-add>+ Add Purchase</button>
-                                    <button class="btn btn-danger" type="button" data-lifting-item-remove disabled>Remove Purchase</button>
-                                </div>
-                            </div>
-                        </div>
-                    @endforeach
-                </div>
-
-                {{-- Part 15: shown when changing the first purchase's fuel cleared the other purchase rows. --}}
-                <p class="lifting-empty-note" role="status" data-lifting-fuel-note hidden></p>
-
-                {{-- Kept at the client's request (not on the mockup). --}}
-                <div class="lift-fields lift-fields-3">
-                    <div class="lift-field">
-                        <label for="dispatch_dr_number">DR Number</label>
-                        <input id="dispatch_dr_number" name="dr_number" type="text" value="{{ old('dr_number') }}" maxlength="100" placeholder="Enter DR Number" @error('dr_number') aria-invalid="true" @enderror>
-                        @error('dr_number')<p class="field-error">{{ $message }}</p>@enderror
-                    </div>
-                </div>
-                @if ($purchaseItems->isEmpty())
-                    <p class="lifting-empty-note" role="note">No purchases have fuel remaining in the depot. Record a new purchase in Inventory, or cancel an unneeded lift to free its quantity.</p>
-                @endif
-                @error('items')<p class="field-error">{{ $message }}</p>@enderror
-            </section>
-
-            {{-- Depot to Client orders this lift delivers. Fuel Remaining in Truck = Amount to Lift - deliveries. --}}
-            <div class="lift-deliveries" data-lift-deliveries>
-                <h3 class="lift-section-title" data-deliveries-title @if (empty($oldDeliveries)) hidden @endif>Delivery Details</h3>
-                <div class="lift-delivery-rows" data-delivery-rows>
-                    @foreach ($oldDeliveries as $deliveryIndex => $delivery)
-                        @include('dispatch.partials.lift-delivery-row', ['deliveryIndex' => $deliveryIndex, 'selectedSale' => $delivery['sale_id'] ?? null])
-                    @endforeach
-                </div>
-                <template data-delivery-template>
-                    @include('dispatch.partials.lift-delivery-row', ['deliveryIndex' => '__INDEX__', 'selectedSale' => null])
-                </template>
-                <div class="lift-delivery-footer">
-                    <p class="lift-truck-remaining" data-truck-remaining-line aria-live="polite">Fuel Remaining in Truck: <output data-truck-remaining>0.00 L</output></p>
-                    <button class="btn lift-add-row" type="button" data-delivery-add @disabled($directSaleOptions->isEmpty())>{{ $directSaleOptions->isEmpty() ? 'No open Depot to Client orders' : '+ Add Depot to Client Delivery' }}</button>
-                </div>
-                @error('deliveries')<p class="field-error" role="alert">{{ $message }}</p>@enderror
-                <p class="field-error" data-deliveries-warning role="alert"></p>
-            </div>
-            <dl class="lift-info">
-                <div class="lift-info-row"><dt>Pickup Depot</dt><dd data-pickup-depot>Select a purchase to derive the official depot and address.</dd></div>
-                <div class="lift-info-row"><dt>Truck Capacity</dt><dd data-truck-capacity>0.00 L</dd></div>
-            </dl>
-            <p class="field-error lift-totals-warning" data-lifting-warning role="alert"></p>
-        </form>
+        @include('dispatch.partials.lift-form', [
+            'formId' => 'lift-schedule-form',
+            'action' => route($liftRoutePrefix.'.hauls.store'),
+            'method' => 'POST',
+            'prefix' => 'dispatch',
+            'formContext' => 'schedule-lift',
+            'idempotencyKey' => $createIdempotencyKey,
+            'values' => ['truck_id' => old('truck_id'), 'driver_user_id' => old('driver_user_id'), 'scheduled_at' => old('scheduled_at'), 'dr_number' => old('dr_number')],
+            'lines' => $liftLines,
+            'deliveries' => $oldDeliveries,
+            'showErrors' => $scheduleFormFailed,
+        ])
         <x-slot:footer>
             <button class="btn btn-pill btn-secondary" type="submit" form="lift-schedule-form">Add Schedule</button>
             <button class="btn btn-pill btn-danger" type="button" data-modal-close>Cancel</button>
@@ -425,6 +352,10 @@
                 </div>
             @endif
             <x-slot:footer>
+                {{-- Part 16 #4: a lift still Scheduled can be edited (read-only from In Transit on). --}}
+                @if (isset($liftEdits[$row['id']]))
+                    <button class="btn btn-pill btn-secondary" type="button" data-modal-swap="{{ $row['id'] }}-edit">Edit</button>
+                @endif
                 @if ($row['can_delete'])
                     @include('dispatch.partials.lift-delete-form', ['row' => $row, 'pill' => true])
                 @endif

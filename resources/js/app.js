@@ -210,6 +210,7 @@ document.addEventListener('change', (event) => {
 
     // Part 2 revisions Record Sales: Delivery Details (truck, driver, date, status) belong to Standard orders only.
     if (event.target.matches('[data-delivery-type]')) syncDeliveryType(event.target);
+    if (event.target.matches('[data-sale-purchase]')) syncStockHint(event.target);
 
     if (event.target.closest('[data-sales-item]')) {
         if (event.target.matches('[data-sale-f1-purchase]')) {
@@ -368,6 +369,17 @@ function syncSaleItemRow(row) {
     return lineTotal;
 }
 
+// Part 16 #2: the Record Sales hint shows the selected fuel's line, or the summary while no fuel is selected.
+function syncStockHint(purchase) {
+    const hint = purchase.closest('[data-sale-form]')?.querySelector('[data-stock-hint]');
+    if (!hint) return;
+    const fuel = purchase.selectedOptions[0]?.value ? purchase.selectedOptions[0].dataset.fuelCode : '';
+    const line = fuel ? hint.querySelector(`[data-stock-hint-fuel="${CSS.escape(fuel)}"]`) : null;
+    hint.querySelectorAll('[data-stock-hint-fuel]').forEach((span) => { span.hidden = span !== line; });
+    hint.querySelector('[data-stock-hint-summary]').hidden = Boolean(fuel);
+    hint.classList.toggle('is-empty', Boolean(fuel) && !line);
+}
+
 function syncDeliveryType(select) {
     const form = select.closest('[data-sale-form]');
     const standard = select.value !== 'depot_to_client';
@@ -376,16 +388,16 @@ function syncDeliveryType(select) {
         section.querySelectorAll('select, input').forEach((field) => { field.disabled = !standard; });
     });
 
-    // Part 13: Garage to Client sells from garage tanks ("garage" options); the other types from the depot. The F1
-    // dropdown of a Garage to Client line lists F1 garage tanks next to F1 purchases.
+    // Part 13: Garage to Client sells from garage tanks ("garage" options); the other types from the depot. Part 16: the
+    // F1 dropdown lists F1 purchases and F1 garage tanks for every delivery type.
     const garage = select.value === 'garage_to_client';
-    // "0 L in the depot but … in the garage" hints are for the depot delivery types only.
+    // The "not in the depot" hint is for the depot delivery types only.
     form?.querySelectorAll('[data-depot-only]').forEach((hint) => { hint.hidden = garage; });
     form?.querySelectorAll('[data-sale-purchase], [data-sale-f1-purchase]').forEach((stock) => {
         const isF1 = stock.matches('[data-sale-f1-purchase]');
         [...stock.options].forEach((option) => {
             if (!option.dataset.source) return;
-            const show = option.dataset.source === 'garage' ? garage : (isF1 || !garage);
+            const show = isF1 || (option.dataset.source === 'garage' ? garage : !garage);
             option.hidden = !show;
             option.disabled = !show;
         });
@@ -397,6 +409,7 @@ function syncDeliveryType(select) {
 }
 
 document.querySelectorAll('[data-delivery-type]').forEach(syncDeliveryType);
+document.querySelectorAll('[data-sale-purchase]').forEach(syncStockHint);
 
 // Part 12: a create modal ([data-reset-on-close]: Schedule Lift, Record Purchase, Record Sales, Add Truck, ...) starts
 // blank every time. A blank copy of its body is kept from page load (typed values, added purchase / delivery rows,

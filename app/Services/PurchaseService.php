@@ -397,6 +397,36 @@ class PurchaseService
                     $row->bank_name ?: 'N/A',
                     $this->formatNumber($onHand),
                 ],
+                // Part 17 #9: the Edit Purchase modal shows these two sections one at a time ("< 1 of 2 >").
+                'detail_pages' => [
+                    ['title' => 'Purchase Details', 'fields' => [
+                        'Date' => $this->formatDate($row->purchase_date),
+                        'Fuel' => $row->fuel_name,
+                        'Depot' => $row->depot_name,
+                        'Quantity Purchased' => $this->formatLiters($row->quantity_ordered_liters),
+                        'Quantity Hauled' => $this->formatLiters($row->hauled_liters),
+                        'Cost/Liter' => $this->formatNumber($row->unit_cost),
+                        'Total Cost' => $this->formatNumber($row->line_total),
+                        'Payment Mode' => self::PAYMENT_MODES[$row->payment_mode] ?? 'N/A',
+                        'Bank' => $row->bank_name ?: 'N/A',
+                        'Purchase Status' => $this->label($row->purchase_status),
+                    ]],
+                    ['title' => 'Purchase Details', 'fields' => [
+                        'Withdrawal Receipts' => $this->withdrawalStatus((int) $row->withdrawal_count),
+                        'Latest Withdrawal Upload' => $this->formatDateTime($row->latest_withdrawal_at),
+                        'Purchase Status' => $this->label($row->purchase_status),
+                        'Item Status' => $this->label($row->item_status),
+                        'Created By' => $row->created_by_name ?: 'N/A',
+                        'Created At' => $this->formatDateTime($row->created_at),
+                        'Updated At' => $this->formatDateTime($row->updated_at),
+                        // Kept from the old details list (not on the mockup): where the purchase's liters are now.
+                        'Quantity Delivered' => $this->formatLiters($released),
+                        'Remaining (Stock)' => $this->formatLiters($onHand),
+                        'Reserved for Orders' => $this->formatLiters($line->reserved ?? 0),
+                        'Remaining in Depot' => $this->formatLiters($line->remaining_in_depot ?? 0),
+                        'Inventory Status' => $this->label($inventoryStatus),
+                    ]],
+                ],
                 'details' => [
                     'Date' => $this->formatDate($row->purchase_date),
                     'Fuel' => $row->fuel_name,

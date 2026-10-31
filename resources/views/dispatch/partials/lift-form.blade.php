@@ -109,7 +109,7 @@
         @if ($fieldError('items'))<p class="field-error">{{ $fieldError('items') }}</p>@endif
     </section>
 
-    {{-- Depot to Client orders this lift delivers. Fuel Remaining in Truck = Amount to Lift - deliveries. --}}
+    {{-- Depot to Client and Standard orders this lift delivers. Standard is converted when saved. --}}
     <div class="lift-deliveries" data-lift-deliveries>
         <h3 class="lift-section-title" data-deliveries-title @if (empty($deliveries)) hidden @endif>Delivery Details</h3>
         <div class="lift-delivery-rows" data-delivery-rows>
@@ -122,7 +122,7 @@
         </template>
         <div class="lift-delivery-footer">
             <p class="lift-truck-remaining" data-truck-remaining-line aria-live="polite">Fuel Remaining in Truck: <output data-truck-remaining>0.00 L</output></p>
-            <button class="btn lift-add-row" type="button" data-delivery-add @disabled($directSaleOptions->isEmpty())>{{ $directSaleOptions->isEmpty() ? 'No open Depot to Client orders' : '+ Add Depot to Client Delivery' }}</button>
+            <button class="btn lift-add-row" type="button" data-delivery-add @disabled($directSaleOptions->isEmpty())>{{ $directSaleOptions->isEmpty() ? 'No open Depot to Client or Standard orders' : '+ Add Client Delivery' }}</button>
         </div>
         @if ($fieldError('deliveries'))<p class="field-error" role="alert">{{ $fieldError('deliveries') }}</p>@endif
         <p class="field-error" data-deliveries-warning role="alert"></p>

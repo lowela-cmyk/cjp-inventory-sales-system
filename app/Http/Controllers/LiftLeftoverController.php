@@ -49,7 +49,7 @@ class LiftLeftoverController extends Controller
                 'sale_id' => (int) $sale->sale_id,
                 'customer_id' => (int) $sale->customer_id,
                 'quantity_liters' => (float) $sale->open_liters,
-            ]]);
+            ]], $userId);
             if ($sale->delivery_type !== 'depot_to_client') {
                 // A Standard order delivered from this truck: its delivery details are the lift's truck and driver.
                 DB::table('sales')->where('id', $sale->sale_id)->update([

@@ -18,6 +18,7 @@ use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -489,7 +490,18 @@ class InventoryOfficerPurchaseController extends Controller
             ->orderByDesc('stock_outs.id');
 
         $paginator = $query->paginate(25, ['*'], 'stock_out_page')->withQueryString();
-        $transformed = collect($paginator->items())->map(function (object $row): array {
+        $sourceChanges = Schema::hasTable('sale_source_changes')
+            ? DB::table('sale_source_changes')
+                ->leftJoin('users as source_change_users', 'source_change_users.id', '=', 'sale_source_changes.changed_by')
+                ->whereIn('sale_source_changes.sale_id', collect($paginator->items())->pluck('sale_id')->all())
+                ->orderByDesc('sale_source_changes.changed_at')
+                ->get(['sale_source_changes.sale_id', 'sale_source_changes.to_delivery_type', 'sale_source_changes.source_label', 'sale_source_changes.changed_at', 'source_change_users.name as changed_by_name'])
+                ->groupBy('sale_id')
+                ->map(fn ($changes): ?string => ($change = $changes->first())
+                    ? 'Changed from Standard to '.(SalesOfficerCustomerController::DELIVERY_TYPES[$change->to_delivery_type] ?? ucwords(str_replace('_', ' ', $change->to_delivery_type))).' ('.$change->source_label.') on '.date('n/j/Y h:i A', strtotime((string) $change->changed_at)).' by '.($change->changed_by_name ?: 'N/A')
+                    : null)
+            : collect();
+        $transformed = collect($paginator->items())->map(function (object $row) use ($sourceChanges): array {
             $amounts = $this->stockOutFinancials->calculate($row);
             // A voided release earns nothing (any payment is a refund due), so it has no margin or profit.
             if ($row->status === 'cancelled') {
@@ -513,7 +525,7 @@ class InventoryOfficerPurchaseController extends Controller
                     $this->formatNumber($amounts['unit_price']),
                     $this->formatNumber($amounts['total_price']),
                     $this->formatNumber($amounts['total_paid']),
-                    $this->stockOutSourceLabel($row),
+                    trim($this->stockOutSourceLabel($row).' '.($sourceChanges->get((int) $row->sale_id) ? '— '.$sourceChanges->get((int) $row->sale_id) : '')),
                     $this->label($row->status),
                     $row->status === 'cancelled' ? '—' : $this->formatFinancial($amounts['margin']),
                     $row->status === 'cancelled' ? '—' : $this->formatFinancial($amounts['profit']),
@@ -522,6 +534,8 @@ class InventoryOfficerPurchaseController extends Controller
                 'delivery' => [
                     'truck' => $row->delivery_truck_code ? TruckLabel::make($row->delivery_truck_name, $row->delivery_truck_code) : 'N/A',
                     'driver' => $row->delivery_driver_name ?: 'N/A',
+                    // Part 17 #11: the table shows the truck's name, not its plate.
+                    'truck_name' => $row->delivery_truck_name ?: ($row->delivery_truck_code ?: 'N/A'),
                     'date' => $row->delivery_date ? $this->formatDateTime($row->delivery_date) : 'N/A',
                     'status' => $this->label($row->delivery_status),
                     'atl' => $row->atl_number ?: 'N/A',
@@ -531,6 +545,7 @@ class InventoryOfficerPurchaseController extends Controller
                 'margin' => $amounts['margin'],
                 'profit' => $amounts['profit'],
                 'id' => (int) $row->id,
+                'source_change_note' => $sourceChanges->get((int) $row->sale_id),
                 'modal_id' => 'io-stock-out-edit-'.$row->id,
                 'editable' => $row->status === 'released',
                 // Part 12: a Delivered sale's release: only Cost / Unit can change (date and delivery details are final).

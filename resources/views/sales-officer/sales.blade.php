@@ -14,6 +14,8 @@
     $filters = $filters ?? [];
     $receivableFilters = $activeTab === 'receivables' ? $filters : [];
     $customerFilters = $activeTab === 'customers' ? $filters : [];
+    // Part 17 #4: asked before an order is marked Delivered (Record Sales or Update Delivery).
+    $deliveredConfirm = 'This sale will be deducted from stock (Stock Out). Continue?';
     $paymentMethodLabels = [
         'cash_on_delivery' => 'COD',
         'cheque' => 'Cheque',
@@ -71,6 +73,9 @@
                             {{-- Part 12: one status per column. --}}
                             <th>Delivery Status</th>
                             <th>Payment Status</th>
+                            {{-- Part 17 #7: who recorded / last updated the order (tooltip on the Order-ID; these keep it in Export). --}}
+                            <th class="export-only" hidden>Recorded By</th>
+                            <th class="export-only" hidden>Last Updated By</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -78,39 +83,31 @@
                         @forelse ($sales as $row)
                             @php $c = $row['cells']; @endphp
                             <tr class="{{ $row['class'] }}">
-                                <td><x-table.stack :lines="[['value' => $c[0]], ['label' => 'SO', 'value' => $c[1], 'class' => 'is-secondary'], ['value' => $c[2], 'class' => 'is-secondary']]" /></td>
-                                <td>{{ $row['delivery_type_label'] }}</td>
+                                <td title="Recorded by {{ $row['recorded'] }}&#10;Last updated by {{ $row['updated'] }}" data-sale-actors><x-table.stack :lines="[['value' => $c[0]], ['label' => 'SO', 'value' => $c[1], 'class' => 'is-secondary'], ['value' => $c[2], 'class' => 'is-secondary']]" /></td>
+                                <td>
+                                    {{ $row['delivery_type_label'] }}
+                                    @if ($row['source_change_note'])
+                                        <small class="sale-source-change-tag" title="{{ $row['source_change_note'] }}">Source changed</small>
+                                    @endif
+                                </td>
                                 <td class="cell-wrap"><x-table.stack :lines="[['value' => $c[3]], ['value' => $c[4], 'class' => 'is-secondary']]" /></td>
                                 <td><x-table.stack :lines="[['value' => $c[5]], ['label' => 'Qty', 'value' => $c[6]], ['label' => '/L', 'value' => $c[7]]]" /></td>
                                 <td><x-table.stack :lines="[['label' => 'Total', 'value' => $c[8]], ['label' => 'Paid', 'value' => $c[9]], ['label' => 'Balance', 'value' => $c[10], 'class' => (float) str_replace(',', '', $c[10]) > 0 ? 'is-due' : null]]" /></td>
                                 <td><x-table.stack :lines="[['label' => 'Due', 'value' => $c[11]], ['label' => 'Last paid', 'value' => $c[12], 'class' => 'is-secondary']]" /></td>
                                 <td><x-admin.status-badge :status="$c[13]" /></td>
                                 <td><x-admin.status-badge :status="$c[14]" /></td>
+                                <td class="export-only" hidden>{{ $row['recorded'] }}</td>
+                                <td class="export-only" hidden>{{ $row['updated'] }}</td>
                                 <td>
                                     <div class="sales-row-actions row-actions-stack">
                                         <button class="btn btn-secondary" type="button" data-modal-open="{{ $row['modal_id'] }}">View</button>
-                                        @if ($row['correction_action'] === 'delete')
-                                            {{-- An untouched draft is discarded outright (not the delivered-order Delete below). --}}
-                                            <form method="POST" action="{{ route($salesRoutePrefix.'.sales.cancel', $row['id']) }}" data-confirm-message="Discard this untouched draft sale? This cannot be undone.">
-                                                @csrf
-                                                @method('PATCH')
-                                                <button class="btn btn-danger" type="submit">Discard Draft</button>
-                                            </form>
-                                        @endif
-                                        {{-- Part 12: Cancel Sale moved into the Edit Sales Record modal. --}}
-                                        {{-- Part 11: only Delivered orders can be deleted (the server enforces it too). --}}
-                                        @if ($isAdminSales && $row['delivery_status'] === 'delivered')
-                                            <form method="POST" action="{{ route($salesRoutePrefix.'.sales.destroy', $row['id']) }}" data-confirm-message="Delete order {{ $row['sale_code'] }}? It will be removed from Receivables, Stock Out and the sales totals. Its fuel stays deducted from its purchase.">
-                                                @csrf
-                                                @method('DELETE')
-                                                <button class="btn btn-danger" type="submit">Delete</button>
-                                            </form>
-                                        @endif
+                                        {{-- Part 12: Cancel Sale moved into the Edit Sales Record modal. Part 17: no Delete or Discard
+                                             Draft here; an order that is not delivered is taken back with Cancel Sale only. --}}
                                     </div>
                                 </td>
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="9">No records found.</td></tr>
+                            <tr><td class="empty-cell" colspan="11">No records found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -174,7 +171,7 @@
         @if ($recordSaleFailed)
             <span hidden data-open-modal-on-load="so-sales-add"></span>
         @endif
-        <form id="record-sale-form" method="POST" action="{{ route($salesRoutePrefix.'.sales.store') }}">
+        <form id="record-sale-form" method="POST" action="{{ route($salesRoutePrefix.'.sales.store') }}" data-confirm-when="delivery_status=delivered" data-confirm-message="{{ $deliveredConfirm }}">
             @csrf
             <input type="hidden" name="idempotency_key" value="{{ old('idempotency_key', $saleIdempotencyKey) }}">
             <input type="hidden" name="form_context" value="record-sale">
@@ -258,14 +255,14 @@
                     </div>
                 </div>
 
-                {{-- Standard orders only: delivered by their own truck. Delivered deducts the stock from the purchases. --}}
-                <div data-standard-only @if ($recordDeliveryType === 'depot_to_client') hidden @endif>
+                {{-- Standard stays a source placeholder; Depot to Client and Garage to Client show Delivery Details. --}}
+                <div data-delivery-details @if ($recordDeliveryType === 'standard') hidden @endif>
                     <h3 class="sale-form-section-title">Delivery Details</h3>
                     <div class="modal-card sale-form-card">
                         <div class="form-grid">
                             <div class="form-row">
                                 <label for="sale_delivery_truck_id">Truck ID</label>
-                                <select id="sale_delivery_truck_id" name="delivery_truck_id" @disabled($recordDeliveryType === 'depot_to_client') @error('delivery_truck_id') aria-invalid="true" @enderror>
+                                <select id="sale_delivery_truck_id" name="delivery_truck_id" @disabled($recordDeliveryType === 'standard') @error('delivery_truck_id') aria-invalid="true" @enderror>
                                     <option value="">Select Truck</option>
                                     @foreach ($deliveryTrucks as $truck)
                                         <option value="{{ $truck->id }}" @selected((string) old('delivery_truck_id') === (string) $truck->id)>{{ \App\Support\TruckLabel::make($truck->name, $truck->truck_code) }}</option>
@@ -275,7 +272,7 @@
                             </div>
                             <div class="form-row">
                                 <label for="sale_delivery_driver">Driver Name</label>
-                                <select id="sale_delivery_driver" name="delivery_driver_user_id" @disabled($recordDeliveryType === 'depot_to_client') @error('delivery_driver_user_id') aria-invalid="true" @enderror>
+                                <select id="sale_delivery_driver" name="delivery_driver_user_id" @disabled($recordDeliveryType === 'standard') @error('delivery_driver_user_id') aria-invalid="true" @enderror>
                                     <option value="">Select Driver</option>
                                     @foreach ($deliveryDrivers as $driver)
                                         <option value="{{ $driver->id }}" @selected((string) old('delivery_driver_user_id') === (string) $driver->id)>{{ $driver->name }}</option>
@@ -285,11 +282,11 @@
                             </div>
                             <div class="form-row">
                                 <label for="sale_delivery_date">Delivery Date</label>
-                                <input id="sale_delivery_date" name="delivery_date" type="datetime-local" value="{{ old('delivery_date') }}" @disabled($recordDeliveryType === 'depot_to_client')>
+                                <input id="sale_delivery_date" name="delivery_date" type="datetime-local" value="{{ old('delivery_date') }}" @disabled($recordDeliveryType === 'standard')>
                             </div>
                             <div class="form-row">
                                 <label for="sale_delivery_status">Delivery Status</label>
-                                <select id="sale_delivery_status" name="delivery_status" data-default="pending" @disabled($recordDeliveryType === 'depot_to_client') @error('delivery_status') aria-invalid="true" @enderror>
+                                <select id="sale_delivery_status" name="delivery_status" data-default="pending" @disabled($recordDeliveryType === 'standard') @error('delivery_status') aria-invalid="true" @enderror>
                                     @foreach ($newOrderDeliveryStatuses as $deliveryStatus)
                                         <option value="{{ $deliveryStatus }}" @selected(old('delivery_status', 'pending') === $deliveryStatus)>{{ ucwords(str_replace('_', ' ', $deliveryStatus)) }}</option>
                                     @endforeach
@@ -316,7 +313,7 @@
             // Part 12: a Delivered sale's order details are final (the server refuses changes too).
             $isDeliveredSale = $row['delivery_status'] === 'delivered';
         @endphp
-        <x-admin.modal id="{{ $row['modal_id'] }}" title="Edit Sales Record" size="sales">
+        <x-admin.modal id="{{ $row['modal_id'] }}" title="RECORD SALES RECEIVABLES" size="sales" :showBrand="false">
             @if ($isEditedSale && $errors->any())
                 <span hidden data-open-modal-on-load="{{ $row['modal_id'] }}"></span>
                 <p class="form-alert" role="alert">{{ $errors->first() }}</p>
@@ -327,19 +324,46 @@
                 <input type="hidden" name="edit_sale_id" value="{{ $row['id'] }}">
             </form>
             @if (! in_array($row['delivery_status'], ['delivered', 'cancelled'], true))
-                <form id="sale-delivery-{{ $row['id'] }}" method="POST" action="{{ route($salesRoutePrefix.'.sales.delivery-status.update', $row['id']) }}" data-confirm-message="Update this delivery status? Selecting Delivered will create Stock-Out and deduct inventory.">
+                <form id="sale-delivery-{{ $row['id'] }}" method="POST" action="{{ route($salesRoutePrefix.'.sales.delivery-status.update', $row['id']) }}" data-confirm-when="delivery_status=delivered" data-confirm-message="{{ $deliveredConfirm }}">
                     @csrf
                     @method('PATCH')
                 </form>
             @endif
             <div class="modal-card">
-                <div class="sales-row-actions"><x-admin.status-badge :status="$row['delivery_status']" /><x-admin.status-badge :status="$row['cells'][14]" /></div>
-                <p class="detail-id">{{ $row['sale_code'] }}</p>
-                <div class="detail-grid">
-                    @foreach ($row['details'] as $label => $value)
-                        <div class="detail-row"><div class="detail-label">{{ $label }}</div><div class="detail-value">{{ $value }}</div></div>
-                    @endforeach
+                <div class="sales-modal-summary">
+                    <div class="sales-row-actions"><x-admin.status-badge :status="$row['delivery_status']" /><x-admin.status-badge :status="$row['cells'][14]" /></div>
+                    <p class="detail-id">{{ $row['sale_code'] }}</p>
                 </div>
+                {{-- Part 17 #1-2: Order, Delivery and Payment Details one at a time; the lines table and the fields stay below. --}}
+                <x-admin.detail-pages :pages="$row['detail_pages']" :outOf="true" />
+                @if ($row['delivery_type'] === 'standard' && ! in_array($row['delivery_status'], ['delivered', 'cancelled'], true))
+                    <div class="modal-card sale-source-assignment" data-source-assignment>
+                        <h3 class="sale-form-section-title">Assign Source</h3>
+                        <p class="sale-locked-note">Choose where this Standard order will be fulfilled. The order type changes only after confirmation.</p>
+                        @foreach ([
+                            'scheduled' => ['title' => 'Scheduled lift', 'type' => 'scheduled_lift', 'options' => $row['source_options']['scheduled']],
+                            'truck' => ['title' => 'Lift with fuel left on truck', 'type' => 'truck', 'options' => $row['source_options']['truck']],
+                            'garage' => ['title' => 'Garage lot', 'type' => 'garage_lot', 'options' => $row['source_options']['garage']],
+                        ] as $sourceGroup)
+                            <form method="POST" action="{{ route($salesRoutePrefix.'.sales.assign-source', $row['id']) }}" data-confirm-message="Assign this source and change the order from Standard? This can only be done once.">
+                                @csrf
+                                <input type="hidden" name="source_type" value="{{ $sourceGroup['type'] }}">
+                                <div class="form-row">
+                                    <label for="source_{{ $sourceGroup['type'] }}_{{ $row['id'] }}">{{ $sourceGroup['title'] }}</label>
+                                    <div class="source-assignment-row">
+                                        <select id="source_{{ $sourceGroup['type'] }}_{{ $row['id'] }}" name="source_id" @disabled($sourceGroup['options'] === []) required>
+                                            <option value="">{{ $sourceGroup['options'] === [] ? 'No matching source available' : 'Select source' }}</option>
+                                            @foreach ($sourceGroup['options'] as $option)
+                                                <option value="{{ $option['id'] }}">{{ $option['label'] }}</option>
+                                            @endforeach
+                                        </select>
+                                        <button class="btn btn-secondary" type="submit" @disabled($sourceGroup['options'] === [])>Assign</button>
+                                    </div>
+                                </div>
+                            </form>
+                        @endforeach
+                    </div>
+                @endif
                 <div class="table-wrap sales-items-table">
                     <table class="admin-table">
                         <thead><tr><th>Fuel</th><th>Purchase ID</th><th>QTY</th><th>F1 %</th><th>F1 (L)</th><th>Fuel (L)</th><th>Fuel Price</th><th>F1 Price</th><th>Line Total</th><th>Fulfilled</th></tr></thead>
@@ -413,12 +437,12 @@
                         <output class="sales-total-preview" data-sales-total-preview>Total: 0.00</output>
                     </div>
                     @endunless
-                    @if ($row['delivery_type'] !== 'depot_to_client' && $isDeliveredSale)
+                    @if ($row['delivery_type'] !== 'standard' && $isDeliveredSale)
                         <div class="form-row"><label>Truck ID</label><output>{{ $row['details']['Truck ID'] ?? 'N/A' }}</output></div>
                         <div class="form-row"><label>Driver Name</label><output>{{ $row['details']['Driver Name'] ?? 'N/A' }}</output></div>
                         <div class="form-row"><label>Delivery Date</label><output>{{ $row['details']['Delivery Date'] ?? 'N/A' }}</output></div>
-                    @elseif ($row['delivery_type'] !== 'depot_to_client')
-                        {{-- Standard orders: Delivery Details. --}}
+                    @elseif ($row['delivery_type'] !== 'standard')
+                        {{-- Depot to Client and Garage to Client orders: Delivery Details. Standard has no delivery fields. --}}
                         <div class="form-row">
                             <label for="sale_delivery_truck_{{ $row['id'] }}">Truck ID</label>
                             <select form="sale-update-{{ $row['id'] }}" id="sale_delivery_truck_{{ $row['id'] }}" name="delivery_truck_id">
@@ -487,11 +511,13 @@
                 @if ($row['status'] !== 'cancelled')
                     <button class="btn btn-pill btn-secondary" type="submit" form="sale-update-{{ $row['id'] }}">Apply Changes</button>
                 @endif
+                {{-- Part 17: one Cancel Sale button while the order is not delivered (none once Delivered: its fuel already left
+                     stock, and the server refuses it). An untouched draft is simply removed; any other order asks for a reason. --}}
                 @if ($row['correction_action'] === 'delete')
-                    <form method="POST" action="{{ route($salesRoutePrefix.'.sales.cancel', $row['id']) }}" data-confirm-message="Delete this untouched draft sale? This cannot be undone.">
+                    <form method="POST" action="{{ route($salesRoutePrefix.'.sales.cancel', $row['id']) }}" data-confirm-message="Cancel this draft sale? It has no payments or deliveries yet, so it will be removed.">
                         @csrf
                         @method('PATCH')
-                        <button class="btn btn-pill btn-danger" type="submit">Delete</button>
+                        <button class="btn btn-pill btn-danger" type="submit">Cancel Sale</button>
                     </form>
                 @elseif ($row['correction_action'] === 'cancel')
                     {{-- Part 12: cancelling lives here (full name, so it is not read as closing the modal); it still asks for a reason. --}}

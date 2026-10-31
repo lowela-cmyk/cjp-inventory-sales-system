@@ -9,15 +9,16 @@ class SaleCorrectionService
     /**
      * Untouched drafts may be removed. Every other active sale must be voided
      * so its financial and inventory history remains traceable.
+     * Part 17: a Delivered sale was already deducted from stock (Stock Out), so it can't be cancelled (null).
      */
     public function correctionMode(int $saleId): ?string
     {
         $sale = DB::table('sales')
             ->where('id', $saleId)
             ->whereNull('deleted_at')
-            ->first(['id', 'status']);
+            ->first(['id', 'status', 'delivery_status']);
 
-        if (! $sale || $sale->status === 'cancelled') {
+        if (! $sale || $sale->status === 'cancelled' || $sale->delivery_status === 'delivered') {
             return null;
         }
 
@@ -36,7 +37,7 @@ class SaleCorrectionService
                 ->where('id', $saleId)
                 ->whereNull('deleted_at')
                 ->lockForUpdate()
-                ->first(['id', 'status']);
+                ->first(['id', 'sale_code', 'status', 'delivery_status']);
 
             if (! $sale) {
                 throw new \RuntimeException('Sale record not found.');
@@ -44,6 +45,10 @@ class SaleCorrectionService
 
             if ($sale->status === 'cancelled') {
                 throw new \RuntimeException('This sale is already cancelled.');
+            }
+
+            if ($sale->delivery_status === 'delivered') {
+                throw new \RuntimeException($sale->sale_code.' is Delivered: its fuel was already deducted from stock (Stock Out), so it cannot be cancelled.');
             }
 
             if ($sale->status === 'draft' && ! $this->hasDependentActivity($saleId, true)) {

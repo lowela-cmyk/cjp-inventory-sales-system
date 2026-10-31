@@ -10,6 +10,7 @@ use App\Services\PurchaseStockService;
 use App\Services\RecordCodeService;
 use App\Services\SaleConfirmationService;
 use App\Services\SaleCorrectionService;
+use App\Services\StandardSourceAssignmentService;
 use App\Support\F1Split;
 use App\Support\FilterDates;
 use App\Support\TruckLabel;
@@ -19,6 +20,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -31,7 +33,8 @@ class SalesOfficerCustomerController extends Controller
         private readonly IdempotencyService $idempotencyService,
         private readonly SaleCorrectionService $saleCorrectionService,
         private readonly PurchaseStockService $purchaseStock,
-        private readonly RecordCodeService $codes
+        private readonly RecordCodeService $codes,
+        private readonly StandardSourceAssignmentService $sourceAssignments
     ) {}
 
     public const PAYMENT_STATUSES = ['clear', 'pending', 'partial', 'unpaid'];
@@ -261,11 +264,28 @@ class SalesOfficerCustomerController extends Controller
         }
 
         $request->session()->put($sessionKey, $idempotency['response_reference']);
+        $this->markUpdatedBy($sale, $request);
 
         return redirect()
             ->route($this->salesRedirectRoute($request))
             ->with('payment_sale_id', $sale)
             ->with('status', 'Payment record '.$idempotency['response_reference'].' recorded successfully.');
+    }
+
+    public function assignSource(Request $request, int $sale): RedirectResponse
+    {
+        $data = $request->validate([
+            'source_type' => ['required', Rule::in(['scheduled_lift', 'truck', 'garage_lot'])],
+            'source_id' => ['required', 'integer'],
+        ]);
+
+        try {
+            $this->sourceAssignments->assign($sale, (string) $data['source_type'], (int) $data['source_id'], (int) $request->user()->id);
+        } catch (ValidationException $exception) {
+            return back()->withErrors($exception->errors())->withInput();
+        }
+
+        return redirect()->route($this->salesRedirectRoute($request))->with('status', 'The Standard order source was assigned successfully.');
     }
 
     public function storeSale(Request $request): RedirectResponse
@@ -471,23 +491,30 @@ class SalesOfficerCustomerController extends Controller
 
         try {
             $newCode = null;
-            DB::transaction(function () use ($sale, $row, $data, $items, $hasDependencies, $request, $requestedStatus, &$newCode): void {
+            $saleUpdate = [
+                'sales_order_number' => $this->blankToNull($data['sales_order_number'] ?? null),
+                'customer_id' => $data['customer_id'],
+                'sale_date' => $data['sale_date'],
+                'payment_method' => $data['payment_method'],
+                'payment_terms' => $data['payment_terms'] ?? $this->defaultPaymentTerms($data['payment_method']),
+                'updated_at' => now(),
+            ];
+            if (Schema::hasColumn('sales', 'updated_by')) {
+                $saleUpdate['updated_by'] = $request->user()->id;
+            }
+            if ($data['delivery_type'] !== 'depot_to_client' && $row->delivery_status !== 'delivered') {
+                $saleUpdate += [
+                    // Standard orders: Delivery Details stay editable until the order is Delivered.
+                    'delivery_truck_id' => $data['delivery_truck_id'] ?? null,
+                    'delivery_driver_user_id' => $data['delivery_driver_user_id'] ?? null,
+                    'delivery_date' => $data['delivery_date'] ?? null,
+                ];
+            }
+            DB::transaction(function () use ($sale, $row, $data, $items, $hasDependencies, $request, $requestedStatus, $saleUpdate, &$newCode): void {
 
                 DB::table('sales')
                     ->where('id', $sale)
-                    ->update([
-                        'sales_order_number' => $this->blankToNull($data['sales_order_number'] ?? null),
-                        'customer_id' => $data['customer_id'],
-                        'sale_date' => $data['sale_date'],
-                        'payment_method' => $data['payment_method'],
-                        'payment_terms' => $data['payment_terms'] ?? $this->defaultPaymentTerms($data['payment_method']),
-                        'updated_at' => now(),
-                    ] + ($data['delivery_type'] !== 'depot_to_client' && $row->delivery_status !== 'delivered' ? [
-                        // Standard orders: Delivery Details stay editable until the order is Delivered.
-                        'delivery_truck_id' => $data['delivery_truck_id'] ?? null,
-                        'delivery_driver_user_id' => $data['delivery_driver_user_id'] ?? null,
-                        'delivery_date' => $data['delivery_date'] ?? null,
-                    ] : []));
+                    ->update($saleUpdate);
 
                 if ($row->delivery_status !== 'delivered' && ! $hasDependencies && $this->changesProtectedSaleFields($row, $data)) {
                     $firstFuelBefore = (int) DB::table('sale_items')->where('sale_id', $sale)->orderBy('id')->value('fuel_type_id');
@@ -537,37 +564,19 @@ class SalesOfficerCustomerController extends Controller
     }
 
     /**
-     * Part 11: Delete (archive) a delivered order. Only Delivered orders qualify. The sale is soft-deleted: it leaves
-     * Receivables, Stock Out and the sales and revenue figures, while its payments, receivable and stock-outs stay in
-     * the database untouched. The fuel was delivered, so it stays deducted from its purchase (Stock-In is unchanged).
+     * Part 17 #4 (replaces Part 11's Delete of delivered orders): a Delivered order's fuel already left stock (Stock
+     * Out), so it can no longer be deleted. Orders that are not delivered yet are taken back with Cancel Sale (voided
+     * with a reason, history kept; an untouched draft is removed), so this endpoint refuses every request.
      */
     public function destroySale(Request $request, int $sale): RedirectResponse
     {
         abort_unless($request->user()?->role === 'admin', 403, 'Only admin users can delete orders.');
-        abort_unless(DB::table('sales')->where('id', $sale)->whereNull('deleted_at')->exists(), 404);
+        $row = DB::table('sales')->where('id', $sale)->whereNull('deleted_at')->first(['sale_code', 'delivery_status']);
+        abort_unless($row !== null, 404);
 
-        try {
-            // The request itself is recorded by the RecordActivity middleware (audit trail).
-            $code = DB::transaction(function () use ($sale): string {
-                $row = DB::table('sales')->where('id', $sale)->whereNull('deleted_at')->lockForUpdate()->first(['id', 'sale_code', 'delivery_status']);
-                if (! $row) {
-                    throw new \RuntimeException('This order was already deleted.');
-                }
-                if ($row->delivery_status !== 'delivered') {
-                    throw new \RuntimeException('Only delivered orders can be deleted. '.$row->sale_code.' is '.$this->label($row->delivery_status).'.');
-                }
-
-                DB::table('sales')->where('id', $row->id)->update(['deleted_at' => now(), 'updated_at' => now()]);
-
-                return $row->sale_code;
-            });
-        } catch (\RuntimeException $exception) {
-            return back()->withErrors(['sale' => $exception->getMessage()]);
-        }
-
-        return redirect()
-            ->route($this->salesRedirectRoute($request))
-            ->with('status', 'Order '.$code.' deleted. Its fuel stays deducted from its purchase.');
+        return back()->withErrors(['sale' => $row->delivery_status === 'delivered'
+            ? $row->sale_code.' is Delivered: its fuel was already deducted from stock (Stock Out), so it cannot be deleted.'
+            : $row->sale_code.' is not delivered: use Cancel Sale in its View instead.']);
     }
 
     public function cancelSale(Request $request, int $sale): RedirectResponse
@@ -599,6 +608,7 @@ class SalesOfficerCustomerController extends Controller
 
             return back()->withErrors(['sale' => $exception->getMessage()]);
         }
+        $this->markUpdatedBy($sale, $request);
 
         return redirect()
             ->route($this->salesRedirectRoute($request))
@@ -626,6 +636,7 @@ class SalesOfficerCustomerController extends Controller
 
             return back()->withErrors(['delivery_status' => $exception->getMessage()]);
         }
+        $this->markUpdatedBy($sale, $request);
 
         return redirect()
             ->route($this->salesRedirectRoute($request))
@@ -904,6 +915,11 @@ class SalesOfficerCustomerController extends Controller
      */
     private function salesRows(?string $search, ?int $perPage = 25, array $filters = [])
     {
+        // Existing installations may reach this code before the Part 17 migration has been applied.
+        $updatedByJoin = Schema::hasColumn('sales', 'updated_by')
+            ? DB::raw('COALESCE(sales.updated_by, sales.delivery_status_updated_by)')
+            : 'sales.delivery_status_updated_by';
+
         $payments = DB::table('payments')
             ->selectRaw('sale_id, COALESCE(SUM(amount), 0) as total_paid')
             ->groupBy('sale_id');
@@ -920,6 +936,9 @@ class SalesOfficerCustomerController extends Controller
             ->leftJoinSub($payments, 'payments_total', 'payments_total.sale_id', '=', 'sales.id')
             ->leftJoin('trucks as delivery_trucks', 'delivery_trucks.id', '=', 'sales.delivery_truck_id')
             ->leftJoin('users as delivery_drivers', 'delivery_drivers.id', '=', 'sales.delivery_driver_user_id')
+            // Part 17 #7: who recorded the sale and who last changed it (older sales: whoever last set its delivery status).
+            ->leftJoin('users as sale_creators', 'sale_creators.id', '=', 'sales.created_by')
+            ->leftJoin('users as sale_updaters', 'sale_updaters.id', '=', $updatedByJoin)
             ->whereNull('sales.deleted_at')
             ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
                 'sales.sale_code',
@@ -971,6 +990,11 @@ class SalesOfficerCustomerController extends Controller
             'delivery_trucks.truck_code as delivery_truck_code',
             'delivery_trucks.name as delivery_truck_name',
             'delivery_drivers.name as delivery_driver_name',
+            'sales.delivered_at',
+            'sales.created_at',
+            'sales.updated_at',
+            'sale_creators.name as created_by_name',
+            'sale_updaters.name as updated_by_name',
         ];
 
         $paginator = null;
@@ -993,9 +1017,10 @@ class SalesOfficerCustomerController extends Controller
         $dependencyMap = $this->saleDependencyMap($saleIds);
         $paymentsBySale = $this->paymentsForSales($saleIds);
         $schedulesBySale = $this->paymentSchedulesForSales($saleIds);
+        $liftsBySale = $this->liftsForSales($saleIds);
 
         $transformed = $rows
-            ->map(function (object $row) use ($itemsBySale, $latestPaymentDates, $dependencyMap, $paymentsBySale, $schedulesBySale): array {
+            ->map(function (object $row) use ($itemsBySale, $latestPaymentDates, $dependencyMap, $paymentsBySale, $schedulesBySale, $liftsBySale): array {
                 $saleId = (int) $row->sale_id;
                 $paid = (float) ($row->total_paid ?? 0);
                 $saleTotal = (float) $row->sale_total;
@@ -1011,6 +1036,7 @@ class SalesOfficerCustomerController extends Controller
                 };
                 $saleItems = $itemsBySale[$saleId] ?? [];
                 $latestPaymentDate = $latestPaymentDates[$saleId] ?? null;
+                $sourceChange = $this->sourceChangeField($saleId);
                 $correctionAction = $this->saleCorrectionService->correctionMode($saleId);
                 $deliveryType = self::DELIVERY_TYPES[$row->delivery_type] ?? self::DELIVERY_TYPES['standard'];
                 $isStandard = $row->delivery_type !== 'depot_to_client';
@@ -1047,6 +1073,10 @@ class SalesOfficerCustomerController extends Controller
                     'correction_action' => $correctionAction,
                     'refund_due' => $refundDue,
                     'items' => $saleItems,
+                    'source_options' => $row->delivery_type === 'standard' && ! in_array($row->delivery_status, ['delivered', 'cancelled'], true)
+                        ? $this->sourceAssignments->options($saleId)
+                        : ['scheduled' => [], 'truck' => [], 'garage' => []],
+                    'source_change_note' => $sourceChange,
                     // Part 13: white by default; red only for a Cancelled sale or a fully Unpaid one (nothing paid yet).
                     // Partially paid sales stay white.
                     'class' => $isCancelled || ($balance > 0 && $paid <= 0) ? 'row-danger' : '',
@@ -1067,33 +1097,49 @@ class SalesOfficerCustomerController extends Controller
                         $this->label($row->delivery_status),
                         $status,
                     ],
-                    'details' => [
-                        'Delivery Type' => $deliveryType,
-                        'Sales Order Number' => $row->sales_order_number ?: 'N/A',
-                        'Transaction Date' => $this->formatDate($row->sale_date),
-                        'Customer Name' => $row->customer_name,
-                        'Company Name' => $row->company_name,
-                        'Fuel Type' => $this->fuelSummary((string) $row->first_fuel_name, (int) $row->item_count),
-                        'Quantity Ordered' => $this->formatLiters($row->total_quantity_liters),
-                        'Purchase ID' => collect($saleItems)->pluck('source')->implode('; ') ?: 'N/A',
-                    ] + ($f1Summary !== '' ? ['F1 Split' => $f1Summary] : []) + ($isStandard ? [
-                        'Truck ID' => $deliveryTruck,
-                        'Driver Name' => $row->delivery_driver_name ?: 'N/A',
-                        'Delivery Date' => $row->delivery_date ? $this->formatDateTime($row->delivery_date) : 'N/A',
-                    ] : []) + [
-                        'Quantity Fulfilled' => $this->formatLiters(collect($saleItems)->sum('fulfilled_quantity_liters')),
-                        'Total' => $this->formatNumber($saleTotal),
-                        'Total Paid' => $this->formatNumber($paid),
-                        'Balance' => $this->formatNumber($balance),
-                        'Payment Status' => $paymentStatus,
-                        'Due Date' => $row->due_date ? $this->formatDate($row->due_date) : 'N/A',
-                        'Latest Payment Date' => $latestPaymentDate ? $this->formatDate($latestPaymentDate) : 'N/A',
-                        'Receivable Status' => $status,
-                        'Delivery Status' => $this->label($row->delivery_status),
-                        'Payment Terms' => $row->payment_terms === 'cod' ? 'COD' : $this->label($row->payment_terms),
-                        'Payment Method' => $this->paymentMethodLabel($row->payment_method),
-                        'Order Status' => $this->label($row->status),
-                    ] + ($isCancelled ? ['Cancellation Reason' => $row->cancellation_reason ?: 'N/A'] : []),
+                    'recorded' => $this->actorLine($row->created_by_name, $row->created_at),
+                    'updated' => $this->actorLine($row->updated_by_name, $row->updated_at),
+                    // Part 17 #1-2: the View shows one section at a time (Order, Delivery, Payment Details).
+                    'detail_pages' => $pages = [
+                        ['title' => 'Order Details', 'fields' => [
+                            'Delivery Type' => $deliveryType,
+                            'Sales Order Number' => $row->sales_order_number ?: 'N/A',
+                            'Transaction Date' => $this->formatDate($row->sale_date),
+                            'Customer Name' => $row->customer_name,
+                            'Company Name' => $row->company_name,
+                            'Fuel Type' => $this->fuelSummary((string) $row->first_fuel_name, (int) $row->item_count),
+                            'Quantity Ordered' => $this->formatLiters($row->total_quantity_liters),
+                            'Purchase ID' => collect($saleItems)->pluck('source')->implode('; ') ?: 'N/A',
+                        ] + ($f1Summary !== '' ? ['F1 Split' => $f1Summary] : []) + [
+                            // Part 17 #7.
+                            'Recorded By' => $this->actorLine($row->created_by_name, $row->created_at),
+                            'Last Updated By' => $this->actorLine($row->updated_by_name, $row->updated_at),
+                        ] + ($sourceChange ? ['Source Change' => $sourceChange] : [])],
+                        ['title' => 'Delivery Details', 'fields' => ($isStandard ? [
+                            'Truck ID' => $deliveryTruck,
+                            'Driver Name' => $row->delivery_driver_name ?: 'N/A',
+                            'Delivery Date' => $row->delivery_date ? $this->formatDateTime($row->delivery_date) : 'N/A',
+                        ] : [
+                            // Depot to Client: the lift that carries the order.
+                            'Lift ID' => $liftsBySale[$saleId]['codes'] ?? 'N/A',
+                            'Truck ID' => $liftsBySale[$saleId]['trucks'] ?? 'N/A',
+                            'Driver Name' => $liftsBySale[$saleId]['drivers'] ?? 'N/A',
+                            'Delivery Date' => $row->delivered_at ? $this->formatDateTime($row->delivered_at) : 'N/A',
+                        ]) + [
+                            'Quantity Fulfilled' => $this->formatLiters(collect($saleItems)->sum('fulfilled_quantity_liters')),
+                        ]],
+                        ['title' => 'Payment Details', 'fields' => [
+                            'Payment Status' => $paymentStatus,
+                            'Due Date' => $row->due_date ? $this->formatDate($row->due_date) : 'N/A',
+                            'Latest Payment Date' => $latestPaymentDate ? $this->formatDate($latestPaymentDate) : 'N/A',
+                            'Receivable Status' => $status,
+                            'Delivery Status' => $this->label($row->delivery_status),
+                            'Payment Terms' => $row->payment_terms === 'cod' ? 'COD' : $this->label($row->payment_terms),
+                            'Payment Method' => $this->paymentMethodLabel($row->payment_method),
+                            'Order Status' => $this->label($row->status),
+                        ] + ($isCancelled ? ['Cancellation Reason' => $row->cancellation_reason ?: 'N/A'] : [])],
+                    ],
+                    'details' => array_merge(...array_column($pages, 'fields')),
                     'payments' => $paymentsBySale[$saleId] ?? [],
                     'payment_schedules' => $schedulesBySale[$saleId] ?? [],
                     'sale_total' => $this->formatNumber($saleTotal),
@@ -2353,6 +2399,72 @@ class SalesOfficerCustomerController extends Controller
     private function formatNumber(mixed $value): string
     {
         return number_format((float) ($value ?? 0), 2);
+    }
+
+    /** Part 17 #7: the user who last changed the sale (edit, delivery status, payment, cancel). */
+    private function markUpdatedBy(int $sale, Request $request): void
+    {
+        $updates = ['updated_at' => now()];
+        if (Schema::hasColumn('sales', 'updated_by')) {
+            $updates['updated_by'] = $request->user()->id;
+        }
+
+        DB::table('sales')->where('id', $sale)->update($updates);
+    }
+
+    /** Part 17 #7: "Name · 10/31/2026 09:54 AM" (N/A when the user is unknown). */
+    private function actorLine(?string $name, mixed $at): string
+    {
+        return ($name ?: 'N/A').($at ? ' · '.$this->formatDateTime($at) : '');
+    }
+
+    private function sourceChangeField(int $saleId): ?string
+    {
+        if (! Schema::hasTable('sale_source_changes')) {
+            return null;
+        }
+
+        $change = DB::table('sale_source_changes')
+            ->leftJoin('users as source_change_users', 'source_change_users.id', '=', 'sale_source_changes.changed_by')
+            ->where('sale_source_changes.sale_id', $saleId)
+            ->orderByDesc('sale_source_changes.changed_at')
+            ->first(['sale_source_changes.to_delivery_type', 'sale_source_changes.source_label', 'sale_source_changes.changed_at', 'source_change_users.name as changed_by_name']);
+        if (! $change) {
+            return null;
+        }
+
+        $type = self::DELIVERY_TYPES[$change->to_delivery_type] ?? $this->label($change->to_delivery_type);
+
+        return 'Changed from Standard to '.$type.' ('.$change->source_label.') on '.$this->formatDateTime($change->changed_at).' by '.($change->changed_by_name ?: 'N/A');
+    }
+
+    /**
+     * Depot to Client orders: the lift(s) carrying each sale, with their trucks (name) and drivers.
+     *
+     * @param  Collection<int, int>  $saleIds
+     * @return array<int, array{codes: string, trucks: string, drivers: string}>
+     */
+    private function liftsForSales(Collection $saleIds): array
+    {
+        if ($saleIds->isEmpty()) {
+            return [];
+        }
+
+        return DB::table('haul_allocations')
+            ->join('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')
+            ->join('trucks', 'trucks.id', '=', 'hauls.truck_id')
+            ->join('users as drivers', 'drivers.id', '=', 'hauls.driver_user_id')
+            ->whereNull('hauls.deleted_at')
+            ->whereIn('haul_allocations.sale_id', $saleIds->all())
+            ->orderBy('hauls.id')
+            ->get(['haul_allocations.sale_id', 'hauls.haul_code', 'trucks.name as truck_name', 'trucks.truck_code', 'drivers.name as driver_name'])
+            ->groupBy('sale_id')
+            ->map(fn (Collection $lifts): array => [
+                'codes' => $lifts->pluck('haul_code')->unique()->implode(', '),
+                'trucks' => $lifts->map(fn (object $lift): string => TruckLabel::make($lift->truck_name, $lift->truck_code))->unique()->implode(', '),
+                'drivers' => $lifts->pluck('driver_name')->unique()->implode(', '),
+            ])
+            ->all();
     }
 
     private function formatLiters(mixed $value): string

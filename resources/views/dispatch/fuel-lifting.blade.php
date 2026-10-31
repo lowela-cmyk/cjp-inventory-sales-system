@@ -252,14 +252,14 @@
                     <h3 class="lift-section-title">Fuel Left on the Truck: {{ $row['truck_leftover_label'] }}</h3>
                     <p class="receipt-line-note">The truck stays Loaded (not Available) until this reaches 0.</p>
                     @if ($row['truck_order_options']->isNotEmpty())
-                        <form class="truck-leftover-form" method="POST" action="{{ route($liftRoutePrefix.'.hauls.truck-deliveries.store', $row['haul_id']) }}" data-prevent-double-submit>
+                        <form class="truck-leftover-form" method="POST" action="{{ route($liftRoutePrefix.'.hauls.truck-deliveries.store', $row['haul_id']) }}" data-prevent-double-submit data-standard-conversion-form>
                             @csrf
                             <div class="form-row">
                                 <label for="truck_order_{{ $row['haul_id'] }}">Order</label>
                                 <select id="truck_order_{{ $row['haul_id'] }}" name="sale_id" required>
                                     <option value="">Select an order to deliver from this truck</option>
                                     @foreach ($row['truck_order_options'] as $order)
-                                        <option value="{{ $order->sale_id }}">{{ $order->label }}</option>
+                                        <option value="{{ $order->sale_id }}" @if (($order->delivery_type ?? null) === 'standard') data-standard-order="true" @endif>{{ $order->label }}</option>
                                     @endforeach
                                 </select>
                             </div>

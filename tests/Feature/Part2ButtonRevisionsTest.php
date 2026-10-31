@@ -120,7 +120,7 @@ class Part2ButtonRevisionsTest extends AuditTestCase
         $this->assertSame(6000.0, $this->remaining($diesel));
     }
 
-    public function test_depot_to_client_orders_get_no_delivery_details_and_are_not_delivered_from_the_sales_page(): void
+    public function test_depot_to_client_orders_are_not_delivered_from_the_sales_page(): void
     {
         $a = $this->actors();
         $diesel = $this->purchaseLine($a, 'DSL', 8000);
@@ -139,6 +139,9 @@ class Part2ButtonRevisionsTest extends AuditTestCase
         $a = $this->actors();
         $diesel = $this->purchaseLine($a, 'DSL', 8000);
 
+        $initialHtml = $this->actingAs($a['sales'])->get(route('sales-officer.sales'))->assertOk()->getContent();
+        $this->assertMatchesRegularExpression('/<div data-delivery-details[^>]*hidden[^>]*>/', $initialHtml);
+
         // Part 13: "garage_to_client" is no longer an alias of Standard; it sells from a garage tank only.
         $this->recordOrder($a, ['purchase_item_id' => $diesel, 'quantity_liters' => 500, 'unit_price' => 60], ['delivery_type' => 'garage_to_client'])
             ->assertSessionHasErrors('items.0.garage_stock_id');
@@ -146,6 +149,8 @@ class Part2ButtonRevisionsTest extends AuditTestCase
 
         $html = $this->actingAs($a['sales'])->get(route('sales-officer.sales'))->assertOk()->getContent();
         $this->assertStringContainsString('<option value="depot_to_client"', $html);
+        $this->assertStringContainsString('data-delivery-details', $html);
+        $this->assertStringContainsString("const showDeliveryDetails = select.value !== 'standard';", \Illuminate\Support\Facades\File::get(resource_path('js/app.js')));
         // (The rejected Garage to Client order keeps its type selected in the reopened form.)
         $this->assertStringContainsString('<option value="standard"', $html);
         $this->assertStringContainsString('<option value="garage_to_client" selected>Garage to Client</option>', $html);

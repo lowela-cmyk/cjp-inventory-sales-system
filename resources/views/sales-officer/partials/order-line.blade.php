@@ -96,11 +96,12 @@
     </div>
 </div>
 <div class="f1-breakdown" data-f1-breakdown>
-    <div class="f1-breakdown-cell"><span>Ordered Amount</span><output data-f1-ordered>0.00</output></div>
+    {{-- Part 17 #8: liters (app.js fills them in); Fuel Total / F1 Total / Line Total below stay in pesos. --}}
+    <div class="f1-breakdown-cell"><span>Ordered Amount</span><output data-f1-ordered>0.00 L</output></div>
     <div class="f1-breakdown-cell"><span>F1 Percentage</span><output data-f1-percent>0%</output></div>
-    <div class="f1-breakdown-cell"><span data-f1-main-label>Fuel Amount</span><output data-f1-main>0.00</output></div>
-    <div class="f1-breakdown-cell"><span>F1 Amount</span><output data-f1-amount>0.00</output></div>
-    <div class="f1-breakdown-cell"><span>Total Amount</span><output data-f1-total>0.00</output></div>
+    <div class="f1-breakdown-cell"><span data-f1-main-label>Fuel Amount</span><output data-f1-main>0.00 L</output></div>
+    <div class="f1-breakdown-cell"><span>F1 Amount</span><output data-f1-amount>0.00 L</output></div>
+    <div class="f1-breakdown-cell"><span>Total Amount</span><output data-f1-total>0.00 L</output></div>
 </div>
 <div class="sale-line-totals">
     <div class="sale-line-total-row"><span data-main-total-label>Fuel Total</span><output data-sales-main-total>0.00</output></div>

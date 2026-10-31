@@ -672,17 +672,6 @@
     }
 }
 
-/* Money in the breakdown row carries the peso sign like the totals; Ordered Amount is liters. The values are the
-   <output>s the existing JS fills, so only their display changes. */
-.admin-modal-sales-wide :is([data-f1-main], [data-f1-amount], [data-f1-total])::before {
-    content: "\20B1\00A0";
-}
-
-.admin-modal-sales-wide [data-f1-ordered]::after {
-    content: "\00A0L";
-}
-
-
 /* Part 12: Edit Sales Record is as wide as Record Sales, so the line table (Fuel ... Fulfilled) shows every column
    at 1280px and up; below that the table scrolls inside its own box. */
 .admin-modal-sales {

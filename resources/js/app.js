@@ -180,6 +180,9 @@ document.addEventListener('click', (event) => {
         toastDismiss.closest('.cjp-toast')?.remove();
     }
 
+    const detailStep = event.target.closest('[data-detail-page-step]');
+    if (detailStep) stepDetailPage(detailStep);
+
     const confirmAccept = event.target.closest('[data-confirm-accept]');
     if (confirmAccept && pendingConfirmForm) {
         const form = pendingConfirmForm;
@@ -208,7 +211,7 @@ document.addEventListener('change', (event) => {
     // Part 9 Purchases: Bank Selection is required for Bank Transfer / Cheque, and disabled and cleared for Cash.
     if (event.target.matches('[data-payment-mode]')) syncBankSelect(event.target);
 
-    // Part 2 revisions Record Sales: Delivery Details (truck, driver, date, status) belong to Standard orders only.
+    // Standard is a source placeholder and has no Delivery Details; Depot/Garage orders keep them.
     if (event.target.matches('[data-delivery-type]')) syncDeliveryType(event.target);
     if (event.target.matches('[data-sale-purchase]')) syncStockHint(event.target);
 
@@ -346,14 +349,14 @@ function syncSaleItemRow(row) {
     const f1Total = percent > 0 ? Math.round(f1 * (Number(f1Price?.value || 0) || 0) * 100) / 100 : 0;
     const lineTotal = mainTotal + f1Total;
 
-    set('[data-f1-ordered]', format(quantity));
+    set('[data-f1-ordered]', `${format(quantity)} L`);
     set('[data-f1-percent]', `${percent}%`);
-    // The breakdown is monetary: quantities are already shown by Ordered Amount and the F1 (L) / Fuel (L) fields.
+    // Part 17 #8: the breakdown row is in liters (fuel / F1 / total liters); the totals bar below stays in pesos.
     // Keep the labels stable even when the primary fuel itself is F1; otherwise the bar showed “F1 Amount” twice.
     set('[data-f1-main-label]', 'Fuel Amount');
-    set('[data-f1-main]', format(mainTotal));
-    set('[data-f1-amount]', format(f1Total));
-    set('[data-f1-total]', format(lineTotal));
+    set('[data-f1-main]', `${format(main)} L`);
+    set('[data-f1-amount]', `${format(f1)} L`);
+    set('[data-f1-total]', `${format(main + f1)} L`);
     set('[data-main-total-label]', 'Fuel Total');
     set('[data-sales-main-total]', format(mainTotal));
     set('[data-sales-f1-total]', format(f1Total));
@@ -382,10 +385,10 @@ function syncStockHint(purchase) {
 
 function syncDeliveryType(select) {
     const form = select.closest('[data-sale-form]');
-    const standard = select.value !== 'depot_to_client';
-    form?.querySelectorAll('[data-standard-only]').forEach((section) => {
-        section.hidden = !standard;
-        section.querySelectorAll('select, input').forEach((field) => { field.disabled = !standard; });
+    const showDeliveryDetails = select.value !== 'standard';
+    form?.querySelectorAll('[data-delivery-details]').forEach((section) => {
+        section.hidden = !showDeliveryDetails;
+        section.querySelectorAll('select, input').forEach((field) => { field.disabled = !showDeliveryDetails; });
     });
 
     // Part 13: Garage to Client sells from garage tanks ("garage" options); the other types from the depot. Part 16: the
@@ -663,6 +666,28 @@ document.addEventListener('keydown', (event) => {
     }
 });
 
+// Part 17 #4: data-confirm-when="field=value" asks only when that field (enabled) holds the value, e.g. Delivered.
+const confirmApplies = (form) => {
+    if (!form.dataset.confirmWhen) return true;
+    const [name, value] = form.dataset.confirmWhen.split('=');
+    const field = form.elements.namedItem(name);
+
+    return Boolean(field) && !field.disabled && field.value === value;
+};
+
+// Part 17: paged detail sections ("< 1 of 3 >"); the arrows stop at the first and last section.
+const stepDetailPage = (button) => {
+    const pager = button.closest('[data-detail-pages]');
+    const pages = [...pager.querySelectorAll('[data-detail-page]')];
+    const current = pages.findIndex((page) => !page.hidden);
+    const next = Math.min(pages.length - 1, Math.max(0, current + Number(button.dataset.detailPageStep)));
+    pages.forEach((page, index) => { page.hidden = index !== next; });
+    pager.querySelector('[data-detail-page-label]').textContent = `${next + 1} out of ${pages.length}`;
+    pager.querySelectorAll('[data-detail-page-step]').forEach((arrow) => {
+        arrow.disabled = Number(arrow.dataset.detailPageStep) < 0 ? next === 0 : next === pages.length - 1;
+    });
+};
+
 document.addEventListener('submit', (event) => {
     const form = event.target;
 
@@ -670,8 +695,17 @@ document.addEventListener('submit', (event) => {
         return;
     }
 
+    // Source assignment can also happen through Schedule/Edit Lift or Deliver from Truck.
+    // Add the same confirmation only when the selected order is still Standard.
+    if (!form.dataset.confirmMessage && (form.matches('[data-lifting-schedule-form]') || form.matches('[data-standard-conversion-form]'))) {
+        const standardOrder = form.querySelector('option[data-delivery-type="standard"]:checked, option[data-standard-order="true"]:checked');
+        if (standardOrder) {
+            form.dataset.confirmMessage = 'Assign this source and change the order from Standard? This can only be done once.';
+        }
+    }
+
     const confirmation = form.dataset.confirmMessage;
-    if (confirmation && form.dataset.confirmed !== 'true') {
+    if (confirmation && form.dataset.confirmed !== 'true' && confirmApplies(form)) {
         event.preventDefault();
         pendingConfirmForm = form;
 

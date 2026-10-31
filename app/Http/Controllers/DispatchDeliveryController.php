@@ -207,7 +207,7 @@ class DispatchDeliveryController extends Controller
                             'created_at' => now(),
                             'updated_at' => now(),
                         ]);
-                        $this->liftAllocations->createForHaul($haulId, (int) $purchaseItem->fuel_type_id, $purchaseItem->allocation);
+                        $this->liftAllocations->createForHaul($haulId, (int) $purchaseItem->fuel_type_id, $purchaseItem->allocation, (int) $request->user()->id);
                         $this->purchaseWorkflow->synchronize((int) $purchaseItem->purchase_id, (int) $request->user()->id, $haulId);
                     }
 
@@ -332,7 +332,7 @@ class DispatchDeliveryController extends Controller
                             'created_at' => now(),
                         ]);
                     }
-                    $this->liftAllocations->createForHaul($haulId, (int) $purchaseItem->fuel_type_id, $purchaseItem->allocation);
+                    $this->liftAllocations->createForHaul($haulId, (int) $purchaseItem->fuel_type_id, $purchaseItem->allocation, (int) $request->user()->id);
                 }
                 $removed = $existing->keys()->diff($purchaseItems->pluck('id'))->map(fn (mixed $id): int => (int) $existing->get($id)->id)->values()->all();
                 if ($removed !== []) {

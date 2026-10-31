@@ -1488,6 +1488,40 @@ table td:has(.status-badge) {
     width: min(1000px, 92vw);
 }
 
+/* Part 17 #1-2: the Sales View follows the supplied Record Sales Receivables mockup. */
+.admin-modal-sales .modal-titlebar {
+    height: 68px;
+    padding-inline: 76px;
+}
+
+.admin-modal-sales .modal-titlebar h2 {
+    font-size: 18px;
+    letter-spacing: .01em;
+}
+
+.admin-modal-sales .modal-body {
+    padding: 22px 28px 24px;
+}
+
+.admin-modal-sales .modal-card {
+    border: 0;
+    padding: 0;
+}
+
+.sales-modal-summary {
+    margin-bottom: 22px;
+}
+
+.sales-modal-summary .sales-row-actions {
+    margin-bottom: 10px;
+}
+
+.sales-modal-summary .detail-id {
+    margin: 0;
+    font-size: 28px;
+    line-height: 1.05;
+}
+
 .admin-modal > .modal-titlebar,
 .admin-modal > .modal-footer {
     flex: none;
@@ -4825,4 +4859,141 @@ body.login-page {
 
 .sale-order-line > .sale-stock-hint.is-empty {
     display: none;
+}
+
+/* Part 17 #1-2 / #9: long View / Edit details are section cards shown one at a time, "< 1 of 3 >" under the card. */
+.detail-pages {
+    margin-top: 4px;
+}
+
+.detail-page-title {
+    margin: 0 0 8px;
+    font-size: 22px;
+    font-weight: 800;
+}
+
+.detail-page-card {
+    gap: 12px;
+    border: 1px solid #a7a7a7;
+    border-radius: 14px;
+    padding: 18px 20px;
+    background: #fff;
+}
+
+.detail-page-card .detail-value {
+    font-size: 15px;
+}
+
+.detail-pager {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 8px;
+    margin: 10px 0 0;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.detail-pager-arrow {
+    width: 28px;
+    height: 28px;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--danger, #dc2626);
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.detail-pager-arrow:disabled {
+    color: var(--admin-muted);
+    cursor: default;
+}
+
+.admin-modal-sales .sales-items-table {
+    margin-top: 18px;
+}
+
+.admin-modal-sales .sales-items-table .admin-table {
+    min-width: 0;
+    table-layout: fixed;
+}
+
+.admin-modal-sales .sales-items-table .admin-table th,
+.admin-modal-sales .sales-items-table .admin-table td {
+    padding: 9px 7px;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.admin-modal-sales .form-grid {
+    row-gap: 13px;
+}
+
+.admin-modal-sales .form-row {
+    grid-template-columns: 158px minmax(0, 1fr);
+    gap: 12px;
+}
+
+.admin-modal-sales .form-row label,
+.admin-modal-sales .detail-label {
+    font-size: 14px;
+}
+
+.admin-modal-sales .form-row input,
+.admin-modal-sales .form-row select,
+.admin-modal-sales .form-row output {
+    min-height: 38px;
+    font-size: 14px;
+}
+
+.admin-modal-sales .modal-footer {
+    padding: 14px 28px;
+}
+
+.detail-pager-arrow:not(:disabled):hover,
+.detail-pager-arrow:focus-visible {
+    background: var(--admin-head);
+}
+
+/* Part 17 #7: export-only columns (Recorded By / Last Updated By) never show on screen. */
+.admin-table .export-only[hidden] {
+    display: none;
+}
+
+.admin-table td[data-sale-actors] {
+    cursor: help;
+}
+
+.sale-source-change-tag {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: #eef5ff;
+    color: #315b92;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.sale-source-assignment {
+    margin-top: 18px;
+}
+
+.sale-source-assignment form + form {
+    margin-top: 10px;
+}
+
+.source-assignment-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+}
+
+/* Part 17 #11: Stock Out shows Driver Name and Truck again; the table scrolls inside its box when it is wider than the
+   frame (1366px) and Actions stays pinned on the right (.inventory-table-actions). */
+.stock-out-table td.stock-out-name.stock-out-crew {
+    min-width: 80px;
+    max-width: 120px;
 }

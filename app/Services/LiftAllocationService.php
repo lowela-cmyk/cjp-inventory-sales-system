@@ -24,7 +24,8 @@ class LiftAllocationService
     private const OPEN_SALE_STATUSES = ['confirmed', 'partially_paid', 'paid', 'unpaid'];
 
     public function __construct(
-        private readonly SaleConfirmationService $saleConfirmation
+        private readonly SaleConfirmationService $saleConfirmation,
+        private readonly StandardSourceAssignmentService $sourceAssignments
     ) {}
 
     /**
@@ -36,7 +37,7 @@ class LiftAllocationService
      */
     public function directSaleOptions(array $exceptHaulIds = []): Collection
     {
-        return $this->openDirectSales(false, ['depot_to_client'], $exceptHaulIds)
+        return $this->openDirectSales(false, ['depot_to_client', 'standard'], $exceptHaulIds)
             ->map(function (object $sale): object {
                 $sale->label = ($sale->customer_name ?: $sale->company_name).' · '.($sale->sales_order_number ?: $sale->sale_code);
                 $sale->ordered_label = mb_strtoupper((string) $sale->fuel_name).' - '.number_format($sale->open_liters, 2).' L';
@@ -62,7 +63,7 @@ class LiftAllocationService
     {
         $errors = [];
         $resolved = [];
-        $open = $this->openDirectSales(true, ['depot_to_client'], $exceptHaulIds)->keyBy('sale_id');
+        $open = $this->openDirectSales(true, ['depot_to_client', 'standard'], $exceptHaulIds)->keyBy('sale_id');
         $seen = [];
         $total = 0.0;
 
@@ -81,7 +82,7 @@ class LiftAllocationService
             if (! $sale) {
                 $errors[$key] = DB::table('haul_allocations')->where('sale_id', $saleId)->where('destination_type', 'customer')->where('status', '!=', 'cancelled')->exists()
                     ? 'This order is already on another lift.'
-                    : 'Select an open Depot to Client order.';
+                    : 'Select an open Depot to Client or Standard order.';
 
                 continue;
             }
@@ -89,9 +90,11 @@ class LiftAllocationService
             // The lift line that carries the order's purchase (or its fuel, for an order without a purchase).
             $lineIndex = null;
             foreach ($lines as $candidate => $line) {
-                $matches = $sale->purchase_item_id
+                $matches = $sale->delivery_type === 'standard'
+                    ? ($fuelTypeByItem[(int) $line['purchase_item_id']] ?? null) === (int) $sale->fuel_type_id
+                    : ($sale->purchase_item_id
                     ? (int) $line['purchase_item_id'] === (int) $sale->purchase_item_id
-                    : ($fuelTypeByItem[(int) $line['purchase_item_id']] ?? null) === (int) $sale->fuel_type_id;
+                    : ($fuelTypeByItem[(int) $line['purchase_item_id']] ?? null) === (int) $sale->fuel_type_id);
                 if ($matches) {
                     $lineIndex = $candidate;
                     break;
@@ -128,7 +131,7 @@ class LiftAllocationService
     /**
      * @param  array<int, array{sale_id: int, customer_id: int, quantity_liters: float}>  $rows
      */
-    public function createForHaul(int $haulId, int $fuelTypeId, array $rows): void
+    public function createForHaul(int $haulId, int $fuelTypeId, array $rows, ?int $actorId = null): void
     {
         foreach ($rows as $row) {
             DB::table('haul_allocations')->insert([
@@ -144,6 +147,9 @@ class LiftAllocationService
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
+            if ($actorId) {
+                $this->sourceAssignments->convertForHaul((int) $row['sale_id'], $haulId, $actorId);
+            }
         }
     }
 

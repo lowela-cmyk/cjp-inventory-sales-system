@@ -86,8 +86,13 @@ class CompliancePhase1Test extends AuditTestCase
             ->assertSee('title="Realized Profit = Total Paid − Total Cost (negative until payments cover the cost)"', false)
             ->assertSeeTextInOrder(['130,000.00', '40,000.00', 'Released', '30,000.00', '-60,000.00']);
 
-        // A voided release earns nothing: both columns read "—" (the 40,000 paid is a refund due).
-        $this->actingAs($a['sales'])->patch(route('sales-officer.sales.cancel', $saleId), ['cancel_reason' => 'wrong_customer'])->assertSessionHasNoErrors();
+        // Part 17: a Delivered sale can't be cancelled (its fuel already left stock).
+        $this->actingAs($a['sales'])->patch(route('sales-officer.sales.cancel', $saleId), ['cancel_reason' => 'wrong_customer'])->assertSessionHasErrors('sale');
+        $this->assertSame('released', DB::table('stock_outs')->where('sale_id', $saleId)->value('status'));
+
+        // A voided release (cancelled before Part 17) earns nothing: both columns read "—" (the 40,000 paid is a refund due).
+        DB::table('sales')->where('id', $saleId)->update(['status' => 'cancelled', 'delivery_status' => 'cancelled']);
+        DB::table('stock_outs')->where('sale_id', $saleId)->update(['status' => 'cancelled']);
         $this->actingAs($a['admin'])->get(route('admin.inventory.stock-out'))->assertOk()
             ->assertSeeTextInOrder(['130,000.00', '40,000.00', 'Cancelled', '—', '—'])
             ->assertDontSeeText('-60,000.00');

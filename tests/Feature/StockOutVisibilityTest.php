@@ -80,7 +80,7 @@ class StockOutVisibilityTest extends AuditTestCase
         $this->assertSame('5,000 L', $cards['Stock-Out Today']);
     }
 
-    public function test_a_cancelled_sale_keeps_its_stock_out_visible_as_cancelled_and_restores_the_purchase(): void
+    public function test_a_delivered_sale_cannot_be_cancelled_so_its_stock_out_stays_released(): void
     {
         $a = $this->actors();
         $diesel = $this->purchaseLine($a, 'DSL', 10000);
@@ -88,12 +88,12 @@ class StockOutVisibilityTest extends AuditTestCase
         $sale = DB::table('sales')->where('sales_order_number', 'SO-VOID')->first(['id', 'sale_code']);
         $this->assertSame(6000.0, $this->remaining($diesel));
 
-        $this->actingAs($a['sales'])->patch(route('sales-officer.sales.cancel', $sale->id), ['cancel_reason' => 'customer_cancelled'])->assertRedirect(route('sales-officer.sales'));
+        // Part 17: refused; the release stays and the liters stay deducted.
+        $this->actingAs($a['sales'])->from(route('sales-officer.sales'))->patch(route('sales-officer.sales.cancel', $sale->id), ['cancel_reason' => 'customer_cancelled'])->assertSessionHasErrors('sale');
 
         $row = $this->stockOutRows($a['inventory'], 'inventory-officer.inventory.stock-out')->first(fn (array $row): bool => $row['cells'][0] === $sale->sale_code);
-        $this->assertSame('Cancelled', $row['cells'][14]);
-        $this->assertSame('—', $row['cells'][15]);
-        $this->assertSame(10000.0, $this->remaining($diesel));
+        $this->assertSame('Released', $row['cells'][14]);
+        $this->assertSame(6000.0, $this->remaining($diesel));
     }
 
     /**

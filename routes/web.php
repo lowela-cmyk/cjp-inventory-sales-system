@@ -86,6 +86,7 @@ Route::middleware(['auth'])->group(function () {
         Route::patch('/sales/customers/{customer}/deactivate', [SalesOfficerCustomerController::class, 'deactivate'])->name('sales.customers.deactivate');
         Route::post('/sales', [SalesOfficerCustomerController::class, 'storeSale'])->name('sales.store');
         Route::post('/sales/{sale}/payments', [SalesOfficerCustomerController::class, 'storePayment'])->name('sales.payments.store');
+        Route::post('/sales/{sale}/assign-source', [SalesOfficerCustomerController::class, 'assignSource'])->name('sales.assign-source');
         Route::patch('/sales/{sale}', [SalesOfficerCustomerController::class, 'updateSale'])->name('sales.update');
         Route::patch('/sales/{sale}/delivery-status', [SalesOfficerCustomerController::class, 'updateDeliveryStatus'])->name('sales.delivery-status.update');
         Route::patch('/sales/{sale}/cancel', [SalesOfficerCustomerController::class, 'cancelSale'])->name('sales.cancel');
@@ -158,6 +159,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/sales', [SalesOfficerCustomerController::class, 'index'])->name('sales');
         Route::post('/sales', [SalesOfficerCustomerController::class, 'storeSale'])->name('sales.store');
         Route::post('/sales/{sale}/payments', [SalesOfficerCustomerController::class, 'storePayment'])->name('sales.payments.store');
+        Route::post('/sales/{sale}/assign-source', [SalesOfficerCustomerController::class, 'assignSource'])->name('sales.assign-source');
         Route::patch('/sales/{sale}', [SalesOfficerCustomerController::class, 'updateSale'])->name('sales.update');
         Route::patch('/sales/{sale}/delivery-status', [SalesOfficerCustomerController::class, 'updateDeliveryStatus'])->name('sales.delivery-status.update');
         Route::patch('/sales/{sale}/cancel', [SalesOfficerCustomerController::class, 'cancelSale'])->name('sales.cancel');

@@ -168,8 +168,11 @@
                         <th>Company Name</th>
                         <th><span class="th-line" data-export-part>Fuel</span><span class="th-line" data-export-part>Purchase ID</span></th>
                         <th>Delivery Type</th>
-                        {{-- Part 12: delivery details live in the Edit Stock-Out modal; these hidden columns keep them in Export. --}}
-                        @foreach (['Truck', 'Driver', 'Delivery Date', 'Delivery Status', 'ATL', 'DR Number', 'Source'] as $exportOnly)
+                        {{-- Part 17 #11: the driver and truck (name) that delivered it are visible columns again (and exported). --}}
+                        <th>Driver Name</th>
+                        <th>Truck</th>
+                        {{-- Part 12: the other delivery details live in the Edit Stock-Out modal; these hidden columns keep them in Export. --}}
+                        @foreach (['Delivery Date', 'Delivery Status', 'ATL', 'DR Number', 'Source'] as $exportOnly)
                             <th class="export-only" hidden>{{ $exportOnly }}</th>
                         @endforeach
                         <th>QTY Released</th><th>Cost / Unit</th><th>Total Cost</th><th>Price / Unit</th><th>Total Price</th><th>Total Paid</th>
@@ -189,9 +192,14 @@
                                 <td><x-table.stack :lines="[['value' => $c[0], 'class' => 'cell-id'], ['value' => $c[1], 'class' => 'is-secondary']]" /></td>
                                 <td class="stock-out-name">{{ $c[2] }}</td>
                                 <td class="stock-out-name">{{ $c[3] }}</td>
-                                <td><x-table.stack :lines="[['value' => $c[5]], ['value' => $c[6], 'class' => 'cell-id is-secondary']]" /></td>
+                                <td>
+                                    <x-table.stack :lines="[['value' => $c[5]], ['value' => $c[6], 'class' => 'cell-id is-secondary']]" />
+                                    @if ($row['source_change_note'])<small class="sale-source-change-tag" title="{{ $row['source_change_note'] }}">Source changed</small>@endif
+                                </td>
                                 <td>{{ $c[4] }}</td>
-                                @foreach ([$d['truck'], $d['driver'], $d['date'], $d['status'], $d['atl'], $d['dr'], $c[13]] as $exportOnly)
+                                <td class="stock-out-name stock-out-crew">{{ $d['driver'] }}</td>
+                                <td class="stock-out-name stock-out-crew">{{ $d['truck_name'] }}</td>
+                                @foreach ([$d['date'], $d['status'], $d['atl'], $d['dr'], $c[13]] as $exportOnly)
                                     <td class="export-only" hidden>{{ $exportOnly }}</td>
                                 @endforeach
                                 @foreach ([7, 8, 9, 10, 11, 12] as $i)
@@ -207,7 +215,7 @@
                                 </td>
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="15">No records found.</td></tr>
+                            <tr><td class="empty-cell" colspan="17">No records found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -290,35 +298,18 @@
                 @csrf
                 @method('PATCH')
             </form>
+            @php
+                // Part 17 #9: the withdrawal files (links) close the second section.
+                $purchasePages = $row['detail_pages'];
+                if (! empty($row['withdrawals'])) {
+                    $purchasePages[1]['fields']['Withdrawal Files'] = new \Illuminate\Support\HtmlString(collect($row['withdrawals'])->map(fn (array $withdrawal): string => '<div><a class="btn btn-secondary btn-small" href="'.e($withdrawal['url']).'">'.e($withdrawal['haul_code']).'</a> <span>'.e($withdrawal['uploaded_at']).'</span>'.($withdrawal['notes'] ? ' <span>'.e($withdrawal['notes']).'</span>' : '').'</div>')->implode(''));
+                }
+            @endphp
             <div class="modal-card">
                 <x-admin.status-badge :status="ucwords($row['payment_status'])" />
                 <p class="detail-id">{{ $row['purchase_code'] }}</p>
-                <div class="detail-grid">
-                    @foreach ($row['details'] as $label => $value)
-                        <div class="detail-row">
-                            <div class="detail-label">{{ $label }}</div>
-                            <div class="detail-value">
-                                {{ $value }}
-                            </div>
-                        </div>
-                    @endforeach
-                    @if (! empty($row['withdrawals']))
-                        <div class="detail-row">
-                            <div class="detail-label">Withdrawal Files</div>
-                            <div class="detail-value withdrawal-list">
-                                @foreach ($row['withdrawals'] as $withdrawal)
-                                    <div>
-                                        <a class="btn btn-secondary btn-small" href="{{ $withdrawal['url'] }}">{{ $withdrawal['haul_code'] }}</a>
-                                        <span>{{ $withdrawal['uploaded_at'] }}</span>
-                                        @if ($withdrawal['notes'])
-                                            <span>{{ $withdrawal['notes'] }}</span>
-                                        @endif
-                                    </div>
-                                @endforeach
-                            </div>
-                        </div>
-                    @endif
-                </div>
+                {{-- Part 17 #9: "< 1 of 2 >" sections; the editable fields stay below (Part 15 locks unchanged). --}}
+                <x-admin.detail-pages :pages="$purchasePages" />
                 <div class="form-grid" style="margin-top: 18px">
                     @if ($row['stock_locked'])
                         {{-- Part 15: once fuel is lifted, Date, Fuel Type, Depot, Quantity and Cost / Liter stay as recorded. --}}

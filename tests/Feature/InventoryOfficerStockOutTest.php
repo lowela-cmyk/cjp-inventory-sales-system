@@ -120,19 +120,23 @@ class InventoryOfficerStockOutTest extends TestCase
         $this->assertSame('The selected sale is not eligible for stock-out.', app(StockOutReleaseService::class)->releaseSaleItem(999999, '2026-08-30 12:00:00', $records['salesOfficer']->id));
     }
 
-    public function test_cancelling_a_delivered_sale_gives_the_liters_back_to_the_purchase(): void
+    public function test_a_delivered_sale_cannot_be_cancelled_and_its_liters_stay_deducted(): void
     {
+        // Part 17: once Delivered the fuel left stock (Stock Out), so Cancel Sale is refused and nothing comes back.
         $records = $this->baseRecords();
         $purchase = $this->purchase($records, 10000, 50);
         $sale = $this->sale($records, [[$purchase, 2500, 65]]);
         $this->assertNull($this->deliver($records, $sale['saleId']));
         $this->assertSame(7500.0, $this->remaining($purchase));
 
-        $this->actingAs($records['salesOfficer'])->patch(route('sales-officer.sales.cancel', $sale['saleId']), ['cancel_reason' => 'customer_cancelled'])
-            ->assertRedirect(route('sales-officer.sales'));
+        $code = DB::table('sales')->where('id', $sale['saleId'])->value('sale_code');
+        $this->actingAs($records['salesOfficer'])->from(route('sales-officer.sales'))->patch(route('sales-officer.sales.cancel', $sale['saleId']), ['cancel_reason' => 'customer_cancelled'])
+            ->assertRedirect(route('sales-officer.sales'))
+            ->assertSessionHasErrors(['sale' => $code.' is Delivered: its fuel was already deducted from stock (Stock Out), so it cannot be cancelled.']);
 
-        $this->assertDatabaseHas('stock_outs', ['sale_id' => $sale['saleId'], 'status' => 'cancelled']);
-        $this->assertSame(10000.0, $this->remaining($purchase));
+        $this->assertDatabaseHas('stock_outs', ['sale_id' => $sale['saleId'], 'status' => 'released']);
+        $this->assertDatabaseHas('sales', ['id' => $sale['saleId'], 'status' => 'confirmed', 'delivery_status' => 'delivered']);
+        $this->assertSame(7500.0, $this->remaining($purchase));
     }
 
     public function test_manual_stock_out_entry_is_removed(): void

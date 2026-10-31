@@ -395,9 +395,9 @@ class SalesOfficerSalesManagementTest extends TestCase
         $this->actingAs($records['salesOfficer'])
             ->get(route('sales-officer.sales'))
             ->assertOk()
-            // Part 11: "Delete" is reserved for delivered orders; an untouched draft is discarded.
-            ->assertSee('Discard this untouched draft sale?')
-            ->assertSee('>Discard Draft<', false)
+            // Part 17: an order that is not delivered only has Cancel Sale (an untouched draft is then removed).
+            ->assertSee('Cancel this draft sale? It has no payments or deliveries yet, so it will be removed.')
+            ->assertDontSee('>Discard Draft<', false)
             ->assertDontSee('Delete order SLS-DRAFT-DELETE');
 
         $this->actingAs($records['salesOfficer'])
@@ -410,8 +410,9 @@ class SalesOfficerSalesManagementTest extends TestCase
         $this->assertDatabaseMissing('receivables', ['sale_id' => $saleId]);
     }
 
-    public function test_cancelled_sale_voids_stock_out_effect_without_deleting_inventory_history(): void
+    public function test_a_delivered_sale_has_no_cancel_sale_and_the_server_refuses_it(): void
     {
+        // Part 17: a Delivered order was already deducted from stock (Stock Out), so it can no longer be cancelled.
         $records = $this->baseRecords();
 
         $this->actingAs($records['salesOfficer'])
@@ -423,30 +424,27 @@ class SalesOfficerSalesManagementTest extends TestCase
             ->assertRedirect(route('sales-officer.sales'));
 
         $sale = DB::table('sales')->where('sales_order_number', 'SO-CANCEL-STOCK')->first();
+        // Not delivered yet: the View offers Cancel Sale.
+        $this->actingAs($records['salesOfficer'])->get(route('sales-officer.sales'))->assertSee('data-modal-swap="so-sale-cancel-'.$sale->id.'"', false);
+
         $this->actingAs($records['salesOfficer'])
             ->patch(route('sales-officer.sales.delivery-status.update', $sale->id), ['delivery_status' => 'delivered'])
             ->assertRedirect(route('sales-officer.sales'));
         $stockOut = DB::table('stock_outs')->where('sale_id', $sale->id)->first();
-        $this->assertNotNull($stockOut);
-        $this->assertSame('released', $stockOut->status);
-        $this->assertNotNull($stockOut->purchase_item_id);
         $purchaseStock = fn (): float => (float) app(PurchaseStockService::class)->line((int) $stockOut->purchase_item_id)->on_hand;
         $deliveredStock = $purchaseStock();
 
-        $this->actingAs($records['salesOfficer'])
-            ->patch(route('sales-officer.sales.cancel', $sale->id), ['cancel_reason' => 'customer_cancelled'])
-            ->assertRedirect(route('sales-officer.sales'));
+        $html = $this->actingAs($records['salesOfficer'])->get(route('sales-officer.sales'))->getContent();
+        $this->assertStringNotContainsString('data-modal-swap="so-sale-cancel-'.$sale->id.'"', $html);
+        $this->assertStringNotContainsString('id="so-sale-cancel-'.$sale->id.'"', $html);
 
-        $this->assertDatabaseHas('stock_outs', ['id' => $stockOut->id, 'status' => 'cancelled']);
-        // The voided release gives its liters back to the purchase; the release row stays for history.
-        $this->assertSame(round($deliveredStock + 1000, 2), $purchaseStock());
-        $this->assertDatabaseHas('sale_items', [
-            'sale_id' => $sale->id,
-            'fulfilled_quantity_liters' => '0.00',
-        ]);
-        $this->assertDatabaseHas('sales', ['id' => $sale->id, 'status' => 'cancelled']);
-        $this->assertDatabaseHas('sales', ['id' => $sale->id, 'delivery_status' => 'cancelled']);
-        $this->assertDatabaseHas('receivables', ['sale_id' => $sale->id, 'status' => 'clear']);
+        $this->actingAs($records['salesOfficer'])->from(route('sales-officer.sales'))
+            ->patch(route('sales-officer.sales.cancel', $sale->id), ['cancel_reason' => 'customer_cancelled'])
+            ->assertSessionHasErrors('sale');
+
+        $this->assertDatabaseHas('stock_outs', ['id' => $stockOut->id, 'status' => 'released']);
+        $this->assertSame($deliveredStock, $purchaseStock());
+        $this->assertDatabaseHas('sales', ['id' => $sale->id, 'delivery_status' => 'delivered', 'cancelled_at' => null]);
     }
 
     public function test_admin_can_cancel_sale_through_admin_route(): void

@@ -130,7 +130,8 @@ class Part2ButtonRevisionsTest extends AuditTestCase
         $saleId = $this->lastSaleId();
         $this->assertDatabaseHas('sales', ['id' => $saleId, 'delivery_type' => 'depot_to_client', 'delivery_truck_id' => null]);
 
-        $this->deliverOrder($a, $saleId)->assertSessionHasErrors(['delivery_status' => 'This Depot to Client sale is delivered through its lift. Add it to a lift in Fuel Lifting and complete the lift first.']);
+        // Part 18 #5: only the lift sets a Depot to Client order's delivery status.
+        $this->deliverOrder($a, $saleId)->assertSessionHasErrors(['delivery_status' => 'A Depot to Client order is delivered through its lift, so its delivery status cannot be changed here.']);
         $this->assertSame(8000.0, $this->remaining($diesel));
     }
 
@@ -150,7 +151,8 @@ class Part2ButtonRevisionsTest extends AuditTestCase
         $html = $this->actingAs($a['sales'])->get(route('sales-officer.sales'))->assertOk()->getContent();
         $this->assertStringContainsString('<option value="depot_to_client"', $html);
         $this->assertStringContainsString('data-delivery-details', $html);
-        $this->assertStringContainsString("const showDeliveryDetails = select.value !== 'standard';", \Illuminate\Support\Facades\File::get(resource_path('js/app.js')));
+        // Part 18 #3 / #5: only Garage to Client shows Delivery Details (Depot to Client takes them from its lift).
+        $this->assertStringContainsString("const showDeliveryDetails = select.value === 'garage_to_client';", \Illuminate\Support\Facades\File::get(resource_path('js/app.js')));
         // (The rejected Garage to Client order keeps its type selected in the reopened form.)
         $this->assertStringContainsString('<option value="standard"', $html);
         $this->assertStringContainsString('<option value="garage_to_client" selected>Garage to Client</option>', $html);
@@ -188,9 +190,9 @@ class Part2ButtonRevisionsTest extends AuditTestCase
         $this->assertDatabaseHas('sales', ['id' => $saleId, 'delivery_status' => 'delivered']);
         $this->assertSame([56400.0, 4600.0], [$this->remaining($premium), $this->remaining($f1)]);
 
-        // Completing the schedule and delivering again change nothing.
+        // Completing the schedule changes nothing, and delivering by hand is refused (Part 18 #5: the lift sets it).
         $this->actingAs($a['dispatch'])->patch(route('dispatch.fuel-lifting.hauls.status', $haulId), ['idempotency_key' => $this->uuid(), 'status' => 'completed'])->assertSessionHasNoErrors();
-        $this->deliverOrder($a, $saleId)->assertSessionHasNoErrors();
+        $this->deliverOrder($a, $saleId)->assertSessionHasErrors('delivery_status');
         $this->assertSame([56400.0, 4600.0], [$this->remaining($premium), $this->remaining($f1)]);
         $this->assertSame(2, DB::table('stock_outs')->where('sale_id', $saleId)->where('status', 'released')->count());
         $this->assertSame(2, DB::table('stock_outs')->where('sale_id', $saleId)->whereNotNull('haul_allocation_id')->count());

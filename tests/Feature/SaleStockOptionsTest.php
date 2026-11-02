@@ -98,7 +98,7 @@ class SaleStockOptionsTest extends AuditTestCase
 
         // The server enforces it: a Standard order can't take the garage lot, Garage to Client can.
         $this->recordOrder($a, ['purchase_item_id' => 'garage:'.$lot, 'quantity_liters' => 100, 'unit_price' => 60])->assertSessionHasErrors();
-        $this->recordOrder($a, ['purchase_item_id' => 'garage:'.$lot, 'quantity_liters' => 100, 'unit_price' => 60], ['delivery_type' => 'garage_to_client'])->assertSessionHasNoErrors();
+        $this->recordOrder($a, ['purchase_item_id' => 'garage:'.$lot, 'quantity_liters' => 100, 'unit_price' => 60], ['delivery_type' => 'garage_to_client'] + $this->garageDelivery($a))->assertSessionHasNoErrors();
         $this->recordOrder($a, ['purchase_item_id' => $depot, 'quantity_liters' => 100, 'unit_price' => 60], ['delivery_type' => 'depot_to_client'])->assertSessionHasNoErrors();
     }
 

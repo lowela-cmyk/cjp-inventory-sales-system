@@ -79,6 +79,9 @@ class SalesOfficerCustomerController extends Controller
     /** Delivery statuses a Standard order can be recorded with (Delivered deducts the stock on save). */
     private const NEW_ORDER_DELIVERY_STATUSES = ['pending', 'out_for_delivery', 'delivered'];
 
+    /** Part 18 #5: a Depot to Client order's Delivery Details before a lift carries it. */
+    private const NOT_ON_A_LIFT = 'Not on a lift yet';
+
     /** Payment Status shown read-only in the sale modals, worked out from recorded payments. */
     private const PAYMENT_STATUS_LABELS = ['unpaid' => 'Unpaid', 'partially_paid' => 'Partially Paid', 'paid' => 'Fully Paid'];
 
@@ -274,13 +277,28 @@ class SalesOfficerCustomerController extends Controller
 
     public function assignSource(Request $request, int $sale): RedirectResponse
     {
+        $garage = $request->input('source_type') === 'garage_lot';
+        // Part 18 #3: a garage lot makes the order Garage to Client, so its Delivery Details are asked in the same step.
         $data = $request->validate([
             'source_type' => ['required', Rule::in(['scheduled_lift', 'truck', 'garage_lot'])],
             'source_id' => ['required', 'integer'],
+            'delivery_truck_id' => $garage ? ['required', 'integer', Rule::exists('trucks', 'id')] : ['exclude'],
+            'delivery_driver_user_id' => $garage ? ['required', 'integer', Rule::exists('users', 'id')->where(fn (Builder $query): Builder => $query->where('role', 'driver'))] : ['exclude'],
+            'delivery_date' => $garage ? ['required', 'date'] : ['exclude'],
+            'delivery_status' => $garage ? ['nullable', Rule::in(self::NEW_ORDER_DELIVERY_STATUSES)] : ['exclude'],
+        ], [], [
+            'delivery_truck_id' => 'truck',
+            'delivery_driver_user_id' => 'driver',
+            'delivery_date' => 'delivery date',
         ]);
 
         try {
-            $this->sourceAssignments->assign($sale, (string) $data['source_type'], (int) $data['source_id'], (int) $request->user()->id);
+            $this->sourceAssignments->assign($sale, (string) $data['source_type'], (int) $data['source_id'], (int) $request->user()->id, $garage ? [
+                'delivery_truck_id' => (int) $data['delivery_truck_id'],
+                'delivery_driver_user_id' => (int) $data['delivery_driver_user_id'],
+                'delivery_date' => $data['delivery_date'],
+                'delivery_status' => $data['delivery_status'] ?? 'pending',
+            ] : []);
         } catch (ValidationException $exception) {
             return back()->withErrors($exception->errors())->withInput();
         }
@@ -516,7 +534,7 @@ class SalesOfficerCustomerController extends Controller
                     ->where('id', $sale)
                     ->update($saleUpdate);
 
-                if ($row->delivery_status !== 'delivered' && ! $hasDependencies && $this->changesProtectedSaleFields($row, $data)) {
+                if ($row->delivery_status !== 'delivered' && ! $hasDependencies && $items !== [] && $this->changesProtectedSaleFields($row, $data)) {
                     $firstFuelBefore = (int) DB::table('sale_items')->where('sale_id', $sale)->orderBy('id')->value('fuel_type_id');
                     DB::table('sale_items')->where('sale_id', $sale)->delete();
                     // Checked after the old lines are gone, so this sale's own reservation is not counted twice.
@@ -622,6 +640,13 @@ class SalesOfficerCustomerController extends Controller
         $data = $request->validate([
             'delivery_status' => ['required', Rule::in(self::DELIVERY_STATUSES)],
         ]);
+
+        // Part 18 #5: a Depot to Client order's delivery status is set by its lift only, never by hand.
+        $deliveryType = DB::table('sales')->where('id', $sale)->whereNull('deleted_at')->value('delivery_type');
+        abort_if($deliveryType === null, 404);
+        if ($deliveryType === 'depot_to_client') {
+            return back()->withErrors(['delivery_status' => 'A Depot to Client order is delivered through its lift, so its delivery status cannot be changed here.']);
+        }
 
         try {
             $this->saleConfirmationService->updateDeliveryStatus(
@@ -1120,11 +1145,11 @@ class SalesOfficerCustomerController extends Controller
                             'Driver Name' => $row->delivery_driver_name ?: 'N/A',
                             'Delivery Date' => $row->delivery_date ? $this->formatDateTime($row->delivery_date) : 'N/A',
                         ] : [
-                            // Depot to Client: the lift that carries the order.
-                            'Lift ID' => $liftsBySale[$saleId]['codes'] ?? 'N/A',
-                            'Truck ID' => $liftsBySale[$saleId]['trucks'] ?? 'N/A',
-                            'Driver Name' => $liftsBySale[$saleId]['drivers'] ?? 'N/A',
-                            'Delivery Date' => $row->delivered_at ? $this->formatDateTime($row->delivered_at) : 'N/A',
+                            // Depot to Client (Part 18 #5): read-only from the lift that carries the order.
+                            'Lift ID' => $liftsBySale[$saleId]['codes'] ?? self::NOT_ON_A_LIFT,
+                            'Truck ID' => $liftsBySale[$saleId]['trucks'] ?? self::NOT_ON_A_LIFT,
+                            'Driver Name' => $liftsBySale[$saleId]['drivers'] ?? self::NOT_ON_A_LIFT,
+                            'Delivery Date' => $liftsBySale[$saleId]['dates'] ?? self::NOT_ON_A_LIFT,
                         ]) + [
                             'Quantity Fulfilled' => $this->formatLiters(collect($saleItems)->sum('fulfilled_quantity_liters')),
                         ]],
@@ -1156,12 +1181,14 @@ class SalesOfficerCustomerController extends Controller
      */
     private function validatedSaleData(Request $request, ?int $saleId = null): array
     {
-        $current = $saleId ? DB::table('sales')->where('id', $saleId)->first(['payment_method', 'payment_terms', 'delivery_type']) : null;
+        $current = $saleId ? DB::table('sales')->where('id', $saleId)->first(['payment_method', 'payment_terms', 'delivery_type', 'delivery_status']) : null;
         // The delivery type is chosen when the order is recorded and stays fixed (lifts may link to it).
         $deliveryType = $current->delivery_type ?? ($request->input('delivery_type') ?: 'standard');
         $isDepot = $deliveryType === 'depot_to_client';
         // Standard and Garage to Client orders carry their own Delivery Details.
         $isStandard = ! $isDepot;
+        // Part 18 #3: a Garage to Client order needs its truck, driver and delivery date until it is Delivered.
+        $deliveryRule = $deliveryType === 'garage_to_client' && ! in_array($current->delivery_status ?? null, ['delivered', 'cancelled'], true) ? 'required' : 'nullable';
         $this->splitGarageSources($request);
 
         $data = $request->validate([
@@ -1203,9 +1230,9 @@ class SalesOfficerCustomerController extends Controller
             'status' => ['nullable', Rule::in(array_diff(self::SALE_STATUSES, ['paid']))],
             'due_date' => ['nullable', 'date', 'after_or_equal:sale_date'],
             // Standard orders only: Delivery Details. Depot to Client orders are delivered through their lift.
-            'delivery_truck_id' => $isStandard ? ['nullable', 'integer', Rule::exists('trucks', 'id')] : ['exclude'],
-            'delivery_driver_user_id' => $isStandard ? ['nullable', 'integer', Rule::exists('users', 'id')->where(fn (Builder $query): Builder => $query->where('role', 'driver'))] : ['exclude'],
-            'delivery_date' => $isStandard ? ['nullable', 'date'] : ['exclude'],
+            'delivery_truck_id' => $isStandard ? [$deliveryRule, 'integer', Rule::exists('trucks', 'id')] : ['exclude'],
+            'delivery_driver_user_id' => $isStandard ? [$deliveryRule, 'integer', Rule::exists('users', 'id')->where(fn (Builder $query): Builder => $query->where('role', 'driver'))] : ['exclude'],
+            'delivery_date' => $isStandard ? [$deliveryRule, 'date'] : ['exclude'],
             'delivery_status' => $isStandard && ! $saleId ? ['nullable', Rule::in(self::NEW_ORDER_DELIVERY_STATUSES)] : ['prohibited'],
             'created_by' => ['prohibited'],
             'line_total' => ['prohibited'],
@@ -1545,6 +1572,12 @@ class SalesOfficerCustomerController extends Controller
             'f1_garage_stock_id' => (float) $item['f1_quantity_liters'] > 0 && ($item['f1_garage_stock_id'] ?? null) ? (int) $item['f1_garage_stock_id'] : null,
             'f1_unit_price' => number_format((float) $item['f1_quantity_liters'] > 0 ? (float) ($item['f1_price'] ?? $item['f1_unit_price']) : 0, 2, '.', ''),
         ];
+
+        // Part 18 #4: an Edit form whose lines can no longer change sends none; missing lines mean unchanged.
+        if (empty($data['items'])) {
+            return (int) $row->customer_id !== (int) $data['customer_id']
+                || (string) $row->sale_date !== (string) $data['sale_date'];
+        }
 
         $existingItems = DB::table('sale_items')
             ->where('sale_id', $row->id)
@@ -2439,10 +2472,10 @@ class SalesOfficerCustomerController extends Controller
     }
 
     /**
-     * Depot to Client orders: the lift(s) carrying each sale, with their trucks (name) and drivers.
+     * Depot to Client orders: the lift(s) carrying each sale, with their trucks (name), drivers and dates.
      *
      * @param  Collection<int, int>  $saleIds
-     * @return array<int, array{codes: string, trucks: string, drivers: string}>
+     * @return array<int, array{codes: string, trucks: string, drivers: string, dates: string}>
      */
     private function liftsForSales(Collection $saleIds): array
     {
@@ -2457,12 +2490,14 @@ class SalesOfficerCustomerController extends Controller
             ->whereNull('hauls.deleted_at')
             ->whereIn('haul_allocations.sale_id', $saleIds->all())
             ->orderBy('hauls.id')
-            ->get(['haul_allocations.sale_id', 'hauls.haul_code', 'trucks.name as truck_name', 'trucks.truck_code', 'drivers.name as driver_name'])
+            ->get(['haul_allocations.sale_id', 'hauls.haul_code', 'hauls.scheduled_at', 'hauls.hauled_at', 'trucks.name as truck_name', 'trucks.truck_code', 'drivers.name as driver_name'])
             ->groupBy('sale_id')
             ->map(fn (Collection $lifts): array => [
                 'codes' => $lifts->pluck('haul_code')->unique()->implode(', '),
                 'trucks' => $lifts->map(fn (object $lift): string => TruckLabel::make($lift->truck_name, $lift->truck_code))->unique()->implode(', '),
                 'drivers' => $lifts->pluck('driver_name')->unique()->implode(', '),
+                // The lift's date: when it was lifted, else when it is scheduled.
+                'dates' => $lifts->map(fn (object $lift): string => $this->formatDateTime($lift->hauled_at ?? $lift->scheduled_at))->unique()->implode(', '),
             ])
             ->all();
     }

@@ -72,7 +72,9 @@ class SalesPaymentFlowTest extends TestCase
             ->assertOk()
             ->assertSee('PHP 10,000.00')
             ->assertSee('BNK-2002')
-            ->assertSee('Paid (set by payments)');
+            // Part 18 #4: the Status follows the payments, so it is only in the cards, not in the edit section.
+            ->assertSee('<div class="detail-label">Order Status</div><div class="detail-value">Paid</div>', false)
+            ->assertDontSee('(set by payments)');
 
         // A fully paid sale stays editable (H02): change only the order number and due date.
         $this->actingAs($user)->from(route($prefix.'.sales'))->patch(route($prefix.'.sales.update', $saleId), [

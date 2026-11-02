@@ -14,6 +14,8 @@
   that guard.
 - Browser or data checks run on a QA copy (a separately named database loaded from a mysqldump), never by pointing
   tests at the real database.
+- QA servers must run with --no-reload and an explicit DB_DATABASE, and you must confirm the running process uses the
+  QA database before sending any request. Never start php artisan serve against a QA copy without this check.
 - Before a migration that changes data on the real database: take a `mysqldump` backup into
   `/Users/johnlukereynon/cjp-backups/` (outside the repo, never committed), run it on a QA copy first, and wait for the
   user's OK.

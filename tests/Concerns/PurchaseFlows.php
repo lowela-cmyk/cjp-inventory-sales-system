@@ -49,6 +49,17 @@ trait PurchaseFlows
         ]);
     }
 
+    /**
+     * Part 18 #3: the Delivery Details a Garage to Client order needs (Record Sales, Edit Sales, Assign to a garage lot).
+     *
+     * @param  array<string, mixed>  $a
+     * @return array<string, mixed>
+     */
+    protected function garageDelivery(array $a): array
+    {
+        return ['delivery_truck_id' => $a['truck'], 'delivery_driver_user_id' => $a['driver']->id, 'delivery_date' => '2026-10-28 10:00'];
+    }
+
     protected function lastSaleId(): int
     {
         return (int) DB::table('sales')->orderByDesc('id')->value('id');

@@ -385,7 +385,8 @@ function syncStockHint(purchase) {
 
 function syncDeliveryType(select) {
     const form = select.closest('[data-sale-form]');
-    const showDeliveryDetails = select.value !== 'standard';
+    // Part 18 #3 / #5: only Garage to Client has Delivery Details here (Depot to Client takes them from its lift).
+    const showDeliveryDetails = select.value === 'garage_to_client';
     form?.querySelectorAll('[data-delivery-details]').forEach((section) => {
         section.hidden = !showDeliveryDetails;
         section.querySelectorAll('select, input').forEach((field) => { field.disabled = !showDeliveryDetails; });

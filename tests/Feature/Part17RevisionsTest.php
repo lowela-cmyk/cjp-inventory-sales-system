@@ -263,7 +263,7 @@ class Part17RevisionsTest extends AuditTestCase
         $lot = (int) DB::table('garage_stocks')->where('haul_id', $haul)->value('id');
         $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 1000, 'unit_price' => 70])->assertSessionHasNoErrors();
         $garageSale = $this->lastSaleId();
-        $this->actingAs($a['sales'])->post(route('sales-officer.sales.assign-source', $garageSale), ['source_type' => 'garage_lot', 'source_id' => $lot])->assertSessionHasNoErrors();
+        $this->actingAs($a['sales'])->post(route('sales-officer.sales.assign-source', $garageSale), ['source_type' => 'garage_lot', 'source_id' => $lot] + $this->garageDelivery($a))->assertSessionHasNoErrors();
         $this->assertSame('garage_to_client', DB::table('sales')->where('id', $garageSale)->value('delivery_type'));
         $this->assertDatabaseHas('sale_items', ['sale_id' => $garageSale, 'garage_stock_id' => $lot, 'purchase_item_id' => $premium]);
         $this->deliverOrder($a, $garageSale)->assertSessionHasNoErrors();

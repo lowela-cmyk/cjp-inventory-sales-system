@@ -4916,15 +4916,27 @@ body.login-page {
 }
 
 .admin-modal-sales .sales-items-table .admin-table {
-    min-width: 0;
+    min-width: 760px;
     table-layout: fixed;
 }
 
+/* Part 18 #1: no cell text runs into the next column. Cells wrap (long IDs break anywhere), and Purchase ID gets the
+   widest column with "PUR-PREM-002" over "+ F1 PUR-F1-001". Narrower than 760px, the table scrolls in its box. */
 .admin-modal-sales .sales-items-table .admin-table th,
 .admin-modal-sales .sales-items-table .admin-table td {
     padding: 9px 7px;
     font-size: 12px;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    vertical-align: middle;
+}
+
+.admin-modal-sales .sales-items-table .sales-items-col-source {
+    width: 20%;
+}
+
+.admin-modal-sales .sales-items-table .sales-items-source span {
+    display: block;
 }
 
 .admin-modal-sales .form-grid {
@@ -4996,4 +5008,40 @@ body.login-page {
 .stock-out-table td.stock-out-name.stock-out-crew {
     min-width: 80px;
     max-width: 120px;
+}
+
+/* Part 18 #2: every field of the Sales edit section is label-left / input-right with the same input width, including
+   the order line's Fuel Type, Fuel Price and F1 fields (Record Sales keeps its labels-on-top columns). */
+.admin-modal-sales .sale-edit-fields {
+    margin-top: 18px;
+}
+
+.admin-modal-sales .sale-edit-fields .sale-pair > .form-row,
+.admin-modal-sales .sale-edit-fields .sale-f1-row > .form-row {
+    grid-template-columns: 158px minmax(0, 1fr);
+    gap: 12px;
+    align-items: center;
+}
+
+.admin-modal-sales .sale-edit-fields .sale-f1-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 13px;
+}
+
+.admin-modal-sales .sale-edit-fields .sale-f1-row .form-row-message {
+    grid-column: 2;
+}
+
+/* Part 18 #3: a garage lot's Delivery Details sit under its Assign row, aligned with the fields above. */
+.source-assignment-delivery {
+    margin-top: 10px;
+    row-gap: 13px;
+}
+
+@media (max-width: 767px) {
+    .admin-modal-sales .sale-edit-fields .sale-pair > .form-row,
+    .admin-modal-sales .sale-edit-fields .sale-f1-row > .form-row {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 7px;
+    }
 }

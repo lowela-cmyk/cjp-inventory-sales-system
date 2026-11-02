@@ -312,24 +312,12 @@
                 <x-admin.detail-pages :pages="$purchasePages" />
                 <div class="form-grid" style="margin-top: 18px">
                     @if ($row['stock_locked'])
-                        {{-- Part 15: once fuel is lifted, Date, Fuel Type, Depot, Quantity and Cost / Liter stay as recorded. --}}
+                        {{-- Part 15: once fuel is lifted, Date, Fuel Type, Depot, Quantity and Cost / Liter stay as recorded.
+                             Part 18 #4: their values are in the cards above; here they are only sent back unchanged. --}}
                         <p class="form-locked-note" role="note">{{ \App\Services\PurchaseService::LOCKED_MESSAGE }}</p>
-                        @php
-                            $lockedFields = [
-                                'purchase_date' => ['Date', \Carbon\CarbonImmutable::parse($row['purchase_date'])->format('m/d/Y')],
-                                'fuel_type_id' => ['Fuel Type', $row['fuel_name']],
-                                'depot_id' => ['Depot', $row['depot_name']],
-                                'quantity_ordered_liters' => ['Quantity (Liters)', number_format((float) $row['quantity_ordered_liters'], 2).' L'],
-                                'unit_cost' => ['Cost / Liter', number_format((float) $row['unit_cost'], 2)],
-                            ];
-                        @endphp
-                        @foreach ($lockedFields as $field => [$label, $text])
-                            <div class="form-row">
-                                <span class="form-label">{{ $label }}</span>
-                                <p class="form-locked-value" data-locked-field="{{ $field }}">{{ $text }}</p>
-                                <input form="purchase-update-{{ $row['id'] }}" type="hidden" name="{{ $field }}" value="{{ $row[$field] }}">
-                                @error($field)<p class="field-error">{{ $message }}</p>@enderror
-                            </div>
+                        @foreach (['purchase_date', 'fuel_type_id', 'depot_id', 'quantity_ordered_liters', 'unit_cost'] as $field)
+                            <input form="purchase-update-{{ $row['id'] }}" type="hidden" name="{{ $field }}" value="{{ $row[$field] }}" data-locked-field="{{ $field }}">
+                            @error($field)<p class="field-error">{{ $message }}</p>@enderror
                         @endforeach
                     @else
                         <div class="form-row"><label for="purchase_date_{{ $row['id'] }}">Date</label><input form="purchase-update-{{ $row['id'] }}" id="purchase_date_{{ $row['id'] }}" name="purchase_date" type="date" value="{{ old('purchase_date', $row['purchase_date']) }}" required></div>
@@ -340,7 +328,6 @@
                     @endif
                     <div class="form-row"><label for="payment_status_{{ $row['id'] }}">Payment Status</label><select form="purchase-update-{{ $row['id'] }}" id="payment_status_{{ $row['id'] }}" name="payment_status" required>@foreach ($paymentStatuses as $status)<option value="{{ $status }}" @selected(old('payment_status', $row['payment_status']) === $status)>{{ ucwords($status) }}</option>@endforeach</select></div>
                     @include('inventory-officer.partials.purchase-payment-mode', ['idSuffix' => '_'.$row['id'], 'formId' => 'purchase-update-'.$row['id'], 'mode' => old('payment_mode', $row['payment_mode']), 'bank' => old('bank_name', $row['bank_name'])])
-                    <div class="form-row"><label>Purchase Status</label><x-admin.status-badge :status="ucwords(str_replace('_', ' ', $row['purchase_status']))" /></div>
                 </div>
             </div>
             <x-slot:footer>

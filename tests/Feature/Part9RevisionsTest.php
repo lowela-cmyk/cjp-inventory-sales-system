@@ -23,11 +23,15 @@ class Part9RevisionsTest extends AuditTestCase
         $ids = DB::table('sales')->orderBy('id')->pluck('id')->all();
 
         $html = $this->actingAs($a['sales'])->get(route('sales-officer.sales'))->assertOk()->getContent();
+        // Part 18 #4: Payment Status is shown in the Payment Details card only, not as a read-only row of the edit section.
         foreach (array_combine($ids, ['Unpaid', 'Partially Paid', 'Fully Paid']) as $saleId => $label) {
-            $this->assertStringContainsString('<label>Payment Status</label><output data-payment-status>'.$label.'</output>', $this->between($html, 'id="so-sales-edit-'.$saleId.'"', 'id="sale_status_'.$saleId.'"'));
+            $modal = $this->between($html, 'id="so-sales-edit-'.$saleId.'"', 'id="so-payment-history-'.$saleId.'"');
+            $this->assertStringContainsString('<div class="detail-label">Payment Status</div><div class="detail-value">'.$label.'</div>', $modal);
+            $this->assertStringNotContainsString('data-payment-status', $modal);
         }
-        // The Edit form keeps its order Status dropdown; Payment Status is never a submitted field.
+        // The Edit form keeps its order Status dropdown until payments set it; Payment Status is never a submitted field.
         $this->assertStringContainsString('<label for="sale_status_'.$ids[0].'">Status</label>', $html);
+        $this->assertStringNotContainsString('id="sale_status_'.$ids[1].'"', $html);
         $this->assertStringNotContainsString('name="sale_payment_status"', $html);
     }
 

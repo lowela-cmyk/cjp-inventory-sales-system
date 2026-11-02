@@ -37,9 +37,18 @@ class StandardSourceAssignmentService
         ];
     }
 
-    public function assign(int $saleId, string $sourceType, int $sourceId, int $userId): void
+    /**
+     * Part 18 #3: a garage lot makes the order Garage to Client, so $delivery (truck, driver, date, status) is required for it.
+     *
+     * @param  array{delivery_truck_id?: int, delivery_driver_user_id?: int, delivery_date?: string, delivery_status?: string}  $delivery
+     */
+    public function assign(int $saleId, string $sourceType, int $sourceId, int $userId, array $delivery = []): void
     {
-        DB::transaction(function () use ($saleId, $sourceType, $sourceId, $userId): void {
+        if ($sourceType === 'garage_lot' && (empty($delivery['delivery_truck_id']) || empty($delivery['delivery_driver_user_id']) || empty($delivery['delivery_date']))) {
+            throw ValidationException::withMessages(['source' => 'Enter the truck, driver and delivery date of the Garage to Client delivery.']);
+        }
+
+        DB::transaction(function () use ($saleId, $sourceType, $sourceId, $userId, $delivery): void {
             $sale = DB::table('sales')->where('id', $saleId)->whereNull('deleted_at')->lockForUpdate()->first();
             if (! $sale || ! in_array($sale->status, self::OPEN_STATUSES, true) || in_array($sale->delivery_status, ['delivered', 'cancelled'], true)) {
                 throw ValidationException::withMessages(['source' => 'Only an open, undelivered Standard order can be assigned a source.']);
@@ -91,6 +100,19 @@ class StandardSourceAssignmentService
             ]);
 
             $this->recordChange($saleId, $toType, $sourceType, $source->haul_id ?? null, $source->garage_stock_id ?? null, $source->source_label, $userId);
+
+            if ($sourceType === 'garage_lot') {
+                DB::table('sales')->where('id', $saleId)->update([
+                    'delivery_truck_id' => $delivery['delivery_truck_id'],
+                    'delivery_driver_user_id' => $delivery['delivery_driver_user_id'],
+                    'delivery_date' => $delivery['delivery_date'],
+                    'updated_at' => now(),
+                ]);
+                $status = $delivery['delivery_status'] ?? 'pending';
+                if ($status !== 'pending') {
+                    $this->saleConfirmation->updateDeliveryStatus($saleId, $status, $userId);
+                }
+            }
 
             if ($sourceType === 'truck') {
                 $haul = DB::table('hauls')->where('id', $source->haul_id)->first(['truck_id', 'driver_user_id']);

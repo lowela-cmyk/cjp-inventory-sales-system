@@ -43,10 +43,10 @@ class Part16RevisionsTest extends AuditTestCase
         $premiumLot = $this->premiumLot($a);
         foreach (['standard', 'depot_to_client', 'garage_to_client'] as $type) {
             $main = $type === 'garage_to_client' ? 'garage:'.$premiumLot : $premium;
-            $this->recordOrder($a, ['purchase_item_id' => $main, 'quantity_liters' => 1000, 'unit_price' => 50, 'f1_percentage' => 10, 'f1_purchase_item_id' => 'garage:'.$lot, 'f1_unit_price' => 40], ['delivery_type' => $type])
+            $this->recordOrder($a, ['purchase_item_id' => $main, 'quantity_liters' => 1000, 'unit_price' => 50, 'f1_percentage' => 10, 'f1_purchase_item_id' => 'garage:'.$lot, 'f1_unit_price' => 40], ['delivery_type' => $type] + ($type === 'garage_to_client' ? $this->garageDelivery($a) : []))
                 ->assertSessionHasNoErrors();
             $this->assertSame($lot, (int) DB::table('sale_items')->where('sale_id', $this->lastSaleId())->value('f1_garage_stock_id'), $type);
-            $this->recordOrder($a, ['purchase_item_id' => $main, 'quantity_liters' => 1000, 'unit_price' => 50, 'f1_percentage' => 10, 'f1_purchase_item_id' => $f1Depot, 'f1_unit_price' => 40], ['delivery_type' => $type])
+            $this->recordOrder($a, ['purchase_item_id' => $main, 'quantity_liters' => 1000, 'unit_price' => 50, 'f1_percentage' => 10, 'f1_purchase_item_id' => $f1Depot, 'f1_unit_price' => 40], ['delivery_type' => $type] + ($type === 'garage_to_client' ? $this->garageDelivery($a) : []))
                 ->assertSessionHasNoErrors();
         }
         // 3 orders x 100 L promised from the 2,000 L lot: 1,700 L left; asking for more than that is refused.

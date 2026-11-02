@@ -30,7 +30,41 @@
             <div class="detail-row"><div class="detail-label">Remaining Balance</div><div class="detail-value">PHP {{ $row['balance'] }}</div></div>
             <div class="detail-row"><div class="detail-label">Payment Status</div><div class="detail-value"><x-admin.status-badge :status="$salePaymentStatus" /></div></div>
             <div class="detail-row"><div class="detail-label">Receivable Status</div><div class="detail-value"><x-admin.status-badge :status="$paymentStatus" /></div></div>
+            @if (($row['refunds'] ?? []) !== [])
+                <div class="detail-row"><div class="detail-label">Refunded</div><div class="detail-value">PHP {{ number_format(collect($row['refunds'])->sum('amount_raw'), 2) }}</div></div>
+            @endif
         </div>
+
+        @if ($row['status'] === 'cancelled')
+            <div class="modal-card" style="margin-top:18px">
+                <h3>Customer Refunds</h3>
+                @forelse (($row['refunds'] ?? []) as $refund)
+                    <form method="POST" action="{{ route($salesRoutePrefix.'.sales.refunds.update', [$saleId, $refund['id']]) }}" class="form-grid" style="margin-top:10px">
+                        @csrf @method('PATCH')
+                        <div class="form-row"><label>Amount</label><input name="amount" type="number" min="0.01" step="0.01" value="{{ $refund['amount_raw'] }}" required></div>
+                        <div class="form-row"><label>Date</label><input name="refund_date" type="date" value="{{ date('Y-m-d', strtotime($refund['date'])) }}" required></div>
+                        <div class="form-row"><label>Method</label><input name="method" type="text" value="{{ $refund['method'] }}" maxlength="40" required></div>
+                        <div class="form-row"><label>Reference</label><input name="reference_number" type="text" value="{{ $refund['reference'] === 'N/A' ? '' : $refund['reference'] }}" maxlength="100"></div>
+                        <div class="form-row"><label>Remarks</label><input name="remarks" type="text" value="{{ $refund['remarks'] === 'N/A' ? '' : $refund['remarks'] }}" maxlength="1000"></div>
+                        <div class="form-row"><label>&nbsp;</label><button class="btn btn-secondary" type="submit">Edit Refund</button></div>
+                    </form>
+                @empty
+                    <p class="table-help">No refunds recorded.</p>
+                @endforelse
+                @if ($row['refund_due'] > 0)
+                    <form method="POST" action="{{ route($salesRoutePrefix.'.sales.refunds.store', $saleId) }}" class="form-grid" style="margin-top:10px">
+                        @csrf
+                        <input type="hidden" name="idempotency_key" value="{{ (string) \Illuminate\Support\Str::uuid() }}">
+                        <div class="form-row"><label>Amount</label><input name="amount" type="number" min="0.01" max="{{ $row['refund_due'] }}" step="0.01" required></div>
+                        <div class="form-row"><label>Date</label><input name="refund_date" type="date" value="{{ now()->toDateString() }}" required></div>
+                        <div class="form-row"><label>Method</label><input name="method" type="text" maxlength="40" required></div>
+                        <div class="form-row"><label>Reference</label><input name="reference_number" type="text" maxlength="100"></div>
+                        <div class="form-row"><label>Remarks</label><input name="remarks" type="text" maxlength="1000"></div>
+                        <div class="form-row"><label>&nbsp;</label><button class="btn btn-primary" type="submit">Record Refund</button></div>
+                    </form>
+                @endif
+            </div>
+        @endif
 
         {{-- Part 12: a settled sale (balance 0) offers no payment form at all; the server refuses one too. --}}
         @if ($paymentAction && $balanceValue > 0)

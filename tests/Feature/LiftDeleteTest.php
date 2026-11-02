@@ -108,11 +108,14 @@ class LiftDeleteTest extends AuditTestCase
 
         // Lifted / Completed: refused.
         $this->actingAs($a['driver'])->patch(route('driver.fuel-lifting.hauls.status', $inTransit), ['idempotency_key' => (string) Str::uuid(), 'lifting_status' => 'lifted'])->assertSessionHasNoErrors();
-        $this->actingAs($a['admin'])->patch(route('admin.fuel-lifting.hauls.status', $inTransit), ['idempotency_key' => (string) Str::uuid(), 'status' => 'completed'])->assertSessionHasNoErrors();
+        // Part 19: a lift with fuel still on the truck must remain active.
+        $this->actingAs($a['admin'])->patch(route('admin.fuel-lifting.hauls.status', $inTransit), ['idempotency_key' => (string) Str::uuid(), 'status' => 'completed'])->assertSessionHasErrors('lifting');
+        $this->assertDatabaseHas('hauls', ['id' => $inTransit, 'status' => 'lifted', 'deleted_at' => null]);
         $this->actingAs($a['admin'])->deleteJson(route('admin.fuel-lifting.hauls.destroy', $inTransit))->assertStatus(422);
-        $this->assertDatabaseHas('hauls', ['id' => $inTransit, 'status' => 'completed', 'deleted_at' => null]);
         // Part 12: its 5,000 L are still on the truck (Loaded); unloading them to the garage (Part 13) frees the truck.
         $this->actingAs($a['admin'])->post(route('admin.fuel-lifting.hauls.unload-to-garage', $inTransit), ['unload' => [$inTransit => [DB::table('storage_locations')->where('type', 'garage')->where('status', 'active')->where('fuel_type_id', DB::table('hauls')->where('id', $inTransit)->value('fuel_type_id'))->where('tank_number', 1)->value('id') => 5000]]])->assertSessionHasNoErrors();
+        $this->actingAs($a['admin'])->patch(route('admin.fuel-lifting.hauls.status', $inTransit), ['idempotency_key' => (string) Str::uuid(), 'status' => 'completed'])->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('hauls', ['id' => $inTransit, 'status' => 'completed', 'deleted_at' => null]);
 
         // Cancelled: refused, and no Delete button.
         $this->scheduleLift($a, [['purchase_item_id' => $premium, 'quantity_liters' => 5000]])->assertSessionHasNoErrors();

@@ -219,55 +219,10 @@ class InventoryOfficerPurchaseController extends Controller
      */
     public function updateStockOut(Request $request, int $stockOut): RedirectResponse
     {
-        $row = DB::table('stock_outs')
-            ->join('sales', 'sales.id', '=', 'stock_outs.sale_id')
-            ->where('stock_outs.id', $stockOut)
-            ->whereNull('sales.deleted_at')
-            ->first(['stock_outs.id', 'stock_outs.status', 'stock_outs.haul_allocation_id', 'sales.id as sale_id', 'sales.delivery_type', 'sales.delivery_status']);
-        abort_unless($row !== null, 404);
+        // Stock-Outs are accounting records created by delivery workflows; corrections happen on the sale or lift.
+        // Keep the legacy route so old links fail safely, but never permit direct mutation here.
+        return back()->withErrors(['stock_out' => 'Stock-Out records are read-only. Update the related sale or lifting record instead.']);
 
-        // Part 12: a Delivered sale's release keeps its date, truck, driver and delivery date; only Cost / Unit changes.
-        $delivered = $row->delivery_status === 'delivered';
-        // The order's own truck, driver and date apply only when no lift carried the release (the lift's win).
-        $standard = ! $delivered && $row->delivery_type !== 'depot_to_client' && $row->haul_allocation_id === null;
-        $data = $request->validate([
-            'stock_out_at' => $delivered ? ['exclude'] : ['required', 'date', 'before_or_equal:now'],
-            'unit_cost' => ['required', 'numeric', 'gte:0', 'max:10000'],
-            'delivery_truck_id' => $standard ? ['nullable', 'integer', Rule::exists('trucks', 'id')] : ['exclude'],
-            'delivery_driver_user_id' => $standard ? ['nullable', 'integer', Rule::exists('users', 'id')->where(fn (Builder $query): Builder => $query->where('role', 'driver'))] : ['exclude'],
-            'delivery_date' => $standard ? ['nullable', 'date'] : ['exclude'],
-        ], [
-            'stock_out_at.before_or_equal' => 'The transaction date cannot be in the future.',
-        ], [
-            'stock_out_at' => 'transaction date',
-            'unit_cost' => 'cost / unit',
-            'delivery_truck_id' => 'truck',
-            'delivery_driver_user_id' => 'driver',
-        ]);
-
-        if ($row->status !== 'released') {
-            return back()->withErrors(['stock_out' => 'Only released stock-outs can be edited; this one is '.$this->label($row->status).'.'])->withInput();
-        }
-
-        DB::transaction(function () use ($row, $data, $standard): void {
-            DB::table('stock_outs')->where('id', $row->id)->update([
-                'unit_cost' => round((float) $data['unit_cost'], 2),
-                'updated_at' => now(),
-            ] + (isset($data['stock_out_at']) ? ['stock_out_at' => $data['stock_out_at']] : []));
-
-            if ($standard) {
-                DB::table('sales')->where('id', $row->sale_id)->update([
-                    'delivery_truck_id' => $data['delivery_truck_id'] ?? null,
-                    'delivery_driver_user_id' => $data['delivery_driver_user_id'] ?? null,
-                    'delivery_date' => $data['delivery_date'] ?? null,
-                    'updated_at' => now(),
-                ]);
-            }
-        });
-
-        return redirect()
-            ->route($this->inventoryRouteName($request, 'stock-out'))
-            ->with('status', 'Stock-out record updated successfully.');
     }
 
     public function withdrawalReceipt(Request $request, int $haul)
@@ -341,6 +296,31 @@ class InventoryOfficerPurchaseController extends Controller
         return redirect()
             ->route($this->inventoryRouteName($request))
             ->with('status', 'Depot created successfully.');
+    }
+
+    public function updateDepot(Request $request, int $depot): RedirectResponse
+    {
+        $data = $request->validate([
+            'depot_code' => ['required', 'string', 'max:30', Rule::unique('depots', 'depot_code')->ignore($depot)],
+            'name' => ['required', 'string', 'max:255'],
+            'address' => ['nullable', 'string', 'max:255'],
+            'contact_person' => ['nullable', 'string', 'max:255'],
+            'phone' => ['nullable', 'string', 'max:30'],
+            'status' => ['required', Rule::in(['active', 'inactive'])],
+        ]);
+
+        abort_unless(DB::table('depots')->where('id', $depot)->exists(), 404);
+        DB::table('depots')->where('id', $depot)->update([
+            'depot_code' => Str::upper(trim($data['depot_code'])),
+            'name' => trim($data['name']),
+            'address' => $data['address'] ?? null,
+            'contact_person' => $data['contact_person'] ?? null,
+            'phone' => $data['phone'] ?? null,
+            'status' => $data['status'],
+            'updated_at' => now(),
+        ]);
+
+        return redirect()->route($this->inventoryRouteName($request, 'depots'))->with('status', 'Depot updated successfully.');
     }
 
     /**
@@ -461,16 +441,17 @@ class InventoryOfficerPurchaseController extends Controller
             }))
             ->when($filters['status'] ?? null, fn (Builder $query, string $status): Builder => $query->where('status', $status))
             ->orderBy('name')
-            ->select(['depot_code', 'name', 'address', 'contact_person', 'phone', 'status']);
+            ->select(['id', 'depot_code', 'name', 'address', 'contact_person', 'phone', 'status']);
 
         $paginator = $query->paginate(25, ['*'], 'depots_page')->withQueryString();
         $transformed = collect($paginator->items())->map(fn (object $row): array => [
-            $row->depot_code,
-            $row->name,
-            $row->address ?: 'N/A',
-            $row->contact_person ?: 'N/A',
-            $row->phone ?: 'N/A',
-            $row->status,
+            'id' => (int) $row->id,
+            'depot_code' => $row->depot_code,
+            'name' => $row->name,
+            'address' => $row->address ?: 'N/A',
+            'contact_person' => $row->contact_person ?: 'N/A',
+            'phone' => $row->phone ?: 'N/A',
+            'status' => $row->status,
         ]);
         $paginator->setCollection($transformed);
 

@@ -55,6 +55,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/inventory/stock-out', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'stock-out')->name('inventory.stock-out');
         Route::patch('/inventory/stock-out/{stockOut}', [InventoryOfficerPurchaseController::class, 'updateStockOut'])->name('inventory.stock-out.update');
         Route::post('/inventory/depots', [InventoryOfficerPurchaseController::class, 'storeDepot'])->name('inventory.depots.store');
+        Route::patch('/inventory/depots/{depot}', [InventoryOfficerPurchaseController::class, 'updateDepot'])->name('inventory.depots.update');
         Route::get('/inventory/depots', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'depots')->name('inventory.depots');
         Route::get('/inventory/garage', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'garage')->name('inventory.garage');
         Route::get('/ledger', InventoryOfficerLedgerController::class)->name('ledger');
@@ -86,6 +87,8 @@ Route::middleware(['auth'])->group(function () {
         Route::patch('/sales/customers/{customer}/deactivate', [SalesOfficerCustomerController::class, 'deactivate'])->name('sales.customers.deactivate');
         Route::post('/sales', [SalesOfficerCustomerController::class, 'storeSale'])->name('sales.store');
         Route::post('/sales/{sale}/payments', [SalesOfficerCustomerController::class, 'storePayment'])->name('sales.payments.store');
+        Route::post('/sales/{sale}/refunds', [SalesOfficerCustomerController::class, 'storeRefund'])->name('sales.refunds.store');
+        Route::patch('/sales/{sale}/refunds/{refund}', [SalesOfficerCustomerController::class, 'updateRefund'])->name('sales.refunds.update');
         Route::post('/sales/{sale}/assign-source', [SalesOfficerCustomerController::class, 'assignSource'])->name('sales.assign-source');
         Route::patch('/sales/{sale}', [SalesOfficerCustomerController::class, 'updateSale'])->name('sales.update');
         Route::patch('/sales/{sale}/delivery-status', [SalesOfficerCustomerController::class, 'updateDeliveryStatus'])->name('sales.delivery-status.update');
@@ -145,6 +148,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/inventory/stock-out', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'stock-out')->name('inventory.stock-out');
         Route::patch('/inventory/stock-out/{stockOut}', [InventoryOfficerPurchaseController::class, 'updateStockOut'])->name('inventory.stock-out.update');
         Route::post('/inventory/depots', [InventoryOfficerPurchaseController::class, 'storeDepot'])->name('inventory.depots.store');
+        Route::patch('/inventory/depots/{depot}', [InventoryOfficerPurchaseController::class, 'updateDepot'])->name('inventory.depots.update');
         Route::get('/inventory/depots', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'depots')->name('inventory.depots');
         Route::get('/inventory/garage', [InventoryOfficerPurchaseController::class, 'index'])->defaults('state', 'garage')->name('inventory.garage');
         Route::get('/ledger', InventoryOfficerLedgerController::class)->name('ledger');
@@ -159,6 +163,8 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/sales', [SalesOfficerCustomerController::class, 'index'])->name('sales');
         Route::post('/sales', [SalesOfficerCustomerController::class, 'storeSale'])->name('sales.store');
         Route::post('/sales/{sale}/payments', [SalesOfficerCustomerController::class, 'storePayment'])->name('sales.payments.store');
+        Route::post('/sales/{sale}/refunds', [SalesOfficerCustomerController::class, 'storeRefund'])->name('sales.refunds.store');
+        Route::patch('/sales/{sale}/refunds/{refund}', [SalesOfficerCustomerController::class, 'updateRefund'])->name('sales.refunds.update');
         Route::post('/sales/{sale}/assign-source', [SalesOfficerCustomerController::class, 'assignSource'])->name('sales.assign-source');
         Route::patch('/sales/{sale}', [SalesOfficerCustomerController::class, 'updateSale'])->name('sales.update');
         Route::patch('/sales/{sale}/delivery-status', [SalesOfficerCustomerController::class, 'updateDeliveryStatus'])->name('sales.delivery-status.update');

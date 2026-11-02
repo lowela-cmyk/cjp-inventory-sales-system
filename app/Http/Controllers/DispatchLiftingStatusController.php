@@ -308,6 +308,14 @@ class DispatchLiftingStatusController extends Controller
             return 'Lift quantity cannot exceed the remaining available purchase fuel.';
         }
 
+        if ($nextStatus === 'completed') {
+            $load = app(\App\Services\LiftAllocationService::class)->loadSummaryByHaul([(int) $haul->id]);
+            $remaining = (float) (($load[(int) $haul->id]['remaining'] ?? $quantity));
+            if ($remaining > 0.005) {
+                return 'This lift cannot be completed while '.number_format($remaining, 2).' L remains on the truck. Deliver or unload the remaining fuel first.';
+            }
+        }
+
         return null;
     }
 

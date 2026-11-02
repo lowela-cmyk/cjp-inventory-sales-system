@@ -72,6 +72,8 @@ class Part15RevisionsTest extends AuditTestCase
         $this->scheduleLift($a, [['purchase_item_id' => $completed, 'quantity_liters' => 8000]], [], ['truck_id' => $truck])->assertSessionHasNoErrors();
         $haulId = $this->lastHaulId();
         $this->completeLift($a, $haulId);
+        $tank = DB::table('storage_locations')->where('type', 'garage')->where('status', 'active')->where('fuel_type_id', DB::table('hauls')->where('id', $haulId)->value('fuel_type_id'))->where('tank_number', 1)->value('id');
+        $this->actingAs($a['dispatch'])->post(route('dispatch.fuel-lifting.hauls.unload-to-garage', $haulId), ['unload' => [$haulId => [$tank => 8000]]])->assertSessionHasNoErrors();
         $this->actingAs($a['dispatch'])->patch(route('dispatch.fuel-lifting.hauls.status', $haulId), ['idempotency_key' => (string) Str::uuid(), 'status' => 'completed'])
             ->assertSessionHasNoErrors();
         $this->assertSame('completed', DB::table('purchases')->where('id', DB::table('purchase_items')->where('id', $completed)->value('purchase_id'))->value('workflow_status'));

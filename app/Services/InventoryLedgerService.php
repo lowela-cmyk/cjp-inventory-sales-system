@@ -109,6 +109,7 @@ class InventoryLedgerService
             ->join('fuel_types', 'fuel_types.id', '=', 'purchase_items.fuel_type_id')
             ->leftJoinSub($completedLifts, 'completed_lifts', 'completed_lifts.purchase_item_id', '=', 'purchase_items.id')
             ->whereNull('purchases.deleted_at')
+            ->where('purchases.status', '!=', 'cancelled')
             ->when($search, fn (Builder $query): Builder => $query->where(function (Builder $query) use ($search): void {
                 foreach ([
                     'purchases.purchase_code',

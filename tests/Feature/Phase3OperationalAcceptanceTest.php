@@ -245,8 +245,8 @@ class Phase3OperationalAcceptanceTest extends TestCase
         $haul = DB::table('hauls')->where('purchase_item_id', $purchaseItem->id)->first();
         $this->assertNotNull($haul);
 
-        // Transition haul to completed
-        foreach (['in_transit', 'lifted', 'completed'] as $status) {
+        // Transition haul to lifted; Part 19 requires the truck load to be accounted for before completion.
+        foreach (['in_transit', 'lifted'] as $status) {
             $this->actingAs($dispatchOfficer)
                 ->patch(route('dispatch.fuel-lifting.hauls.status', $haul->id), [
                     'idempotency_key' => (string) Str::uuid(),
@@ -254,10 +254,25 @@ class Phase3OperationalAcceptanceTest extends TestCase
                 ])
                 ->assertRedirect(route('dispatch.fuel-lifting'));
         }
+        $this->actingAs($dispatchOfficer)
+            ->patch(route('dispatch.fuel-lifting.hauls.status', $haul->id), [
+                'idempotency_key' => (string) Str::uuid(),
+                'status' => 'completed',
+            ])
+            ->assertSessionHasErrors('lifting');
+        $tank = DB::table('storage_locations')->where('type', 'garage')->where('status', 'active')->where('fuel_type_id', $purchaseItem->fuel_type_id)->where('tank_number', 1)->value('id');
+        $this->actingAs($dispatchOfficer)
+            ->post(route('dispatch.fuel-lifting.hauls.unload-to-garage', $haul->id), ['unload' => [$haul->id => [$tank => 20000]]])
+            ->assertSessionHasNoErrors();
+        $this->actingAs($dispatchOfficer)
+            ->patch(route('dispatch.fuel-lifting.hauls.status', $haul->id), [
+                'idempotency_key' => (string) Str::uuid(),
+                'status' => 'completed',
+            ])
+            ->assertRedirect(route('dispatch.fuel-lifting'));
 
-        // October 22: scheduling no longer creates a garage allocation and there is no manual Stock-In; the lifted
-        // purchase is the stock (fuel only enters a garage tank through Unload to Garage, Part 13).
-        $this->assertSame(0, DB::table('haul_allocations')->where('haul_id', $haul->id)->count());
+        // Part 19: the completed lift is fully accounted for through its garage allocation; no manual Stock-In is needed.
+        $this->assertSame(1, DB::table('haul_allocations')->where('haul_id', $haul->id)->where('destination_type', 'garage')->where('quantity_liters', 20000)->count());
         $this->assertSame(20000.0, (float) DB::table('hauls')->where('id', $haul->id)->value('quantity_liters'));
 
         // 3. (removed: HTTP garage Stock-In)

@@ -227,7 +227,7 @@
                         </div>
                         <div class="form-row">
                             <label for="sale_payment_date">Date of Payment</label>
-                            <input id="sale_payment_date" name="payment_date" type="date" value="{{ old('payment_date') }}" @error('payment_date') aria-invalid="true" @enderror>
+                            <input id="sale_payment_date" name="payment_date" type="date" value="{{ old('payment_date', now()->toDateString()) }}" @error('payment_date') aria-invalid="true" @enderror>
                             @error('payment_date')<p class="field-error form-row-message">{{ $message }}</p>@enderror
                         </div>
                         <div class="form-row">
@@ -249,7 +249,7 @@
                             </select>
                             @error('payment_method')<p class="field-error form-row-message">{{ $message }}</p>@enderror
                         </div>
-                        <div class="form-row"><label for="sale_due_date">Due Date</label><input id="sale_due_date" name="due_date" type="date" value="{{ old('due_date') }}"></div>
+                        <div class="form-row"><label for="sale_due_date">Due Date</label><input id="sale_due_date" name="due_date" type="date" value="{{ old('due_date', now()->toDateString()) }}"></div>
                         {{-- Part 9: read-only, worked out from the payment entered here (Unpaid / Partially Paid / Fully Paid). --}}
                         <div class="form-row"><label>Payment Status</label><output class="sale-readonly-field" data-sales-payment-status-preview>Unpaid</output></div>
                     </div>
@@ -493,6 +493,7 @@
 
         @include('admin.partials.payment-history-modal', [
             'row' => $row,
+            'salesRoutePrefix' => $salesRoutePrefix,
             'saleId' => $row['id'],
             'saleCode' => $row['sale_code'],
             'paymentStatus' => $row['cells'][14],

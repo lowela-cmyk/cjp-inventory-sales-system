@@ -128,12 +128,12 @@ class Part12ApprovedItemsTest extends AuditTestCase
         $this->assertStringNotContainsString('id="sale_delivery_truck_'.$saleId.'"', $page);
         $this->assertStringNotContainsString('id="sale_qty_'.$saleId.'_0"', $page);
 
-        // Inventory > Edit Stock-Out: only Cost / Unit changes.
+        // Part 19: Stock-Out records are immutable accounting history; corrections happen on the sale or lift.
         $stockOut = DB::table('stock_outs')->where('sale_id', $saleId)->first();
         $this->actingAs($a['inventory'])->patch(route('inventory-officer.inventory.stock-out.update', $stockOut->id), [
             'edit_stock_out_id' => $stockOut->id, 'unit_cost' => 44, 'stock_out_at' => '2026-10-01 08:00', 'delivery_truck_id' => $truck2, 'delivery_date' => '2026-10-01 08:00',
-        ])->assertSessionHasNoErrors();
-        $this->assertSame(44.0, (float) DB::table('stock_outs')->where('id', $stockOut->id)->value('unit_cost'));
+        ])->assertSessionHasErrors('stock_out');
+        $this->assertSame((float) $stockOut->unit_cost, (float) DB::table('stock_outs')->where('id', $stockOut->id)->value('unit_cost'));
         $this->assertSame((string) $stockOut->stock_out_at, (string) DB::table('stock_outs')->where('id', $stockOut->id)->value('stock_out_at'));
         $this->assertSame((int) $a['truck'], (int) DB::table('sales')->where('id', $saleId)->value('delivery_truck_id'));
         $stockOutPage = $this->actingAs($a['inventory'])->get(route('inventory-officer.inventory.stock-out'))->assertOk()->getContent();

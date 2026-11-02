@@ -285,6 +285,13 @@ class PurchaseService
             ->selectRaw('purchase_item_id, COUNT(*) as withdrawal_count, MAX(withdrawal_receipt_uploaded_at) as latest_withdrawal_at')
             ->groupBy('purchase_item_id');
 
+        // The purchase table shows the actual crew assigned to its latest non-cancelled lift.
+        $latestHaul = DB::table('hauls as h')
+            ->whereNull('h.deleted_at')
+            ->where('h.status', '!=', 'cancelled')
+            ->selectRaw('h.purchase_item_id, MAX(h.id) as haul_id')
+            ->groupBy('h.purchase_item_id');
+
         $query = DB::table('purchase_items')
             ->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
             ->join('depots', 'depots.id', '=', 'purchases.depot_id')
@@ -292,6 +299,10 @@ class PurchaseService
             ->leftJoin('users', 'users.id', '=', 'purchases.created_by')
             ->leftJoinSub($haulTotals, 'haul_totals', 'haul_totals.purchase_item_id', '=', 'purchase_items.id')
             ->leftJoinSub($withdrawalTotals, 'withdrawal_totals', 'withdrawal_totals.purchase_item_id', '=', 'purchase_items.id')
+            ->leftJoinSub($latestHaul, 'latest_haul', 'latest_haul.purchase_item_id', '=', 'purchase_items.id')
+            ->leftJoin('hauls as assigned_haul', 'assigned_haul.id', '=', 'latest_haul.haul_id')
+            ->leftJoin('trucks as assigned_truck', 'assigned_truck.id', '=', 'assigned_haul.truck_id')
+            ->leftJoin('users as assigned_driver', 'assigned_driver.id', '=', 'assigned_haul.driver_user_id')
             ->whereNull('purchases.deleted_at')
             ->when($search, fn (Builder $q): Builder => $this->applySearch($q, $search, [
                 'purchases.purchase_code',
@@ -331,6 +342,9 @@ class PurchaseService
                 'depots.name as depot_name',
                 'fuel_types.name as fuel_name',
                 'users.name as created_by_name',
+                'assigned_driver.name as assigned_driver_name',
+                'assigned_truck.name as assigned_truck_name',
+                'assigned_truck.truck_code as assigned_truck_code',
                 DB::raw('COALESCE(haul_totals.hauled_liters, 0) as hauled_liters'),
                 DB::raw('COALESCE(withdrawal_totals.withdrawal_count, 0) as withdrawal_count'),
                 'withdrawal_totals.latest_withdrawal_at',
@@ -377,6 +391,8 @@ class PurchaseService
                 'stock_locked' => in_array((int) $row->id, $lifted, true),
                 'fuel_name' => $row->fuel_name,
                 'depot_name' => $row->depot_name,
+                'driver_name' => $row->assigned_driver_name ?: '—',
+                'truck_name' => $row->assigned_truck_name ?: ($row->assigned_truck_code ?: '—'),
                 'class' => $this->rowClass($row->payment_status, $row->purchase_status),
                 'cells' => [
                     $row->purchase_code,

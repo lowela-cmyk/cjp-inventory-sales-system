@@ -190,7 +190,11 @@ class Part2ButtonRevisionsTest extends AuditTestCase
         $this->assertDatabaseHas('sales', ['id' => $saleId, 'delivery_status' => 'delivered']);
         $this->assertSame([56400.0, 4600.0], [$this->remaining($premium), $this->remaining($f1)]);
 
-        // Completing the schedule changes nothing, and delivering by hand is refused (Part 18 #5: the lift sets it).
+        // Part 19: the schedule cannot complete while 36,000 L remains on the truck. Unload it first.
+        $tank = DB::table('storage_locations')->where('type', 'garage')->where('status', 'active')->where('fuel_type_id', $this->fuel('PREM'))->where('tank_number', 1)->value('id');
+        $tank2 = DB::table('storage_locations')->where('type', 'garage')->where('status', 'active')->where('fuel_type_id', $this->fuel('PREM'))->where('tank_number', 2)->value('id');
+        $this->actingAs($a['dispatch'])->patch(route('dispatch.fuel-lifting.hauls.status', $haulId), ['idempotency_key' => $this->uuid(), 'status' => 'completed'])->assertSessionHasErrors('lifting');
+        $this->actingAs($a['dispatch'])->post(route('dispatch.fuel-lifting.hauls.unload-to-garage', $haulId), ['unload' => [$haulId => [$tank => 24000, $tank2 => 12000]]])->assertSessionHasNoErrors();
         $this->actingAs($a['dispatch'])->patch(route('dispatch.fuel-lifting.hauls.status', $haulId), ['idempotency_key' => $this->uuid(), 'status' => 'completed'])->assertSessionHasNoErrors();
         $this->deliverOrder($a, $saleId)->assertSessionHasErrors('delivery_status');
         $this->assertSame([56400.0, 4600.0], [$this->remaining($premium), $this->remaining($f1)]);
@@ -203,7 +207,7 @@ class Part2ButtonRevisionsTest extends AuditTestCase
         $html = $this->actingAs($a['dispatch'])->get(route('dispatch.fuel-lifting.hauled'))->assertOk()->getContent();
         $this->assertStringNotContainsString('Allocated Quantity', $html);
         $this->assertMatchesRegularExpression('/40,000\.00 L<\/td>\s*<td>4,000\.00 L<\/td>/', $html);
-        $this->assertStringContainsString('<div class="detail-label">Remaining on Truck</div><div class="detail-value">36,000.00 L</div>', $html);
+        $this->assertStringContainsString('<div class="detail-label">Remaining on Truck</div><div class="detail-value">0.00 L</div>', $html);
     }
 
     public function test_schedule_lift_rejects_over_delivery_and_an_order_on_two_lifts(): void

@@ -275,6 +275,71 @@ class SalesOfficerCustomerController extends Controller
             ->with('status', 'Payment record '.$idempotency['response_reference'].' recorded successfully.');
     }
 
+    public function storeRefund(Request $request, int $sale): RedirectResponse
+    {
+        $data = $this->validatedRefundData($request);
+        $token = $data['idempotency_key'] ?? null;
+        try {
+            $write = function () use ($sale, $data, $request): array {
+                return DB::transaction(function () use ($sale, $data, $request): array {
+                    $this->assertRefundable($sale, null, (float) $data['amount']);
+                    $refundId = DB::table('sale_refunds')->insertGetId([
+                        'sale_id' => $sale, 'amount' => round((float) $data['amount'], 2), 'refund_date' => $data['refund_date'],
+                        'method' => $data['method'], 'reference_number' => $this->blankToNull($data['reference_number'] ?? null),
+                        'remarks' => $this->blankToNull($data['remarks'] ?? null), 'recorded_by' => $request->user()->id,
+                        'created_at' => now(), 'updated_at' => now(),
+                    ]);
+                    return ['reference_id' => $refundId, 'response_reference' => 'REFUND-'.$refundId];
+                });
+            };
+            $idempotency = $token
+                ? $this->idempotencyService->run($token, 'sales.refunds.store', (int) $request->user()->id, $write)
+                : $write();
+        } catch (ValidationException $e) { return back()->withErrors($e->errors())->withInput(); }
+        return redirect()->route($this->salesRedirectRoute($request))->with('status', (($idempotency['duplicate'] ?? false) ? 'Refund record was already submitted.' : 'Refund recorded successfully.'));
+    }
+
+    public function updateRefund(Request $request, int $sale, int $refund): RedirectResponse
+    {
+        $data = $this->validatedRefundData($request);
+        try {
+            DB::transaction(function () use ($sale, $refund, $data, $request): void {
+                $row = DB::table('sale_refunds')->where('id', $refund)->where('sale_id', $sale)->lockForUpdate()->first();
+                abort_unless($row !== null, 404);
+                $this->assertRefundable($sale, $refund, (float) $data['amount']);
+                DB::table('sale_refunds')->where('id', $refund)->update([
+                    'amount' => round((float) $data['amount'], 2), 'refund_date' => $data['refund_date'], 'method' => $data['method'],
+                    'reference_number' => $this->blankToNull($data['reference_number'] ?? null), 'remarks' => $this->blankToNull($data['remarks'] ?? null),
+                    'recorded_by' => $request->user()->id, 'updated_at' => now(),
+                ]);
+            });
+        } catch (ValidationException $e) { return back()->withErrors($e->errors())->withInput(); }
+        return redirect()->route($this->salesRedirectRoute($request))->with('status', 'Refund updated successfully.');
+    }
+
+    private function validatedRefundData(Request $request): array
+    {
+        return $request->validate([
+            'amount' => ['required', 'numeric', 'gt:0', 'max:999999999999.99'],
+            'refund_date' => ['required', 'date'],
+            'method' => ['required', 'string', 'max:40'],
+            'reference_number' => ['nullable', 'string', 'max:100'],
+            'remarks' => ['nullable', 'string', 'max:1000'],
+            'idempotency_key' => ['nullable', 'uuid'],
+        ]);
+    }
+
+    private function assertRefundable(int $sale, ?int $refundId, float $amount): void
+    {
+        $saleRow = DB::table('sales')->where('id', $sale)->where('status', 'cancelled')->whereNull('deleted_at')->first(['id']);
+        abort_unless($saleRow !== null, 404);
+        $paid = (float) DB::table('payments')->where('sale_id', $sale)->sum('amount');
+        $refunded = (float) DB::table('sale_refunds')->where('sale_id', $sale)->when($refundId, fn (Builder $q) => $q->where('id', '!=', $refundId))->sum('amount');
+        if (round($refunded + $amount, 2) > round($paid, 2)) {
+            throw ValidationException::withMessages(['amount' => 'Refund cannot exceed the customer refund balance of PHP '.number_format(max(0, $paid - $refunded), 2).'.']);
+        }
+    }
+
     public function assignSource(Request $request, int $sale): RedirectResponse
     {
         $garage = $request->input('source_type') === 'garage_lot';
@@ -507,6 +572,10 @@ class SalesOfficerCustomerController extends Controller
             }
         }
 
+        $beforeSale = DB::table('sales')->where('id', $sale)->first(['sales_order_number', 'customer_id', 'sale_date', 'payment_method', 'payment_terms']);
+        $beforeDueDate = DB::table('receivables')->where('sale_id', $sale)->value('due_date');
+        $beforeItems = DB::table('sale_items')->where('sale_id', $sale)->orderBy('id')->get(['purchase_item_id', 'f1_purchase_item_id', 'quantity_liters', 'unit_price', 'f1_percentage', 'f1_unit_price']);
+
         try {
             $newCode = null;
             $saleUpdate = [
@@ -528,7 +597,7 @@ class SalesOfficerCustomerController extends Controller
                     'delivery_date' => $data['delivery_date'] ?? null,
                 ];
             }
-            DB::transaction(function () use ($sale, $row, $data, $items, $hasDependencies, $request, $requestedStatus, $saleUpdate, &$newCode): void {
+            DB::transaction(function () use ($sale, $row, $data, $items, $beforeSale, $beforeDueDate, $beforeItems, $hasDependencies, $request, $requestedStatus, $saleUpdate, &$newCode): void {
 
                 DB::table('sales')
                     ->where('id', $sale)
@@ -569,6 +638,8 @@ class SalesOfficerCustomerController extends Controller
                     }
                     $this->saleConfirmationService->reconcile($sale);
                 }
+
+                $this->recordSaleChangeLog($sale, $beforeSale, $beforeDueDate, $beforeItems, $request->user()->id);
             });
         } catch (\RuntimeException $exception) {
             return back()
@@ -579,6 +650,50 @@ class SalesOfficerCustomerController extends Controller
         return redirect()
             ->route($this->salesRedirectRoute($request))
             ->with('status', 'Sale record updated successfully.'.($newCode ? ' New Order ID: '.$newCode.'.' : ''));
+    }
+
+    /** Record field-level before/after values for editable sale corrections. */
+    private function recordSaleChangeLog(int $saleId, ?object $beforeSale, mixed $beforeDueDate, Collection $beforeItems, int $userId): void
+    {
+        if (! Schema::hasTable('sale_change_logs') || ! $beforeSale) {
+            return;
+        }
+
+        $afterSale = DB::table('sales')->where('id', $saleId)->first(['sales_order_number', 'customer_id', 'sale_date', 'payment_method', 'payment_terms']);
+        foreach (['sales_order_number', 'customer_id', 'sale_date', 'payment_method', 'payment_terms'] as $field) {
+            $old = (string) ($beforeSale->{$field} ?? '');
+            $new = (string) ($afterSale->{$field} ?? '');
+            if ($old !== $new) {
+                $this->insertSaleChangeLog($saleId, $field, $old, $new, $userId);
+            }
+        }
+        $afterDueDate = DB::table('receivables')->where('sale_id', $saleId)->value('due_date');
+        if ((string) ($beforeDueDate ?? '') !== (string) ($afterDueDate ?? '')) {
+            $this->insertSaleChangeLog($saleId, 'due_date', (string) ($beforeDueDate ?? ''), (string) ($afterDueDate ?? ''), $userId);
+        }
+
+        $afterItems = DB::table('sale_items')->where('sale_id', $saleId)->orderBy('id')->get(['purchase_item_id', 'f1_purchase_item_id', 'quantity_liters', 'unit_price', 'f1_percentage', 'f1_unit_price']);
+        $fields = ['purchase_item_id', 'f1_purchase_item_id', 'quantity_liters', 'unit_price', 'f1_percentage', 'f1_unit_price'];
+        $itemCount = max($beforeItems->count(), $afterItems->count());
+        for ($index = 0; $index < $itemCount; $index++) {
+            $oldItem = $beforeItems->get($index);
+            $newItem = $afterItems->get($index);
+            foreach ($fields as $field) {
+                $old = (string) ($oldItem->{$field} ?? '');
+                $new = (string) ($newItem->{$field} ?? '');
+                if ($old !== $new) {
+                    $this->insertSaleChangeLog($saleId, 'items.'.$index.'.'.$field, $old, $new, $userId);
+                }
+            }
+        }
+    }
+
+    private function insertSaleChangeLog(int $saleId, string $field, string $old, string $new, int $userId): void
+    {
+        DB::table('sale_change_logs')->insert([
+            'sale_id' => $saleId, 'field' => $field, 'old_value' => $old === '' ? null : $old, 'new_value' => $new === '' ? null : $new,
+            'changed_by' => $userId, 'created_at' => now(), 'updated_at' => now(),
+        ]);
     }
 
     /**
@@ -837,19 +952,16 @@ class SalesOfficerCustomerController extends Controller
                 ->flip()
                 ->all();
 
-        // Payments recorded on cancelled sales are owed back to the customer.
-        $refundDueTotals = $customerIds->isEmpty()
-            ? []
-            : DB::table('payments')
-                ->join('sales', 'sales.id', '=', 'payments.sale_id')
-                ->whereIn('sales.customer_id', $customerIds->all())
-                ->whereNull('sales.deleted_at')
-                ->where('sales.status', 'cancelled')
-                ->groupBy('sales.customer_id')
-                ->selectRaw('sales.customer_id, SUM(payments.amount) as refund_due')
-                ->pluck('refund_due', 'customer_id')
-                ->mapWithKeys(fn (mixed $amount, mixed $id): array => [(int) $id => (float) $amount])
-                ->all();
+        // Payments recorded on cancelled sales are owed back minus recorded refunds.
+        $refundDueTotals = $customerIds->isEmpty() ? [] : (function () use ($customerIds): array {
+            $paid = DB::table('payments')->join('sales', 'sales.id', '=', 'payments.sale_id')
+                ->whereIn('sales.customer_id', $customerIds->all())->whereNull('sales.deleted_at')->where('sales.status', 'cancelled')
+                ->groupBy('sales.customer_id')->selectRaw('sales.customer_id, SUM(payments.amount) as total')->pluck('total', 'customer_id');
+            $refunded = DB::table('sale_refunds')->join('sales', 'sales.id', '=', 'sale_refunds.sale_id')
+                ->whereIn('sales.customer_id', $customerIds->all())->whereNull('sales.deleted_at')->where('sales.status', 'cancelled')
+                ->groupBy('sales.customer_id')->selectRaw('sales.customer_id, SUM(sale_refunds.amount) as total')->pluck('total', 'customer_id');
+            return $customerIds->mapWithKeys(fn (int $id): array => [$id => max(0, (float) ($paid[$id] ?? 0) - (float) ($refunded[$id] ?? 0))])->all();
+        })();
 
         $hasSalesCustomerIds = $customerIds->isEmpty()
             ? []
@@ -1041,18 +1153,19 @@ class SalesOfficerCustomerController extends Controller
         $latestPaymentDates = $this->latestPaymentDatesForSales($saleIds);
         $dependencyMap = $this->saleDependencyMap($saleIds);
         $paymentsBySale = $this->paymentsForSales($saleIds);
+        $refundsBySale = $this->refundsForSales($saleIds);
         $schedulesBySale = $this->paymentSchedulesForSales($saleIds);
         $liftsBySale = $this->liftsForSales($saleIds);
 
         $transformed = $rows
-            ->map(function (object $row) use ($itemsBySale, $latestPaymentDates, $dependencyMap, $paymentsBySale, $schedulesBySale, $liftsBySale): array {
+            ->map(function (object $row) use ($itemsBySale, $latestPaymentDates, $dependencyMap, $paymentsBySale, $refundsBySale, $schedulesBySale, $liftsBySale): array {
                 $saleId = (int) $row->sale_id;
                 $paid = (float) ($row->total_paid ?? 0);
                 $saleTotal = (float) $row->sale_total;
                 $isCancelled = $row->status === 'cancelled';
                 $balance = $isCancelled ? 0 : max(0, $saleTotal - $paid);
                 // Payments on a voided sale are owed back to the customer, so they are not "clear".
-                $refundDue = $isCancelled ? round($paid, 2) : 0.0;
+                $refundDue = $isCancelled ? round(max(0, $paid - collect($refundsBySale[$saleId] ?? [])->sum('amount_raw')), 2) : 0.0;
                 $receivableStatus = $isCancelled ? ($refundDue > 0 ? 'refund_due' : 'clear') : $this->receivableStatusForSale($saleTotal, $paid, $row->due_date);
                 $status = match (true) {
                     $refundDue > 0 => 'Refund due: ₱'.number_format($refundDue, 2),
@@ -1097,6 +1210,7 @@ class SalesOfficerCustomerController extends Controller
                     'has_dependencies' => $dependencyMap[$saleId] ?? false,
                     'correction_action' => $correctionAction,
                     'refund_due' => $refundDue,
+                    'refunds' => $refundsBySale[$saleId] ?? [],
                     'items' => $saleItems,
                     'source_options' => $row->delivery_type === 'standard' && ! in_array($row->delivery_status, ['delivered', 'cancelled'], true)
                         ? $this->sourceAssignments->options($saleId)
@@ -2113,6 +2227,17 @@ class SalesOfficerCustomerController extends Controller
     private function paymentsForSale(int $saleId): array
     {
         return $this->paymentsForSales(collect([$saleId]))[$saleId] ?? [];
+    }
+
+    private function refundsForSales(Collection $saleIds): array
+    {
+        if ($saleIds->isEmpty() || ! Schema::hasTable('sale_refunds')) return [];
+        return DB::table('sale_refunds')->whereIn('sale_id', $saleIds->all())->orderBy('id')->get()
+            ->groupBy('sale_id')->map(fn (Collection $rows) => $rows->map(fn (object $r): array => [
+                'id' => (int) $r->id, 'amount_raw' => (float) $r->amount, 'amount' => $this->formatNumber($r->amount),
+                'date' => $this->formatDate($r->refund_date), 'method' => ucwords(str_replace('_', ' ', $r->method)),
+                'reference' => $r->reference_number ?: 'N/A', 'remarks' => $r->remarks ?: 'N/A',
+            ])->all())->all();
     }
 
     /**

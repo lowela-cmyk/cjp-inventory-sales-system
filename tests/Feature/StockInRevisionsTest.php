@@ -232,7 +232,7 @@ class StockInRevisionsTest extends AuditTestCase
             ])->assertSessionHasErrors('stock_in');
     }
 
-    public function test_edit_stock_out_record_corrects_the_release_and_its_order_delivery_details(): void
+    public function test_stock_out_record_is_read_only_and_its_order_delivery_details_are_not_editable_here(): void
     {
         $a = $this->actors();
         $premium = $this->purchaseLine($a, 'PREM', 20000, 55);
@@ -240,38 +240,15 @@ class StockInRevisionsTest extends AuditTestCase
         $standard = DB::table('stock_outs')->orderByDesc('id')->first();
 
         $html = $this->actingAs($a['inventory'])->get(route('inventory-officer.inventory.stock-out'))->assertOk()->getContent();
-        $this->assertStringContainsString('data-modal-open="io-stock-out-edit-'.$standard->id.'">Edit</button>', $html);
-        $this->assertStringContainsString('Edit Stock-Out Record', $html);
+        $this->assertStringContainsString('data-modal-open="io-stock-out-edit-'.$standard->id.'">View</button>', $html);
+        $this->assertStringContainsString('Stock-Out Record', $html);
+        $this->assertStringNotContainsString('Edit Stock-Out Record', $html);
 
-        $edit = fn (int $id, array $data) => $this->actingAs($a['inventory'])->from(route('inventory-officer.inventory.stock-out'))
-            ->patch(route('inventory-officer.inventory.stock-out.update', $id), $data + ['edit_stock_out_id' => $id]);
-
-        // Part 12: the order is Delivered, so only Cost / Unit changes; the date, truck, driver and delivery date stay.
-        $before = DB::table('sales')->where('id', $standard->sale_id)->first(['delivery_truck_id', 'delivery_driver_user_id']);
-        $edit($standard->id, ['stock_out_at' => '2026-10-13 15:30', 'unit_cost' => 54, 'delivery_truck_id' => $a['truck'], 'delivery_driver_user_id' => $a['driver']->id, 'delivery_date' => '2026-10-13 14:00'])
-            ->assertSessionHasNoErrors()->assertRedirect(route('inventory-officer.inventory.stock-out'));
-        $row = collect($this->viewData($a['inventory'], 'inventory-officer.inventory.stock-out', 'stockOut')->items())->firstWhere('id', (int) $standard->id);
-        // 1,000 L at 54 = 54,000; 65,000 billed and nothing paid yet.
-        $this->assertSame(['54.00', '54,000.00', '11,000.00', '-54,000.00'], [$row['cells'][8], $row['cells'][9], $row['cells'][15], $row['cells'][16]]);
-        $this->assertSame((string) $standard->stock_out_at, (string) DB::table('stock_outs')->where('id', $standard->id)->value('stock_out_at'));
-        $this->assertEquals($before, DB::table('sales')->where('id', $standard->sale_id)->first(['delivery_truck_id', 'delivery_driver_user_id']));
-        // Quantity, purchase and the stock-in are untouched.
-        $this->assertSame([1000.0, $premium], [(float) DB::table('stock_outs')->where('id', $standard->id)->value('quantity_liters'), (int) DB::table('stock_outs')->where('id', $standard->id)->value('purchase_item_id')]);
+        $this->actingAs($a['inventory'])->from(route('inventory-officer.inventory.stock-out'))
+            ->patch(route('inventory-officer.inventory.stock-out.update', $standard->id), ['unit_cost' => 54])
+            ->assertSessionHasErrors('stock_out');
+        $this->assertSame((float) $standard->unit_cost, (float) DB::table('stock_outs')->where('id', $standard->id)->value('unit_cost'));
         $this->assertSame(19000.0, app(StockInService::class)->records()->firstWhere('purchase_item_id', $premium)->remaining);
-
-        // A Depot to Client release: its delivery details come from the lift, so only date and cost change here.
-        $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 2000, 'unit_price' => 65], ['delivery_type' => 'depot_to_client'])->assertSessionHasNoErrors();
-        $sale = $this->lastSaleId();
-        $this->scheduleLift($a, [['purchase_item_id' => $premium, 'quantity_liters' => 2000]], [$sale])->assertSessionHasNoErrors();
-        $this->completeLift($a, $this->lastHaulId());
-        $lifted = DB::table('stock_outs')->where('sale_id', $sale)->first();
-        $edit($lifted->id, ['stock_out_at' => '2026-10-14 08:00', 'unit_cost' => 55, 'delivery_truck_id' => $a['truck'], 'delivery_driver_user_id' => $a['driver']->id])->assertSessionHasNoErrors();
-        $this->assertNull(DB::table('sales')->where('id', $sale)->value('delivery_truck_id'));
-
-        // A cancelled stock-out can't be edited.
-        DB::table('stock_outs')->where('id', $lifted->id)->update(['status' => 'cancelled']);
-        $edit($lifted->id, ['stock_out_at' => '2026-10-14 08:00', 'unit_cost' => 50])->assertSessionHasErrors('stock_out');
-        $this->assertSame(55.0, (float) DB::table('stock_outs')->where('id', $lifted->id)->value('unit_cost'));
     }
 
     public function test_purchases_written_outside_purchases_get_their_stock_in(): void

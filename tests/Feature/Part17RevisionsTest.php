@@ -214,7 +214,7 @@ class Part17RevisionsTest extends AuditTestCase
         $this->assertStringContainsString('<td class="stock-out-name stock-out-crew">'.e($a['driver']->name).'</td>', $table);
         // The truck's name, not its plate.
         $this->assertStringContainsString('<td class="stock-out-name stock-out-crew">Isuzu Giga</td>', $table);
-        // Actions stays pinned while the wider table scrolls inside its box.
+        // The wider table scrolls inside its box (Part 18 follow-up: its Actions column is not pinned, see Part18RevisionsTest).
         $this->assertStringContainsString('inventory-table-actions stock-out-table', $html);
     }
 

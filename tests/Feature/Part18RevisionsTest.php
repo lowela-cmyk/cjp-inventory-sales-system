@@ -284,6 +284,27 @@ class Part18RevisionsTest extends AuditTestCase
         $this->assertSame('delivered', DB::table('sales')->where('id', $this->lastSaleId())->value('delivery_status'));
     }
 
+    // ----- Pinned Actions column ------------------------------------------------------------------------------
+
+    public function test_no_column_sits_under_a_pinned_actions_column(): void
+    {
+        $css = File::get(resource_path('css/app.css'));
+        $pinned = '.table-wrap > :is(.admin-table:not(.inventory-table), .inventory-table-actions):not(.admin-table-fit):not(.depot-table)';
+
+        // Tables with a pinned Actions column take their box's width and wrap between words instead of growing past it.
+        $this->assertStringContainsString($pinned." {\n    width: 100%;\n    min-width: 0;\n}", $css);
+        $this->assertStringContainsString($pinned." :is(th, td) {\n    white-space: normal;", $css);
+        // Badges, buttons and the Actions cell stay on one line; below 1600px the cells are compact and Actions stack.
+        $this->assertStringContainsString($pinned." :is(th, td):last-child,\n".$pinned." :is(.status-badge, .btn),\n".$pinned." :is(td:first-child, .cell-id) {\n    white-space: nowrap;", $css);
+        $this->assertMatchesRegularExpression('/@media \(max-width: 1599px\) \{\s*\/\*[^*]*\*\/\s*'.preg_quote($pinned, '/').':not\(\.stock-out-table\) :is\(th, td\) \{\s*padding: 8px 4px;/', $css);
+
+        // Stock Out keeps one value per column and is the one table whose Actions column is not pinned.
+        $this->assertStringContainsString(".table-wrap > .inventory-table-actions.stock-out-table :is(th, td):last-child {\n    position: static;\n    box-shadow: none;\n}", $css);
+        $a = $this->actors();
+        $html = $this->actingAs($a['inventory'])->get(route('inventory-officer.inventory.stock-out'))->assertOk()->getContent();
+        $this->assertStringContainsString('<th>QTY Released</th><th>Cost / Unit</th><th>Total Cost</th><th>Price / Unit</th><th>Total Price</th><th>Total Paid</th>', $html);
+    }
+
     // ----- helpers ---------------------------------------------------------------------------------------------
 
     private function saleModal(array $a, int $saleId): string

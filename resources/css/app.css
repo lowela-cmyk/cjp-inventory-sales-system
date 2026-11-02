@@ -5004,7 +5004,7 @@ body.login-page {
 }
 
 /* Part 17 #11: Stock Out shows Driver Name and Truck again; the table scrolls inside its box when it is wider than the
-   frame (1366px) and Actions stays pinned on the right (.inventory-table-actions). */
+   frame (1366px); its Actions column is not pinned (see "Stock Out: Actions is not pinned" below). */
 .stock-out-table td.stock-out-name.stock-out-crew {
     min-width: 80px;
     max-width: 120px;
@@ -5044,4 +5044,70 @@ body.login-page {
         grid-template-columns: minmax(0, 1fr);
         gap: 7px;
     }
+}
+
+/* Pinned Actions column: no column may sit under it. Tables with a sticky Actions column take the width of their box
+   and wrap cell text between words when their natural width would not fit (a table that already fits keeps its
+   one-line cells), so the pinned column never covers another at 1366px and up. Badges, buttons and the Actions cell
+   stay on one line, and so do IDs (first column, .cell-id). */
+.table-wrap > :is(.admin-table:not(.inventory-table), .inventory-table-actions):not(.admin-table-fit):not(.depot-table) {
+    width: 100%;
+    min-width: 0;
+}
+
+.table-wrap > :is(.admin-table:not(.inventory-table), .inventory-table-actions):not(.admin-table-fit):not(.depot-table) :is(th, td) {
+    white-space: normal;
+    overflow-wrap: normal;
+    word-break: normal;
+}
+
+.table-wrap > :is(.admin-table:not(.inventory-table), .inventory-table-actions):not(.admin-table-fit):not(.depot-table) :is(th, td):last-child,
+.table-wrap > :is(.admin-table:not(.inventory-table), .inventory-table-actions):not(.admin-table-fit):not(.depot-table) :is(.status-badge, .btn),
+.table-wrap > :is(.admin-table:not(.inventory-table), .inventory-table-actions):not(.admin-table-fit):not(.depot-table) :is(td:first-child, .cell-id) {
+    white-space: nowrap;
+}
+
+/* Up to 1599px (a 1366px screen leaves the table about 1,016px), pinned tables are compact so they fit their box:
+   tighter cells, 13px text, status pills that may take two lines, and Actions buttons stacked one per line. */
+@media (max-width: 1599px) {
+    /* Stock Out keeps its own tighter Part 12 cells (4px, 12px text). */
+    .table-wrap > :is(.admin-table:not(.inventory-table), .inventory-table-actions):not(.admin-table-fit):not(.depot-table):not(.stock-out-table) :is(th, td) {
+        padding: 8px 4px;
+        font-size: 13px;
+    }
+
+    .table-wrap > :is(.admin-table:not(.inventory-table), .inventory-table-actions):not(.admin-table-fit):not(.depot-table) .status-badge {
+        width: auto;
+        min-width: 0;
+        max-width: 84px;
+        height: auto;
+        min-height: 30px;
+        padding: 4px 5px;
+        white-space: normal;
+        font-size: 11px;
+        line-height: 1.15;
+    }
+
+    .table-wrap > :is(.admin-table:not(.inventory-table), .inventory-table-actions):not(.admin-table-fit):not(.depot-table) :is(.driver-row-actions, .dispatch-row-actions, .sales-row-actions, .inventory-row-actions) {
+        display: inline-grid;
+        min-width: 0;
+        gap: 6px;
+    }
+
+    .table-wrap > :is(.admin-table:not(.inventory-table), .inventory-table-actions):not(.admin-table-fit):not(.depot-table) .btn {
+        min-width: 64px;
+        padding: 0 10px;
+    }
+
+    .table-wrap > :is(.admin-table:not(.inventory-table), .inventory-table-actions):not(.admin-table-fit):not(.depot-table) td.cell-wrap {
+        min-width: 72px;
+    }
+}
+
+/* Stock Out: Actions is not pinned. Its columns (every money value, Customer / Company, Driver / Truck each in their
+   own column) are wider than the 1,016px a 1366px screen leaves, so a pinned Actions would cover some of them; the
+   table scrolls instead and Edit is at the end of the row. Every other table keeps Actions pinned (and fits its box). */
+.table-wrap > .inventory-table-actions.stock-out-table :is(th, td):last-child {
+    position: static;
+    box-shadow: none;
 }

@@ -452,6 +452,15 @@ class InventoryOfficerPurchaseController extends Controller
             'contact_person' => $row->contact_person ?: 'N/A',
             'phone' => $row->phone ?: 'N/A',
             'status' => $row->status,
+            // The Edit Depot form starts from the stored values (blank, not "N/A").
+            'form' => [
+                'depot_code' => $row->depot_code,
+                'name' => $row->name,
+                'address' => (string) $row->address,
+                'contact_person' => (string) $row->contact_person,
+                'phone' => (string) $row->phone,
+                'status' => $row->status,
+            ],
         ]);
         $paginator->setCollection($transformed);
 

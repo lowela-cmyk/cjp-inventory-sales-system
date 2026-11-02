@@ -60,6 +60,14 @@ class DispatchLiftingStatusController extends Controller
 
             $validationError = $this->validateLiftForStatus($row, $nextStatus);
 
+            if (! $validationError && $nextStatus === 'completed') {
+                $lineIds = $row->lifting_schedule_id
+                    ? DB::table('hauls')->where('lifting_schedule_id', $row->lifting_schedule_id)->whereNull('deleted_at')
+                        ->where('status', $row->status)->lockForUpdate()->pluck('id')->map(fn (mixed $id): int => (int) $id)->push((int) $row->id)->unique()->values()->all()
+                    : [(int) $row->id];
+                $validationError = $this->fuelLeftOnTruck($lineIds);
+            }
+
             if ($validationError) {
                 return $validationError;
             }
@@ -85,6 +93,7 @@ class DispatchLiftingStatusController extends Controller
                 $siblings = DB::table('hauls')
                     ->where('lifting_schedule_id', $row->lifting_schedule_id)
                     ->where('id', '!=', $row->id)
+                    ->whereNull('deleted_at')
                     ->where('status', $row->status)
                     ->lockForUpdate()
                     ->get(['id', 'purchase_id', 'purchase_item_id']);
@@ -308,15 +317,32 @@ class DispatchLiftingStatusController extends Controller
             return 'Lift quantity cannot exceed the remaining available purchase fuel.';
         }
 
-        if ($nextStatus === 'completed') {
-            $load = app(\App\Services\LiftAllocationService::class)->loadSummaryByHaul([(int) $haul->id]);
-            $remaining = (float) (($load[(int) $haul->id]['remaining'] ?? $quantity));
-            if ($remaining > 0.005) {
-                return 'This lift cannot be completed while '.number_format($remaining, 2).' L remains on the truck. Deliver or unload the remaining fuel first.';
-            }
+        return null;
+    }
+
+    /**
+     * Part 19: a lift is Completed only once its truck is empty. Every lift line the request would complete (the lift and
+     * the other lines of its schedule that move with it) is checked before any of them changes, so a schedule never
+     * completes a line that still has undelivered or unallocated fuel on the truck.
+     *
+     * @param  array<int, int>  $haulIds
+     */
+    private function fuelLeftOnTruck(array $haulIds): ?string
+    {
+        $load = $this->liftAllocations->loadSummaryByHaul($haulIds);
+        $codes = DB::table('hauls')->whereIn('id', $haulIds)->pluck('haul_code', 'id');
+        $open = collect($haulIds)
+            ->map(fn (int $id): array => ['code' => (string) ($codes[$id] ?? $id), 'remaining' => (float) ($load[$id]['remaining'] ?? 0)])
+            ->filter(fn (array $line): bool => $line['remaining'] > 0.005)
+            ->values();
+
+        if ($open->isEmpty()) {
+            return null;
         }
 
-        return null;
+        return 'This lift cannot be completed while fuel remains on the truck: '
+            .$open->map(fn (array $line): string => $line['code'].' '.number_format($line['remaining'], 2).' L')->implode(', ')
+            .'. Deliver or unload the remaining fuel first.';
     }
 
     private function remainingPurchaseItemLiftQuantity(object $haul): float

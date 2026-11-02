@@ -363,8 +363,11 @@ class PurchaseService
         $transformed = $rawRows->map(function (object $row) use ($dependencyMap, $withdrawalsMap, $stock, $cancelBlocked, $lifted): array {
             $line = $stock->get((int) $row->id);
             $released = (float) ($line->released ?? 0);
-            $onHand = (float) ($line->on_hand ?? $row->quantity_ordered_liters);
+            // Part 19: a cancelled purchase holds no stock (its stock-in is voided), whatever its lines still say.
+            $cancelled = $row->purchase_status === 'cancelled' || $row->legacy_purchase_status === 'cancelled';
+            $onHand = $cancelled ? 0.0 : (float) ($line->on_hand ?? $row->quantity_ordered_liters);
             $inventoryStatus = match (true) {
+                $cancelled => 'cancelled',
                 $onHand <= 0 => 'depleted',
                 $released > 0 => 'partially_delivered',
                 default => 'in_stock',

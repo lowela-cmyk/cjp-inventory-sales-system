@@ -71,12 +71,12 @@ class Part19RevisionsTest extends AuditTestCase
         $refundId = (int) DB::table('sale_refunds')->where('sale_id', $saleId)->value('id');
 
         $this->actingAs($a['sales'])->patch(route('sales-officer.sales.refunds.update', [$saleId, $refundId]), [
-            'amount' => 7000, 'refund_date' => '2026-11-03', 'method' => 'cash', 'reference_number' => 'REF-2', 'remarks' => 'Corrected refund',
+            'amount' => 7000, 'refund_date' => '2026-11-02', 'method' => 'cash_on_delivery', 'reference_number' => 'REF-2', 'remarks' => 'Corrected refund',
         ])->assertSessionHasNoErrors();
-        $this->assertDatabaseHas('sale_refunds', ['id' => $refundId, 'amount' => '7000.00', 'method' => 'cash', 'reference_number' => 'REF-2']);
+        $this->assertDatabaseHas('sale_refunds', ['id' => $refundId, 'amount' => '7000.00', 'method' => 'cash_on_delivery', 'reference_number' => 'REF-2']);
 
         $this->actingAs($a['sales'])->patch(route('sales-officer.sales.refunds.update', [$saleId, $refundId]), [
-            'amount' => 11000, 'refund_date' => '2026-11-03', 'method' => 'cash',
+            'amount' => 11000, 'refund_date' => '2026-11-02', 'method' => 'cash_on_delivery',
         ])->assertSessionHasErrors('amount');
         $this->assertSame(7000.0, (float) DB::table('sale_refunds')->where('id', $refundId)->value('amount'));
         $this->actingAs($a['sales'])->get(route('sales-officer.sales'))->assertSee('Refund due: ₱3,000.00');

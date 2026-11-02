@@ -11,7 +11,9 @@
     };
     $isOldPaymentForm = (int) old('payment_sale_id') === (int) $saleId;
     $showPaymentForm = $isOldPaymentForm && $errors->any();
-    $reopenOnLoad = $isOldPaymentForm || (int) session('payment_sale_id') === (int) $saleId;
+    // Part 19: a refund form sends refund_sale_id, so its errors reopen this sale's modal.
+    $isRefundForm = (int) old('refund_sale_id') === (int) $saleId;
+    $reopenOnLoad = $isOldPaymentForm || $isRefundForm || (int) session('payment_sale_id') === (int) $saleId;
     $fieldPrefix = 'payment_'.$saleId;
     $selectedMethod = ($isOldPaymentForm ? old('method') : null) ?: (in_array($row['payment_method'], $paymentMethods, true) ? $row['payment_method'] : 'cash_on_delivery');
     // Field errors are shown only in the modal of the sale whose payment form was submitted.
@@ -35,31 +37,46 @@
             @endif
         </div>
 
-        @if ($row['status'] === 'cancelled')
-            <div class="modal-card" style="margin-top:18px">
+        {{-- Part 19: customer refunds of a cancelled sale. Methods are the payment methods (stored as their value), every
+             edit is kept field by field in the sale's change history, and the forms appear only once the table exists. --}}
+        @if ($row['status'] === 'cancelled' && ($refundsEnabled ?? true))
+            <div class="modal-card refund-card">
                 <h3>Customer Refunds</h3>
+                @if ($isRefundForm && $errors->has('refund'))<p class="form-alert" role="alert">{{ $errors->first('refund') }}</p>@endif
                 @forelse (($row['refunds'] ?? []) as $refund)
-                    <form method="POST" action="{{ route($salesRoutePrefix.'.sales.refunds.update', [$saleId, $refund['id']]) }}" class="form-grid" style="margin-top:10px">
+                    @php
+                        $isThisRefund = $isRefundForm && (int) old('refund_id') === (int) $refund['id'];
+                        $refundOld = fn (string $key, mixed $value): mixed => $isThisRefund ? old($key, $value) : $value;
+                        $refundError = fn (string $field): ?string => $isThisRefund ? $errors->first($field) ?: null : null;
+                    @endphp
+                    <form method="POST" action="{{ route($salesRoutePrefix.'.sales.refunds.update', [$saleId, $refund['id']]) }}" class="form-grid refund-form">
                         @csrf @method('PATCH')
-                        <div class="form-row"><label>Amount</label><input name="amount" type="number" min="0.01" step="0.01" value="{{ $refund['amount_raw'] }}" required></div>
-                        <div class="form-row"><label>Date</label><input name="refund_date" type="date" value="{{ date('Y-m-d', strtotime($refund['date'])) }}" required></div>
-                        <div class="form-row"><label>Method</label><input name="method" type="text" value="{{ $refund['method'] }}" maxlength="40" required></div>
-                        <div class="form-row"><label>Reference</label><input name="reference_number" type="text" value="{{ $refund['reference'] === 'N/A' ? '' : $refund['reference'] }}" maxlength="100"></div>
-                        <div class="form-row"><label>Remarks</label><input name="remarks" type="text" value="{{ $refund['remarks'] === 'N/A' ? '' : $refund['remarks'] }}" maxlength="1000"></div>
+                        <input type="hidden" name="refund_sale_id" value="{{ $saleId }}"><input type="hidden" name="refund_id" value="{{ $refund['id'] }}">
+                        <div class="form-row"><label for="refund_amount_{{ $refund['id'] }}">Amount</label><input id="refund_amount_{{ $refund['id'] }}" name="amount" type="number" min="0.01" step="0.01" value="{{ $refundOld('amount', $refund['amount_raw']) }}" required>@if ($refundError('amount'))<p class="field-error form-row-message">{{ $refundError('amount') }}</p>@endif</div>
+                        <div class="form-row"><label for="refund_date_{{ $refund['id'] }}">Date</label><input id="refund_date_{{ $refund['id'] }}" name="refund_date" type="date" max="{{ now()->toDateString() }}" value="{{ $refundOld('refund_date', date('Y-m-d', strtotime($refund['date_value']))) }}" required>@if ($refundError('refund_date'))<p class="field-error form-row-message">{{ $refundError('refund_date') }}</p>@endif</div>
+                        <div class="form-row"><label for="refund_method_{{ $refund['id'] }}">Method</label><select id="refund_method_{{ $refund['id'] }}" name="method" required>@foreach ($paymentMethods as $method)<option value="{{ $method }}" @selected($refundOld('method', $refund['method_value']) === $method)>{{ $paymentMethodLabels[$method] ?? ucwords(str_replace('_', ' ', $method)) }}</option>@endforeach</select>@if ($refundError('method'))<p class="field-error form-row-message">{{ $refundError('method') }}</p>@endif</div>
+                        <div class="form-row"><label for="refund_reference_{{ $refund['id'] }}">Reference</label><input id="refund_reference_{{ $refund['id'] }}" name="reference_number" type="text" value="{{ $refundOld('reference_number', $refund['reference'] === 'N/A' ? '' : $refund['reference']) }}" maxlength="100"></div>
+                        <div class="form-row"><label for="refund_remarks_{{ $refund['id'] }}">Remarks</label><input id="refund_remarks_{{ $refund['id'] }}" name="remarks" type="text" value="{{ $refundOld('remarks', $refund['remarks'] === 'N/A' ? '' : $refund['remarks']) }}" maxlength="1000"></div>
                         <div class="form-row"><label>&nbsp;</label><button class="btn btn-secondary" type="submit">Edit Refund</button></div>
                     </form>
                 @empty
                     <p class="table-help">No refunds recorded.</p>
                 @endforelse
                 @if ($row['refund_due'] > 0)
-                    <form method="POST" action="{{ route($salesRoutePrefix.'.sales.refunds.store', $saleId) }}" class="form-grid" style="margin-top:10px">
+                    @php
+                        $isNewRefund = $isRefundForm && ! old('refund_id');
+                        $newRefundError = fn (string $field): ?string => $isNewRefund ? $errors->first($field) ?: null : null;
+                    @endphp
+                    <form method="POST" action="{{ route($salesRoutePrefix.'.sales.refunds.store', $saleId) }}" class="form-grid refund-form">
                         @csrf
+                        {{-- A new key per page load: a double submit of this form records one refund. --}}
                         <input type="hidden" name="idempotency_key" value="{{ (string) \Illuminate\Support\Str::uuid() }}">
-                        <div class="form-row"><label>Amount</label><input name="amount" type="number" min="0.01" max="{{ $row['refund_due'] }}" step="0.01" required></div>
-                        <div class="form-row"><label>Date</label><input name="refund_date" type="date" value="{{ now()->toDateString() }}" required></div>
-                        <div class="form-row"><label>Method</label><input name="method" type="text" maxlength="40" required></div>
-                        <div class="form-row"><label>Reference</label><input name="reference_number" type="text" maxlength="100"></div>
-                        <div class="form-row"><label>Remarks</label><input name="remarks" type="text" maxlength="1000"></div>
+                        <input type="hidden" name="refund_sale_id" value="{{ $saleId }}">
+                        <div class="form-row"><label for="refund_new_amount_{{ $saleId }}">Amount</label><input id="refund_new_amount_{{ $saleId }}" name="amount" type="number" min="0.01" max="{{ $row['refund_due'] }}" step="0.01" value="{{ $isNewRefund ? old('amount') : '' }}" required>@if ($newRefundError('amount'))<p class="field-error form-row-message">{{ $newRefundError('amount') }}</p>@endif</div>
+                        <div class="form-row"><label for="refund_new_date_{{ $saleId }}">Date</label><input id="refund_new_date_{{ $saleId }}" name="refund_date" type="date" max="{{ now()->toDateString() }}" value="{{ $isNewRefund ? old('refund_date', now()->toDateString()) : now()->toDateString() }}" required>@if ($newRefundError('refund_date'))<p class="field-error form-row-message">{{ $newRefundError('refund_date') }}</p>@endif</div>
+                        <div class="form-row"><label for="refund_new_method_{{ $saleId }}">Method</label><select id="refund_new_method_{{ $saleId }}" name="method" required>@foreach ($paymentMethods as $method)<option value="{{ $method }}" @selected(($isNewRefund ? old('method') : null) === $method)>{{ $paymentMethodLabels[$method] ?? ucwords(str_replace('_', ' ', $method)) }}</option>@endforeach</select>@if ($newRefundError('method'))<p class="field-error form-row-message">{{ $newRefundError('method') }}</p>@endif</div>
+                        <div class="form-row"><label for="refund_new_reference_{{ $saleId }}">Reference</label><input id="refund_new_reference_{{ $saleId }}" name="reference_number" type="text" maxlength="100" value="{{ $isNewRefund ? old('reference_number') : '' }}"></div>
+                        <div class="form-row"><label for="refund_new_remarks_{{ $saleId }}">Remarks</label><input id="refund_new_remarks_{{ $saleId }}" name="remarks" type="text" maxlength="1000" value="{{ $isNewRefund ? old('remarks') : '' }}"></div>
                         <div class="form-row"><label>&nbsp;</label><button class="btn btn-primary" type="submit">Record Refund</button></div>
                     </form>
                 @endif

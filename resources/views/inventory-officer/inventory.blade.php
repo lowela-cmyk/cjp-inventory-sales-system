@@ -42,13 +42,14 @@
                 <button class="btn btn-secondary btn-wide" type="button" data-modal-open="io-purchase-add">+ Record Purchase</button>
             </x-filter.bar>
             <div class="table-wrap inventory-table-wrap">
-                <table class="admin-table inventory-table inventory-table-actions table-stacked">
+                <table class="admin-table inventory-table inventory-table-actions table-stacked purchases-table">
                     <thead><tr>
                         <th>Purchase-ID</th><th>Date</th><th>Fuel</th><th>Depot</th>
                         <th>Purchased (L)</th>
                         <th>Remaining (L)</th><th>Driver Name</th><th>Truck</th>
                         <th>Cost / Liter</th><th>Total Cost</th>
-                        <th><span class="th-line" data-export-part>Payment Mode</span><span class="th-line" data-export-part>Bank</span></th>
+                        {{-- The Bank line is hidden on screen but kept for the export, so the CSV still has a Bank column. --}}
+                        <th><span class="th-line" data-export-part>Payment Mode</span><span class="visually-hidden" data-export-part>Bank</span></th>
                         <th>Receipt</th>
                         {{-- Part 12: one status per column. --}}
                         <th class="inventory-status-column">Inventory Status</th>
@@ -470,29 +471,39 @@
     @endforeach
 
         @foreach ($depotRows as $depotRow)
+            @php
+                // Old input and errors belong only to the depot whose Edit form was submitted.
+                $isEditedDepot = (int) old('edit_depot_id') === $depotRow['id'];
+                $depotOld = fn (string $key): mixed => $isEditedDepot ? old($key, $depotRow['form'][$key]) : $depotRow['form'][$key];
+            @endphp
             <x-admin.modal id="io-depot-edit-{{ $depotRow['id'] }}" title="Edit Depot">
-                <form id="depot-update-{{ $depotRow['id'] }}" method="POST" action="{{ route($inventoryRoutePrefix.'.depots.update', $depotRow['id']) }}">@csrf @method('PATCH')</form>
+                @if ($isEditedDepot && $errors->any())
+                    <span hidden data-open-modal-on-load="io-depot-edit-{{ $depotRow['id'] }}"></span>
+                @endif
+                <form id="depot-update-{{ $depotRow['id'] }}" method="POST" action="{{ route($inventoryRoutePrefix.'.depots.update', $depotRow['id']) }}">@csrf @method('PATCH')<input type="hidden" name="edit_depot_id" value="{{ $depotRow['id'] }}"></form>
                 <div class="modal-card"><div class="form-grid">
                     @foreach (['depot_code' => 'Code', 'name' => 'Name', 'address' => 'Address', 'contact_person' => 'Contact', 'phone' => 'Phone'] as $field => $label)
-                        <div class="form-row"><label for="depot_{{ $field }}_{{ $depotRow['id'] }}">{{ $label }}</label><input form="depot-update-{{ $depotRow['id'] }}" id="depot_{{ $field }}_{{ $depotRow['id'] }}" name="{{ $field }}" type="text" maxlength="{{ $field === 'phone' ? 30 : ($field === 'depot_code' ? 30 : 255) }}" value="{{ $depotRow[$field] === 'N/A' ? '' : $depotRow[$field] }}" @if(in_array($field, ['depot_code', 'name'], true)) required @endif></div>
+                        <div class="form-row"><label for="depot_{{ $field }}_{{ $depotRow['id'] }}">{{ $label }}</label><input form="depot-update-{{ $depotRow['id'] }}" id="depot_{{ $field }}_{{ $depotRow['id'] }}" name="{{ $field }}" type="text" maxlength="{{ in_array($field, ['phone', 'depot_code'], true) ? 30 : 255 }}" value="{{ $depotOld($field) }}" @if(in_array($field, ['depot_code', 'name'], true)) required @endif @if($isEditedDepot && $errors->has($field)) aria-invalid="true" @endif>@if ($isEditedDepot)@error($field)<p class="field-error form-row-message">{{ $message }}</p>@enderror @endif</div>
                     @endforeach
-                    <div class="form-row"><label for="depot_status_{{ $depotRow['id'] }}">Status</label><select form="depot-update-{{ $depotRow['id'] }}" id="depot_status_{{ $depotRow['id'] }}" name="status" required><option value="active" @selected($depotRow['status'] === 'active')>Active</option><option value="inactive" @selected($depotRow['status'] === 'inactive')>Inactive</option></select></div>
+                    <div class="form-row"><label for="depot_status_{{ $depotRow['id'] }}">Status</label><select form="depot-update-{{ $depotRow['id'] }}" id="depot_status_{{ $depotRow['id'] }}" name="status" required><option value="active" @selected($depotOld('status') === 'active')>Active</option><option value="inactive" @selected($depotOld('status') === 'inactive')>Inactive</option></select>@if ($isEditedDepot)@error('status')<p class="field-error form-row-message">{{ $message }}</p>@enderror @endif</div>
                 </div></div>
                 <x-slot:footer><button class="btn btn-pill btn-secondary" type="submit" form="depot-update-{{ $depotRow['id'] }}">Apply Changes</button><button class="btn btn-pill btn-danger" type="button" data-modal-close>Close</button></x-slot:footer>
             </x-admin.modal>
         @endforeach
 
+    {{-- old() here belongs to Add Depot only, never to a failed Edit Depot submission. --}}
+    @php $depotAddOld = fn (string $key, ?string $default = null): ?string => old('edit_depot_id') ? $default : old($key, $default); @endphp
     <x-admin.modal id="io-depot-add" reset-on-close title="Add Depot">
         <form id="depot-add-form" method="POST" action="{{ route($inventoryRoutePrefix.'.depots.store') }}">
             @csrf
             <div class="modal-card">
                 <div class="form-grid">
-                    <div class="form-row"><label for="depot_code_master">Code</label><input id="depot_code_master" name="depot_code" type="text" maxlength="30" value="{{ old('depot_code') }}" required></div>
-                    <div class="form-row"><label for="depot_name_master">Name</label><input id="depot_name_master" name="name" type="text" maxlength="255" value="{{ old('name') }}" required></div>
-                    <div class="form-row"><label for="depot_status_master">Status</label><select id="depot_status_master" name="status" required data-default="active"><option value="active" @selected(old('status', 'active') === 'active')>Active</option><option value="inactive" @selected(old('status') === 'inactive')>Inactive</option></select></div>
-                    <div class="form-row"><label for="depot_phone_master">Phone</label><input id="depot_phone_master" name="phone" type="text" maxlength="30" value="{{ old('phone') }}"></div>
-                    <div class="form-row"><label for="depot_contact_master">Contact</label><input id="depot_contact_master" name="contact_person" type="text" maxlength="255" value="{{ old('contact_person') }}"></div>
-                    <div class="form-row"><label for="depot_address_master">Address</label><input id="depot_address_master" name="address" type="text" maxlength="255" value="{{ old('address') }}"></div>
+                    <div class="form-row"><label for="depot_code_master">Code</label><input id="depot_code_master" name="depot_code" type="text" maxlength="30" value="{{ $depotAddOld('depot_code') }}" required></div>
+                    <div class="form-row"><label for="depot_name_master">Name</label><input id="depot_name_master" name="name" type="text" maxlength="255" value="{{ $depotAddOld('name') }}" required></div>
+                    <div class="form-row"><label for="depot_status_master">Status</label><select id="depot_status_master" name="status" required data-default="active"><option value="active" @selected($depotAddOld('status', 'active') === 'active')>Active</option><option value="inactive" @selected($depotAddOld('status') === 'inactive')>Inactive</option></select></div>
+                    <div class="form-row"><label for="depot_phone_master">Phone</label><input id="depot_phone_master" name="phone" type="text" maxlength="30" value="{{ $depotAddOld('phone') }}"></div>
+                    <div class="form-row"><label for="depot_contact_master">Contact</label><input id="depot_contact_master" name="contact_person" type="text" maxlength="255" value="{{ $depotAddOld('contact_person') }}"></div>
+                    <div class="form-row"><label for="depot_address_master">Address</label><input id="depot_address_master" name="address" type="text" maxlength="255" value="{{ $depotAddOld('address') }}"></div>
                 </div>
             </div>
         </form>

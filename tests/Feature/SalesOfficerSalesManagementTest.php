@@ -365,8 +365,9 @@ class SalesOfficerSalesManagementTest extends TestCase
         ]);
 
         $this->actingAs($records['salesOfficer'])
+            // Part 19: QTY and prices may be corrected after a payment; the transaction date may not.
             ->patch(route('sales-officer.sales.update', $saleId), $this->salePayload($records, [
-                'quantity_liters' => '9999',
+                'sale_date' => '2026-08-31',
             ]))
             ->assertSessionHasErrors('sale');
 

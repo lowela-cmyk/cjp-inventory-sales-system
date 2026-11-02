@@ -111,8 +111,9 @@ class Part12ApprovedItemsTest extends AuditTestCase
             ->assertSessionHasErrors(['delivery_truck_id' => 'This sale is already Delivered, so its truck can no longer be changed.']);
         $this->actingAs($a['sales'])->from(route('sales-officer.sales'))->patch(route('sales-officer.sales.update', $saleId), $form + ['delivery_date' => '2026-10-20 08:00'])
             ->assertSessionHasErrors('delivery_date');
+        // Part 19: its QTY is final (only its prices may be corrected).
         $this->actingAs($a['sales'])->from(route('sales-officer.sales'))->patch(route('sales-officer.sales.update', $saleId), $form + ['items' => [['purchase_item_id' => $premium, 'quantity_liters' => 900, 'unit_price' => 50]]])
-            ->assertSessionHasErrors('sale');
+            ->assertSessionHasErrors('items.0.quantity_liters');
         $this->actingAs($a['sales'])->from(route('sales-officer.sales'))->patch(route('sales-officer.sales.update', $saleId), ['customer_id' => 999999] + $form)
             ->assertSessionHasErrors();
 

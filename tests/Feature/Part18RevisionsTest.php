@@ -165,18 +165,19 @@ class Part18RevisionsTest extends AuditTestCase
         $this->assertSame(['delivery_status', 'sales_order_number', 'sale_date', 'customer_id', 'items[0][quantity_liters]', 'items[0][purchase_item_id]', 'items[0][unit_price]', 'items[0][f1_purchase_item_id]', 'items[0][f1_unit_price]', 'items[0][f1_percentage]', 'payment_method', 'payment_terms', 'due_date', 'status'], $this->fieldNames($edit));
         $this->assertNoReadOnlyRows($edit);
 
-        // A payment fixes customer, date, line and status (sent back unchanged, hidden).
+        // A payment fixes customer, date, sources and status (sent back unchanged, hidden); Part 19: QTY and price may be corrected.
         $this->actingAs($a['sales'])->post(route('sales-officer.sales.payments.store', $saleId), [
             'idempotency_key' => (string) Str::uuid(), 'payment_date' => '2026-10-15', 'amount' => 100, 'method' => 'cash_on_delivery',
         ])->assertSessionHasNoErrors();
         $edit = $this->editSection($this->saleModal($a, $saleId));
-        $this->assertSame(['delivery_status', 'sales_order_number', 'payment_method', 'payment_terms', 'due_date'], $this->fieldNames($edit));
+        $this->assertSame(['delivery_status', 'sales_order_number', 'items[0][quantity_liters]', 'items[0][unit_price]', 'payment_method', 'payment_terms', 'due_date'], $this->fieldNames($edit));
         $this->assertNoReadOnlyRows($edit);
 
-        // Delivered: only Sales Order No., Payment Method, Payment Terms and Due Date (no "Delivered: ..." note).
+        // Delivered: Sales Order No., the line's prices (Part 19; QTY shown read-only), Payment Method, Payment Terms and Due Date.
         $this->deliverOrder($a, $saleId)->assertSessionHasNoErrors();
         $edit = $this->editSection($this->saleModal($a, $saleId));
-        $this->assertSame(['sales_order_number', 'payment_method', 'payment_terms', 'due_date'], $this->fieldNames($edit));
+        $this->assertSame(['sales_order_number', 'items[0][quantity_liters]', 'items[0][unit_price]', 'payment_method', 'payment_terms', 'due_date'], $this->fieldNames($edit));
+        $this->assertMatchesRegularExpression('/name="items\[0\]\[quantity_liters\]"[^>]*readonly/', $edit);
         $this->assertNoReadOnlyRows($edit);
         $this->assertStringNotContainsString('Update Delivery', $edit);
 

@@ -64,7 +64,7 @@ class Part9RevisionsTest extends AuditTestCase
         $this->assertSame(0, DB::table('purchases')->whereNotNull('bank_name')->count());
 
         $html = $this->actingAs($a['inventory'])->get(route('inventory-officer.inventory'))->assertOk()->getContent();
-        $this->assertStringContainsString('<span class="th-line" data-export-part>Payment Mode</span><span class="th-line" data-export-part>Bank</span>', $html);
+        $this->assertStringContainsString('<span class="th-line" data-export-part>Payment Mode</span><span class="visually-hidden" data-export-part>Bank</span>', $html);
         $this->assertStringContainsString('data-payment-mode="bank_name"', $html);
         foreach (['Bank Transfer', 'Cash', 'Cheque', '>BPI<', '>BDO<', '>RCBC<', 'Bank Selection'] as $text) {
             $this->assertStringContainsString($text, $html);

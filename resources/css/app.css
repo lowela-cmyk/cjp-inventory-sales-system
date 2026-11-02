@@ -4389,6 +4389,13 @@ body.login-page {
     width: 128px;
     min-width: 128px;
     max-width: 128px;
+    height: auto;
+    min-height: 36px;
+    padding: 4px 8px;
+    line-height: 1.1;
+    white-space: normal;
+    overflow: visible;
+    overflow-wrap: normal;
 }
 
 /* Part 12: Stock Out has Customer Name and Company Name in their own columns; long names wrap between words. */
@@ -5110,4 +5117,63 @@ body.login-page {
 .table-wrap > .inventory-table-actions.stock-out-table :is(th, td):last-child {
     position: static;
     box-shadow: none;
+}
+
+/* Purchases (November 2, 2026): roomier cells and one-line status pills, so the columns no longer feel crowded. With
+   that spacing the table is wider than its box at every screen size, so, like Stock Out, Actions is not pinned: the
+   table scrolls and Edit is at the end of the row, and no column (Payment Status) sits under it. These selectors
+   outrank the compact 1599px pinned-table rules above. */
+.table-wrap > .inventory-table-actions.purchases-table {
+    width: max-content;
+    min-width: 100%;
+}
+
+.table-wrap > .admin-table.inventory-table-actions.purchases-table.table-stacked :is(th, td) {
+    padding: 12px 16px;
+    font-size: 14px;
+}
+
+.table-wrap > .inventory-table-actions.purchases-table :is(th, td):last-child {
+    position: static;
+    box-shadow: none;
+}
+
+.table-wrap > .admin-table.inventory-table-actions.purchases-table.table-stacked td.cell-wrap {
+    min-width: 120px;
+}
+
+.table-wrap > .inventory-table-actions.purchases-table td.purchase-status-cell .status-badge {
+    width: max-content;
+    min-width: 132px;
+    max-width: none;
+    height: 34px;
+    min-height: 34px;
+    padding: 0 14px;
+    font-size: 11px;
+    line-height: 1;
+    white-space: nowrap;
+    overflow: visible;
+}
+
+/* Part 19: Customer Refunds card in the Payment History modal. */
+.refund-card {
+    margin-top: 18px;
+}
+
+.refund-card .refund-form {
+    margin-top: 10px;
+}
+
+/* Part 19: correcting the order lines of a sale with activity, and its Change History. */
+.sale-correction {
+    display: grid;
+    gap: 10px;
+}
+
+.sale-correction-line {
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.sale-change-history {
+    margin-top: 16px;
 }

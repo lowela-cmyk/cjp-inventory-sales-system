@@ -420,6 +420,39 @@
                             {{-- Final: sent unchanged so the server sees no change (it refuses one anyway). --}}
                             <input form="sale-update-{{ $row['id'] }}" type="hidden" name="sale_date" value="{{ $row['sale_date'] }}">
                             <input form="sale-update-{{ $row['id'] }}" type="hidden" name="customer_id" value="{{ $row['customer_id'] }}">
+                            {{-- Part 19: a sale with payment, delivery or lift activity keeps its fuel and sources; its line
+                                 figures may be corrected (QTY and F1 % only until fuel moves, prices always). The server
+                                 checks every change against deliveries, stock and payments. --}}
+                            <div class="sale-correction" data-sale-correction>
+                                <p class="sale-locked-note">{{ $row['fuel_moved'] ? 'Fuel of this order already moved, so only the prices can be corrected.' : 'Correct QTY, F1 % or prices. The fuel and purchase stay as recorded.' }}</p>
+                                @foreach ($row['items'] as $itemIndex => $item)
+                                    @php
+                                        $fieldId = 'sale_fix_'.$row['id'].'_'.$itemIndex;
+                                        $lineError = fn (string $field): ?string => $isEditedSale && $errors->has("items.$itemIndex.$field") ? $errors->first("items.$itemIndex.$field") : null;
+                                        $hasF1Source = (bool) $item['f1_purchase_item_id'];
+                                    @endphp
+                                    @foreach (['purchase_item_id', 'f1_purchase_item_id', 'garage_stock_id', 'f1_garage_stock_id', 'fuel_type_id'] as $sourceField)
+                                        <input form="sale-update-{{ $row['id'] }}" type="hidden" name="items[{{ $itemIndex }}][{{ $sourceField }}]" value="{{ $item[$sourceField] }}">
+                                    @endforeach
+                                    <div class="form-grid sale-correction-line">
+                                        <div class="form-row"><label for="{{ $fieldId }}_qty">{{ $item['fuel_name'] }} QTY</label><input form="sale-update-{{ $row['id'] }}" id="{{ $fieldId }}_qty" name="items[{{ $itemIndex }}][quantity_liters]" type="number" min="0.01" step="0.01" value="{{ $editOld("items.$itemIndex.quantity_liters", $item['quantity_liters']) }}" required @readonly($row['fuel_moved'])>@if ($lineError('quantity_liters'))<p class="field-error form-row-message">{{ $lineError('quantity_liters') }}</p>@endif @if ($lineError('purchase_item_id'))<p class="field-error form-row-message">{{ $lineError('purchase_item_id') }}</p>@endif</div>
+                                        @if ($hasF1Source)
+                                            @if ($row['fuel_moved'])
+                                                <input form="sale-update-{{ $row['id'] }}" type="hidden" name="items[{{ $itemIndex }}][f1_percentage]" value="{{ $item['f1_percentage'] }}">
+                                                <div class="form-row"><label>F1 %</label><output class="sale-readonly-field">{{ rtrim(rtrim(number_format((float) $item['f1_percentage'], 2), '0'), '.') }}%</output></div>
+                                            @else
+                                                <div class="form-row"><label for="{{ $fieldId }}_f1">F1 %</label><select form="sale-update-{{ $row['id'] }}" id="{{ $fieldId }}_f1" name="items[{{ $itemIndex }}][f1_percentage]"><option value="0">0%</option>@foreach ($f1Percentages as $percentage)<option value="{{ $percentage }}" @selected((float) $editOld("items.$itemIndex.f1_percentage", $item['f1_percentage']) === (float) $percentage)>{{ $percentage }}%</option>@endforeach</select>@if ($lineError('f1_percentage'))<p class="field-error form-row-message">{{ $lineError('f1_percentage') }}</p>@endif</div>
+                                            @endif
+                                        @else
+                                            <input form="sale-update-{{ $row['id'] }}" type="hidden" name="items[{{ $itemIndex }}][f1_percentage]" value="0">
+                                        @endif
+                                        <div class="form-row"><label for="{{ $fieldId }}_price">Fuel Price</label><input form="sale-update-{{ $row['id'] }}" id="{{ $fieldId }}_price" name="items[{{ $itemIndex }}][unit_price]" type="number" min="0.01" step="0.01" value="{{ $editOld("items.$itemIndex.unit_price", $item['unit_price']) }}" required>@if ($lineError('unit_price'))<p class="field-error form-row-message">{{ $lineError('unit_price') }}</p>@endif</div>
+                                        @if ($hasF1Source)
+                                            <div class="form-row"><label for="{{ $fieldId }}_f1_price">F1 Price</label><input form="sale-update-{{ $row['id'] }}" id="{{ $fieldId }}_f1_price" name="items[{{ $itemIndex }}][f1_unit_price]" type="number" min="0" step="0.01" value="{{ $editOld("items.$itemIndex.f1_unit_price", $item['f1_unit_price']) }}">@if ($lineError('f1_unit_price'))<p class="field-error form-row-message">{{ $lineError('f1_unit_price') }}</p>@endif</div>
+                                        @endif
+                                    </div>
+                                @endforeach
+                            </div>
                         @endif
                         {{-- Part 18 #3: a Garage to Client order's Delivery Details stay editable (and required) until Delivered. --}}
                         @if ($isGarageSale && $isOpenSale)
@@ -460,6 +493,20 @@
                                 </select>
                             </div>
                         @endif
+                    </div>
+                @endif
+                {{-- Part 19: every correction (order lines, terms, refunds), old and new value, newest first. --}}
+                @if ($row['change_logs'] !== [])
+                    <div class="table-wrap sale-change-history">
+                        <p class="sale-locked-note">Change History</p>
+                        <table class="admin-table">
+                            <thead><tr><th>Date</th><th>Field</th><th>Old</th><th>New</th><th>By</th></tr></thead>
+                            <tbody>
+                                @foreach ($row['change_logs'] as $log)
+                                    <tr><td>{{ $log['at'] }}</td><td>{{ $log['field'] }}</td><td>{{ $log['old'] }}</td><td>{{ $log['new'] }}</td><td>{{ $log['by'] }}</td></tr>
+                                @endforeach
+                            </tbody>
+                        </table>
                     </div>
                 @endif
             </div>

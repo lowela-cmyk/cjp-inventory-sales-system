@@ -150,6 +150,8 @@ class SalesOfficerCustomerController extends Controller
             'paymentMethods' => self::PAYMENT_METHODS,
             'paymentTerms' => self::PAYMENT_TERMS,
             'saleIdempotencyKey' => (string) Str::uuid(),
+            // Part 19: refund forms appear only once the sale_refunds migration has run.
+            'refundsEnabled' => Schema::hasTable('sale_refunds'),
         ]);
     }
 
@@ -277,7 +279,10 @@ class SalesOfficerCustomerController extends Controller
 
     public function storeRefund(Request $request, int $sale): RedirectResponse
     {
-        $data = $this->validatedRefundData($request);
+        if (! Schema::hasTable('sale_refunds')) {
+            return back()->withErrors(['refund' => 'Refund support is not installed yet. Apply the pending database migration before recording refunds.']);
+        }
+        $data = $this->validatedRefundData($request, $sale);
         $token = $data['idempotency_key'] ?? null;
         try {
             $write = function () use ($sale, $data, $request): array {
@@ -289,6 +294,7 @@ class SalesOfficerCustomerController extends Controller
                         'remarks' => $this->blankToNull($data['remarks'] ?? null), 'recorded_by' => $request->user()->id,
                         'created_at' => now(), 'updated_at' => now(),
                     ]);
+                    $this->logRefundChanges($sale, $refundId, null, $data, (int) $request->user()->id);
                     return ['reference_id' => $refundId, 'response_reference' => 'REFUND-'.$refundId];
                 });
             };
@@ -301,12 +307,16 @@ class SalesOfficerCustomerController extends Controller
 
     public function updateRefund(Request $request, int $sale, int $refund): RedirectResponse
     {
-        $data = $this->validatedRefundData($request);
+        if (! Schema::hasTable('sale_refunds')) {
+            return back()->withErrors(['refund' => 'Refund support is not installed yet. Apply the pending database migration before editing refunds.']);
+        }
+        $data = $this->validatedRefundData($request, $sale);
         try {
             DB::transaction(function () use ($sale, $refund, $data, $request): void {
                 $row = DB::table('sale_refunds')->where('id', $refund)->where('sale_id', $sale)->lockForUpdate()->first();
                 abort_unless($row !== null, 404);
                 $this->assertRefundable($sale, $refund, (float) $data['amount']);
+                $this->logRefundChanges($sale, $refund, $row, $data, (int) $request->user()->id);
                 DB::table('sale_refunds')->where('id', $refund)->update([
                     'amount' => round((float) $data['amount'], 2), 'refund_date' => $data['refund_date'], 'method' => $data['method'],
                     'reference_number' => $this->blankToNull($data['reference_number'] ?? null), 'remarks' => $this->blankToNull($data['remarks'] ?? null),
@@ -317,16 +327,49 @@ class SalesOfficerCustomerController extends Controller
         return redirect()->route($this->salesRedirectRoute($request))->with('status', 'Refund updated successfully.');
     }
 
-    private function validatedRefundData(Request $request): array
+    /**
+     * Part 19: the method is one of the payment methods (stored as its value, e.g. bank_transfer), and a refund is dated
+     * no later than today and no earlier than the first payment it gives back.
+     */
+    private function validatedRefundData(Request $request, int $sale): array
     {
+        $firstPayment = DB::table('payments')->where('sale_id', $sale)->min('payment_date');
+
         return $request->validate([
             'amount' => ['required', 'numeric', 'gt:0', 'max:999999999999.99'],
-            'refund_date' => ['required', 'date'],
-            'method' => ['required', 'string', 'max:40'],
+            'refund_date' => array_merge(['required', 'date', 'before_or_equal:today'], $firstPayment ? ['after_or_equal:'.date('Y-m-d', strtotime((string) $firstPayment))] : []),
+            'method' => ['required', Rule::in(self::PAYMENT_METHODS)],
             'reference_number' => ['nullable', 'string', 'max:100'],
             'remarks' => ['nullable', 'string', 'max:1000'],
             'idempotency_key' => ['nullable', 'uuid'],
         ]);
+    }
+
+    /**
+     * Part 19: field-level audit of a refund (old and new values) in sale_change_logs, when that table is installed.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function logRefundChanges(int $sale, int $refundId, ?object $before, array $data, int $userId): void
+    {
+        if (! Schema::hasTable('sale_change_logs')) {
+            return;
+        }
+
+        $after = [
+            'amount' => number_format((float) $data['amount'], 2, '.', ''),
+            'refund_date' => (string) $data['refund_date'],
+            'method' => (string) $data['method'],
+            'reference_number' => (string) ($this->blankToNull($data['reference_number'] ?? null) ?? ''),
+            'remarks' => (string) ($this->blankToNull($data['remarks'] ?? null) ?? ''),
+        ];
+        foreach ($after as $field => $new) {
+            $old = $before ? (string) ($before->{$field} ?? '') : '';
+            if ($field === 'refund_date' && $old !== '') {
+                $old = date('Y-m-d', strtotime($old));
+            }
+            $this->insertSaleChangeLog($sale, 'refunds.'.$refundId.'.'.$field, $old, $new, $userId);
+        }
     }
 
     private function assertRefundable(int $sale, ?int $refundId, float $amount): void
@@ -541,11 +584,11 @@ class SalesOfficerCustomerController extends Controller
         }
 
         if ($hasDependencies) {
-            // A Delivered sale was checked above (its form sends no order lines).
-            if ($row->delivery_status !== 'delivered' && $this->changesProtectedSaleFields($row, $data)) {
+            // Order lines sent with the form are checked as a Part 19 correction (lineCorrection) in the transaction.
+            if ($row->delivery_status !== 'delivered' && empty($data['items']) && $this->changesProtectedSaleFields($row, $data)) {
                 return back()
                     ->withInput()
-                    ->withErrors(['sale' => 'This sale already has payment, stock-out, inventory release, or haul activity, so customer, fuel, quantity, price, and date cannot be changed.']);
+                    ->withErrors(['sale' => 'This sale already has payment, stock-out, inventory release, or haul activity, so its customer and date cannot be changed.']);
             }
 
             if (in_array($requestedStatus, ['draft', 'cancelled'], true)) {
@@ -619,6 +662,11 @@ class SalesOfficerCustomerController extends Controller
                     if ($firstFuel > 0 && $firstFuel !== $firstFuelBefore) {
                         $newCode = $this->codes->recode(RecordCodeService::SALE, 'sale', $sale, $firstFuel);
                     }
+                } elseif (($hasDependencies || $row->delivery_status === 'delivered') && $items !== [] && $this->changesProtectedSaleFields($row, $data)) {
+                    // Part 19: payments, deliveries and lifts stay as recorded; only the lines' figures are corrected.
+                    foreach ($this->lineCorrection($row, $data, $items) as $itemId => $values) {
+                        DB::table('sale_items')->where('id', $itemId)->update($values + ['updated_at' => now()]);
+                    }
                 }
 
                 if (isset($data['due_date'])) {
@@ -681,7 +729,7 @@ class SalesOfficerCustomerController extends Controller
             foreach ($fields as $field) {
                 $old = (string) ($oldItem->{$field} ?? '');
                 $new = (string) ($newItem->{$field} ?? '');
-                if ($old !== $new) {
+                if (is_numeric($old) && is_numeric($new) ? (float) $old !== (float) $new : $old !== $new) {
                     $this->insertSaleChangeLog($saleId, 'items.'.$index.'.'.$field, $old, $new, $userId);
                 }
             }
@@ -690,6 +738,12 @@ class SalesOfficerCustomerController extends Controller
 
     private function insertSaleChangeLog(int $saleId, string $field, string $old, string $new, int $userId): void
     {
+        $normalize = fn (string $value): string => is_numeric($value) ? (string) (0 + $value) : $value;
+        [$old, $new] = [$normalize($old), $normalize($new)];
+        if ($old === $new) {
+            return;
+        }
+
         DB::table('sale_change_logs')->insert([
             'sale_id' => $saleId, 'field' => $field, 'old_value' => $old === '' ? null : $old, 'new_value' => $new === '' ? null : $new,
             'changed_by' => $userId, 'created_at' => now(), 'updated_at' => now(),
@@ -957,9 +1011,11 @@ class SalesOfficerCustomerController extends Controller
             $paid = DB::table('payments')->join('sales', 'sales.id', '=', 'payments.sale_id')
                 ->whereIn('sales.customer_id', $customerIds->all())->whereNull('sales.deleted_at')->where('sales.status', 'cancelled')
                 ->groupBy('sales.customer_id')->selectRaw('sales.customer_id, SUM(payments.amount) as total')->pluck('total', 'customer_id');
-            $refunded = DB::table('sale_refunds')->join('sales', 'sales.id', '=', 'sale_refunds.sale_id')
-                ->whereIn('sales.customer_id', $customerIds->all())->whereNull('sales.deleted_at')->where('sales.status', 'cancelled')
-                ->groupBy('sales.customer_id')->selectRaw('sales.customer_id, SUM(sale_refunds.amount) as total')->pluck('total', 'customer_id');
+            $refunded = Schema::hasTable('sale_refunds')
+                ? DB::table('sale_refunds')->join('sales', 'sales.id', '=', 'sale_refunds.sale_id')
+                    ->whereIn('sales.customer_id', $customerIds->all())->whereNull('sales.deleted_at')->where('sales.status', 'cancelled')
+                    ->groupBy('sales.customer_id')->selectRaw('sales.customer_id, SUM(sale_refunds.amount) as total')->pluck('total', 'customer_id')
+                : collect();
             return $customerIds->mapWithKeys(fn (int $id): array => [$id => max(0, (float) ($paid[$id] ?? 0) - (float) ($refunded[$id] ?? 0))])->all();
         })();
 
@@ -1154,11 +1210,13 @@ class SalesOfficerCustomerController extends Controller
         $dependencyMap = $this->saleDependencyMap($saleIds);
         $paymentsBySale = $this->paymentsForSales($saleIds);
         $refundsBySale = $this->refundsForSales($saleIds);
+        $fuelMovedMap = $this->saleFuelMovedMap($saleIds);
+        $changeLogsBySale = $this->changeLogsForSales($saleIds);
         $schedulesBySale = $this->paymentSchedulesForSales($saleIds);
         $liftsBySale = $this->liftsForSales($saleIds);
 
         $transformed = $rows
-            ->map(function (object $row) use ($itemsBySale, $latestPaymentDates, $dependencyMap, $paymentsBySale, $refundsBySale, $schedulesBySale, $liftsBySale): array {
+            ->map(function (object $row) use ($itemsBySale, $latestPaymentDates, $dependencyMap, $paymentsBySale, $refundsBySale, $fuelMovedMap, $changeLogsBySale, $schedulesBySale, $liftsBySale): array {
                 $saleId = (int) $row->sale_id;
                 $paid = (float) ($row->total_paid ?? 0);
                 $saleTotal = (float) $row->sale_total;
@@ -1208,6 +1266,9 @@ class SalesOfficerCustomerController extends Controller
                     'due_date' => $row->due_date,
                     'latest_payment_date' => $latestPaymentDate,
                     'has_dependencies' => $dependencyMap[$saleId] ?? false,
+                    // Part 19: once fuel moved, a correction may change the prices only.
+                    'fuel_moved' => $row->delivery_status === 'delivered' || ($fuelMovedMap[$saleId] ?? false),
+                    'change_logs' => $changeLogsBySale[$saleId] ?? [],
                     'correction_action' => $correctionAction,
                     'refund_due' => $refundDue,
                     'refunds' => $refundsBySale[$saleId] ?? [],
@@ -1611,8 +1672,9 @@ class SalesOfficerCustomerController extends Controller
         // The Edit form of a delivered sale sends no order lines (they are read-only); missing lines mean unchanged.
         $headerChanged = (int) $row->customer_id !== (int) ($data['customer_id'] ?? $row->customer_id)
             || (string) $row->sale_date !== (string) ($data['sale_date'] ?? $row->sale_date);
-        if ($headerChanged || (! empty($data['items']) && $this->changesProtectedSaleFields($row, $data))) {
-            $errors['sale'] = $message('customer, date, fuel, purchase, quantities, F1 and prices');
+        // Part 19: its prices may still be corrected (lineCorrection checks every line; quantities and F1 stay).
+        if ($headerChanged) {
+            $errors['sale'] = $message('customer and date');
         }
         if ($row->delivery_type !== 'depot_to_client') {
             foreach ([
@@ -1627,6 +1689,132 @@ class SalesOfficerCustomerController extends Controller
         }
 
         return $errors;
+    }
+
+    /**
+     * Part 19: corrections to a sale that already has payment, delivery or lift activity. Each line keeps its fuel and
+     * sources (purchase, garage lot, F1 source); only QTY, F1 %, Fuel Price and F1 Price may change, and only when it
+     * is safe:
+     * - once any of the order's fuel was released, delivered or put on a lift, QTY and F1 % are final (those records
+     *   were made from them), so only the prices change;
+     * - extra liters must still be available from the line's sources;
+     * - the corrected total may not fall below what the customer already paid.
+     * Payments, stock-outs and lifts are never changed. Throws on an unsafe change.
+     *
+     * @param  array<string, mixed>  $data
+     * @param  array<int, array<string, mixed>>  $items
+     * @return array<int, array<string, mixed>> sale_item id => new values
+     *
+     * @throws ValidationException
+     */
+    private function lineCorrection(object $row, array $data, array $items): array
+    {
+        if ((int) $row->customer_id !== (int) $data['customer_id'] || (string) $row->sale_date !== (string) $data['sale_date']) {
+            throw ValidationException::withMessages(['sale' => 'This sale already has payment, delivery or lift activity, so its customer and date cannot be changed.']);
+        }
+
+        $existing = DB::table('sale_items')->where('sale_id', $row->id)->orderBy('id')->lockForUpdate()
+            ->get(['id', 'purchase_item_id', 'fuel_type_id', 'garage_stock_id', 'f1_purchase_item_id', 'f1_garage_stock_id', 'quantity_liters', 'f1_percentage', 'main_quantity_liters', 'f1_quantity_liters', 'fulfilled_quantity_liters'])
+            ->values();
+        $items = array_values($items);
+        if (count($items) !== $existing->count()) {
+            throw ValidationException::withMessages(['sale' => 'Order lines cannot be added or removed once a sale has payment, delivery or lift activity.']);
+        }
+
+        $fuelMoved = $row->delivery_status === 'delivered' || ($this->saleFuelMovedMap(collect([(int) $row->id]))[(int) $row->id] ?? false);
+        $same = fn (mixed $a, mixed $b): bool => (int) ($a ?? 0) === (int) ($b ?? 0);
+        $errors = [];
+        $updates = [];
+        $extra = [];
+        foreach ($existing as $index => $old) {
+            $new = $items[$index];
+            if (! $same($old->purchase_item_id, $new['purchase_item_id']) || ! $same($old->fuel_type_id, $new['fuel_type_id']) || ! $same($old->garage_stock_id, $new['garage_stock_id'] ?? null)) {
+                $errors["items.$index.purchase_item_id"] = 'The fuel and purchase of this line cannot change any more; only QTY, F1 % and prices can be corrected.';
+
+                continue;
+            }
+            if ($new['f1_quantity_liters'] > 0 && (! $old->f1_purchase_item_id || ! $same($old->f1_purchase_item_id, $new['f1_purchase_item_id']) || ! $same($old->f1_garage_stock_id, $new['f1_garage_stock_id'] ?? null))) {
+                $errors["items.$index.f1_percentage"] = 'This line has no F1 source of its own, so an F1 % cannot be added any more.';
+
+                continue;
+            }
+            $quantityChanged = round((float) $old->quantity_liters, 2) !== round((float) $new['quantity_liters'], 2)
+                || round((float) $old->f1_percentage, 2) !== round((float) $new['f1_percentage'], 2);
+            if ($fuelMoved && $quantityChanged) {
+                $errors["items.$index.quantity_liters"] = 'Fuel of this order was already released, delivered or put on a lift, so its QTY and F1 % are final. Only the prices can be corrected.';
+
+                continue;
+            }
+            if ($new['quantity_liters'] < round((float) $old->fulfilled_quantity_liters, 2)) {
+                $errors["items.$index.quantity_liters"] = 'QTY cannot be less than the '.number_format((float) $old->fulfilled_quantity_liters, 2).' L already delivered.';
+
+                continue;
+            }
+            if ($new['f1_quantity_liters'] > 0 && $new['f1_unit_price'] <= 0) {
+                $errors["items.$index.f1_unit_price"] = 'Enter the F1 Price.';
+
+                continue;
+            }
+
+            // Only liters added to a source need stock (what the line already holds stays reserved for it).
+            $addMain = round(max(0, $new['main_quantity_liters'] - (float) $old->main_quantity_liters), 2);
+            $addF1 = round(max(0, $new['f1_quantity_liters'] - (float) $old->f1_quantity_liters), 2);
+            if ($addMain > 0 || $addF1 > 0) {
+                $extra[$index] = ['main_quantity_liters' => $addMain, 'f1_quantity_liters' => $addF1] + $new;
+            }
+
+            $updates[(int) $old->id] = [
+                'quantity_liters' => $new['quantity_liters'],
+                'unit_price' => $new['unit_price'],
+                'f1_percentage' => $new['f1_percentage'],
+                'f1_purchase_item_id' => $new['f1_quantity_liters'] > 0 ? $old->f1_purchase_item_id : null,
+                'f1_garage_stock_id' => $new['f1_quantity_liters'] > 0 ? $old->f1_garage_stock_id : null,
+                'f1_price' => $new['f1_price'],
+                'f1_unit_price' => $new['f1_unit_price'],
+                'main_quantity_liters' => $new['main_quantity_liters'],
+                'f1_quantity_liters' => $new['f1_quantity_liters'],
+                'line_total' => $new['line_total'],
+            ];
+        }
+        if ($errors !== []) {
+            throw ValidationException::withMessages($errors);
+        }
+        if ($extra !== []) {
+            $this->assertPurchaseStock($extra, (string) $row->delivery_type);
+        }
+
+        $total = round(collect($updates)->sum('line_total'), 2);
+        $paid = $this->paidTotalForSale((int) $row->id);
+        if ($total < $paid) {
+            throw ValidationException::withMessages(['sale' => 'The corrected total (PHP '.number_format($total, 2).') would be less than the PHP '.number_format($paid, 2).' already paid. Payments are never changed, so the total must stay at or above it.']);
+        }
+
+        return $updates;
+    }
+
+    /**
+     * Part 19: sales whose fuel already moved: a stock-out (not cancelled), a lift row (not cancelled, lift not deleted)
+     * or delivered liters.
+     *
+     * @param  Collection<int, int>  $saleIds
+     * @return array<int, bool>
+     */
+    private function saleFuelMovedMap(Collection $saleIds): array
+    {
+        $ids = $saleIds->map(fn (mixed $id): int => (int) $id)->filter()->unique()->values()->all();
+        if ($ids === []) {
+            return [];
+        }
+
+        $moved = collect()
+            ->merge(DB::table('stock_outs')->whereIn('sale_id', $ids)->where('status', '!=', 'cancelled')->pluck('sale_id'))
+            ->merge(DB::table('haul_allocations')->join('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')->whereNull('hauls.deleted_at')
+                ->where('haul_allocations.status', '!=', 'cancelled')->whereIn('haul_allocations.sale_id', $ids)->pluck('haul_allocations.sale_id'))
+            ->merge(DB::table('sale_items')->whereIn('sale_id', $ids)->where('fulfilled_quantity_liters', '>', 0)->pluck('sale_id'))
+            ->map(fn (mixed $id): int => (int) $id)
+            ->flip();
+
+        return collect($ids)->mapWithKeys(fn (int $id): array => [$id => $moved->has($id)])->all();
     }
 
     private function hasSaleDependentActivity(int $saleId): bool
@@ -2235,9 +2423,64 @@ class SalesOfficerCustomerController extends Controller
         return DB::table('sale_refunds')->whereIn('sale_id', $saleIds->all())->orderBy('id')->get()
             ->groupBy('sale_id')->map(fn (Collection $rows) => $rows->map(fn (object $r): array => [
                 'id' => (int) $r->id, 'amount_raw' => (float) $r->amount, 'amount' => $this->formatNumber($r->amount),
-                'date' => $this->formatDate($r->refund_date), 'method' => ucwords(str_replace('_', ' ', $r->method)),
+                'date' => $this->formatDate($r->refund_date), 'date_value' => (string) $r->refund_date,
+                // Part 19: refunds saved before the method list kept labels ("Bank Transfer"); read them as the stored value.
+                'method_value' => $method = $this->refundMethodValue((string) $r->method), 'method' => ucwords(str_replace('_', ' ', $method)),
                 'reference' => $r->reference_number ?: 'N/A', 'remarks' => $r->remarks ?: 'N/A',
             ])->all())->all();
+    }
+
+    private function refundMethodValue(string $method): string
+    {
+        return strtolower(str_replace([' ', '-'], '_', trim($method)));
+    }
+
+    /**
+     * Part 19: field-level history of sale corrections and refund edits (newest first), for the sale's Edit modal.
+     *
+     * @param  Collection<int, int>  $saleIds
+     * @return array<int, array<int, array<string, string>>>
+     */
+    private function changeLogsForSales(Collection $saleIds): array
+    {
+        if ($saleIds->isEmpty() || ! Schema::hasTable('sale_change_logs')) {
+            return [];
+        }
+
+        return DB::table('sale_change_logs')
+            ->leftJoin('users', 'users.id', '=', 'sale_change_logs.changed_by')
+            ->whereIn('sale_change_logs.sale_id', $saleIds->all())
+            ->orderByDesc('sale_change_logs.id')
+            ->get(['sale_change_logs.sale_id', 'sale_change_logs.field', 'sale_change_logs.old_value', 'sale_change_logs.new_value', 'sale_change_logs.created_at', 'users.name as changed_by_name'])
+            ->groupBy('sale_id')
+            ->map(fn (Collection $rows): array => $rows->map(fn (object $log): array => [
+                'field' => $this->changeLogFieldLabel((string) $log->field),
+                'old' => $log->old_value ?? '—',
+                'new' => $log->new_value ?? '—',
+                'by' => $log->changed_by_name ?? 'N/A',
+                'at' => $this->formatDateTime($log->created_at),
+            ])->all())
+            ->all();
+    }
+
+    /** "items.0.quantity_liters" reads "Line 1 QTY"; "refunds.4.amount" reads "Refund #4 Amount". */
+    private function changeLogFieldLabel(string $field): string
+    {
+        $labels = [
+            'quantity_liters' => 'QTY', 'unit_price' => 'Fuel Price', 'f1_percentage' => 'F1 %', 'f1_unit_price' => 'F1 Price',
+            'purchase_item_id' => 'Purchase', 'f1_purchase_item_id' => 'F1 Purchase', 'amount' => 'Amount', 'refund_date' => 'Date',
+            'method' => 'Method', 'reference_number' => 'Reference', 'remarks' => 'Remarks', 'sales_order_number' => 'Sales Order Number',
+            'customer_id' => 'Customer', 'sale_date' => 'Transaction Date', 'payment_method' => 'Payment Method',
+            'payment_terms' => 'Payment Terms', 'due_date' => 'Due Date',
+        ];
+        $parts = explode('.', $field);
+        $name = $labels[end($parts)] ?? ucwords(str_replace('_', ' ', (string) end($parts)));
+
+        return match (true) {
+            count($parts) === 3 && $parts[0] === 'items' => 'Line '.((int) $parts[1] + 1).' '.$name,
+            count($parts) === 3 && $parts[0] === 'refunds' => 'Refund #'.$parts[1].' '.$name,
+            default => $name,
+        };
     }
 
     /**

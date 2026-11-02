@@ -216,6 +216,27 @@ class Part19FixesTest extends AuditTestCase
         $this->assertDatabaseHas('sale_items', ['sale_id' => $saleId, 'quantity_liters' => 1100]);
     }
 
+    public function test_the_sales_page_works_when_the_sale_code_audit_column_is_not_installed_yet(): void
+    {
+        if (DB::getDriverName() !== 'sqlite') {
+            $this->markTestSkipped('Dropping columns on MariaDB would alter the test schema for the remaining tests; checked on SQLite.');
+        }
+
+        $a = $this->actors();
+        $premium = $this->purchaseLine($a, 'PREM', 10000);
+        $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 1000, 'unit_price' => 65], ['amount_paid' => 1000])
+            ->assertSessionHasNoErrors();
+
+        Schema::table('sale_change_logs', function ($table): void {
+            $table->dropIndex(['sale_code']);
+            $table->dropColumn('sale_code');
+        });
+
+        $this->actingAs($a['sales'])->get(route('sales-officer.sales'))
+            ->assertOk()
+            ->assertDontSee('Internal Server Error');
+    }
+
     // ----- Fuel Lifting ------------------------------------------------------------------------------------------
 
     public function test_a_multi_lift_schedule_completes_only_when_every_lift_line_is_empty(): void

@@ -2452,11 +2452,27 @@ class SalesOfficerCustomerController extends Controller
             return [];
         }
 
+        // `sale_code` was added after the original audit table. Keep the history
+        // page usable while an existing installation is between migrations (or
+        // when a deployment is rolled back) instead of making the whole sales
+        // page fail with an unknown-column exception.
+        $columns = [
+            'sale_change_logs.sale_id',
+            'sale_change_logs.field',
+            'sale_change_logs.old_value',
+            'sale_change_logs.new_value',
+            'sale_change_logs.created_at',
+            'users.name as changed_by_name',
+        ];
+        if (Schema::hasColumn('sale_change_logs', 'sale_code')) {
+            $columns[] = 'sale_change_logs.sale_code';
+        }
+
         return DB::table('sale_change_logs')
             ->leftJoin('users', 'users.id', '=', 'sale_change_logs.changed_by')
             ->whereIn('sale_change_logs.sale_id', $saleIds->all())
             ->orderByDesc('sale_change_logs.id')
-            ->get(['sale_change_logs.sale_id', 'sale_change_logs.sale_code', 'sale_change_logs.field', 'sale_change_logs.old_value', 'sale_change_logs.new_value', 'sale_change_logs.created_at', 'users.name as changed_by_name'])
+            ->get($columns)
             ->groupBy('sale_id')
             ->map(fn (Collection $rows): array => $rows->map(fn (object $log): array => [
                 'field' => $this->changeLogFieldLabel((string) $log->field),

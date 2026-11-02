@@ -3,12 +3,13 @@
 Run every command in **Git Bash** on the client's PC, one step at a time. Stop at any step whose result is not
 what the step says to expect.
 
-This brings the PC to the latest `main` and runs three migrations. Each one only adds or changes the two new tables
-(`sale_refunds`, `sale_change_logs`); no existing row is changed.
+This brings the PC to the latest `main` and runs four migrations. They add or change the two Part 19 tables
+(`sale_refunds`, `sale_change_logs`); the fourth migration also backfills sale codes on existing change-log rows.
 
 - `2026_11_02_000001_create_sale_refunds_table`
 - `2026_11_02_000002_create_sale_change_logs_table`
 - `2026_11_03_000001_keep_sale_change_logs_of_deleted_sales`
+- `2026_11_03_000002_add_sale_code_to_sale_change_logs`
 
 ## 0. Settings for this session
 
@@ -81,7 +82,7 @@ No PHP packages changed, so `composer install` is not needed.
 "$PHP" artisan migrate:status | grep Pending
 ```
 
-Expect **exactly** the three migrations listed at the top. If anything else is pending, stop and ask.
+Expect **exactly** the four migrations listed at the top. If anything else is pending, stop and ask.
 
 ## 6. Migrate
 
@@ -123,8 +124,8 @@ Later, `git checkout main` returns to the latest code.
 ```bash
 # Save any refunds and change history recorded since the update first.
 "$MYSQLDUMP" -h 127.0.0.1 -u root "$DB_NAME" sale_refunds sale_change_logs > "$BACKUP_DIR/part19-tables-$(date +%Y%m%d-%H%M%S).sql"
-"$PHP" artisan migrate:rollback --step=3 --force
-"$PHP" artisan migrate:status | grep 2026_11_0     # expect: all three Pending
+"$PHP" artisan migrate:rollback --step=4 --force
+"$PHP" artisan migrate:status | grep 2026_11_0     # expect: all four Pending
 ```
 
 **Full restore** from the step 3 backup (loses everything recorded after the backup):

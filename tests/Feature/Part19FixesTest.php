@@ -143,13 +143,14 @@ class Part19FixesTest extends AuditTestCase
             'edit_sale_id' => $saleId, 'customer_id' => $a['customer'], 'sale_date' => '2026-10-15', 'sales_order_number' => 'SO-DRAFT-1',
             'payment_method' => 'cash_on_delivery', 'payment_terms' => 'installment', 'status' => 'draft',
         ])->assertSessionHasNoErrors();
+        $saleCode = (string) DB::table('sales')->where('id', $saleId)->value('sale_code');
         $logId = (int) DB::table('sale_change_logs')->where('sale_id', $saleId)->where('field', 'sales_order_number')->value('id');
         $this->assertGreaterThan(0, $logId);
 
         $this->actingAs($a['sales'])->from(route('sales-officer.sales'))->patch(route('sales-officer.sales.cancel', $saleId))->assertSessionHasNoErrors();
 
         $this->assertDatabaseMissing('sales', ['id' => $saleId]);
-        $this->assertDatabaseHas('sale_change_logs', ['id' => $logId, 'sale_id' => null, 'field' => 'sales_order_number', 'new_value' => 'SO-DRAFT-1']);
+        $this->assertDatabaseHas('sale_change_logs', ['id' => $logId, 'sale_id' => null, 'sale_code' => $saleCode, 'field' => 'sales_order_number', 'new_value' => 'SO-DRAFT-1']);
     }
 
     // ----- Refunds -----------------------------------------------------------------------------------------------

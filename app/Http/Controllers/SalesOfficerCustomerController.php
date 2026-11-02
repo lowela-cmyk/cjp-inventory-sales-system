@@ -744,10 +744,15 @@ class SalesOfficerCustomerController extends Controller
             return;
         }
 
-        DB::table('sale_change_logs')->insert([
+        $row = [
             'sale_id' => $saleId, 'field' => $field, 'old_value' => $old === '' ? null : $old, 'new_value' => $new === '' ? null : $new,
             'changed_by' => $userId, 'created_at' => now(), 'updated_at' => now(),
-        ]);
+        ];
+        if (Schema::hasColumn('sale_change_logs', 'sale_code')) {
+            $row['sale_code'] = DB::table('sales')->where('id', $saleId)->value('sale_code');
+        }
+
+        DB::table('sale_change_logs')->insert($row);
     }
 
     /**
@@ -2451,7 +2456,7 @@ class SalesOfficerCustomerController extends Controller
             ->leftJoin('users', 'users.id', '=', 'sale_change_logs.changed_by')
             ->whereIn('sale_change_logs.sale_id', $saleIds->all())
             ->orderByDesc('sale_change_logs.id')
-            ->get(['sale_change_logs.sale_id', 'sale_change_logs.field', 'sale_change_logs.old_value', 'sale_change_logs.new_value', 'sale_change_logs.created_at', 'users.name as changed_by_name'])
+            ->get(['sale_change_logs.sale_id', 'sale_change_logs.sale_code', 'sale_change_logs.field', 'sale_change_logs.old_value', 'sale_change_logs.new_value', 'sale_change_logs.created_at', 'users.name as changed_by_name'])
             ->groupBy('sale_id')
             ->map(fn (Collection $rows): array => $rows->map(fn (object $log): array => [
                 'field' => $this->changeLogFieldLabel((string) $log->field),

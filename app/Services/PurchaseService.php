@@ -363,6 +363,8 @@ class PurchaseService
         $transformed = $rawRows->map(function (object $row) use ($dependencyMap, $withdrawalsMap, $stock, $cancelBlocked, $lifted): array {
             $line = $stock->get((int) $row->id);
             $released = (float) ($line->released ?? 0);
+            // A purchase with no payment mode reads N/A (a null key is deprecated as an array offset in PHP 8.5).
+            $paymentModeLabel = self::PAYMENT_MODES[$row->payment_mode ?? ''] ?? 'N/A';
             // Part 19: a cancelled purchase holds no stock (its stock-in is voided), whatever its lines still say.
             $cancelled = $row->purchase_status === 'cancelled' || $row->legacy_purchase_status === 'cancelled';
             $onHand = $cancelled ? 0.0 : (float) ($line->on_hand ?? $row->quantity_ordered_liters);
@@ -412,7 +414,7 @@ class PurchaseService
                     $this->withdrawalStatus((int) $row->withdrawal_count),
                     $this->label($row->purchase_status),
                     $this->label($row->payment_status),
-                    self::PAYMENT_MODES[$row->payment_mode] ?? 'N/A',
+                    $paymentModeLabel,
                     $row->bank_name ?: 'N/A',
                     $this->formatNumber($onHand),
                 ],
@@ -426,7 +428,7 @@ class PurchaseService
                         'Quantity Hauled' => $this->formatLiters($row->hauled_liters),
                         'Cost/Liter' => $this->formatNumber($row->unit_cost),
                         'Total Cost' => $this->formatNumber($row->line_total),
-                        'Payment Mode' => self::PAYMENT_MODES[$row->payment_mode] ?? 'N/A',
+                        'Payment Mode' => $paymentModeLabel,
                         'Bank' => $row->bank_name ?: 'N/A',
                         'Purchase Status' => $this->label($row->purchase_status),
                     ]],
@@ -459,7 +461,7 @@ class PurchaseService
                     'Inventory Status' => $this->label($inventoryStatus),
                     'Cost/Liter' => $this->formatNumber($row->unit_cost),
                     'Total Cost' => $this->formatNumber($row->line_total),
-                    'Payment Mode' => self::PAYMENT_MODES[$row->payment_mode] ?? 'N/A',
+                    'Payment Mode' => $paymentModeLabel,
                     'Bank' => $row->bank_name ?: 'N/A',
                     'Withdrawal Receipts' => $this->withdrawalStatus((int) $row->withdrawal_count),
                     'Latest Withdrawal Upload' => $this->formatDateTime($row->latest_withdrawal_at),

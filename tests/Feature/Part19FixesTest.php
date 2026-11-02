@@ -8,7 +8,6 @@ use App\Services\PurchaseService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Str;
 use Tests\Concerns\PurchaseFlows;
 use Tests\Feature\Audit\AuditTestCase;
 
@@ -131,6 +130,26 @@ class Part19FixesTest extends AuditTestCase
         $this->assertDatabaseHas('sale_items', ['sale_id' => $saleId, 'quantity_liters' => 1000, 'unit_price' => 52, 'line_total' => 52000, 'fulfilled_quantity_liters' => 1000]);
         $this->assertEquals($stockOuts, DB::table('stock_outs')->where('sale_id', $saleId)->get(['id', 'quantity_liters', 'status', 'unit_cost'])->toArray());
         $this->assertSame(9000.0, $this->remaining($premium));
+    }
+
+    public function test_deleting_an_untouched_draft_keeps_its_change_history(): void
+    {
+        $a = $this->actors();
+        $premium = $this->purchaseLine($a, 'PREM', 10000);
+        $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 1000, 'unit_price' => 65], ['status' => 'draft'])->assertSessionHasNoErrors();
+        $saleId = $this->lastSaleId();
+        $this->assertDatabaseHas('sales', ['id' => $saleId, 'status' => 'draft']);
+        $this->actingAs($a['sales'])->from(route('sales-officer.sales'))->patch(route('sales-officer.sales.update', $saleId), [
+            'edit_sale_id' => $saleId, 'customer_id' => $a['customer'], 'sale_date' => '2026-10-15', 'sales_order_number' => 'SO-DRAFT-1',
+            'payment_method' => 'cash_on_delivery', 'payment_terms' => 'installment', 'status' => 'draft',
+        ])->assertSessionHasNoErrors();
+        $logId = (int) DB::table('sale_change_logs')->where('sale_id', $saleId)->where('field', 'sales_order_number')->value('id');
+        $this->assertGreaterThan(0, $logId);
+
+        $this->actingAs($a['sales'])->from(route('sales-officer.sales'))->patch(route('sales-officer.sales.cancel', $saleId))->assertSessionHasNoErrors();
+
+        $this->assertDatabaseMissing('sales', ['id' => $saleId]);
+        $this->assertDatabaseHas('sale_change_logs', ['id' => $logId, 'sale_id' => null, 'field' => 'sales_order_number', 'new_value' => 'SO-DRAFT-1']);
     }
 
     // ----- Refunds -----------------------------------------------------------------------------------------------

@@ -145,7 +145,7 @@ class Part2ButtonRevisionsTest extends AuditTestCase
 
         // Part 13: "garage_to_client" is no longer an alias of Standard; it sells from a garage tank only.
         $this->recordOrder($a, ['purchase_item_id' => $diesel, 'quantity_liters' => 500, 'unit_price' => 60], ['delivery_type' => 'garage_to_client'])
-            ->assertSessionHasErrors('items.0.garage_stock_id');
+            ->assertSessionHasErrors(['items.0.garage_tank_id' => 'Select the garage tank to sell from.']);
         $this->assertSame(0, DB::table('sales')->count());
 
         $html = $this->actingAs($a['sales'])->get(route('sales-officer.sales'))->assertOk()->getContent();

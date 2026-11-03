@@ -218,16 +218,20 @@ class InventoryLedgerService
         }
 
         // Part 2 revisions: what deliveries took from the purchase (its stock), by delivery type.
-        return DB::table('stock_outs')
-            ->join('sales', 'sales.id', '=', 'stock_outs.sale_id')
-            ->where('stock_outs.status', 'released')
-            ->whereIn('stock_outs.purchase_item_id', $purchaseItemIds)
-            ->groupBy('stock_outs.purchase_item_id', 'sales.delivery_type')
-            ->selectRaw('stock_outs.purchase_item_id, sales.delivery_type, COALESCE(SUM(stock_outs.quantity_liters), 0) as liters')
+        // Part 18 add-on: a tank release counts for the purchases it drew from.
+        return PurchaseStockService::releasesByPurchaseQuery()
+            ->join('sales', 'sales.id', '=', 'purchase_releases.sale_id')
+            ->whereIn('purchase_releases.purchase_item_id', $purchaseItemIds)
+            ->groupBy('purchase_releases.purchase_item_id', 'sales.delivery_type')
+            ->selectRaw('purchase_releases.purchase_item_id, sales.delivery_type, COALESCE(SUM(purchase_releases.liters), 0) as liters')
             ->get()
             ->groupBy('purchase_item_id')
             ->map(fn (Collection $rows): string => 'Delivered: '.$rows
-                ->map(fn (object $row): string => ($row->delivery_type === 'depot_to_client' ? 'Depot to Client' : 'Standard').' '.$this->formatLiters($row->liters))
+                ->map(fn (object $row): string => match ($row->delivery_type) {
+                    'depot_to_client' => 'Depot to Client',
+                    'garage_to_client' => 'Garage to Client',
+                    default => 'Standard',
+                }.' '.$this->formatLiters($row->liters))
                 ->implode(', '))
             ->all();
     }
@@ -296,8 +300,8 @@ class InventoryLedgerService
      */
     private function latestBalances(): array
     {
-        $released = DB::table('stock_outs')->where('status', 'released')->whereNotNull('purchase_item_id')
-            ->groupBy('purchase_item_id')->selectRaw('purchase_item_id, COALESCE(SUM(quantity_liters), 0) as released');
+        $released = PurchaseStockService::releasesByPurchaseQuery()
+            ->groupBy('purchase_item_id')->selectRaw('purchase_item_id, COALESCE(SUM(liters), 0) as released');
 
         return DB::table('purchase_items')
             ->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')

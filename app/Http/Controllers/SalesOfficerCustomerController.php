@@ -136,8 +136,11 @@ class SalesOfficerCustomerController extends Controller
             'purchaseOptions' => $purchaseOptions = $this->purchaseStock->saleOptions($this->purchaseIdsOnSales()),
             'f1PurchaseOptions' => $purchaseOptions->where('fuel_code', F1Split::F1_CODE)->values(),
             'stockHints' => $this->stockHints(),
-            // Part 13: garage lots (tanks) a Garage to Client line, and its F1 portion, can sell from.
-            'garageOptions' => $garageOptions = app(GarageStockService::class)->saleOptions($this->garageIdsOnSales()),
+            // Part 18 add-on: the garage tanks a Garage to Client line, and an F1 portion, sell from ("tank:<id>"), and
+            // the lots older open orders still sell from (kept selectable on those orders only).
+            'garageTankOptions' => $garageTanks = app(GarageStockService::class)->tankOptions(null, $this->garageTankIdsOnSales()),
+            'f1GarageTankOptions' => $garageTanks->where('fuel_code', F1Split::F1_CODE)->values(),
+            'garageOptions' => $garageOptions = app(GarageStockService::class)->lots(['with_empty' => true], null, $this->garageIdsOnSales() ?: [0])->values(),
             'f1GarageOptions' => $garageOptions->where('fuel_code', F1Split::F1_CODE)->values(),
             'newOrderDeliveryStatuses' => self::NEW_ORDER_DELIVERY_STATUSES,
             'deliveryTrucks' => DB::table('trucks')->where('status', '!=', 'inactive')->orderByRaw(TruckLabel::orderSql())->get(['id', 'truck_code', 'name']),
@@ -385,10 +388,11 @@ class SalesOfficerCustomerController extends Controller
 
     public function assignSource(Request $request, int $sale): RedirectResponse
     {
-        $garage = $request->input('source_type') === 'garage_lot';
-        // Part 18 #3: a garage lot makes the order Garage to Client, so its Delivery Details are asked in the same step.
+        $garage = $request->input('source_type') === 'garage_tank';
+        // Part 18 #3: a garage source makes the order Garage to Client, so its Delivery Details are asked in the same
+        // step. Part 18 add-on: the garage source is a tank (its mixed fuel at its average cost), never a lot.
         $data = $request->validate([
-            'source_type' => ['required', Rule::in(['scheduled_lift', 'truck', 'garage_lot'])],
+            'source_type' => ['required', Rule::in(['scheduled_lift', 'truck', 'garage_tank'])],
             'source_id' => ['required', 'integer'],
             'delivery_truck_id' => $garage ? ['required', 'integer', Rule::exists('trucks', 'id')] : ['exclude'],
             'delivery_driver_user_id' => $garage ? ['required', 'integer', Rule::exists('users', 'id')->where(fn (Builder $query): Builder => $query->where('role', 'driver'))] : ['exclude'],
@@ -648,9 +652,10 @@ class SalesOfficerCustomerController extends Controller
 
                 if ($row->delivery_status !== 'delivered' && ! $hasDependencies && $items !== [] && $this->changesProtectedSaleFields($row, $data)) {
                     $firstFuelBefore = (int) DB::table('sale_items')->where('sale_id', $sale)->orderBy('id')->value('fuel_type_id');
+                    $ownLots = $this->garageLotIdsOfSale($sale);
                     DB::table('sale_items')->where('sale_id', $sale)->delete();
                     // Checked after the old lines are gone, so this sale's own reservation is not counted twice.
-                    $this->assertPurchaseStock($items, (string) $data['delivery_type']);
+                    $this->assertPurchaseStock($items, (string) $data['delivery_type'], $ownLots);
 
                     $now = now();
                     foreach ($items as $item) {
@@ -1380,10 +1385,14 @@ class SalesOfficerCustomerController extends Controller
             'sale_date' => ['required', 'date'],
             // Part 2 revisions: an order line names the purchase its fuel is deducted from ("PUR-022 · PREMIUM").
             'items' => [$saleId ? 'nullable' : 'required', 'array', 'min:1'],
-            'items.*.purchase_item_id' => [$saleId ? 'nullable' : 'required', 'integer', Rule::exists('purchase_items', 'id')],
-            // Part 13: the garage lot a Garage to Client line (and its F1 portion) sells from.
-            'items.*.garage_stock_id' => [$deliveryType === 'garage_to_client' && ! $saleId ? 'required' : 'nullable', 'integer', Rule::exists('garage_stocks', 'id')],
+            // Part 18 add-on: a Garage to Client line names its tank instead of a purchase.
+            'items.*.purchase_item_id' => [$saleId || $deliveryType === 'garage_to_client' ? 'nullable' : 'required', 'integer', Rule::exists('purchase_items', 'id')],
+            // Part 13: the garage lot an older Garage to Client line (and its F1 portion) sells from.
+            'items.*.garage_stock_id' => ['nullable', 'integer', Rule::exists('garage_stocks', 'id')],
             'items.*.f1_garage_stock_id' => ['nullable', 'integer', Rule::exists('garage_stocks', 'id')],
+            // Part 18 add-on: the garage tank a Garage to Client line (and an F1 portion) sells from.
+            'items.*.garage_tank_id' => [$deliveryType === 'garage_to_client' && ! $saleId ? 'required' : 'nullable', 'integer', Rule::exists('storage_locations', 'id')->where('type', 'garage')],
+            'items.*.f1_garage_tank_id' => ['nullable', 'integer', Rule::exists('storage_locations', 'id')->where('type', 'garage')],
             // Only lines recorded before purchases were chosen send their fuel instead.
             'items.*.fuel_type_id' => ['nullable', 'integer', ApprovedFuelType::rule()],
             'items.*.quantity_liters' => ['required_with:items', 'numeric', 'gt:0', 'max:1000000'],
@@ -1423,8 +1432,8 @@ class SalesOfficerCustomerController extends Controller
             'delivery_status_updated_by' => ['prohibited'],
         ], [
             'items.required' => 'Add the order line.',
-            'items.*.purchase_item_id.required' => $deliveryType === 'garage_to_client' ? 'Select the garage stock (tank) to sell from.' : 'Select the Fuel Type purchase.',
-            'items.*.garage_stock_id.required' => 'Select the garage stock (tank) to sell from.',
+            'items.*.purchase_item_id.required' => 'Select the Fuel Type purchase.',
+            'items.*.garage_tank_id.required' => 'Select the garage tank to sell from.',
         ], [
             'delivery_truck_id' => 'truck',
             'delivery_driver_user_id' => 'driver',
@@ -1439,6 +1448,9 @@ class SalesOfficerCustomerController extends Controller
      * Part 13: the stock dropdowns of a Garage to Client line list garage lots as "garage:<lot id>" (the F1 dropdown
      * lists F1 lots the same way, next to F1 purchases). Each such value becomes the line's garage lot, and its
      * purchase becomes the lot's purchase, so costs and margins stay with the purchase.
+     *
+     * Part 18 add-on: they list garage TANKS as "tank:<tank id>"; such a value becomes the line's tank and the line has
+     * no purchase of its own (a tank release draws from the purchases in the tank). Lots stay only on older orders.
      */
     private function splitGarageSources(Request $request): void
     {
@@ -1448,9 +1460,12 @@ class SalesOfficerCustomerController extends Controller
         }
 
         foreach ($items as $index => $item) {
-            foreach (['purchase_item_id' => 'garage_stock_id', 'f1_purchase_item_id' => 'f1_garage_stock_id'] as $purchaseField => $lotField) {
+            foreach (['purchase_item_id' => ['garage_stock_id', 'garage_tank_id'], 'f1_purchase_item_id' => ['f1_garage_stock_id', 'f1_garage_tank_id']] as $purchaseField => [$lotField, $tankField]) {
                 $value = is_array($item) ? (string) ($item[$purchaseField] ?? '') : '';
-                if (str_starts_with($value, 'garage:')) {
+                if (str_starts_with($value, 'tank:')) {
+                    $items[$index][$tankField] = (int) substr($value, 5);
+                    $items[$index][$purchaseField] = null;
+                } elseif (str_starts_with($value, 'garage:')) {
                     $lotId = (int) substr($value, 7);
                     $items[$index][$lotField] = $lotId;
                     $items[$index][$purchaseField] = DB::table('garage_stocks')->where('id', $lotId)->value('purchase_item_id');
@@ -1500,19 +1515,29 @@ class SalesOfficerCustomerController extends Controller
         $purchaseFuel = DB::table('purchase_items')
             ->whereIn('id', collect($rows)->pluck('purchase_item_id')->filter()->map(fn (mixed $id): int => (int) $id)->all() ?: [0])
             ->pluck('fuel_type_id', 'id');
+        $tankFuel = DB::table('storage_locations')
+            ->whereIn('id', collect($rows)->pluck('garage_tank_id')->filter()->map(fn (mixed $id): int => (int) $id)->all() ?: [0])
+            ->pluck('fuel_type_id', 'id');
         $eligible = F1Split::eligibleFuelIds();
 
         $items = [];
         foreach ($rows as $index => $row) {
-            $purchaseId = ($row['purchase_item_id'] ?? null) ? (int) $row['purchase_item_id'] : null;
-            $fuelTypeId = $purchaseId ? (int) ($purchaseFuel[$purchaseId] ?? 0) : (int) ($row['fuel_type_id'] ?? ($existing[$index] ?? 0));
+            $tankId = ($row['garage_tank_id'] ?? null) ? (int) $row['garage_tank_id'] : null;
+            $purchaseId = ! $tankId && ($row['purchase_item_id'] ?? null) ? (int) $row['purchase_item_id'] : null;
+            // A tank line's fuel is the tank's.
+            $fuelTypeId = match (true) {
+                $tankId !== null => (int) ($tankFuel[$tankId] ?? 0),
+                $purchaseId !== null => (int) ($purchaseFuel[$purchaseId] ?? 0),
+                default => (int) ($row['fuel_type_id'] ?? ($existing[$index] ?? 0)),
+            };
             $quantity = round((float) $row['quantity_liters'], 2);
             $price = round((float) $row['unit_price'], 2);
             $percentage = in_array($fuelTypeId, $eligible, true) ? (float) ($row['f1_percentage'] ?? 0) : 0.0;
             [$main, $f1] = F1Split::split($quantity, $percentage);
-            $f1PurchaseId = $f1 > 0 && ($row['f1_purchase_item_id'] ?? null) ? (int) $row['f1_purchase_item_id'] : null;
-            $lotId = ($row['garage_stock_id'] ?? null) ? (int) $row['garage_stock_id'] : null;
-            $f1LotId = $f1 > 0 && ($row['f1_garage_stock_id'] ?? null) ? (int) $row['f1_garage_stock_id'] : null;
+            $f1TankId = $f1 > 0 && ($row['f1_garage_tank_id'] ?? null) ? (int) $row['f1_garage_tank_id'] : null;
+            $f1PurchaseId = $f1 > 0 && ! $f1TankId && ($row['f1_purchase_item_id'] ?? null) ? (int) $row['f1_purchase_item_id'] : null;
+            $lotId = ! $tankId && ($row['garage_stock_id'] ?? null) ? (int) $row['garage_stock_id'] : null;
+            $f1LotId = $f1 > 0 && ! $f1TankId && ($row['f1_garage_stock_id'] ?? null) ? (int) $row['f1_garage_stock_id'] : null;
             $f1Price = $f1 > 0 ? round((float) ($row['f1_price'] ?? $row['f1_unit_price'] ?? 0), 2) : 0.0;
 
             $items[$index] = [
@@ -1524,6 +1549,8 @@ class SalesOfficerCustomerController extends Controller
                 'f1_purchase_item_id' => $f1PurchaseId,
                 'garage_stock_id' => $lotId,
                 'f1_garage_stock_id' => $f1LotId,
+                'garage_tank_id' => $tankId,
+                'f1_garage_tank_id' => $f1TankId,
                 'f1_price' => $f1Price,
                 'f1_unit_price' => $f1Price,
                 'main_quantity_liters' => $main,
@@ -1548,6 +1575,8 @@ class SalesOfficerCustomerController extends Controller
             'f1_purchase_item_id' => $item['f1_purchase_item_id'],
             'garage_stock_id' => $item['garage_stock_id'] ?? null,
             'f1_garage_stock_id' => $item['f1_garage_stock_id'] ?? null,
+            'garage_tank_id' => $item['garage_tank_id'] ?? null,
+            'f1_garage_tank_id' => $item['f1_garage_tank_id'] ?? null,
             'stock_in_movement_id' => null,
             'quantity_liters' => $item['quantity_liters'],
             'unit_price' => $item['unit_price'],
@@ -1568,27 +1597,43 @@ class SalesOfficerCustomerController extends Controller
      * can't promise the same liters.
      * - Standard / Depot to Client (Part 13): the purchase's liters in the depot (remaining in depot less what other
      *   open orders will take from the depot).
-     * - Garage to Client (Part 13): a garage lot (tank) of the line's fuel; its liters in the garage less what other
-     *   open Garage to Client orders were promised. Its F1 portion may come from an F1 garage lot or an F1 purchase.
+     * - Garage to Client (Part 18 add-on): a garage tank of the line's fuel; its liters less what open orders were
+     *   promised from it (and what older orders hold on its lots). Its F1 portion may come from an F1 tank or an F1
+     *   purchase. A lot is accepted only when it is already on the order being changed ($ownLots, older orders).
      *
      * @param  array<int, array<string, mixed>>  $items
+     * @param  array<int, int>  $ownLots
      *
      * @throws ValidationException
      */
-    private function assertPurchaseStock(array $items, string $deliveryType = 'standard'): void
+    private function assertPurchaseStock(array $items, string $deliveryType = 'standard', array $ownLots = []): void
     {
         $ids = collect($items)->flatMap(fn (array $item): array => [$item['purchase_item_id'], $item['f1_purchase_item_id']])->filter()->unique()->values()->all();
         $lines = $this->purchaseStock->lines($ids, true);
+        $garageStock = app(GarageStockService::class);
         $lotIds = collect($items)->flatMap(fn (array $item): array => [$item['garage_stock_id'] ?? null, $item['f1_garage_stock_id'] ?? null])->filter()->unique()->values()->all();
-        $lots = app(GarageStockService::class)->lots(['with_empty' => true], null, $lotIds ?: [0], true);
+        $lots = $garageStock->lots(['with_empty' => true], null, $lotIds ?: [0], true);
+        $tankIds = collect($items)->flatMap(fn (array $item): array => [$item['garage_tank_id'] ?? null, $item['f1_garage_tank_id'] ?? null])->filter()->map(fn (mixed $id): int => (int) $id)->unique()->values()->all();
+        $tankFuels = DB::table('storage_locations')->whereIn('id', $tankIds ?: [0])->pluck('fuel_type_id')->map(fn (mixed $id): int => (int) $id)->unique()->values()->all();
+        $tanks = $tankIds === [] ? collect() : $garageStock->tanks($tankFuels, true)->only($tankIds);
         $isGarage = $deliveryType === 'garage_to_client';
         $f1FuelId = F1Split::f1FuelId();
         $requested = [];
         $requestedFromLot = [];
+        $requestedFromTank = [];
         $errors = [];
+        $ownLot = fn (?object $lot): bool => $lot !== null && in_array((int) $lot->id, $ownLots, true);
 
-        // Liters asked of a lot or of a purchase's depot stock, with the error when they are not there.
-        $take = function (string $key, ?object $lot, ?object $line, float $liters, string $what) use (&$requested, &$requestedFromLot, &$errors): void {
+        // Liters asked of a tank, a lot or a purchase's depot stock, with the error when they are not there.
+        $take = function (string $key, ?object $tank, ?object $lot, ?object $line, float $liters, string $what) use (&$requested, &$requestedFromLot, &$requestedFromTank, &$errors): void {
+            if ($tank) {
+                $requestedFromTank[$tank->id] = round(($requestedFromTank[$tank->id] ?? 0) + $liters, 2);
+                if ($requestedFromTank[$tank->id] > $tank->available) {
+                    $errors[$key] = 'Only '.number_format($tank->available, 2).' L of '.$tank->fuel_name.' are available in '.$tank->name.' for '.$what.'.';
+                }
+
+                return;
+            }
             if ($lot) {
                 $requestedFromLot[$lot->id] = round(($requestedFromLot[$lot->id] ?? 0) + $liters, 2);
                 if ($requestedFromLot[$lot->id] > $lot->available) {
@@ -1604,30 +1649,38 @@ class SalesOfficerCustomerController extends Controller
         };
 
         foreach ($items as $index => $item) {
+            $tank = ($item['garage_tank_id'] ?? null) ? $tanks->get((int) $item['garage_tank_id']) : null;
             $lot = ($item['garage_stock_id'] ?? null) ? $lots->get((int) $item['garage_stock_id']) : null;
             $line = $item['purchase_item_id'] ? $lines->get($item['purchase_item_id']) : null;
-            if ($isGarage && ! $lot) {
-                $errors["items.$index.purchase_item_id"] = 'Select the garage stock (tank) to sell from.';
-            } elseif (! $isGarage && ($item['garage_stock_id'] ?? null)) {
-                $errors["items.$index.purchase_item_id"] = 'Only a Garage to Client order sells from garage stock.';
-            } elseif (! $line) {
+            if (($item['garage_stock_id'] ?? null) && ! $ownLot($lot)) {
+                $errors["items.$index.purchase_item_id"] = $isGarage ? 'Select the garage tank to sell from; fuel in a tank is mixed, so it is no longer sold by lot.' : 'Only a Garage to Client order sells from garage stock.';
+            } elseif ($isGarage && ! $tank && ! $lot) {
+                $errors["items.$index.purchase_item_id"] = 'Select the garage tank to sell from.';
+            } elseif (! $isGarage && ($item['garage_tank_id'] ?? null)) {
+                $errors["items.$index.purchase_item_id"] = 'Only a Garage to Client order sells from a garage tank.';
+            } elseif ($tank && (int) $tank->fuel_type_id !== (int) $item['fuel_type_id']) {
+                $errors["items.$index.purchase_item_id"] = 'Select a garage tank of the line\'s fuel.';
+            } elseif (! $tank && ! $line) {
                 $errors["items.$index.purchase_item_id"] = 'Select an available Fuel Type purchase.';
             } else {
-                $take("items.$index.quantity_liters", $lot, $line, $item['main_quantity_liters'], 'this order');
+                $take("items.$index.quantity_liters", $tank, $lot, $line, $item['main_quantity_liters'], 'this order');
             }
 
             if ($item['f1_quantity_liters'] <= 0) {
                 continue;
             }
+            $f1Tank = ($item['f1_garage_tank_id'] ?? null) ? $tanks->get((int) $item['f1_garage_tank_id']) : null;
             $f1Lot = ($item['f1_garage_stock_id'] ?? null) ? $lots->get((int) $item['f1_garage_stock_id']) : null;
             $f1Line = $item['f1_purchase_item_id'] ? $lines->get($item['f1_purchase_item_id']) : null;
             $f1Portion = 'the '.number_format($item['f1_quantity_liters'], 2).' L F1 portion';
             // Part 16 #1: the F1 portion may come from an F1 purchase in the depot or an F1 garage tank, whatever the
             // delivery type (it is blended in, so it does not ride with the order's own fuel).
-            if (! $f1Line || (int) $f1Line->fuel_type_id !== $f1FuelId || ($f1Lot && (int) $f1Lot->fuel_type_id !== $f1FuelId)) {
+            if (($item['f1_garage_stock_id'] ?? null) && ! $ownLot($f1Lot)) {
+                $errors["items.$index.f1_purchase_item_id"] = 'Select the F1 purchase or F1 garage tank for '.$f1Portion.'.';
+            } elseif ($f1Tank ? (int) $f1Tank->fuel_type_id !== $f1FuelId : (! $f1Line || (int) $f1Line->fuel_type_id !== $f1FuelId || ($f1Lot && (int) $f1Lot->fuel_type_id !== $f1FuelId))) {
                 $errors["items.$index.f1_purchase_item_id"] = 'Select the F1 purchase or F1 garage tank for '.$f1Portion.'.';
             } else {
-                $take("items.$index.f1_purchase_item_id", $f1Lot, $f1Line, $item['f1_quantity_liters'], $f1Portion);
+                $take("items.$index.f1_purchase_item_id", $f1Tank, $f1Lot, $f1Line, $item['f1_quantity_liters'], $f1Portion);
             }
             if ($item['f1_unit_price'] <= 0) {
                 $errors["items.$index.f1_unit_price"] = 'Enter the F1 Price.';
@@ -1637,6 +1690,14 @@ class SalesOfficerCustomerController extends Controller
         if ($errors !== []) {
             throw ValidationException::withMessages($errors);
         }
+    }
+
+    /** @return array<int, int> the garage lots a sale's lines (and F1 portions) already sell from (older orders) */
+    private function garageLotIdsOfSale(int $saleId): array
+    {
+        return DB::table('sale_items')->where('sale_id', $saleId)->get(['garage_stock_id', 'f1_garage_stock_id'])
+            ->flatMap(fn (object $item): array => [$item->garage_stock_id, $item->f1_garage_stock_id])
+            ->filter()->map(fn (mixed $id): int => (int) $id)->unique()->values()->all();
     }
 
     private function saleForUpdate(int $sale): ?object
@@ -1719,7 +1780,7 @@ class SalesOfficerCustomerController extends Controller
         }
 
         $existing = DB::table('sale_items')->where('sale_id', $row->id)->orderBy('id')->lockForUpdate()
-            ->get(['id', 'purchase_item_id', 'fuel_type_id', 'garage_stock_id', 'f1_purchase_item_id', 'f1_garage_stock_id', 'quantity_liters', 'f1_percentage', 'main_quantity_liters', 'f1_quantity_liters', 'fulfilled_quantity_liters'])
+            ->get(['id', 'purchase_item_id', 'fuel_type_id', 'garage_stock_id', 'f1_purchase_item_id', 'f1_garage_stock_id', 'garage_tank_id', 'f1_garage_tank_id', 'quantity_liters', 'f1_percentage', 'main_quantity_liters', 'f1_quantity_liters', 'fulfilled_quantity_liters'])
             ->values();
         $items = array_values($items);
         if (count($items) !== $existing->count()) {
@@ -1733,12 +1794,12 @@ class SalesOfficerCustomerController extends Controller
         $extra = [];
         foreach ($existing as $index => $old) {
             $new = $items[$index];
-            if (! $same($old->purchase_item_id, $new['purchase_item_id']) || ! $same($old->fuel_type_id, $new['fuel_type_id']) || ! $same($old->garage_stock_id, $new['garage_stock_id'] ?? null)) {
+            if (! $same($old->purchase_item_id, $new['purchase_item_id']) || ! $same($old->fuel_type_id, $new['fuel_type_id']) || ! $same($old->garage_stock_id, $new['garage_stock_id'] ?? null) || ! $same($old->garage_tank_id, $new['garage_tank_id'] ?? null)) {
                 $errors["items.$index.purchase_item_id"] = 'The fuel and purchase of this line cannot change any more; only QTY, F1 % and prices can be corrected.';
 
                 continue;
             }
-            if ($new['f1_quantity_liters'] > 0 && (! $old->f1_purchase_item_id || ! $same($old->f1_purchase_item_id, $new['f1_purchase_item_id']) || ! $same($old->f1_garage_stock_id, $new['f1_garage_stock_id'] ?? null))) {
+            if ($new['f1_quantity_liters'] > 0 && ((! $old->f1_purchase_item_id && ! $old->f1_garage_tank_id) || ! $same($old->f1_purchase_item_id, $new['f1_purchase_item_id']) || ! $same($old->f1_garage_stock_id, $new['f1_garage_stock_id'] ?? null) || ! $same($old->f1_garage_tank_id, $new['f1_garage_tank_id'] ?? null))) {
                 $errors["items.$index.f1_percentage"] = 'This line has no F1 source of its own, so an F1 % cannot be added any more.';
 
                 continue;
@@ -1774,6 +1835,7 @@ class SalesOfficerCustomerController extends Controller
                 'f1_percentage' => $new['f1_percentage'],
                 'f1_purchase_item_id' => $new['f1_quantity_liters'] > 0 ? $old->f1_purchase_item_id : null,
                 'f1_garage_stock_id' => $new['f1_quantity_liters'] > 0 ? $old->f1_garage_stock_id : null,
+                'f1_garage_tank_id' => $new['f1_quantity_liters'] > 0 ? $old->f1_garage_tank_id : null,
                 'f1_price' => $new['f1_price'],
                 'f1_unit_price' => $new['f1_unit_price'],
                 'main_quantity_liters' => $new['main_quantity_liters'],
@@ -1785,7 +1847,7 @@ class SalesOfficerCustomerController extends Controller
             throw ValidationException::withMessages($errors);
         }
         if ($extra !== []) {
-            $this->assertPurchaseStock($extra, (string) $row->delivery_type);
+            $this->assertPurchaseStock($extra, (string) $row->delivery_type, $this->garageLotIdsOfSale((int) $row->id));
         }
 
         $total = round(collect($updates)->sum('line_total'), 2);
@@ -1877,6 +1939,8 @@ class SalesOfficerCustomerController extends Controller
             'f1_purchase_item_id' => (float) $item['f1_quantity_liters'] > 0 && $item['f1_purchase_item_id'] ? (int) $item['f1_purchase_item_id'] : null,
             'garage_stock_id' => ($item['garage_stock_id'] ?? null) ? (int) $item['garage_stock_id'] : null,
             'f1_garage_stock_id' => (float) $item['f1_quantity_liters'] > 0 && ($item['f1_garage_stock_id'] ?? null) ? (int) $item['f1_garage_stock_id'] : null,
+            'garage_tank_id' => ($item['garage_tank_id'] ?? null) ? (int) $item['garage_tank_id'] : null,
+            'f1_garage_tank_id' => (float) $item['f1_quantity_liters'] > 0 && ($item['f1_garage_tank_id'] ?? null) ? (int) $item['f1_garage_tank_id'] : null,
             'f1_unit_price' => number_format((float) $item['f1_quantity_liters'] > 0 ? (float) ($item['f1_price'] ?? $item['f1_unit_price']) : 0, 2, '.', ''),
         ];
 
@@ -1889,7 +1953,7 @@ class SalesOfficerCustomerController extends Controller
         $existingItems = DB::table('sale_items')
             ->where('sale_id', $row->id)
             ->orderBy('id')
-            ->get(['purchase_item_id', 'fuel_type_id', 'quantity_liters', 'unit_price', 'f1_percentage', 'f1_purchase_item_id', 'garage_stock_id', 'f1_garage_stock_id', 'f1_price', 'f1_unit_price', 'f1_quantity_liters'])
+            ->get(['purchase_item_id', 'fuel_type_id', 'quantity_liters', 'unit_price', 'f1_percentage', 'f1_purchase_item_id', 'garage_stock_id', 'f1_garage_stock_id', 'garage_tank_id', 'f1_garage_tank_id', 'f1_price', 'f1_unit_price', 'f1_quantity_liters'])
             ->map(fn (object $item): array => $shape((array) $item))
             ->all();
 
@@ -2280,6 +2344,8 @@ class SalesOfficerCustomerController extends Controller
             ->leftJoin('purchases as main_purchases', 'main_purchases.id', '=', 'main_items.purchase_id')
             ->leftJoin('purchase_items as f1_items', 'f1_items.id', '=', 'sale_items.f1_purchase_item_id')
             ->leftJoin('purchases as f1_purchases', 'f1_purchases.id', '=', 'f1_items.purchase_id')
+            ->leftJoin('storage_locations as main_tanks', 'main_tanks.id', '=', 'sale_items.garage_tank_id')
+            ->leftJoin('storage_locations as f1_tanks', 'f1_tanks.id', '=', 'sale_items.f1_garage_tank_id')
             ->whereIn('sale_items.sale_id', $ids->all())
             ->orderBy('sale_items.sale_id')
             ->orderBy('sale_items.id')
@@ -2290,6 +2356,11 @@ class SalesOfficerCustomerController extends Controller
                 'sale_items.f1_purchase_item_id',
                 'sale_items.garage_stock_id',
                 'sale_items.f1_garage_stock_id',
+                'sale_items.garage_tank_id',
+                'sale_items.f1_garage_tank_id',
+                'main_tanks.name as tank_name',
+                'f1_tanks.name as f1_tank_name',
+                'sale_items.id as sale_item_id',
                 'sale_items.quantity_liters',
                 'sale_items.unit_price',
                 'sale_items.f1_price',
@@ -2305,11 +2376,39 @@ class SalesOfficerCustomerController extends Controller
             ])
             ->groupBy(fn (object $item): int => (int) $item->sale_id);
 
+        // Part 18 add-on: a tank line's source is "Garage — Premium Tank 1 (avg ₱55.20/L)": the average its release was costed
+        // at (and the purchases it drew from), or the tank's current average until it is released.
+        $tankLines = $items->flatten(1)->filter(fn (object $item): bool => $item->garage_tank_id || $item->f1_garage_tank_id);
+        $tankAverages = $tankLines->isEmpty() ? collect() : app(GarageStockService::class)->tanks()->map(fn (object $tank): ?float => $tank->avg_cost);
+        $tankReleases = collect();
+        if ($tankLines->isNotEmpty()) {
+            $releases = DB::table('stock_outs')
+                ->where('status', 'released')
+                ->whereIn('sale_item_id', $tankLines->pluck('sale_item_id')->all())
+                ->whereExists(fn (Builder $query): Builder => $query->selectRaw('1')->from('stock_out_draws')->whereColumn('stock_out_draws.stock_out_id', 'stock_outs.id'))
+                ->orderBy('id')
+                ->get(['id', 'sale_item_id', 'portion', 'unit_cost']);
+            $draws = app(GarageStockService::class)->drawsByStockOut($releases->pluck('id')->map(fn (mixed $id): int => (int) $id)->all());
+            $tankReleases = $releases->groupBy(fn (object $release): string => $release->sale_item_id.':'.($release->portion === 'f1' ? 'f1' : 'main'))
+                ->map(fn ($rows): array => [
+                    'unit_cost' => (float) $rows->last()->unit_cost,
+                    'codes' => $rows->flatMap(fn (object $release) => $draws->get((int) $release->id, collect())->pluck('purchase_code'))->unique()->implode(', '),
+                ]);
+        }
+        $tankSource = function (?string $name, mixed $tankId, int $saleItemId, string $portion) use ($tankAverages, $tankReleases): string {
+            $release = $tankReleases->get($saleItemId.':'.$portion);
+            $average = $release['unit_cost'] ?? $tankAverages->get((int) $tankId);
+
+            return 'Garage — '.($name ?: 'tank').($average !== null ? ' (avg ₱'.number_format((float) $average, 2).'/L)' : '').($release ? ': '.$release['codes'] : '');
+        };
+
         return $ids
             ->mapWithKeys(fn (int $saleId): array => [
                 $saleId => ($items[$saleId] ?? collect())
-                    ->map(function (object $item): array {
+                    ->map(function (object $item) use ($tankSource): array {
                         $main = round((float) $item->quantity_liters - (float) $item->f1_quantity_liters, 2);
+                        $mainSource = $item->garage_tank_id ? $tankSource($item->tank_name, $item->garage_tank_id, (int) $item->sale_item_id, 'main') : ($item->purchase_code ?: '—');
+                        $f1Source = $item->f1_garage_tank_id ? $tankSource($item->f1_tank_name, $item->f1_garage_tank_id, (int) $item->sale_item_id, 'f1') : ($item->f1_purchase_code ?: '—');
 
                         return [
                             'fuel_type_id' => (int) $item->fuel_type_id,
@@ -2321,6 +2420,8 @@ class SalesOfficerCustomerController extends Controller
                             'f1_purchase_code' => $item->f1_purchase_code,
                             'garage_stock_id' => $item->garage_stock_id ? (int) $item->garage_stock_id : null,
                             'f1_garage_stock_id' => $item->f1_garage_stock_id ? (int) $item->f1_garage_stock_id : null,
+                            'garage_tank_id' => $item->garage_tank_id ? (int) $item->garage_tank_id : null,
+                            'f1_garage_tank_id' => $item->f1_garage_tank_id ? (int) $item->f1_garage_tank_id : null,
                             'quantity_liters' => $item->quantity_liters,
                             'unit_price' => $item->unit_price,
                             'f1_price' => (float) ($item->f1_price ?? $item->f1_unit_price),
@@ -2328,7 +2429,7 @@ class SalesOfficerCustomerController extends Controller
                             'line_total' => $item->line_total,
                             'fulfilled_quantity_liters' => $item->fulfilled_quantity_liters,
                             // Where the liters are deducted from (Part 2 revisions).
-                            'source' => trim(($item->purchase_code ?: '—').((float) $item->f1_quantity_liters > 0 ? ' + F1 '.($item->f1_purchase_code ?: '—') : '')),
+                            'source' => trim($mainSource.((float) $item->f1_quantity_liters > 0 ? ' + F1 '.$f1Source : '')),
                             'f1_percentage' => (float) $item->f1_percentage,
                             'f1_quantity_liters' => (float) $item->f1_quantity_liters,
                             'main_quantity_liters' => $main,
@@ -2346,6 +2447,18 @@ class SalesOfficerCustomerController extends Controller
      *
      * @return array<int, int>
      */
+    /** @return array<int, int> Part 18 add-on: garage tanks on open sales, so editing such a sale keeps its tank selectable */
+    private function garageTankIdsOnSales(): array
+    {
+        return DB::table('sale_items')
+            ->join('sales', 'sales.id', '=', 'sale_items.sale_id')
+            ->whereNull('sales.deleted_at')
+            ->whereNotIn('sales.delivery_status', ['delivered', 'cancelled'])
+            ->get(['sale_items.garage_tank_id', 'sale_items.f1_garage_tank_id'])
+            ->flatMap(fn (object $item): array => [$item->garage_tank_id, $item->f1_garage_tank_id])
+            ->filter()->map(fn (mixed $id): int => (int) $id)->unique()->values()->all();
+    }
+
     /** @return array<int, int> garage lots on open sales, so editing such a sale keeps its lot selectable */
     private function garageIdsOnSales(): array
     {

@@ -259,15 +259,40 @@ class StockInService
             ])
             ->selectRaw('? as line_portion', [$name]);
 
+        // Part 18 add-on: a line sold from a garage tank names no purchase; it is listed under each purchase its
+        // releases drew from, for the liters drawn.
+        $drawn = DB::table('stock_out_draws')
+            ->join('stock_outs', 'stock_outs.id', '=', 'stock_out_draws.stock_out_id')
+            ->join('sale_items', 'sale_items.id', '=', 'stock_outs.sale_item_id')
+            ->join('sales', 'sales.id', '=', 'sale_items.sale_id')
+            ->join('customers', 'customers.id', '=', 'sales.customer_id')
+            ->where('stock_outs.status', 'released')
+            ->whereIn('stock_out_draws.purchase_item_id', $purchaseItemIds)
+            ->groupBy('stock_out_draws.purchase_item_id', 'sale_items.id', 'stock_outs.portion', 'sales.sale_code', 'sales.sales_order_number', 'sales.sale_date', 'sales.delivery_type', 'sales.delivery_status', 'sales.deleted_at', 'customers.name')
+            ->select([
+                'stock_out_draws.purchase_item_id',
+                'sale_items.id as sale_item_id',
+                'sales.sale_code',
+                'sales.sales_order_number',
+                'sales.sale_date',
+                'sales.delivery_type',
+                'sales.delivery_status',
+                'sales.deleted_at as sale_deleted_at',
+                'customers.name as customer_name',
+            ])
+            ->selectRaw('COALESCE(SUM(stock_out_draws.liters), 0) as liters')
+            ->selectRaw("CASE WHEN stock_outs.portion = 'f1' THEN 'f1' ELSE 'main' END as line_portion");
+
         $lines = $portion('purchase_item_id', 'main_quantity_liters', 'main')
             ->unionAll($portion('f1_purchase_item_id', 'f1_quantity_liters', 'f1'))
+            ->unionAll($drawn)
             ->get();
 
-        $releases = DB::table('stock_outs')
-            ->where('status', 'released')
+        // Part 18 add-on: a tank release counts for each purchase it drew from (its draw's liters).
+        $releases = PurchaseStockService::releasesByPurchaseQuery()
             ->whereIn('purchase_item_id', $purchaseItemIds)
             ->orderBy('stock_out_at')
-            ->get(['sale_item_id', 'purchase_item_id', 'portion', 'stock_out_code', 'quantity_liters', 'stock_out_at'])
+            ->get(['sale_item_id', 'purchase_item_id', 'portion', 'stock_out_code', 'liters as quantity_liters', 'stock_out_at'])
             ->groupBy(fn (object $release): string => $release->purchase_item_id.':'.$release->sale_item_id.':'.($release->portion === 'f1' ? 'f1' : 'main'));
 
         return $lines
@@ -346,12 +371,15 @@ class StockInService
      */
     private function stockOutOn(array $filters, ?array $purchaseItemIds, string $date): float
     {
-        return round((float) DB::table('stock_outs')
-            ->where('status', 'released')
+        // Narrowed to purchases, a tank release counts by its draws (Part 18 add-on); otherwise every release counts.
+        $query = $purchaseItemIds === null
+            ? DB::table('stock_outs')->where('status', 'released')->selectRaw('stock_out_at, depot_id, fuel_type_id, quantity_liters as liters')
+            : PurchaseStockService::releasesByPurchaseQuery()->whereIn('purchase_item_id', $purchaseItemIds ?: [0]);
+
+        return round((float) DB::query()->fromSub($query, 'day_releases')
             ->whereDate('stock_out_at', $date)
             ->when($filters['depot_id'] ?? null, fn (Builder $query, mixed $id): Builder => $query->where('depot_id', (int) $id))
             ->when($filters['fuel_type_id'] ?? null, fn (Builder $query, mixed $id): Builder => $query->where('fuel_type_id', (int) $id))
-            ->when($purchaseItemIds !== null, fn (Builder $query): Builder => $query->whereIn('purchase_item_id', $purchaseItemIds ?: [0]))
-            ->sum('quantity_liters'), 2);
+            ->sum('liters'), 2);
     }
 }

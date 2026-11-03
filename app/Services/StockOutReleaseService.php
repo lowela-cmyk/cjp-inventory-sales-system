@@ -12,7 +12,11 @@ use Illuminate\Support\Str;
  * leaves f1_purchase_item_id. Each release is one stock-out row naming the purchase it was deducted from.
  *
  * Releasing is idempotent per portion: only liters not released yet for the line are deducted, so a sale and the
- * lift that delivers it can never take the same liters twice. Standard sales are released when their Delivery Status
+ * lift that delivers it can never take the same liters twice.
+ *
+ * Part 18 add-on (November 3, 2026): a portion sold from a garage TANK (garage_tank_id / f1_garage_tank_id) is one
+ * stock-out from the tank at the tank's average cost; its draws (stock_out_draws) take the liters from the lots in the
+ * tank in proportion to what each can give, each draw naming its purchase, so every purchase still adds up. Standard sales are released when their Delivery Status
  * becomes Delivered; Depot to Client sales when their lift is completed ($allocation = that lift's delivery row).
  */
 class StockOutReleaseService
@@ -44,6 +48,8 @@ class StockOutReleaseService
                 'sale_items.f1_purchase_item_id',
                 'sale_items.garage_stock_id',
                 'sale_items.f1_garage_stock_id',
+                'sale_items.garage_tank_id',
+                'sale_items.f1_garage_tank_id',
                 'sale_items.quantity_liters',
                 'sale_items.f1_quantity_liters',
                 'sales.customer_id',
@@ -69,30 +75,52 @@ class StockOutReleaseService
         // A line recorded before purchases were chosen comes from the purchase of its lift (Depot to Client), else from
         // the oldest purchase of its fuel that still holds the liters. The purchase used is then kept on the line.
         $f1FuelId = (int) (F1Split::f1FuelId() ?? 0);
-        $mainPurchaseId = $item->purchase_item_id
+        // A tank portion has no purchase of its own: its draws name them.
+        $mainTankId = $item->garage_tank_id ? (int) $item->garage_tank_id : null;
+        $f1TankId = $item->f1_garage_tank_id ? (int) $item->f1_garage_tank_id : null;
+        $mainPurchaseId = $mainTankId ? null : ($item->purchase_item_id
             ?: ($allocation ? DB::table('hauls')->where('id', $allocation->haul_id)->value('purchase_item_id') : null)
-            ?: ($mainDue > 0 ? $this->oldestPurchaseWithStock((int) $item->fuel_type_id, $mainDue) : null);
-        $f1PurchaseId = $item->f1_purchase_item_id ?: ($f1Due > 0 ? $this->oldestPurchaseWithStock($f1FuelId, $f1Due) : null);
+            ?: ($mainDue > 0 ? $this->oldestPurchaseWithStock((int) $item->fuel_type_id, $mainDue) : null));
+        $f1PurchaseId = $f1TankId ? null : ($item->f1_purchase_item_id ?: ($f1Due > 0 ? $this->oldestPurchaseWithStock($f1FuelId, $f1Due) : null));
 
         $portions = [];
+        $tankPortions = [];
         if ($mainDue > 0) {
-            if (! $mainPurchaseId) {
+            if ($mainTankId) {
+                $tankPortions[] = ['main', $mainTankId, (int) $item->fuel_type_id, $mainDue];
+            } elseif (! $mainPurchaseId) {
                 return 'No purchase of '.$item->fuel_name.' has the '.number_format($mainDue, 2).' L of order '.$item->sale_code.' left.';
+            } else {
+                $portions[] = ['main', (int) $mainPurchaseId, (int) $item->fuel_type_id, $mainDue, $item->garage_stock_id ? (int) $item->garage_stock_id : null];
             }
-            $portions[] = ['main', (int) $mainPurchaseId, (int) $item->fuel_type_id, $mainDue, $item->garage_stock_id ? (int) $item->garage_stock_id : null];
         }
         if ($f1Due > 0) {
-            if (! $f1PurchaseId) {
+            if ($f1TankId) {
+                $tankPortions[] = ['f1', $f1TankId, $f1FuelId, $f1Due];
+            } elseif (! $f1PurchaseId) {
                 return 'No F1 purchase has the '.number_format($f1Due, 2).' L F1 portion of order '.$item->sale_code.' left.';
+            } else {
+                $portions[] = ['f1', (int) $f1PurchaseId, $f1FuelId, $f1Due, $item->f1_garage_stock_id ? (int) $item->f1_garage_stock_id : null];
             }
-            $portions[] = ['f1', (int) $f1PurchaseId, $f1FuelId, $f1Due, $item->f1_garage_stock_id ? (int) $item->f1_garage_stock_id : null];
         }
-        if ($portions === []) {
+        if ($portions === [] && $tankPortions === []) {
             return null;
         }
 
+        // Part 18 add-on: each tank portion's draws, worked out (lots locked) before anything is written.
+        $tankReleases = [];
+        foreach ($tankPortions as [$portion, $tankId, $fuelTypeId, $liters]) {
+            $tank = $this->garageStock->tank($tankId, true);
+            $tankLots = $this->garageStock->lots(['with_empty' => true, 'storage_location_id' => $tankId], null, null, true);
+            $draws = $tank ? GarageStockService::proportionalDraws($tankLots, $liters) : null;
+            if (! $tank || $draws === null || $tank->avg_cost === null) {
+                return ($tank->name ?? 'The garage tank').' has only '.number_format((float) $tankLots->sum('available'), 2).' L left for the '.number_format($liters, 2).' L '.($portion === 'f1' ? 'F1 portion ' : '').'of order '.$item->sale_code.'.';
+            }
+            $tankReleases[] = [$portion, $tank, $fuelTypeId, $liters, $draws];
+        }
+
         // Check every portion before writing anything, so a short purchase leaves the line untouched.
-        $lines = $this->purchaseStock->lines(array_column($portions, 1), true, true);
+        $lines = $portions === [] ? collect() : $this->purchaseStock->lines(array_column($portions, 1), true, true);
         // Part 13: a Garage to Client portion leaves its garage lot (locked); it must still hold the liters.
         $lots = $this->garageStock->lots(['with_empty' => true], null, array_values(array_filter(array_column($portions, 4))) ?: [0], true);
         $neededFromLot = [];
@@ -125,6 +153,9 @@ class StockOutReleaseService
             $line = $lines->get($purchaseItemId);
             $this->insertRelease($item, $portion, $line, $fuelTypeId, $liters, $stockOutAt, $createdBy, $allocation, $remarks, $lotId ? $lots->get($lotId) : null);
         }
+        foreach ($tankReleases as [$portion, $tank, $fuelTypeId, $liters, $draws]) {
+            $this->insertTankRelease($item, $portion, $tank, $fuelTypeId, $liters, $draws, $stockOutAt, $createdBy);
+        }
 
         // Keep the purchases a line recorded without them was deducted from.
         $link = array_filter([
@@ -148,7 +179,47 @@ class StockOutReleaseService
         return $line ? (int) $line->id : null;
     }
 
-    private function insertRelease(object $item, string $portion, object $line, int $fuelTypeId, float $liters, string $stockOutAt, int $createdBy, ?object $allocation, ?string $remarks, ?object $lot = null): void
+    /**
+     * Part 18 add-on: one release from a garage tank at its average cost, and the liters it drew from each lot.
+     *
+     * @param  array<int, array{lot: object, liters: float}>  $draws
+     */
+    private function insertTankRelease(object $item, string $portion, object $tank, int $fuelTypeId, float $liters, array $draws, string $stockOutAt, int $createdBy): void
+    {
+        $this->markFulfilled($item, $liters);
+
+        $this->idempotencyService->retryOnCollision('stock_out_code', function () use ($item, $portion, $tank, $fuelTypeId, $liters, $draws, $stockOutAt, $createdBy): void {
+            $stockOutId = DB::table('stock_outs')->insertGetId([
+                'stock_out_code' => $this->nextCode(),
+                'sale_id' => $item->sale_id,
+                'sale_item_id' => $item->id,
+                'customer_id' => $item->customer_id,
+                'fuel_type_id' => $fuelTypeId,
+                'portion' => $portion,
+                'source_type' => 'garage',
+                'storage_location_id' => $tank->id,
+                'quantity_liters' => $liters,
+                'unit_cost' => $tank->avg_cost,
+                'stock_out_at' => $stockOutAt,
+                'status' => 'released',
+                'created_by' => $createdBy,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            DB::table('stock_out_draws')->insert(array_map(fn (array $draw): array => [
+                'stock_out_id' => $stockOutId,
+                'garage_stock_id' => $draw['lot']->id,
+                'purchase_item_id' => $draw['lot']->purchase_item_id,
+                'liters' => $draw['liters'],
+                'unit_cost' => $draw['lot']->unit_cost,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ], $draws));
+        });
+    }
+
+    /** A release replaces the line's prepared stock-outs and adds to what the line has delivered. */
+    private function markFulfilled(object $item, float $liters): void
     {
         DB::table('stock_outs')
             ->where('sale_item_id', $item->id)
@@ -159,6 +230,11 @@ class StockOutReleaseService
             'fulfilled_quantity_liters' => DB::raw('fulfilled_quantity_liters + '.$liters),
             'updated_at' => now(),
         ]);
+    }
+
+    private function insertRelease(object $item, string $portion, object $line, int $fuelTypeId, float $liters, string $stockOutAt, int $createdBy, ?object $allocation, ?string $remarks, ?object $lot = null): void
+    {
+        $this->markFulfilled($item, $liters);
 
         $this->idempotencyService->retryOnCollision('stock_out_code', function () use ($item, $portion, $line, $fuelTypeId, $liters, $stockOutAt, $createdBy, $allocation, $lot): void {
             DB::table('stock_outs')->insert([

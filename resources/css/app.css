@@ -4710,6 +4710,14 @@ body.login-page {
     font-size: 12px;
 }
 
+/* Part 18 add-on: the tank's weighted average cost per liter. */
+.garage-tank-avg {
+    margin-top: 2px;
+    color: var(--admin-ink);
+    font-size: 12px;
+    font-weight: 600;
+}
+
 .garage-toolbar {
     margin-bottom: 16px;
 }
@@ -4811,6 +4819,11 @@ body.login-page {
 .garage-tank-share-code {
     font-weight: 700;
     word-break: break-all;
+}
+
+.garage-tank-share-cost {
+    font-size: 11px;
+    opacity: 0.85;
 }
 
 .admin-table.garage-table {

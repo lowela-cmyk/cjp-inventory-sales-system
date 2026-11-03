@@ -31,27 +31,29 @@ class Part16RevisionsTest extends AuditTestCase
         $a = $this->actors();
         $premium = $this->purchaseLine($a, 'PREM', 20000);
         $f1Depot = $this->purchaseLine($a, 'F1', 3000);
-        $lot = $this->f1Lot($a, 2000);
+        $this->f1Lot($a, 2000);
+        $f1Tank = $this->tank('F1', 1);
 
         $form = $this->recordSalesForm($a);
         $f1Select = substr($form, strpos($form, 'data-sale-f1-purchase'), 3000);
         $this->assertStringContainsString('<option value="'.$f1Depot.'" data-source="depot"', $f1Select);
-        $this->assertMatchesRegularExpression('/<option value="garage:'.$lot.'" data-source="garage" data-garage-f1[^>]*>[^<]*F1 Tank 1/', $f1Select);
+        // Part 18 add-on: the F1 garage option is the tank itself, at its average cost.
+        $this->assertMatchesRegularExpression('/<option value="tank:'.$f1Tank.'" data-source="garage" data-garage-f1[^>]*>F1 Tank 1 · 2,000 L · avg ₱/', $f1Select);
         $this->assertStringNotContainsString('No F1 stock', $f1Select);
 
         // The server accepts either source whatever the delivery type, and checks the liters of the one picked.
-        $premiumLot = $this->premiumLot($a);
+        $this->premiumLot($a);
         foreach (['standard', 'depot_to_client', 'garage_to_client'] as $type) {
-            $main = $type === 'garage_to_client' ? 'garage:'.$premiumLot : $premium;
-            $this->recordOrder($a, ['purchase_item_id' => $main, 'quantity_liters' => 1000, 'unit_price' => 50, 'f1_percentage' => 10, 'f1_purchase_item_id' => 'garage:'.$lot, 'f1_unit_price' => 40], ['delivery_type' => $type] + ($type === 'garage_to_client' ? $this->garageDelivery($a) : []))
+            $main = $type === 'garage_to_client' ? 'tank:'.$this->tank('PREM', 1) : $premium;
+            $this->recordOrder($a, ['purchase_item_id' => $main, 'quantity_liters' => 1000, 'unit_price' => 50, 'f1_percentage' => 10, 'f1_purchase_item_id' => 'tank:'.$f1Tank, 'f1_unit_price' => 40], ['delivery_type' => $type] + ($type === 'garage_to_client' ? $this->garageDelivery($a) : []))
                 ->assertSessionHasNoErrors();
-            $this->assertSame($lot, (int) DB::table('sale_items')->where('sale_id', $this->lastSaleId())->value('f1_garage_stock_id'), $type);
+            $this->assertSame($f1Tank, (int) DB::table('sale_items')->where('sale_id', $this->lastSaleId())->value('f1_garage_tank_id'), $type);
             $this->recordOrder($a, ['purchase_item_id' => $main, 'quantity_liters' => 1000, 'unit_price' => 50, 'f1_percentage' => 10, 'f1_purchase_item_id' => $f1Depot, 'f1_unit_price' => 40], ['delivery_type' => $type] + ($type === 'garage_to_client' ? $this->garageDelivery($a) : []))
                 ->assertSessionHasNoErrors();
         }
-        // 3 orders x 100 L promised from the 2,000 L lot: 1,700 L left; asking for more than that is refused.
-        $this->assertSame(1700.0, app(GarageStockService::class)->lot($lot)->available);
-        $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 20000, 'unit_price' => 50, 'f1_percentage' => 10, 'f1_purchase_item_id' => 'garage:'.$lot, 'f1_unit_price' => 40])
+        // 3 orders x 100 L promised from the 2,000 L tank: 1,700 L left; asking for more than that is refused.
+        $this->assertSame(1700.0, app(GarageStockService::class)->tanks()->get($f1Tank)->available);
+        $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 20000, 'unit_price' => 50, 'f1_percentage' => 10, 'f1_purchase_item_id' => 'tank:'.$f1Tank, 'f1_unit_price' => 40])
             ->assertSessionHasErrors('items.0.f1_purchase_item_id');
     }
 
@@ -65,12 +67,12 @@ class Part16RevisionsTest extends AuditTestCase
         $f1Tank = $this->tank('F1', 1);
         $tankContents = fn (): float => (float) app(GarageStockService::class)->tanks()->get($f1Tank)->contents;
 
-        $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 4000, 'unit_price' => 50, 'f1_percentage' => 10, 'f1_purchase_item_id' => 'garage:'.$lot, 'f1_unit_price' => 40], ['delivery_type' => 'depot_to_client'])
+        $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 4000, 'unit_price' => 50, 'f1_percentage' => 10, 'f1_purchase_item_id' => 'tank:'.$f1Tank, 'f1_unit_price' => 40], ['delivery_type' => 'depot_to_client'])
             ->assertSessionHasNoErrors();
         $order = $this->lastSaleId();
 
         // Open order: the 400 L are held (not available to other orders) but still in the tank.
-        $this->assertSame([2000.0, 1600.0, 2000.0], [app(GarageStockService::class)->lot($lot)->in_garage, app(GarageStockService::class)->lot($lot)->available, $tankContents()]);
+        $this->assertSame([2000.0, 1600.0, 2000.0], [app(GarageStockService::class)->lot($lot)->in_garage, (float) app(GarageStockService::class)->tanks()->get($f1Tank)->available, $tankContents()]);
 
         // The lift carries the order's Premium; the driver's Lifted delivers the order.
         $this->scheduleLift($a, [['purchase_item_id' => $premium, 'quantity_liters' => 4000]], [$order])->assertSessionHasNoErrors();
@@ -81,7 +83,8 @@ class Part16RevisionsTest extends AuditTestCase
 
         $f1Release = fn () => DB::table('stock_outs')->where('sale_id', $order)->where('portion', 'f1')->where('status', 'released');
         $this->assertSame(1, $f1Release()->count());
-        $this->assertDatabaseHas('stock_outs', ['sale_id' => $order, 'portion' => 'f1', 'source_type' => 'garage', 'garage_stock_id' => $lot, 'storage_location_id' => $f1Tank, 'quantity_liters' => 400, 'status' => 'released']);
+        $this->assertDatabaseHas('stock_outs', ['sale_id' => $order, 'portion' => 'f1', 'source_type' => 'garage', 'garage_stock_id' => null, 'storage_location_id' => $f1Tank, 'quantity_liters' => 400, 'status' => 'released']);
+        $this->assertSame(400.0, (float) DB::table('stock_out_draws')->where('stock_out_id', $f1Release()->value('id'))->where('garage_stock_id', $lot)->sum('liters'));
         // Freed tank space: 2,000 - 400 = 1,600 L left, 24,000 - 1,600 = 22,400 L free.
         $this->assertSame(1600.0, $tankContents());
         $this->assertSame(22400.0, (float) app(GarageStockService::class)->tanks()->get($f1Tank)->free);
@@ -227,7 +230,7 @@ class Part16RevisionsTest extends AuditTestCase
         foreach ([[$a['inventory'], 'inventory-officer.inventory.garage'], [$a['dispatch'], 'dispatch.fuel-lifting.garage']] as [$user, $route]) {
             $page = $this->actingAs($user)->get(route($route))->assertOk()->getContent();
             $this->assertSame(8, substr_count($page, 'data-modal-open="garage-tank-'));
-            $this->assertMatchesRegularExpression('#<td><strong>Diesel Tank 1</strong></td>\s*<td class="inventory-number">24,000.00 L</td>\s*<td class="inventory-number">4,000.00 L</td>\s*<td>'.$codes[0].', '.$codes[1].'</td>#', $page);
+            $this->assertMatchesRegularExpression('#<td><strong>Diesel Tank 1</strong></td>\s*<td class="inventory-number">24,000.00 L</td>\s*<td class="inventory-number">4,000.00 L</td>\s*<td class="inventory-number">₱[\d.,]+/L</td>\s*<td>'.$codes[0].', '.$codes[1].'</td>#', $page);
 
             $modal = substr($page, strpos($page, 'id="garage-tank-'.$tank1.'"'), 8000);
             $this->assertStringContainsString('Quantity: <strong>4,000.00 L</strong>', $modal);

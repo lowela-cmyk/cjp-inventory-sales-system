@@ -66,6 +66,12 @@ class StockOutFinancialService
                     ->orWhere('source_garage.name', 'like', $term)
                     ->orWhere('source_depot.name', 'like', $term)
                     ->orWhere('release_purchase.purchase_code', 'like', $term)
+                    // Part 18 add-on: a tank release is found by the purchases it drew from.
+                    ->orWhereExists(fn (Builder $draws): Builder => $draws->selectRaw('1')->from('stock_out_draws')
+                        ->join('purchase_items as draw_item', 'draw_item.id', '=', 'stock_out_draws.purchase_item_id')
+                        ->join('purchases as draw_purchase', 'draw_purchase.id', '=', 'draw_item.purchase_id')
+                        ->whereColumn('stock_out_draws.stock_out_id', 'stock_outs.id')
+                        ->where('draw_purchase.purchase_code', 'like', $term))
                     ->orWhere('stock_outs.status', 'like', $term);
             }))
             ->select([

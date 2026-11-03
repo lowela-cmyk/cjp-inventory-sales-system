@@ -491,7 +491,10 @@ class InventoryOfficerPurchaseController extends Controller
                     ? 'Changed from Standard to '.(SalesOfficerCustomerController::DELIVERY_TYPES[$change->to_delivery_type] ?? ucwords(str_replace('_', ' ', $change->to_delivery_type))).' ('.$change->source_label.') on '.date('n/j/Y h:i A', strtotime((string) $change->changed_at)).' by '.($change->changed_by_name ?: 'N/A')
                     : null)
             : collect();
-        $transformed = collect($paginator->items())->map(function (object $row) use ($sourceChanges): array {
+        // Part 18 add-on: the lots (purchases) each tank release drew from.
+        $draws = app(GarageStockService::class)->drawsByStockOut(collect($paginator->items())->pluck('id')->map(fn (mixed $id): int => (int) $id)->all());
+        $transformed = collect($paginator->items())->map(function (object $row) use ($sourceChanges, $draws): array {
+            $rowDraws = $draws->get((int) $row->id);
             $amounts = $this->stockOutFinancials->calculate($row);
             // A voided release earns nothing (any payment is a refund due), so it has no margin or profit.
             if ($row->status === 'cancelled') {
@@ -508,14 +511,14 @@ class InventoryOfficerPurchaseController extends Controller
                     SalesOfficerCustomerController::DELIVERY_TYPES[$row->delivery_type] ?? SalesOfficerCustomerController::DELIVERY_TYPES['standard'],
                     $row->fuel_name.($row->portion === 'f1' ? ' (F1 portion)' : ''),
                     // The purchase this release was deducted from (the F1 portion names its F1 purchase).
-                    $row->release_purchase_code ?: ($row->lot_code ?: 'N/A'),
+                    $row->release_purchase_code ?: ($rowDraws ? $rowDraws->pluck('purchase_code')->unique()->implode(', ') : ($row->lot_code ?: 'N/A')),
                     $this->formatNumber($amounts['quantity']),
                     $this->formatFinancial($amounts['unit_cost']),
                     $this->formatFinancial($amounts['total_cost']),
                     $this->formatNumber($amounts['unit_price']),
                     $this->formatNumber($amounts['total_price']),
                     $this->formatNumber($amounts['total_paid']),
-                    trim($this->stockOutSourceLabel($row).' '.($sourceChanges->get((int) $row->sale_id) ? '— '.$sourceChanges->get((int) $row->sale_id) : '')),
+                    trim($this->stockOutSourceLabel($row, $rowDraws !== null).' '.($sourceChanges->get((int) $row->sale_id) ? '— '.$sourceChanges->get((int) $row->sale_id) : '')),
                     $this->label($row->status),
                     $row->status === 'cancelled' ? '—' : $this->formatFinancial($amounts['margin']),
                     $row->status === 'cancelled' ? '—' : $this->formatFinancial($amounts['profit']),
@@ -536,6 +539,8 @@ class InventoryOfficerPurchaseController extends Controller
                 'profit' => $amounts['profit'],
                 'id' => (int) $row->id,
                 'source_change_note' => $sourceChanges->get((int) $row->sale_id),
+                // View: "PUR-001 2,000.00 L @ ₱54.00/L · PUR-003 1,000.00 L @ ₱57.60/L".
+                'drawn_from' => $rowDraws ? GarageStockService::drawsLabel($rowDraws) : null,
                 'modal_id' => 'io-stock-out-edit-'.$row->id,
                 'editable' => $row->status === 'released',
                 // Part 12: a Delivered sale's release: only Cost / Unit can change (date and delivery details are final).
@@ -611,11 +616,16 @@ class InventoryOfficerPurchaseController extends Controller
         };
     }
 
-    private function stockOutSourceLabel(object $row): string
+    private function stockOutSourceLabel(object $row, bool $fromTank = false): string
     {
         if ($row->source_type === 'depot') {
             // Part 2 revisions: deducted from a purchase at its depot.
             return 'Depot'.($row->depot_name ? ' — '.$row->depot_name : '');
+        }
+
+        // Part 18 add-on: "Garage — Premium Tank 1 (avg ₱55.20/L)": the tank and its average cost when released.
+        if ($fromTank) {
+            return 'Garage — '.$row->garage_name.($row->cost_unit !== null ? ' (avg ₱'.number_format((float) $row->cost_unit, 2).'/L)' : '');
         }
 
         // Part 13: "Garage — Diesel Tank 1 · GRG-… · LFT-…" (the garage lot and the lift that unloaded it).

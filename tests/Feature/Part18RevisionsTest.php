@@ -74,16 +74,16 @@ class Part18RevisionsTest extends AuditTestCase
 
     // ----- 3. Garage to Client Delivery Details ----------------------------------------------------------------
 
-    public function test_assigning_a_garage_lot_asks_for_the_delivery_details_in_the_same_step(): void
+    public function test_assigning_a_garage_tank_asks_for_the_delivery_details_in_the_same_step(): void
     {
         $a = $this->actors();
-        [$premium, $lot] = $this->garageLot($a);
+        [$premium, , $tank] = $this->garageLot($a);
         $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 1000, 'unit_price' => 70])->assertSessionHasNoErrors();
         $saleId = $this->lastSaleId();
 
-        // The garage lot's Assign form carries the Delivery Details (required); the lift ones do not.
+        // The garage tank's Assign form carries the Delivery Details (required); the lift ones do not.
         $modal = $this->saleModal($a, $saleId);
-        $garageForm = substr($modal, strpos($modal, 'value="garage_lot"'));
+        $garageForm = substr($modal, strpos($modal, 'value="garage_tank"'));
         $garageForm = substr($garageForm, 0, strpos($garageForm, '</form>'));
         foreach (['delivery_truck_id', 'delivery_driver_user_id', 'delivery_date'] as $field) {
             $this->assertMatchesRegularExpression('/name="'.$field.'"[^>]*required/', $garageForm);
@@ -94,7 +94,7 @@ class Part18RevisionsTest extends AuditTestCase
 
         // Without them the order stays Standard.
         $assign = fn (array $extra = []) => $this->actingAs($a['sales'])->from(route('sales-officer.sales'))
-            ->post(route('sales-officer.sales.assign-source', $saleId), ['edit_sale_id' => $saleId, 'source_type' => 'garage_lot', 'source_id' => $lot] + $extra);
+            ->post(route('sales-officer.sales.assign-source', $saleId), ['edit_sale_id' => $saleId, 'source_type' => 'garage_tank', 'source_id' => $tank] + $extra);
         $assign()->assertSessionHasErrors(['delivery_truck_id', 'delivery_driver_user_id', 'delivery_date']);
         $assign(['delivery_truck_id' => $a['truck']])->assertSessionHasErrors(['delivery_driver_user_id', 'delivery_date']);
         $this->assertSame('standard', DB::table('sales')->where('id', $saleId)->value('delivery_type'));
@@ -110,7 +110,7 @@ class Part18RevisionsTest extends AuditTestCase
         $this->assertMatchesRegularExpression('/<option value="'.$a['truck'].'" selected>/', $edit);
         $update = fn (array $extra) => $this->actingAs($a['sales'])->from(route('sales-officer.sales'))->patch(route('sales-officer.sales.update', $saleId), $extra + [
             'edit_sale_id' => $saleId, 'customer_id' => $a['customer'], 'sale_date' => '2026-10-15', 'payment_method' => 'cash_on_delivery', 'payment_terms' => 'installment',
-            'items' => [['purchase_item_id' => 'garage:'.$lot, 'quantity_liters' => 1000, 'unit_price' => 70]],
+            'items' => [['purchase_item_id' => 'tank:'.$tank, 'quantity_liters' => 1000, 'unit_price' => 70]],
         ]);
         $update([])->assertSessionHasErrors(['delivery_truck_id', 'delivery_driver_user_id', 'delivery_date']);
         $update(['delivery_date' => '2026-10-29 08:30'] + $this->garageDelivery($a))->assertSessionHasNoErrors();
@@ -120,24 +120,25 @@ class Part18RevisionsTest extends AuditTestCase
         $this->assertStringNotContainsString('name="delivery_truck_id"', $this->editSection($this->saleModal($a, $saleId)));
     }
 
-    public function test_a_garage_lot_assigned_as_delivered_is_deducted_once(): void
+    public function test_a_garage_tank_assigned_as_delivered_is_deducted_once(): void
     {
         $a = $this->actors();
-        [$premium, $lot] = $this->garageLot($a);
+        [$premium, $lot, $tank] = $this->garageLot($a);
         $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 1000, 'unit_price' => 70])->assertSessionHasNoErrors();
         $saleId = $this->lastSaleId();
 
-        $this->actingAs($a['sales'])->post(route('sales-officer.sales.assign-source', $saleId), ['source_type' => 'garage_lot', 'source_id' => $lot, 'delivery_status' => 'delivered'] + $this->garageDelivery($a))
+        $this->actingAs($a['sales'])->post(route('sales-officer.sales.assign-source', $saleId), ['source_type' => 'garage_tank', 'source_id' => $tank, 'delivery_status' => 'delivered'] + $this->garageDelivery($a))
             ->assertSessionHasNoErrors();
         $this->assertDatabaseHas('sales', ['id' => $saleId, 'delivery_type' => 'garage_to_client', 'delivery_status' => 'delivered']);
-        $this->assertSame(1, DB::table('stock_outs')->where('sale_id', $saleId)->where('garage_stock_id', $lot)->count());
+        $this->assertSame(1, DB::table('stock_outs')->where('sale_id', $saleId)->where('storage_location_id', $tank)->count());
+        $this->assertSame(1000.0, (float) DB::table('stock_out_draws')->where('garage_stock_id', $lot)->sum('liters'));
     }
 
     public function test_record_sales_garage_to_client_requires_the_delivery_details(): void
     {
         $a = $this->actors();
-        [, $lot] = $this->garageLot($a);
-        $line = ['purchase_item_id' => 'garage:'.$lot, 'quantity_liters' => 500, 'unit_price' => 60];
+        [, , $tank] = $this->garageLot($a);
+        $line = ['purchase_item_id' => 'tank:'.$tank, 'quantity_liters' => 500, 'unit_price' => 60];
 
         $this->recordOrder($a, $line, ['delivery_type' => 'garage_to_client'])->assertSessionHasErrors(['delivery_truck_id', 'delivery_driver_user_id', 'delivery_date']);
         $this->assertSame(0, DB::table('sales')->count());
@@ -342,7 +343,7 @@ class Part18RevisionsTest extends AuditTestCase
         }
     }
 
-    /** @return array{0: int, 1: int} the Premium purchase and a garage lot of 3,000 L from it */
+    /** @return array{0: int, 1: int, 2: int} the Premium purchase, a garage lot of 3,000 L from it, and its tank */
     private function garageLot(array $a): array
     {
         $premium = $this->purchaseLine($a, 'PREM', 20000);
@@ -352,7 +353,7 @@ class Part18RevisionsTest extends AuditTestCase
         $tank = (int) DB::table('storage_locations')->where('type', 'garage')->where('status', 'active')->where('fuel_type_id', $this->fuel('PREM'))->where('tank_number', 1)->value('id');
         $this->actingAs($a['admin'])->post(route('admin.fuel-lifting.hauls.unload-to-garage', $haul), ['unload' => [$haul => [$tank => 3000]]])->assertSessionHasNoErrors();
 
-        return [$premium, (int) DB::table('garage_stocks')->where('haul_id', $haul)->value('id')];
+        return [$premium, (int) DB::table('garage_stocks')->where('haul_id', $haul)->value('id'), $tank];
     }
 
     private function purchaseCode(int $purchaseItemId): string

@@ -318,9 +318,10 @@
                         @foreach ([
                             'scheduled' => ['title' => 'Scheduled lift', 'type' => 'scheduled_lift', 'options' => $row['source_options']['scheduled']],
                             'truck' => ['title' => 'Lift with fuel left on truck', 'type' => 'truck', 'options' => $row['source_options']['truck']],
-                            'garage' => ['title' => 'Garage lot', 'type' => 'garage_lot', 'options' => $row['source_options']['garage']],
+                            {{-- Part 18 add-on: the garage source is a tank (mixed fuel, sold at the tank's average cost). --}}
+                            'garage' => ['title' => 'Garage tank', 'type' => 'garage_tank', 'options' => $row['source_options']['garage']],
                         ] as $sourceGroup)
-                            @php $isGarageSource = $sourceGroup['type'] === 'garage_lot'; @endphp
+                            @php $isGarageSource = $sourceGroup['type'] === 'garage_tank'; @endphp
                             <form method="POST" action="{{ route($salesRoutePrefix.'.sales.assign-source', $row['id']) }}" data-confirm-message="Assign this source and change the order from Standard? This can only be done once.{{ $isGarageSource ? ' If the Delivery Status is Delivered, the order is deducted from stock (Stock Out).' : '' }}">
                                 @csrf
                                 <input type="hidden" name="edit_sale_id" value="{{ $row['id'] }}">
@@ -340,7 +341,7 @@
                                 @if ($isGarageSource && $sourceGroup['options'] !== [])
                                     {{-- Part 18 #3: the order becomes Garage to Client, so its Delivery Details are asked in the same step. --}}
                                     <div class="form-grid source-assignment-delivery" data-garage-delivery>
-                                        <p class="sale-locked-note">Garage to Client Delivery Details: required to assign a garage lot.</p>
+                                        <p class="sale-locked-note">Garage to Client Delivery Details: required to assign a garage tank.</p>
                                         @include('sales-officer.partials.delivery-fields', ['idPrefix' => 'assign_'.$row['id'], 'formId' => null, 'value' => $editOld, 'withStatus' => true, 'deliveryStatus' => $editOld('delivery_status', 'pending'), 'showErrors' => $isEditedSale])
                                     </div>
                                 @endif
@@ -396,10 +397,12 @@
                                             'f1_purchase_item_id' => $editOld("items.$itemIndex.f1_purchase_item_id", $item['f1_purchase_item_id']),
                                             'garage_stock_id' => $item['garage_stock_id'],
                                             'f1_garage_stock_id' => $item['f1_garage_stock_id'],
+                                            'garage_tank_id' => $item['garage_tank_id'],
+                                            'f1_garage_tank_id' => $item['f1_garage_tank_id'],
                                             'f1_unit_price' => $editOld("items.$itemIndex.f1_unit_price", $item['f1_unit_price']),
                                             'f1_percentage' => $editOld("items.$itemIndex.f1_percentage", $item['f1_percentage']),
                                             // A line recorded before purchases were chosen keeps its fuel until a purchase is picked.
-                                            'legacy' => ! $item['purchase_item_id'],
+                                            'legacy' => ! $item['purchase_item_id'] && ! $item['garage_tank_id'] && ! $item['garage_stock_id'],
                                             'fuel_type_id' => $item['fuel_type_id'],
                                             'fuel_name' => $item['fuel_name'],
                                             'fuel_code' => $item['fuel_code'],
@@ -429,9 +432,9 @@
                                     @php
                                         $fieldId = 'sale_fix_'.$row['id'].'_'.$itemIndex;
                                         $lineError = fn (string $field): ?string => $isEditedSale && $errors->has("items.$itemIndex.$field") ? $errors->first("items.$itemIndex.$field") : null;
-                                        $hasF1Source = (bool) $item['f1_purchase_item_id'];
+                                        $hasF1Source = (bool) ($item['f1_purchase_item_id'] || $item['f1_garage_tank_id']);
                                     @endphp
-                                    @foreach (['purchase_item_id', 'f1_purchase_item_id', 'garage_stock_id', 'f1_garage_stock_id', 'fuel_type_id'] as $sourceField)
+                                    @foreach (['purchase_item_id', 'f1_purchase_item_id', 'garage_stock_id', 'f1_garage_stock_id', 'garage_tank_id', 'f1_garage_tank_id', 'fuel_type_id'] as $sourceField)
                                         <input form="sale-update-{{ $row['id'] }}" type="hidden" name="items[{{ $itemIndex }}][{{ $sourceField }}]" value="{{ $item[$sourceField] }}">
                                     @endforeach
                                     <div class="form-grid sale-correction-line">

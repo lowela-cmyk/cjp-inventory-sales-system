@@ -93,12 +93,15 @@ class SaleStockOptionsTest extends AuditTestCase
         // Standard / Depot to Client: depot purchases only (the lifted one has nothing in the depot).
         $this->assertStringContainsString('<option value="'.$depot.'" data-source="depot"', $form);
         $this->assertStringNotContainsString('<option value="'.$toGarage.'" data-source="depot"', $form);
-        // Garage to Client: the garage lot (app.js shows only "garage" options for that type).
-        $this->assertStringContainsString('<option value="garage:'.$lot.'" data-source="garage"', $form);
+        // Garage to Client: the garage tank (app.js shows only "garage" options for that type); Part 18 add-on: never a lot.
+        $this->assertStringContainsString('<option value="tank:'.$tank.'" data-source="garage"', $form);
+        $this->assertStringNotContainsString('value="garage:'.$lot.'"', $form);
 
-        // The server enforces it: a Standard order can't take the garage lot, Garage to Client can.
-        $this->recordOrder($a, ['purchase_item_id' => 'garage:'.$lot, 'quantity_liters' => 100, 'unit_price' => 60])->assertSessionHasErrors();
-        $this->recordOrder($a, ['purchase_item_id' => 'garage:'.$lot, 'quantity_liters' => 100, 'unit_price' => 60], ['delivery_type' => 'garage_to_client'] + $this->garageDelivery($a))->assertSessionHasNoErrors();
+        // The server enforces it: a Standard order can't take the garage tank, Garage to Client can (but not a lot).
+        $this->recordOrder($a, ['purchase_item_id' => 'tank:'.$tank, 'quantity_liters' => 100, 'unit_price' => 60])->assertSessionHasErrors();
+        $this->recordOrder($a, ['purchase_item_id' => 'garage:'.$lot, 'quantity_liters' => 100, 'unit_price' => 60], ['delivery_type' => 'garage_to_client'] + $this->garageDelivery($a))
+            ->assertSessionHasErrors(['items.0.garage_tank_id' => 'Select the garage tank to sell from.']);
+        $this->recordOrder($a, ['purchase_item_id' => 'tank:'.$tank, 'quantity_liters' => 100, 'unit_price' => 60], ['delivery_type' => 'garage_to_client'] + $this->garageDelivery($a))->assertSessionHasNoErrors();
         $this->recordOrder($a, ['purchase_item_id' => $depot, 'quantity_liters' => 100, 'unit_price' => 60], ['delivery_type' => 'depot_to_client'])->assertSessionHasNoErrors();
     }
 

@@ -256,7 +256,7 @@ class PurchaseService
             ->select("sale_items.$column as id");
         $used = $openSales('purchase_item_id')
             ->union($openSales('f1_purchase_item_id'))
-            ->union(DB::table('stock_outs')->whereIn('purchase_item_id', $ids)->where('status', 'released')->select('purchase_item_id as id'))
+            ->union(PurchaseStockService::releasesByPurchaseQuery()->whereIn('purchase_item_id', $ids)->select('purchase_item_id as id'))
             ->pluck('id');
 
         $ints = fn ($values): array => collect($values)->map(fn (mixed $id): int => (int) $id)->unique()->values()->all();

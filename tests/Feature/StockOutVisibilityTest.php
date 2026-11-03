@@ -67,11 +67,11 @@ class StockOutVisibilityTest extends AuditTestCase
         $this->actingAs($a['inventory'])->get(route('inventory-officer.inventory.stock-out'))->assertOk()
             // Part 4 #6: related values share a column (each still its own export column) so the table fits.
             ->assertSee('<span class="th-line" data-export-part>Purchase ID</span>', false)
-            // Part 12: Delivery Type has its own column; truck, driver, date, status, ATL, DR and source are in the
-            // Edit Stock-Out modal and stay in Export as hidden columns.
+            // Part 12: Delivery Type has its own column; truck, driver, date, status, ATL and DR stay in Export as
+            // hidden columns, while Part 18 keeps the tank source visible.
             ->assertSee('<th>Delivery Type</th>', false)
             ->assertSee('<th class="export-only" hidden>Delivery Status</th>', false)
-            ->assertSee('<th class="export-only" hidden>Source</th>', false)
+            ->assertSee('<th>Source</th>', false)
             ->assertDontSee('Delivery Date / Status');
 
         // Summary cards follow the purchases: 25,000 L bought, 1,800 + 3,000 Premium and 200 F1 delivered.

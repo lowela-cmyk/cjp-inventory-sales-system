@@ -92,7 +92,7 @@ class CompliancePhase3Test extends TestCase
         $stockOut = $this->get(route('admin.inventory.stock-out'))->getContent();
         // Part 12 stacks only Order-ID/Date and Fuel/Purchase ID; every money value keeps its own column.
         $this->assertStringContainsString('<th>QTY Released</th><th>Cost / Unit</th><th>Total Cost</th><th>Price / Unit</th><th>Total Price</th><th>Total Paid</th>', $stockOut);
-        $this->assertStringContainsString('<th class="export-only" hidden>Source</th>', $stockOut);
+        $this->assertStringContainsString('<th>Source</th>', $stockOut);
 
         $styles = File::get(resource_path('css/app.css'));
         $this->assertMatchesRegularExpression('/\.cell-line \{\s*white-space: nowrap;/', $styles);

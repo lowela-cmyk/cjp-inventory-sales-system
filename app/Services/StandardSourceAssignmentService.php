@@ -38,13 +38,15 @@ class StandardSourceAssignmentService
     }
 
     /**
-     * Part 18 #3: a garage lot makes the order Garage to Client, so $delivery (truck, driver, date, status) is required for it.
+     * Part 18 #3: a garage source makes the order Garage to Client, so $delivery (truck, driver, date, status) is required
+     * for it. Part 18 add-on: the garage source is a TANK ("garage_tank"): fuel in it is mixed, so the order sells from
+     * the tank at its average cost and its release draws from the lots in it.
      *
      * @param  array{delivery_truck_id?: int, delivery_driver_user_id?: int, delivery_date?: string, delivery_status?: string}  $delivery
      */
     public function assign(int $saleId, string $sourceType, int $sourceId, int $userId, array $delivery = []): void
     {
-        if ($sourceType === 'garage_lot' && (empty($delivery['delivery_truck_id']) || empty($delivery['delivery_driver_user_id']) || empty($delivery['delivery_date']))) {
+        if ($sourceType === 'garage_tank' && (empty($delivery['delivery_truck_id']) || empty($delivery['delivery_driver_user_id']) || empty($delivery['delivery_date']))) {
             throw ValidationException::withMessages(['source' => 'Enter the truck, driver and delivery date of the Garage to Client delivery.']);
         }
 
@@ -67,9 +69,11 @@ class StandardSourceAssignmentService
 
             foreach ($items as $item) {
                 $updates = ['updated_at' => now()];
-                if ($sourceType === 'garage_lot') {
-                    $updates['purchase_item_id'] = $source->purchase_item_id;
-                    $updates['garage_stock_id'] = $source->id;
+                if ($sourceType === 'garage_tank') {
+                    // A tank line has no purchase of its own (its release draws from the purchases in the tank).
+                    $updates['purchase_item_id'] = null;
+                    $updates['garage_stock_id'] = null;
+                    $updates['garage_tank_id'] = $source->id;
                 } else {
                     $updates['purchase_item_id'] = $source->purchase_item_id;
                 }
@@ -92,16 +96,16 @@ class StandardSourceAssignmentService
                 ]);
             }
 
-            $toType = $sourceType === 'garage_lot' ? 'garage_to_client' : 'depot_to_client';
+            $toType = $sourceType === 'garage_tank' ? 'garage_to_client' : 'depot_to_client';
             DB::table('sales')->where('id', $saleId)->update([
                 'delivery_type' => $toType,
                 'updated_by' => $userId,
                 'updated_at' => now(),
             ]);
 
-            $this->recordChange($saleId, $toType, $sourceType, $source->haul_id ?? null, $source->garage_stock_id ?? null, $source->source_label, $userId);
+            $this->recordChange($saleId, $toType, $sourceType, $source->haul_id ?? null, null, $source->source_label, $userId, $sourceType === 'garage_tank' ? (int) $source->id : null);
 
-            if ($sourceType === 'garage_lot') {
+            if ($sourceType === 'garage_tank') {
                 DB::table('sales')->where('id', $saleId)->update([
                     'delivery_truck_id' => $delivery['delivery_truck_id'],
                     'delivery_driver_user_id' => $delivery['delivery_driver_user_id'],
@@ -178,14 +182,12 @@ class StandardSourceAssignmentService
             }
             return $source;
         }
-        if ($sourceType === 'garage_lot') {
-            $source = app(GarageStockService::class)->lots(['with_empty' => true, 'fuel_type_id' => $fuelId], null, [$sourceId], true)->get($sourceId);
+        if ($sourceType === 'garage_tank') {
+            $source = app(GarageStockService::class)->tanks([$fuelId], true)->get($sourceId);
             if (! $source || (float) $source->available < $needed) {
-                throw ValidationException::withMessages(['source' => 'That garage lot does not have enough of this fuel available.']);
+                throw ValidationException::withMessages(['source' => 'That garage tank does not have enough of this fuel available.']);
             }
-            $source->purchase_item_id = (int) $source->purchase_item_id;
-            $source->garage_stock_id = (int) $source->id;
-            $source->source_label = $source->tank_name.' / '.$source->lot_code;
+            $source->source_label = $source->name.($source->avg_cost !== null ? ' (avg ₱'.number_format($source->avg_cost, 2).'/L)' : '');
             return $source;
         }
         throw ValidationException::withMessages(['source' => 'Select a valid source.']);
@@ -207,12 +209,13 @@ class StandardSourceAssignmentService
         ])->all();
     }
 
+    /** Part 18 add-on: the fuel's garage tanks that can cover the order: "Premium Tank 1 · 12,000.00 L available · avg ₱55.20/L". */
     private function garageOptions(int $fuelId, float $needed): array
     {
-        return app(GarageStockService::class)->saleOptions([], $fuelId)->filter(fn (object $lot): bool => (float) $lot->available >= $needed)->map(fn (object $lot): array => [
-            'id' => (int) $lot->id,
-            'label' => $lot->tank_name.' / '.$lot->lot_code.' · '.number_format((float) $lot->available, 2).' L available',
-        ])->all();
+        return app(GarageStockService::class)->tankOptions($fuelId)->filter(fn (object $tank): bool => (float) $tank->available >= $needed)->map(fn (object $tank): array => [
+            'id' => (int) $tank->id,
+            'label' => implode(' · ', array_filter([$tank->name, number_format((float) $tank->available, 2).' L available', $tank->avg_cost === null ? null : 'avg ₱'.number_format($tank->avg_cost, 2).'/L'])),
+        ])->values()->all();
     }
 
     private function liftOptions(int $fuelId, string|array $statuses, float $needed): Collection
@@ -252,9 +255,9 @@ class StandardSourceAssignmentService
         return $row;
     }
 
-    private function recordChange(int $saleId, string $toType, string $sourceType, ?int $haulId, ?int $garageStockId, string $sourceLabel, int $userId): void
+    private function recordChange(int $saleId, string $toType, string $sourceType, ?int $haulId, ?int $garageStockId, string $sourceLabel, int $userId, ?int $tankId = null): void
     {
-        DB::table('sale_source_changes')->insert([
+        DB::table('sale_source_changes')->insert(($tankId !== null ? ['storage_location_id' => $tankId] : []) + [
             'sale_id' => $saleId,
             'from_delivery_type' => 'standard',
             'to_delivery_type' => $toType,

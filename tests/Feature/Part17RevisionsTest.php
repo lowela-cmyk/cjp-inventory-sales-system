@@ -244,7 +244,7 @@ class Part17RevisionsTest extends AuditTestCase
         $this->actingAs($a['inventory'])->get(route('inventory-officer.inventory.stock-out'))->assertOk()->assertSee('Changed from Standard to Depot to Client ('.$note.')');
     }
 
-    public function test_standard_can_be_assigned_to_truck_leftover_and_garage_lot_once(): void
+    public function test_standard_can_be_assigned_to_truck_leftover_and_garage_tank_once(): void
     {
         $a = $this->actors();
         $premium = $this->purchaseLine($a, 'PREM', 20000);
@@ -263,13 +263,16 @@ class Part17RevisionsTest extends AuditTestCase
         $lot = (int) DB::table('garage_stocks')->where('haul_id', $haul)->value('id');
         $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 1000, 'unit_price' => 70])->assertSessionHasNoErrors();
         $garageSale = $this->lastSaleId();
-        $this->actingAs($a['sales'])->post(route('sales-officer.sales.assign-source', $garageSale), ['source_type' => 'garage_lot', 'source_id' => $lot] + $this->garageDelivery($a))->assertSessionHasNoErrors();
+        // Part 18 add-on: the garage source is the tank, not a lot.
+        $this->actingAs($a['sales'])->post(route('sales-officer.sales.assign-source', $garageSale), ['source_type' => 'garage_lot', 'source_id' => $lot] + $this->garageDelivery($a))->assertSessionHasErrors('source_type');
+        $this->actingAs($a['sales'])->post(route('sales-officer.sales.assign-source', $garageSale), ['source_type' => 'garage_tank', 'source_id' => $tank] + $this->garageDelivery($a))->assertSessionHasNoErrors();
         $this->assertSame('garage_to_client', DB::table('sales')->where('id', $garageSale)->value('delivery_type'));
-        $this->assertDatabaseHas('sale_items', ['sale_id' => $garageSale, 'garage_stock_id' => $lot, 'purchase_item_id' => $premium]);
+        $this->assertDatabaseHas('sale_items', ['sale_id' => $garageSale, 'garage_tank_id' => $tank, 'garage_stock_id' => null, 'purchase_item_id' => null]);
         $this->deliverOrder($a, $garageSale)->assertSessionHasNoErrors();
         $this->deliverOrder($a, $garageSale)->assertSessionHasNoErrors();
         $this->assertSame(1, DB::table('stock_outs')->where('sale_id', $garageSale)->where('status', 'released')->count());
-        $this->assertDatabaseHas('sale_source_changes', ['sale_id' => $garageSale, 'to_delivery_type' => 'garage_to_client', 'garage_stock_id' => $lot]);
+        $this->assertDatabaseHas('sale_source_changes', ['sale_id' => $garageSale, 'to_delivery_type' => 'garage_to_client', 'source_type' => 'garage_tank', 'storage_location_id' => $tank]);
+        $this->assertSame(1000.0, (float) DB::table('stock_out_draws')->where('garage_stock_id', $lot)->sum('liters'));
     }
 
     public function test_standard_source_assignment_rejects_wrong_fuel_insufficient_source_and_delivered_orders(): void

@@ -174,8 +174,9 @@
                         {{-- Part 17 #11: the driver and truck (name) that delivered it are visible columns again (and exported). --}}
                         <th>Driver Name</th>
                         <th>Truck</th>
+                        <th>Source</th>
                         {{-- Part 12: the other delivery details live in the Edit Stock-Out modal; these hidden columns keep them in Export. --}}
-                        @foreach (['Delivery Date', 'Delivery Status', 'ATL', 'DR Number', 'Source'] as $exportOnly)
+                        @foreach (['Delivery Date', 'Delivery Status', 'ATL', 'DR Number'] as $exportOnly)
                             <th class="export-only" hidden>{{ $exportOnly }}</th>
                         @endforeach
                         <th>QTY Released</th><th>Cost / Unit</th><th>Total Cost</th><th>Price / Unit</th><th>Total Price</th><th>Total Paid</th>
@@ -202,7 +203,8 @@
                                 <td>{{ $c[4] }}</td>
                                 <td class="stock-out-name stock-out-crew">{{ $d['driver'] }}</td>
                                 <td class="stock-out-name stock-out-crew">{{ $d['truck_name'] }}</td>
-                                @foreach ([$d['date'], $d['status'], $d['atl'], $d['dr'], $c[13]] as $exportOnly)
+                                <td class="stock-out-name">{{ $c[13] }}</td>
+                                @foreach ([$d['date'], $d['status'], $d['atl'], $d['dr']] as $exportOnly)
                                     <td class="export-only" hidden>{{ $exportOnly }}</td>
                                 @endforeach
                                 @foreach ([7, 8, 9, 10, 11, 12] as $i)
@@ -440,6 +442,8 @@
                         'Delivery Type' => $c[4],
                         'Fuel' => $c[5],
                         'Purchase ID' => $c[6],
+                        // Part 18 add-on: a garage tank release names the purchases (lots) it drew from.
+                        'Drawn From' => $row['drawn_from'],
                         'QTY Released' => $c[7].' L',
                         'Cost / Unit' => $c[8],
                         'Total Cost' => $c[9],

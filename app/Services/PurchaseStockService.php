@@ -155,6 +155,26 @@ class PurchaseStockService
     }
 
     /**
+     * Part 18 add-on: released liters per purchase, one row per release (a stock-out naming its purchase) or per draw
+     * of a tank release (whose stock-out names the tank, not a purchase). Columns: purchase_item_id, liters,
+     * stock_out_id, stock_out_code, stock_out_at, sale_id, sale_item_id, portion, depot_id, fuel_type_id.
+     */
+    public static function releasesByPurchaseQuery(): Builder
+    {
+        $columns = ['stock_outs.id as stock_out_id', 'stock_outs.stock_out_code', 'stock_outs.stock_out_at', 'stock_outs.sale_id', 'stock_outs.sale_item_id', 'stock_outs.portion', 'stock_outs.depot_id', 'stock_outs.fuel_type_id'];
+        $direct = DB::table('stock_outs')
+            ->where('stock_outs.status', 'released')
+            ->whereNotNull('stock_outs.purchase_item_id')
+            ->select(array_merge(['stock_outs.purchase_item_id', 'stock_outs.quantity_liters as liters'], $columns));
+        $drawn = DB::table('stock_out_draws')
+            ->join('stock_outs', 'stock_outs.id', '=', 'stock_out_draws.stock_out_id')
+            ->where('stock_outs.status', 'released')
+            ->select(array_merge(['stock_out_draws.purchase_item_id', 'stock_out_draws.liters'], $columns));
+
+        return DB::query()->fromSub($direct->unionAll($drawn), 'purchase_releases');
+    }
+
+    /**
      * @param  array<int, int>  $ids
      * @return array<int, float>
      */
@@ -164,11 +184,10 @@ class PurchaseStockService
             return [];
         }
 
-        return DB::table('stock_outs')
-            ->where('status', 'released')
+        return self::releasesByPurchaseQuery()
             ->whereIn('purchase_item_id', $ids)
             ->groupBy('purchase_item_id')
-            ->selectRaw('purchase_item_id, COALESCE(SUM(quantity_liters), 0) as liters')
+            ->selectRaw('purchase_item_id, COALESCE(SUM(liters), 0) as liters')
             ->pluck('liters', 'purchase_item_id')
             ->map(fn (mixed $liters): float => (float) $liters)
             ->all();
@@ -228,7 +247,10 @@ class PurchaseStockService
             return $total;
         };
 
-        return [$sum([$main, $f1]), $sum([$mainDepot, $f1Depot])];
+        // Part 18 add-on: open orders of a garage tank are promised from its purchases as a release would draw them.
+        $tanks = app(GarageStockService::class)->tankReservedByPurchase($ids);
+
+        return [$sum([$main, $f1, $tanks]), $sum([$mainDepot, $f1Depot])];
     }
 
     /**

@@ -37,7 +37,7 @@ class Part13RevisionsTest extends AuditTestCase
         $a = $this->actors();
         User::factory()->create(['role' => 'driver', 'status' => 'active', 'approval_status' => 'pending']);
         User::factory()->create(['role' => 'driver', 'status' => 'active', 'approval_status' => 'rejected']);
-        $html = $this->actingAs($a['admin'])->get(route('admin.account-requests'))->assertOk()->getContent();
+        $html = $this->actingAs($a['admin'])->get(route('admin.user-management', ['tab' => 'account-requests']))->assertOk()->getContent();
         $this->assertDoesNotMatchRegularExpression('/<tr class="row-/', $html);
 
         $premium = $this->purchaseLine($a, 'PREM', 10000);
@@ -182,7 +182,7 @@ class Part13RevisionsTest extends AuditTestCase
 
         // The Garage to Client dropdown names the tank and its average cost (Part 18 add-on), not a lot.
         $this->actingAs($a['sales'])->get(route('sales-officer.sales'))->assertOk()
-            ->assertSee('<option value="tank:'.$t2.'" data-source="garage"', false)->assertSee('Diesel Tank 2 · 6,000 L · avg ₱'.$cost.'/L')
+            ->assertSee('<option value="tank:'.$t2.'" data-source="garage"', false)->assertSee('Diesel Tank 2 · 6,000 L')
             ->assertDontSee('value="garage:'.$lot.'"', false);
 
         // Two open orders cannot promise more than the tank holds.

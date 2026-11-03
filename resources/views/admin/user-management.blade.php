@@ -1,5 +1,5 @@
 @php
-    $activeTab = in_array($activeTab, ['office', 'drivers'], true) ? $activeTab : 'office';
+    $activeTab = in_array($activeTab, ['office', 'drivers', 'account-requests'], true) ? $activeTab : 'office';
     $staffId = fn ($user) => 'EMP-'.str_pad((string) $user->id, 6, '0', STR_PAD_LEFT);
     $driverId = fn ($driver) => $driver->driver_code ?: 'DRV-'.str_pad((string) $driver->id, 6, '0', STR_PAD_LEFT);
     $filters = $filters ?? [];
@@ -9,15 +9,16 @@
 
 @component('layouts.admin', ['title' => 'User Management', 'active' => 'user-management'])
     <div data-tabs>
-        <h2 class="section-title" data-tab-heading>{{ ['office' => 'Office Staff', 'drivers' => 'Drivers'][$activeTab] }}</h2>
+        <h2 class="section-title" data-tab-heading>{{ ['office' => 'Office Staff', 'drivers' => 'Drivers', 'account-requests' => 'Account Requests'][$activeTab] }}</h2>
 
 
 
         <div class="tabs">
             <button class="tab-button {{ $activeTab === 'office' ? 'is-active' : '' }}" type="button" data-tab-target="office" data-heading="Office Staff" data-tab-url="{{ route('admin.user-management', ['tab' => 'office']) }}">Office Staff</button>
             <button class="tab-button {{ $activeTab === 'drivers' ? 'is-active' : '' }}" type="button" data-tab-target="drivers" data-heading="Drivers" data-tab-url="{{ route('admin.user-management', ['tab' => 'drivers']) }}">Drivers</button>
+            <button class="tab-button {{ $activeTab === 'account-requests' ? 'is-active' : '' }}" type="button" data-tab-target="account-requests" data-heading="Account Requests" data-tab-url="{{ route('admin.user-management', ['tab' => 'account-requests']) }}">Account Requests</button>
         </div>
-        <div class="actions-right">
+        <div class="actions-right" @if ($activeTab === 'account-requests') hidden @endif>
             <a
                 class="btn btn-secondary"
                 href="{{ route('admin.user-management.export', ['tab' => $activeTab]) }}"
@@ -96,6 +97,10 @@
                     {{ $drivers->links() }}
                 </div>
             @endif
+        </section>
+
+        <section data-tab-panel="account-requests" {{ $activeTab !== 'account-requests' ? 'hidden' : '' }}>
+            @include('admin.partials.account-requests-table')
         </section>
 
     </div>

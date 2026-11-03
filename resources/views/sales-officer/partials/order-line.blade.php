@@ -52,9 +52,9 @@
                 @endforeach
             @endif
             @if ($showGarage)
-                {{-- "Premium Tank 1 · 12,000 L · avg ₱55.20/L" (liters still free to sell). --}}
+                {{-- Tank selection shows only the tank name and available liters; cost stays internal. --}}
                 @foreach ($garageTankOptions as $tank)
-                    <option value="tank:{{ $tank->id }}" data-source="garage" data-fuel-code="{{ $tank->fuel_code }}" data-fuel-name="{{ $tank->fuel_name }}" data-available="{{ $tank->available }}" @selected($selectedPurchase === 'tank:'.$tank->id)>{{ $tank->option_label }}</option>
+                    <option value="tank:{{ $tank->id }}" data-source="garage" data-fuel-code="{{ $tank->fuel_code }}" data-fuel-name="{{ $tank->fuel_name }}" data-available="{{ $tank->available }}" @selected($selectedPurchase === 'tank:'.$tank->id)>{{ $tank->name }} · {{ number_format((float) $tank->available, fmod((float) $tank->available, 1.0) === 0.0 ? 0 : 2) }} L</option>
                 @endforeach
                 @foreach ($garageOptions as $lot)
                     <option value="garage:{{ $lot->id }}" data-source="garage" data-fuel-code="{{ $lot->fuel_code }}" data-fuel-name="{{ $lot->fuel_name }}" data-available="{{ $lot->available }}" selected>{{ $lot->option_label }}</option>
@@ -92,7 +92,7 @@
             {{-- Part 16 #1: the F1 portion may come from an F1 garage tank for every delivery type (Part 18 add-on: the
                  tank itself, at its average cost). --}}
             @foreach ($f1GarageTankOptions as $tank)
-                <option value="tank:{{ $tank->id }}" data-source="garage" data-garage-f1 data-available="{{ $tank->available }}" data-unit-price="{{ $tank->avg_cost }}" @selected($selectedF1 === 'tank:'.$tank->id)>{{ $tank->option_label }}</option>
+                <option value="tank:{{ $tank->id }}" data-source="garage" data-garage-f1 data-available="{{ $tank->available }}" data-unit-price="{{ $tank->avg_cost }}" @selected($selectedF1 === 'tank:'.$tank->id)>{{ $tank->name }} · {{ number_format((float) $tank->available, fmod((float) $tank->available, 1.0) === 0.0 ? 0 : 2) }} L</option>
             @endforeach
             @foreach ($f1GarageOptions as $lot)
                 <option value="garage:{{ $lot->id }}" data-source="garage" data-garage-f1 data-available="{{ $lot->available }}" data-unit-price="{{ $lot->unit_cost }}" selected>{{ $lot->option_label }}</option>

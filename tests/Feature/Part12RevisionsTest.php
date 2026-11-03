@@ -159,12 +159,12 @@ class Part12RevisionsTest extends AuditTestCase
         $a = $this->actors();
         $pending = User::factory()->create(['name' => 'Pending Person', 'role' => 'driver', 'status' => 'active', 'approval_status' => 'pending']);
 
-        $html = fn (): string => $this->actingAs($a['admin'])->get(route('admin.account-requests'))->assertOk()->getContent();
+        $html = fn (): string => $this->actingAs($a['admin'])->get(route('admin.user-management', ['tab' => 'account-requests']))->assertOk()->getContent();
         $this->assertSame(1, substr_count($html(), '>Approve</button>'));
         $this->assertStringContainsString('data-confirm-message="Reject the account request of Pending Person?', $html());
 
         $this->actingAs($a['admin'])->patch(route('admin.account-requests.update', $pending), ['approval_status' => 'approved'])
-            ->assertRedirect(route('admin.account-requests'))->assertSessionHas('status');
+            ->assertRedirect(route('admin.user-management', ['tab' => 'account-requests']))->assertSessionHas('status');
         $this->assertSame(0, substr_count($html(), '>Approve</button>'));
         $this->assertSame(0, substr_count($html(), '>Reject</button>'));
 

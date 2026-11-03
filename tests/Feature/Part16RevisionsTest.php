@@ -38,7 +38,7 @@ class Part16RevisionsTest extends AuditTestCase
         $f1Select = substr($form, strpos($form, 'data-sale-f1-purchase'), 3000);
         $this->assertStringContainsString('<option value="'.$f1Depot.'" data-source="depot"', $f1Select);
         // Part 18 add-on: the F1 garage option is the tank itself, at its average cost.
-        $this->assertMatchesRegularExpression('/<option value="tank:'.$f1Tank.'" data-source="garage" data-garage-f1[^>]*>F1 Tank 1 · 2,000 L · avg ₱/', $f1Select);
+        $this->assertMatchesRegularExpression('/<option value="tank:'.$f1Tank.'" data-source="garage" data-garage-f1[^>]*>F1 Tank 1 · 2,000 L<\/option>/', $f1Select);
         $this->assertStringNotContainsString('No F1 stock', $f1Select);
 
         // The server accepts either source whatever the delivery type, and checks the liters of the one picked.

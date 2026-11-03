@@ -137,10 +137,12 @@ class AdminFullAccessTest extends TestCase
         $r = $this->records();
 
         foreach (['admin.dashboard', 'admin.inventory', 'admin.ledger', 'admin.fuel-lifting', 'admin.fuel-lifting.trucks', 'admin.sales', 'admin.sales.customers',
-            'admin.alerts', 'admin.account-requests', 'admin.user-management',
+            'admin.alerts', 'admin.user-management',
             'inventory-officer.inventory', 'sales-officer.sales', 'dispatch.fuel-lifting', 'dispatch.fuel-lifting.trucks', 'driver.fuel-lifting'] as $route) {
             $this->actingAs($r['admin'])->get(route($route))->assertOk();
         }
+        $this->actingAs($r['admin'])->get(route('admin.account-requests'))
+            ->assertRedirect(route('admin.user-management', ['tab' => 'account-requests']));
 
         $restricted = [
             'driver' => ['/admin/dashboard', '/admin/sales', '/inventory-officer/inventory', '/sales-officer/sales', '/dispatch/fuel-lifting'],

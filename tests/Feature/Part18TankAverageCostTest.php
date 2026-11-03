@@ -37,7 +37,8 @@ class Part18TankAverageCostTest extends AuditTestCase
 
         $this->assertSame([12000.0, 662400.0, 55.20], $this->tankFigures($tank));
         $this->actingAs($a['sales'])->get(route('sales-officer.sales'))->assertOk()
-            ->assertSee('<option value="tank:'.$tank.'" data-source="garage" data-fuel-code="PREM" data-fuel-name="Premium" data-available="12000" >Premium Tank 1 · 12,000 L · avg ₱55.20/L</option>', false);
+            ->assertSee('<option value="tank:'.$tank.'" data-source="garage" data-fuel-code="PREM" data-fuel-name="Premium" data-available="12000" >Premium Tank 1 · 12,000 L</option>', false)
+            ->assertDontSee('Premium Tank 1 · 12,000 L · avg ₱55.20/L');
 
         // Unloading truck leftover mixes into the tank: 3,000 L at ₱60.00 -> ₱842,400 / 15,000 L = ₱56.16.
         Carbon::setTestNow('2026-10-16 09:00:00');
@@ -156,7 +157,7 @@ class Part18TankAverageCostTest extends AuditTestCase
         $this->recordOrder($a, ['purchase_item_id' => $this->purchaseLine($a, 'PREM', 5000), 'quantity_liters' => 1500, 'unit_price' => 70])->assertSessionHasNoErrors();
         $standard = $this->lastSaleId();
         $modal = $this->saleModal($a, $standard);
-        $this->assertStringContainsString('<option value="'.$tank.'">Premium Tank 1 · 2,000.00 L available · avg ₱55.20/L</option>', $modal);
+        $this->assertStringContainsString('<option value="'.$tank.'">Premium Tank 1 · 2,000.00 L available</option>', $modal);
         $this->actingAs($a['sales'])->post(route('sales-officer.sales.assign-source', $standard), ['source_type' => 'garage_lot', 'source_id' => $lotA] + $this->garageDelivery($a))->assertSessionHasErrors('source_type');
         $this->actingAs($a['sales'])->post(route('sales-officer.sales.assign-source', $standard), ['source_type' => 'garage_tank', 'source_id' => $tank] + $this->garageDelivery($a))->assertSessionHasNoErrors();
         $this->assertDatabaseHas('sale_items', ['sale_id' => $standard, 'garage_tank_id' => $tank, 'purchase_item_id' => null]);

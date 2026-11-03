@@ -413,6 +413,10 @@ class AdminUserManagementTest extends TestCase
 
         $this->actingAs($admin)
             ->get(route('admin.account-requests'))
+            ->assertRedirect(route('admin.user-management', ['tab' => 'account-requests']));
+
+        $this->actingAs($admin)
+            ->get(route('admin.user-management', ['tab' => 'account-requests']))
             ->assertOk()
             ->assertSee('Pending Driver')
             ->assertSee('pending-driver@example.com')
@@ -426,7 +430,7 @@ class AdminUserManagementTest extends TestCase
                 'role' => 'admin',
                 'status' => 'inactive',
             ])
-            ->assertRedirect(route('admin.account-requests'));
+            ->assertRedirect(route('admin.user-management', ['tab' => 'account-requests']));
 
         $this->assertSame('approved', $pending->refresh()->approval_status);
         $this->assertSame('driver', $pending->role);
@@ -445,7 +449,7 @@ class AdminUserManagementTest extends TestCase
             ->patch(route('admin.account-requests.update', $rejected), [
                 'approval_status' => 'rejected',
             ])
-            ->assertRedirect(route('admin.account-requests'));
+            ->assertRedirect(route('admin.user-management', ['tab' => 'account-requests']));
 
         $this->assertSame('rejected', $rejected->refresh()->approval_status);
     }

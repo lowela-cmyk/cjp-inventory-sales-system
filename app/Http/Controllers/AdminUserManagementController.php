@@ -35,7 +35,7 @@ class AdminUserManagementController extends Controller
     public function index(Request $request): View
     {
         $activeTab = $request->query('tab', session('user_management_tab', 'office'));
-        $activeTab = in_array($activeTab, ['office', 'drivers'], true) ? $activeTab : 'office';
+        $activeTab = in_array($activeTab, ['office', 'drivers', 'account-requests'], true) ? $activeTab : 'office';
         $data = $request->validate([
             'search' => ['nullable', 'string', 'max:100'],
             'role' => ['nullable', Rule::in(array_keys(self::OFFICE_ROLES))],
@@ -49,6 +49,7 @@ class AdminUserManagementController extends Controller
         return view('admin.user-management', [
             'staff' => $this->staffRows(25, $filtersFor('office')),
             'drivers' => $this->driverRows(25, $filtersFor('drivers')),
+            'requests' => $this->accountRequestRows(),
             'officeRoles' => self::OFFICE_ROLES,
             'roles' => self::ROLES,
             'statuses' => self::STATUSES,
@@ -250,19 +251,9 @@ class AdminUserManagementController extends Controller
         return $this->backToTab($data['tab'] ?? ($user->role === 'driver' ? 'drivers' : 'office'), 'Account status updated successfully.');
     }
 
-    public function accountRequests(): View
+    public function accountRequests(): RedirectResponse
     {
-        $requests = User::query()
-            ->whereIn('approval_status', self::APPROVAL_STATUSES)
-            ->orderByRaw("CASE approval_status WHEN 'pending' THEN 0 WHEN 'rejected' THEN 1 ELSE 2 END")
-            ->orderByDesc('created_at')
-            ->orderByDesc('id')
-            ->get();
-
-        return view('admin.account-requests', [
-            'requests' => $requests,
-            'approvalStatuses' => self::APPROVAL_STATUSES,
-        ]);
+        return redirect()->route('admin.user-management', ['tab' => 'account-requests']);
     }
 
     public function updateApproval(Request $request, User $user): RedirectResponse
@@ -274,7 +265,7 @@ class AdminUserManagementController extends Controller
         // Part 12: a request is decided once; an approved or rejected account is managed in User Management.
         if ($user->approval_status !== 'pending') {
             return redirect()
-                ->route('admin.account-requests')
+                ->route('admin.user-management', ['tab' => 'account-requests'])
                 ->withErrors(['approval_status' => 'This account request was already '.$user->approval_status.'.']);
         }
 
@@ -291,7 +282,7 @@ class AdminUserManagementController extends Controller
             : 'Account request rejected. The user remains blocked from CJP dashboards.';
 
         return redirect()
-            ->route('admin.account-requests')
+            ->route('admin.user-management', ['tab' => 'account-requests'])
             ->with('status', $message)
             ->with('toast_type', $data['approval_status'] === 'approved' ? 'success' : 'warning');
     }
@@ -423,6 +414,16 @@ class AdminUserManagementController extends Controller
             ->with('user_management_tab', $tab)
             ->with('status', $message)
             ->with('toast_type', 'success');
+    }
+
+    private function accountRequestRows()
+    {
+        return User::query()
+            ->whereIn('approval_status', self::APPROVAL_STATUSES)
+            ->orderByRaw("CASE approval_status WHEN 'pending' THEN 0 WHEN 'rejected' THEN 1 ELSE 2 END")
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->get();
     }
 
     /**

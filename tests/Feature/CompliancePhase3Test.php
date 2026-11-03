@@ -18,7 +18,7 @@ class CompliancePhase3Test extends TestCase
     public function test_success_messages_are_toasts_only_on_every_role_page(): void
     {
         $pages = [
-            'admin' => ['admin.inventory', 'admin.fuel-lifting', 'admin.sales', 'admin.user-management', 'admin.account-requests'],
+            'admin' => ['admin.inventory', 'admin.fuel-lifting', 'admin.sales', 'admin.user-management'],
             'inventory_officer' => ['inventory-officer.inventory'],
             'sales_officer' => ['sales-officer.sales'],
             'dispatch_officer' => ['dispatch.fuel-lifting'],

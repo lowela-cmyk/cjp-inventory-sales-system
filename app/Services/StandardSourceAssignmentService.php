@@ -209,12 +209,12 @@ class StandardSourceAssignmentService
         ])->all();
     }
 
-    /** Part 18 add-on: the fuel's garage tanks that can cover the order: "Premium Tank 1 · 12,000.00 L available · avg ₱55.20/L". */
+    /** Part 18 add-on: the fuel's garage tanks that can cover the order; cost stays internal. */
     private function garageOptions(int $fuelId, float $needed): array
     {
         return app(GarageStockService::class)->tankOptions($fuelId)->filter(fn (object $tank): bool => (float) $tank->available >= $needed)->map(fn (object $tank): array => [
             'id' => (int) $tank->id,
-            'label' => implode(' · ', array_filter([$tank->name, number_format((float) $tank->available, 2).' L available', $tank->avg_cost === null ? null : 'avg ₱'.number_format($tank->avg_cost, 2).'/L'])),
+            'label' => $tank->name.' · '.number_format((float) $tank->available, 2).' L available',
         ])->values()->all();
     }
 

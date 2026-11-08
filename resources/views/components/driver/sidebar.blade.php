@@ -14,14 +14,12 @@
         </div>
     </a>
 
-    <nav class="side-nav driver-nav" aria-label="Driver navigation">
-        <x-sidebar-link route="driver.fuel-lifting" label="Fuel Lifting" module="fuel-lifting" />
-    </nav>
+    <x-nav.sidebar-links role="driver" />
 
     <div class="sidebar-account">
         <div class="sidebar-user">{{ strtoupper($user?->name ?? $driverName) }}</div>
         <div class="sidebar-role">{{ $user?->role_label ?? 'Driver' }}</div>
-        <form method="POST" action="{{ route('logout') }}" data-confirm-message="Are you sure you want to sign out of CJP Southern Star?">
+        <form method="POST" action="{{ route('logout') }}" data-confirm="simple" data-confirm-title="Sign out?" data-confirm-ok="Sign Out" data-confirm-message="Are you sure you want to sign out of CJP Southern Star?">
             @csrf
             <button class="btn btn-secondary btn-block" type="submit">Logout</button>
         </form>

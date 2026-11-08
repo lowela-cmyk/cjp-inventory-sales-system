@@ -78,7 +78,7 @@ class DashboardSummaryCardsTest extends TestCase
         $this->actingAs($admin)
             ->get(route('admin.dashboard'))
             ->assertOk()
-            ->assertSee('0.00 KL')
+            ->assertSee('title="0 L"', false)
             ->assertSee('PHP 0.00')
             ->assertSee('No data yet')
             ->assertDontSee('data-dashboard-chart', false)

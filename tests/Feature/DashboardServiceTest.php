@@ -270,7 +270,7 @@ class DashboardServiceTest extends TestCase
             ->assertSee('name="sales_date_to" value="2026-10-31"', false);
         // Last Month (September 2026): S_C only.
         $this->actingAs($admin)->get(route('admin.dashboard', ['sales_period' => 'last_month']))->assertOk()
-            ->assertSeeInOrder(['Collected Revenue', 'PHP 0.00', 'Total Delivered', '4.00 KL', 'Total Sales', '1']);
+            ->assertSeeInOrder(['Collected Revenue', 'PHP 0.00', 'Total Delivered', '4,000 L', 'Total Sales', '1']);
         // Last Year: S_E.
         $this->actingAs($admin)->get(route('admin.dashboard', ['sales_period' => 'last_year']))->assertOk()
             ->assertSeeInOrder(['Collected Revenue', 'PHP 50,000.00']);
@@ -323,7 +323,7 @@ class DashboardServiceTest extends TestCase
         $admin = $this->admin();
 
         $this->actingAs($admin)->get(route('admin.dashboard'))->assertOk()
-            ->assertSeeInOrder(['Total Inventory in Stock', '27.50 KL', 'Total Purchases', '3', 'Remaining Balance in Depots', '11.00 KL'])
+            ->assertSeeInOrder(['Total Inventory in Stock', '27,500 L', 'Total Purchases', '3', 'Remaining Balance in Depots', '11,000 L'])
             ->assertSee('Expected Stock Out Rate:')
             ->assertSee('5.17%')
             ->assertSee('PHP 190,000.00')

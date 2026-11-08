@@ -69,22 +69,5 @@
     </div>
 @endif
 
-<div class="modal-backdrop system-confirm-backdrop" id="system-confirm-modal" aria-hidden="true">
-    <div class="admin-modal system-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="system-confirm-title" aria-describedby="system-confirm-message">
-        <div class="modal-titlebar system-confirm-titlebar">
-            <span class="modal-brand-logo" aria-hidden="true">
-                <img src="{{ asset('images/cjp-logo.png') }}" alt="">
-            </span>
-            <h2 id="system-confirm-title">Confirm Action</h2>
-            <button class="modal-close" type="button" data-modal-close aria-label="Close modal"></button>
-        </div>
-        <div class="modal-body system-confirm-body">
-            <div class="system-confirm-status" aria-hidden="true">!</div>
-            <p id="system-confirm-message">Are you sure you want to continue?</p>
-            <div class="modal-actions system-confirm-actions">
-                <button class="btn btn-pill btn-secondary" type="button" data-modal-close>Cancel</button>
-                <button class="btn btn-pill btn-danger" type="button" data-confirm-accept>Continue</button>
-            </div>
-        </div>
-    </div>
-</div>
+{{-- Confirmation for data-changing forms (replaces the older generic Confirm Action modal). --}}
+<x-confirm-dialog />

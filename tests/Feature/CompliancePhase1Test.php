@@ -231,7 +231,7 @@ class CompliancePhase1Test extends AuditTestCase
 
     private function card(string $html, string $label): string
     {
-        $this->assertSame(1, preg_match('#<em>'.preg_quote($label, '#').'</em>\s*<strong>([^<]*)</strong>#', $html, $match), 'Missing card '.$label);
+        $this->assertSame(1, preg_match('#<em>'.preg_quote($label, '#').'</em>\s*<strong class="stat-value" title="([^"]*)"#', $html, $match), 'Missing card '.$label);
 
         return trim($match[1]);
     }

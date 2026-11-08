@@ -7,7 +7,7 @@
 </x-filter.bar>
 
 <div class="table-wrap">
-    <table class="admin-table fleet-table">
+    <table class="admin-table fleet-table" data-card-keys="0,2,4">
         <thead><tr><th>Plate Number</th><th>Truck Code</th><th>Name / Description</th><th>Capacity</th><th>On Truck</th><th>Status</th><th>Active Lifts</th><th>Next Schedule</th><th>Actions</th></tr></thead>
         <tbody>
             @forelse ($truckDirectory as $truck)

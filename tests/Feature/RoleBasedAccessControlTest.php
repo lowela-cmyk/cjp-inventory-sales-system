@@ -512,7 +512,7 @@ class RoleBasedAccessControlTest extends TestCase
         $this->actingAs($admin)
             ->get('/admin/dashboard')
             ->assertOk()
-            ->assertSee('0.00 KL')
+            ->assertSee('title="0 L"', false)
             ->assertSee('PHP 0.00')
             ->assertSee('No data yet')
             ->assertDontSee('PHP 4,580,000')
@@ -691,10 +691,10 @@ class RoleBasedAccessControlTest extends TestCase
             ->assertOk()
             // In stock (stock-in remaining = purchased - released - promised to open orders):
             //   Premium 100,000 - 5,000 released - (20,000 - 5,000) promised = 80,000; Diesel 1,000. Total 81,000 L.
-            ->assertSeeInOrder(['Total Inventory in Stock', '81.00 KL'])
+            ->assertSeeInOrder(['Total Inventory in Stock', '81,000 L'])
             // Still at the depot: Premium 100,000 - 40,000 lifted - 5,000 released straight from the depot = 55,000;
             //   Diesel 1,000 (not lifted). Total 56,000 L.
-            ->assertSeeInOrder(['Remaining Balance in Depots', '56.00 KL'])
+            ->assertSeeInOrder(['Remaining Balance in Depots', '56,000 L'])
             ->assertSeeInOrder(['Total Lifts', '1'])
             // Promised to undelivered orders / on hand (purchased - released): 15,000 / (95,000 + 1,000) = 15.625%.
             ->assertSeeInOrder(['Expected Stock Out Rate:', '15.63%'])

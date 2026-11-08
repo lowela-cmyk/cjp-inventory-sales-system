@@ -217,8 +217,8 @@ class FunctionalTestingTest extends TestCase
             ->get(route('admin.dashboard'))
             ->assertOk()
             // 6,000 L purchased - 2,000 L delivered.
-            ->assertSeeInOrder(['Total Inventory in Stock', '4.00 KL'])
-            ->assertSeeInOrder(['Total Delivered', '2.00 KL'])
+            ->assertSeeInOrder(['Total Inventory in Stock', '4,000 L'])
+            ->assertSeeInOrder(['Total Delivered', '2,000 L'])
             ->assertSeeInOrder(['Unpaid Amount', 'PHP 100,000.00']);
     }
 

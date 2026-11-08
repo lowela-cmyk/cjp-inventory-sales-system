@@ -22,18 +22,15 @@
 
 @component($liftLayout, ['title' => 'Fuel Lifting Operations', 'active' => 'fuel-lifting'])
     <div data-tabs>
-        <h2 class="section-title" data-tab-heading>{{ $headings[$activeTab] }}</h2>
-
-
-
+        <div class="page-heading-row">
+            <h2 class="section-title" data-tab-heading>{{ $headings[$activeTab] }}</h2>
+            <x-export-button />
+        </div>
         <div class="tabs">
             <button class="tab-button {{ $activeTab === 'schedule' ? 'is-active' : '' }}" type="button" data-tab-target="schedule" data-tab-url="{{ route($liftRoutePrefix) }}" data-heading="Schedule">Schedule</button>
             <button class="tab-button {{ $activeTab === 'hauled' ? 'is-active' : '' }}" type="button" data-tab-target="hauled" data-tab-url="{{ route($liftRoutePrefix.'.hauled') }}" data-heading="Hauled">Hauled</button>
             <button class="tab-button {{ $activeTab === 'trucks' ? 'is-active' : '' }}" type="button" data-tab-target="trucks" data-tab-url="{{ route($liftRoutePrefix.'.trucks') }}" data-heading="Trucks">Trucks</button>
             <button class="tab-button {{ $activeTab === 'garage' ? 'is-active' : '' }}" type="button" data-tab-target="garage" data-tab-url="{{ route($liftRoutePrefix.'.garage') }}" data-heading="Garage">Garage</button>
-        </div>
-        <div class="actions-right">
-            <button class="btn btn-secondary" type="button" data-export-table>Export</button>
         </div>
 
         @if (! empty($summaryCards))
@@ -41,7 +38,7 @@
                 @foreach ($summaryCards as $card)
                     <div class="metric-card">
                         <em>{{ $card['label'] }}</em>
-                        <strong>{{ $card['value'] }}</strong>
+                        <x-stat-value :value="$card['value']" />
                     </div>
                 @endforeach
             </div>
@@ -58,7 +55,7 @@
             </x-filter.bar>
 
             <div class="table-wrap dispatch-table-wrap">
-                <table class="admin-table dispatch-table">
+                <table class="admin-table dispatch-table" data-card-keys="0,3,9">
                     <thead>
                         <tr>
                             <th>Lift-ID</th>
@@ -112,7 +109,7 @@
             </x-filter.bar>
 
             <div class="table-wrap dispatch-table-wrap">
-                <table class="admin-table dispatch-table">
+                <table class="admin-table dispatch-table" data-card-keys="0,3,9">
                     <thead>
                         <tr>
                             <th>Lift-ID</th>
@@ -294,7 +291,9 @@
                 </div>
             @endif
             @if (! empty($row['allowed_statuses']))
-                <form class="modal-card modal-form-card" method="POST" action="{{ route($liftRoutePrefix.'.hauls.status', $row['haul_id']) }}">
+                <form class="modal-card modal-form-card" method="POST" action="{{ route($liftRoutePrefix.'.hauls.status', $row['haul_id']) }}"
+                    data-confirm="status" data-confirm-title="Update lift status?" data-confirm-item="{{ $row['cells'][0] }}"
+                    data-confirm-from="{{ ucwords(str_replace('_', ' ', $row['status'])) }}" data-confirm-to-field="status">
                     @csrf
                     @method('PATCH')
                     <input type="hidden" name="idempotency_key" value="{{ $statusIdempotencyKey }}">
@@ -310,7 +309,7 @@
                 </form>
             @endif
             @if ($row['can_assign_truck'])
-                <form class="modal-card modal-form-card" method="POST" action="{{ route($liftRoutePrefix.'.hauls.truck', $row['haul_id']) }}">
+                <form class="modal-card modal-form-card" method="POST" action="{{ route($liftRoutePrefix.'.hauls.truck', $row['haul_id']) }}" data-confirm-item="{{ $row['cells'][0] }}">
                     @csrf
                     @method('PATCH')
                     <input type="hidden" name="idempotency_key" value="{{ $truckAssignmentIdempotencyKey }}">

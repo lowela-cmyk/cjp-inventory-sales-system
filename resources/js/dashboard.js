@@ -229,10 +229,12 @@ document.querySelectorAll('[data-dashboard-export]').forEach((form) => {
         // The PDF downloads in place; the button shows it is working for a moment.
         if (button) {
             button.disabled = true;
-            button.textContent = 'Exporting…';
+            // Only the label changes, so the button keeps its icon.
+            const label = button.querySelector('[data-export-label]') || button;
+            label.textContent = 'Exporting…';
             window.setTimeout(() => {
                 button.disabled = false;
-                button.textContent = 'Export';
+                label.textContent = 'Export';
             }, 4000);
         }
         form.submit();

@@ -40,7 +40,7 @@
     $garageLiters = fn (float $value): string => number_format($value, 2).' L';
 @endphp
 <div class="table-wrap">
-    <table class="admin-table garage-table garage-tank-table">
+    <table class="admin-table garage-table garage-tank-table" data-card-keys="0,2">
         <thead><tr><th>Tank</th><th>Capacity</th><th>Stock Quantity</th><th>Avg Cost / L</th><th>Purchase IDs</th><th class="export-only" hidden>Lots (newest first)</th><th>Actions</th></tr></thead>
         <tbody>
             @forelse ($garage['tankRows'] as $tank)

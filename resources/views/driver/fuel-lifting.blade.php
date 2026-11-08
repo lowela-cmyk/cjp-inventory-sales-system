@@ -10,25 +10,22 @@
 
 @component('layouts.driver', ['title' => 'Fuel Lifting Operations', 'active' => 'fuel-lifting', 'driverName' => $driverName])
     <div data-tabs>
-        <h2 class="section-title" data-driver-heading>{{ $activeTab === 'hauled' ? 'Hauled' : 'Schedule' }}</h2>
-
-
-
+        <div class="page-heading-row">
+            <h2 class="section-title" data-driver-heading>{{ $activeTab === 'hauled' ? 'Hauled' : 'Schedule' }}</h2>
+            <x-export-button />
+        </div>
         <div class="tabs">
             <button class="tab-button {{ $activeTab === 'schedule' ? 'is-active' : '' }}" type="button" data-tab-target="schedule" data-tab-url="{{ route('driver.fuel-lifting') }}" data-heading="Schedule">Schedule</button>
             <button class="tab-button {{ $activeTab === 'hauled' ? 'is-active' : '' }}" type="button" data-tab-target="hauled" data-tab-url="{{ route('driver.fuel-lifting.hauled') }}" data-heading="Hauled">Hauled</button>
         </div>
 
-        <div class="actions-right">
-            <button class="btn btn-secondary" type="button" data-export-table>Export</button>
-        </div>
 
         @if (! empty($summaryCards))
             <div class="metric-row driver-metric-row">
                 @foreach ($summaryCards as $card)
                     <div class="metric-card">
                         <em>{{ $card['label'] }}</em>
-                        <strong>{{ $card['value'] }}</strong>
+                        <x-stat-value :value="$card['value']" />
                     </div>
                 @endforeach
             </div>
@@ -65,7 +62,7 @@
             </x-filter.bar>
 
             <div class="table-wrap driver-table-wrap">
-                <table class="admin-table driver-table">
+                <table class="admin-table driver-table" data-card-keys="0,3,7">
                     <thead>
                         <tr>
                             <th>Lift-ID</th>
@@ -118,7 +115,7 @@
             </x-filter.bar>
 
             <div class="table-wrap driver-table-wrap">
-                <table class="admin-table driver-table">
+                <table class="admin-table driver-table" data-card-keys="0,3,7">
                     <thead>
                         <tr>
                             <th>Lift-ID</th>
@@ -187,7 +184,9 @@
             </div>
             <div class="modal-actions">
                 @if (($row['kind'] ?? '') === 'Lift' && ! empty($row['allowed_driver_statuses']))
-                    <form method="POST" action="{{ route('driver.fuel-lifting.hauls.status', $row['record_id']) }}">
+                    <form method="POST" action="{{ route('driver.fuel-lifting.hauls.status', $row['record_id']) }}"
+                        data-confirm="status" data-confirm-title="Update lifting status?" data-confirm-item="{{ $row['cells'][0] }}"
+                        data-confirm-from="{{ collect($row['cells'])->last() }}" data-confirm-to-field="lifting_status">
                         @csrf
                         @method('PATCH')
                         <input type="hidden" name="idempotency_key" value="{{ $liftingStatusIdempotencyKey }}">

@@ -7,7 +7,10 @@
     @if ($isCancelForm && $errors->hasAny(['cancel_reason', 'cancel_note']))
         <span hidden data-open-modal-on-load="so-sale-cancel-{{ $row['id'] }}"></span>
     @endif
-    <form id="sale-cancel-form-{{ $row['id'] }}" method="POST" action="{{ route($salesRoutePrefix.'.sales.cancel', $row['id']) }}" data-prevent-double-submit>
+    <form id="sale-cancel-form-{{ $row['id'] }}" method="POST" action="{{ route($salesRoutePrefix.'.sales.cancel', $row['id']) }}" data-prevent-double-submit
+        data-confirm="delete" data-confirm-action="Cancel sale" data-confirm-typed="{{ $row['sale_code'] }}"
+        data-confirm-item="{{ $row['sale_code'] }} ({{ $row['cells'][3] }}, PHP {{ $row['cells'][8] }})"
+        data-confirm-undo="This can't be undone. Payments and history are kept; released stock goes back to inventory.">
         @csrf
         @method('PATCH')
         <input type="hidden" name="cancel_sale_id" value="{{ $row['id'] }}">

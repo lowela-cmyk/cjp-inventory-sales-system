@@ -10,10 +10,10 @@
 
 @component($inventoryLayout, ['title' => 'Inventory Management', 'active' => 'inventory'])
     <div data-tabs>
-        <h2 class="section-title" data-tab-heading>{{ $headings[$activeTab] }}</h2>
-
-
-
+        <div class="page-heading-row">
+            <h2 class="section-title" data-tab-heading>{{ $headings[$activeTab] }}</h2>
+            <x-export-button />
+        </div>
         <div class="tabs">
             <button class="tab-button {{ $activeTab === 'purchases' ? 'is-active' : '' }}" type="button" data-tab-target="purchases" data-tab-url="{{ route($inventoryRoutePrefix) }}" data-heading="Purchases">Purchases</button>
             <button class="tab-button {{ $activeTab === 'stock-in' ? 'is-active' : '' }}" type="button" data-tab-target="stock-in" data-tab-url="{{ route($inventoryRoutePrefix.'.stock-in') }}" data-heading="Stock-In">Stock In</button>
@@ -21,14 +21,13 @@
             <button class="tab-button {{ $activeTab === 'depots' ? 'is-active' : '' }}" type="button" data-tab-target="depots" data-tab-url="{{ route($inventoryRoutePrefix.'.depots') }}" data-heading="Depots">Depots</button>
             <button class="tab-button {{ $activeTab === 'garage' ? 'is-active' : '' }}" type="button" data-tab-target="garage" data-tab-url="{{ route($inventoryRoutePrefix.'.garage') }}" data-heading="Garage">Garage</button>
         </div>
-        <div class="actions-right"><button class="btn btn-secondary" type="button" data-export-table>Export</button></div>
 
         @if (! empty($summaryCards))
             <div class="metric-row">
                 @foreach ($summaryCards as $card)
                     <div class="metric-card">
                         <em>{{ $card['label'] }}</em>
-                        <strong>{{ $card['value'] }}</strong>
+                        <x-stat-value :value="$card['value']" />
                         <span>{{ $card['caption'] }}</span>
                     </div>
                 @endforeach
@@ -42,7 +41,7 @@
                 <button class="btn btn-secondary btn-wide" type="button" data-modal-open="io-purchase-add">+ Record Purchase</button>
             </x-filter.bar>
             <div class="table-wrap inventory-table-wrap">
-                <table class="admin-table inventory-table inventory-table-actions table-stacked purchases-table">
+                <table class="admin-table inventory-table inventory-table-actions table-stacked purchases-table" data-card-keys="0,2,5">
                     <thead><tr>
                         <th>Purchase-ID</th><th>Date</th><th>Fuel</th><th>Depot</th>
                         <th>Purchased (L)</th>
@@ -112,7 +111,7 @@
             </x-filter.bar>
             <p class="table-help">Every purchase is stocked in automatically. Sales deduct from the purchase they select as soon as they are saved; cancelling a sale gives the liters back.</p>
             <div class="table-wrap inventory-table-wrap">
-                <table class="admin-table inventory-table inventory-table-actions table-stacked stock-in-table">
+                <table class="admin-table inventory-table inventory-table-actions table-stacked stock-in-table" data-card-keys="0,2,7">
                     <thead><tr>
                         {{-- The original Stock-In columns (August 2026 design), now filled from each purchase's stock-in:
                              Current QTY = liters left, Sold QTY = liters sales took (delivered + promised). --}}
@@ -163,7 +162,7 @@
             <div class="table-wrap inventory-table-wrap">
                 {{-- Part 4 #6 / Part 8 #4: the table fits its frame. Related values share a cell (one export column each);
                      every money value keeps its own column, as on the Part 4 example. --}}
-                <table class="admin-table inventory-table inventory-table-actions stock-out-table table-stacked">
+                <table class="admin-table inventory-table inventory-table-actions stock-out-table table-stacked" data-card-keys="0,1,16">
                     <thead><tr>
                         <th><span class="th-line" data-export-part>Order-ID</span><span class="th-line" data-export-part>Transaction Date</span></th>
                         {{-- Part 12: customer and company in their own columns. --}}
@@ -235,7 +234,7 @@
                 <button class="btn btn-secondary" type="button" data-modal-open="io-depot-add">+ Depot</button>
             </x-filter.bar>
             <div class="table-wrap inventory-table-wrap">
-                <table class="admin-table depot-table inventory-table">
+                <table class="admin-table depot-table inventory-table" data-card-keys="0,1">
                     <thead><tr><th>Depot Code</th><th>Name</th><th>Address</th><th>Contact Person</th><th>Phone</th><th class="inventory-status-column">Status</th><th>Actions</th></tr></thead>
                     <tbody>
                         @forelse ($depotRows as $row)
@@ -291,7 +290,7 @@
             @include('inventory-officer.partials.receipt-lightbox', ['lightboxId' => $row['modal_id'].'-receipts', 'purchaseCode' => $row['purchase_code'], 'receipts' => $row['withdrawals']])
         @endif
         <x-admin.modal id="{{ $row['modal_id'] }}" title="Edit Purchase Record">
-            <form id="purchase-update-{{ $row['id'] }}" method="POST" action="{{ route($inventoryRoutePrefix.'.purchases.update', $row['id']) }}">
+            <form id="purchase-update-{{ $row['id'] }}" data-confirm-item="{{ $row['purchase_code'] }}" method="POST" action="{{ route($inventoryRoutePrefix.'.purchases.update', $row['id']) }}">
                 @csrf
                 @method('PATCH')
             </form>
@@ -332,7 +331,11 @@
                 {{-- Part 15: Cancel Purchase (full name, so it is not read as closing the modal) only while the purchase is
                      Pending and no lift, sale, stock-out or garage lot uses it. Close only closes. --}}
                 @if ($row['can_cancel'])
-                    <form method="POST" action="{{ route($inventoryRoutePrefix.'.purchases.cancel', $row['id']) }}" data-confirm-message="Cancel purchase {{ $row['purchase_code'] }}? It will be marked Cancelled and can no longer be lifted or sold from.">
+                    <form method="POST" action="{{ route($inventoryRoutePrefix.'.purchases.cancel', $row['id']) }}"
+                        data-confirm="delete" data-confirm-action="Cancel purchase" data-confirm-typed="{{ $row['purchase_code'] }}"
+                        data-confirm-item="{{ $row['purchase_code'] }} ({{ $row['cells'][2] }}, {{ $row['cells'][4] }} L, {{ $row['cells'][3] }})"
+                        data-confirm-undo="This can't be undone. The purchase is marked Cancelled and can no longer be lifted or sold from."
+                        data-confirm-message="Cancel purchase {{ $row['purchase_code'] }}? It will be marked Cancelled and can no longer be lifted or sold from.">
                         @csrf
                         @method('PATCH')
                         <button class="btn btn-pill btn-danger" type="submit">Cancel Purchase</button>
@@ -362,7 +365,7 @@
                     <p class="form-locked-note" role="note">{{ \App\Services\PurchaseService::LOCKED_MESSAGE }}</p>
                 @endif
                 @if ($row['editable'])
-                    <form id="stock-in-update-{{ $row['id'] }}" method="POST" action="{{ route($inventoryRoutePrefix.'.stock-in.update', $row['purchase_item_id']) }}" data-prevent-double-submit>
+                    <form id="stock-in-update-{{ $row['id'] }}" data-confirm-item="{{ $row['purchase_code'] }}" method="POST" action="{{ route($inventoryRoutePrefix.'.stock-in.update', $row['purchase_item_id']) }}" data-prevent-double-submit>
                         @csrf
                         @method('PATCH')
                         <input type="hidden" name="edit_stock_in_id" value="{{ $row['id'] }}">
@@ -484,7 +487,7 @@
                 @if ($isEditedDepot && $errors->any())
                     <span hidden data-open-modal-on-load="io-depot-edit-{{ $depotRow['id'] }}"></span>
                 @endif
-                <form id="depot-update-{{ $depotRow['id'] }}" method="POST" action="{{ route($inventoryRoutePrefix.'.depots.update', $depotRow['id']) }}">@csrf @method('PATCH')<input type="hidden" name="edit_depot_id" value="{{ $depotRow['id'] }}"></form>
+                <form id="depot-update-{{ $depotRow['id'] }}" data-confirm-item="{{ $depotRow['depot_code'] }} ({{ $depotRow['name'] }})" method="POST" action="{{ route($inventoryRoutePrefix.'.depots.update', $depotRow['id']) }}">@csrf @method('PATCH')<input type="hidden" name="edit_depot_id" value="{{ $depotRow['id'] }}"></form>
                 <div class="modal-card"><div class="form-grid">
                     @foreach (['depot_code' => 'Code', 'name' => 'Name', 'address' => 'Address', 'contact_person' => 'Contact', 'phone' => 'Phone'] as $field => $label)
                         <div class="form-row"><label for="depot_{{ $field }}_{{ $depotRow['id'] }}">{{ $label }}</label><input form="depot-update-{{ $depotRow['id'] }}" id="depot_{{ $field }}_{{ $depotRow['id'] }}" name="{{ $field }}" type="text" maxlength="{{ in_array($field, ['phone', 'depot_code'], true) ? 30 : 255 }}" value="{{ $depotOld($field) }}" @if(in_array($field, ['depot_code', 'name'], true)) required @endif @if($isEditedDepot && $errors->has($field)) aria-invalid="true" @endif>@if ($isEditedDepot)@error($field)<p class="field-error form-row-message">{{ $message }}</p>@enderror @endif</div>

@@ -26,15 +26,13 @@
 
 @component($salesLayout, ['title' => 'Sales Management', 'active' => 'sales'])
     <div data-tabs>
-        <h2 class="section-title" data-tab-heading>{{ $activeTab === 'customers' ? 'Customers' : 'Receivables' }}</h2>
-
-
+        <div class="page-heading-row">
+            <h2 class="section-title" data-tab-heading>{{ $activeTab === 'customers' ? 'Customers' : 'Receivables' }}</h2>
+            <x-export-button />
+        </div>
         <div class="tabs">
             <button class="tab-button {{ $activeTab === 'receivables' ? 'is-active' : '' }}" type="button" data-tab-target="receivables" data-tab-url="{{ route($salesRoutePrefix.'.sales') }}" data-heading="Receivables">Receivables</button>
             <button class="tab-button {{ $activeTab === 'customers' ? 'is-active' : '' }}" type="button" data-tab-target="customers" data-tab-url="{{ route($salesRoutePrefix.'.sales.customers') }}" data-heading="Customers">Customers</button>
-        </div>
-        <div class="actions-right">
-            <button class="btn btn-secondary" type="button" data-export-table>Export</button>
         </div>
 
         @if (! empty($summaryCards))
@@ -42,7 +40,7 @@
                 @foreach ($summaryCards as $card)
                     <div class="metric-card">
                         <em>{{ $card['label'] }}</em>
-                        <strong>{{ $card['value'] }}</strong>
+                        <x-stat-value :value="$card['value']" />
                         <span>{{ $card['caption'] }}</span>
                     </div>
                 @endforeach
@@ -61,7 +59,7 @@
             </x-filter.bar>
             <p class="table-help">Stock-Out is deducted from the order's purchases when a Standard order is Delivered, or when the lift of a Depot to Client order is completed.</p>
             <div class="table-wrap">
-                <table class="admin-table table-stacked">
+                <table class="admin-table table-stacked" data-card-keys="0,2,4">
                     <thead>
                         <tr>
                             <th><span class="th-line" data-export-part>Order-ID</span><span class="th-line" data-export-part>Sales Order No.</span><span class="th-line" data-export-part>Transaction Date</span></th>
@@ -127,7 +125,7 @@
                 <button class="btn btn-secondary btn-wide" type="button" data-modal-open="so-customer-add">+ Add Customers</button>
             </x-filter.bar>
             <div class="table-wrap">
-                <table class="admin-table">
+                <table class="admin-table" data-card-keys="0,1,2">
                     <thead>
                         <tr>
                             <th>Customer ID</th>
@@ -293,13 +291,15 @@
                 <span hidden data-open-modal-on-load="{{ $row['modal_id'] }}"></span>
                 <p class="form-alert" role="alert">{{ $errors->first() }}</p>
             @endif
-            <form id="sale-update-{{ $row['id'] }}" method="POST" action="{{ route($salesRoutePrefix.'.sales.update', $row['id']) }}">
+            <form id="sale-update-{{ $row['id'] }}" data-confirm-item="{{ $row['sale_code'] }}" method="POST" action="{{ route($salesRoutePrefix.'.sales.update', $row['id']) }}">
                 @csrf
                 @method('PATCH')
                 <input type="hidden" name="edit_sale_id" value="{{ $row['id'] }}">
             </form>
             @if (! in_array($row['delivery_status'], ['delivered', 'cancelled'], true))
-                <form id="sale-delivery-{{ $row['id'] }}" method="POST" action="{{ route($salesRoutePrefix.'.sales.delivery-status.update', $row['id']) }}" data-confirm-when="delivery_status=delivered" data-confirm-message="{{ $deliveredConfirm }}">
+                <form id="sale-delivery-{{ $row['id'] }}" method="POST" action="{{ route($salesRoutePrefix.'.sales.delivery-status.update', $row['id']) }}" data-confirm-when="delivery_status=delivered" data-confirm-message="{{ $deliveredConfirm }}"
+                    data-confirm="status" data-confirm-title="Update delivery status?" data-confirm-item="{{ $row['sale_code'] }}"
+                    data-confirm-from="{{ ucwords(str_replace('_', ' ', $row['delivery_status'])) }}" data-confirm-to-field="delivery_status">
                     @csrf
                     @method('PATCH')
                 </form>
@@ -524,7 +524,11 @@
                 {{-- Part 17: one Cancel Sale button while the order is not delivered (none once Delivered: its fuel already left
                      stock, and the server refuses it). An untouched draft is simply removed; any other order asks for a reason. --}}
                 @if ($row['correction_action'] === 'delete')
-                    <form method="POST" action="{{ route($salesRoutePrefix.'.sales.cancel', $row['id']) }}" data-confirm-message="Cancel this draft sale? It has no payments or deliveries yet, so it will be removed.">
+                    <form method="POST" action="{{ route($salesRoutePrefix.'.sales.cancel', $row['id']) }}"
+                        data-confirm="delete" data-confirm-action="Cancel sale" data-confirm-typed="{{ $row['sale_code'] }}"
+                        data-confirm-item="{{ $row['sale_code'] }} ({{ $row['cells'][3] }}, PHP {{ $row['cells'][8] }})"
+                        data-confirm-undo="This can't be undone. The draft has no payments or deliveries, so it is removed."
+                        data-confirm-message="Cancel this draft sale? It has no payments or deliveries yet, so it will be removed.">
                         @csrf
                         @method('PATCH')
                         <button class="btn btn-pill btn-danger" type="submit">Cancel Sale</button>
@@ -589,7 +593,7 @@
                 <span hidden data-open-modal-on-load="{{ $row['modal_id'] }}"></span>
                 <p class="form-alert" role="alert">{{ $errors->first() }}</p>
             @endif
-            <form id="customer-update-{{ $row['id'] }}" method="POST" action="{{ route($salesRoutePrefix.'.sales.customers.update', $row['id']) }}">
+            <form id="customer-update-{{ $row['id'] }}" data-confirm-item="{{ $row['customer_code'] }}" method="POST" action="{{ route($salesRoutePrefix.'.sales.customers.update', $row['id']) }}">
                 @csrf
                 @method('PATCH')
                 <input type="hidden" name="edit_customer_id" value="{{ $row['id'] }}">
@@ -615,7 +619,11 @@
             </div>
             <x-slot:footer>
                 <button class="btn btn-pill btn-secondary" type="submit" form="customer-update-{{ $row['id'] }}">Apply Changes</button>
-                <form method="POST" action="{{ route($salesRoutePrefix.'.sales.customers.deactivate', $row['id']) }}" data-confirm-message="Deactivate this customer? Existing sales stay unchanged.">
+                <form method="POST" action="{{ route($salesRoutePrefix.'.sales.customers.deactivate', $row['id']) }}"
+                    data-confirm="delete" data-confirm-action="Deactivate customer"
+                    data-confirm-item="{{ $row['customer_code'] }} ({{ $row['details']['Customer Name'] ?? '' }})"
+                    data-confirm-undo="You can set the customer back to Active later. Existing sales stay unchanged."
+                    data-confirm-message="Deactivate this customer? Existing sales stay unchanged.">
                     @csrf
                     @method('PATCH')
                     <button class="btn btn-pill btn-danger" type="submit">Delete</button>

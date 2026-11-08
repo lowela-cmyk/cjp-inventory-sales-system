@@ -1,0 +1,2209 @@
+/* ==================================================================================================================
+   Responsive layer (November 2026). Shared by every role (Admin, Inventory Officer, Sales Officer, Dispatch, Driver).
+   Loaded last (app.js), so it overrides the page styles without touching them.
+
+   Breakpoints:  phone < 640px  |  tablet 640-1023px  |  desktop >= 1024px.
+   Tables turn into cards below 768px (as asked: "below 768px, render each row as a compact card").
+   responsive.js adds the avatar menu, the Filters sheet, the card table markup and the alert "more" link.
+   ================================================================================================================== */
+
+:root {
+    --rsp-gutter: 16px;
+    --rsp-gap: 12px;
+    --rsp-tap: 44px;
+    --rsp-input-line: #c9ced6;
+}
+
+/* ------------------------------------------------------------------------------------------------------------------
+   All widths
+   ------------------------------------------------------------------------------------------------------------------ */
+
+/* No sideways page scroll: wide content scrolls inside its own box (tables) instead. */
+.admin-main {
+    overflow-x: clip;
+}
+
+/* Header: title block may shrink; the avatar only shows on small screens. */
+.header-titles {
+    min-width: 0;
+}
+
+.header-account {
+    position: relative;
+    min-width: 0;
+}
+
+.header-avatar {
+    display: none;
+}
+
+/* Page heading row: section heading on the left, a small Export button on the right. */
+.page-heading-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--rsp-gap);
+    margin: 0 0 14px;
+    min-width: 0;
+}
+
+.page-heading-row > .section-title,
+.page-heading-row > .dash-section-title {
+    min-width: 0;
+    margin: 0;
+}
+
+.page-heading-row > .page-heading-actions,
+.page-heading-row > .dash-actions {
+    display: flex;
+    flex: none;
+    margin: 0;
+}
+
+.page-heading-row > .page-heading-actions[hidden] {
+    display: none;
+}
+
+.btn.btn-export {
+    gap: 6px;
+    min-width: 0;
+    min-height: 36px;
+    padding: 0 12px;
+    font-size: 13px;
+    box-shadow: 0 2px 0 var(--admin-ink);
+}
+
+.btn-export .btn-icon {
+    flex: none;
+}
+
+/* Filters: light inputs (white, 1px border) instead of solid navy blocks, on every filter bar. */
+form.filter-bar :is(input[type="search"], input[type="date"], select),
+form.filter-bar .filter-date-field input[type="date"] {
+    border: 1px solid var(--rsp-input-line);
+    border-radius: 6px;
+    background: #fff;
+    color: #111;
+    color-scheme: light;
+}
+
+form.filter-bar input[type="search"]::placeholder {
+    color: #6b7280;
+}
+
+form.filter-bar :is(input, select):focus-visible {
+    border-color: var(--admin-ink);
+    outline: 2px solid rgb(13 20 36 / 15%);
+    outline-offset: 0;
+}
+
+form.filter-bar .filter-date-clear {
+    border-color: var(--rsp-input-line);
+    border-radius: 6px;
+}
+
+/* The Filters sheet only exists on phones; elsewhere its controls sit in the bar as before. */
+.filter-panel {
+    display: contents;
+}
+
+.filter-toggle,
+.filter-panel-head,
+.filter-scrim {
+    display: none;
+}
+
+/* Active-filter chips (Dashboard). */
+.filter-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    max-width: 100%;
+    min-height: 26px;
+    padding: 2px 10px;
+    border: 1px solid var(--admin-soft-line);
+    border-radius: 999px;
+    background: #f4f6f9;
+    color: var(--admin-ink);
+    font-size: 12px;
+    font-weight: 700;
+    overflow-wrap: anywhere;
+}
+
+.filter-chip > span {
+    color: var(--admin-muted);
+    font-weight: 600;
+}
+
+/* Stat figures never wrap; the short form ("PHP 5.39M") only shows below 1024px. */
+.stat-value {
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.stat-value {
+    overflow: hidden;
+}
+
+/* The two forms are spans inside the figure; reset card caption styles (.metric-card span) that would hit them. */
+.stat-value > :is(.stat-value-full, .stat-value-short) {
+    display: inline;
+    margin: 0;
+    color: inherit;
+    font-size: inherit;
+}
+
+.stat-value > .stat-value-short {
+    display: none;
+}
+
+/* responsive.js: the full value would overflow this card, so the short one shows (desktop too). */
+.stat-value.is-short > .stat-value-full {
+    display: none;
+}
+
+.stat-value.is-short > .stat-value-short {
+    display: inline;
+}
+
+.metric-card .stat-value {
+    display: block;
+    margin-top: 10px;
+    font-size: 26px;
+}
+
+.dash-kpi .stat-value {
+    overflow-wrap: normal;
+}
+
+/* Alert cards: the Read / Unread pill stays on the title's line; long texts stop at two lines with "more". */
+.workflow-alert-heading {
+    flex-wrap: nowrap;
+    align-items: flex-start;
+}
+
+.workflow-alert-heading .alert-title {
+    flex: 0 1 auto;
+}
+
+.workflow-alert-heading .status-badge {
+    flex: none;
+    min-height: 22px;
+    padding: 0 8px;
+    font-size: 11px;
+}
+
+.workflow-alert-message {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+}
+
+.workflow-alert-message.is-expanded {
+    display: block;
+    -webkit-line-clamp: unset;
+    line-clamp: none;
+}
+
+.alert-more {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: #1d4ed8;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.alert-more[hidden] {
+    display: none;
+}
+
+/* The card-table "⋮" button only exists in card mode. */
+.card-menu-toggle {
+    display: none;
+}
+
+/* ------------------------------------------------------------------------------------------------------------------
+   Tablet and phone (< 1024px)
+   ------------------------------------------------------------------------------------------------------------------ */
+@media (max-width: 1023px) {
+    /* Off-canvas sidebar behind the hamburger (was below 760px only). */
+    /* Scrolls away with the header (it is not sticky) instead of floating over the content. */
+    .mobile-menu-button {
+        position: absolute;
+        top: 10px;
+        left: 12px;
+        z-index: 40;
+        display: grid;
+        align-content: center;
+        gap: 4px;
+        width: var(--rsp-tap);
+        height: var(--rsp-tap);
+        padding: 12px 11px;
+        border: 1px solid var(--admin-soft-line);
+        border-radius: 8px;
+        background: #fff;
+        cursor: pointer;
+    }
+
+    .mobile-menu-button span {
+        height: 2px;
+        border-radius: 1px;
+        background: var(--admin-ink);
+    }
+
+    .admin-sidebar {
+        transform: translateX(-100%);
+        transition: transform .18s ease;
+    }
+
+    .sidebar-open .admin-sidebar {
+        transform: translateX(0);
+        box-shadow: 0 0 24px rgb(0 0 0 / 18%);
+    }
+
+    .sidebar-open .sidebar-scrim {
+        position: fixed;
+        inset: 0;
+        z-index: 10;
+        display: block;
+        background: rgb(0 0 0 / 25%);
+    }
+
+    .admin-main {
+        margin-left: 0;
+    }
+
+    /* Header: one 64px row. Hamburger | title | bell + avatar. */
+    .admin-header {
+        flex-wrap: nowrap;
+        height: 64px;
+        min-height: 0;
+        gap: var(--rsp-gap);
+        padding: 0 var(--rsp-gutter) 0 calc(12px + var(--rsp-tap) + 12px);
+    }
+
+    .admin-header h1 {
+        margin: 0;
+        overflow: hidden;
+        font-size: 18px;
+        line-height: 1.2;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        overflow-wrap: normal;
+    }
+
+    .admin-header .header-subtitle {
+        display: none;
+    }
+
+    .header-profile {
+        flex: none;
+        gap: 8px;
+        min-width: 0;
+    }
+
+    .header-bell {
+        width: var(--rsp-tap);
+        height: var(--rsp-tap);
+    }
+
+    .header-bell-badge {
+        top: -4px;
+        right: -4px;
+    }
+
+    .header-avatar {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: var(--rsp-tap);
+        height: var(--rsp-tap);
+        padding: 0;
+        border: 0;
+        border-radius: 50%;
+        background: var(--admin-ink);
+        color: #fff;
+        font-size: 14px;
+        font-weight: 800;
+        letter-spacing: .02em;
+        cursor: pointer;
+    }
+
+    .header-avatar:focus-visible {
+        outline: 3px solid rgb(13 20 36 / 30%);
+        outline-offset: 2px;
+    }
+
+    /* Name and role open in a small dropdown under the avatar. */
+    .header-account-text {
+        position: absolute;
+        top: calc(100% + 8px);
+        right: 0;
+        z-index: 45;
+        display: none;
+        min-width: 180px;
+        max-width: calc(100vw - 2 * var(--rsp-gutter));
+        padding: 12px 14px;
+        border: 1px solid var(--admin-soft-line);
+        border-radius: 8px;
+        background: #fff;
+        box-shadow: 0 8px 24px rgb(13 20 36 / 14%);
+        text-align: left;
+    }
+
+    .header-account.is-open .header-account-text {
+        display: block;
+    }
+
+    .header-account-text .profile-role {
+        margin-top: 4px;
+        color: var(--admin-muted);
+    }
+
+    .admin-content {
+        padding: 20px var(--rsp-gutter);
+    }
+
+    /* Sub-tabs: one horizontally scrollable bar, the active tab underlined. */
+    .tabs {
+        flex-wrap: nowrap;
+        gap: 0;
+        margin: 0 calc(-1 * var(--rsp-gutter)) 14px;
+        padding: 0 var(--rsp-gutter);
+        overflow-x: auto;
+        overscroll-behavior-x: contain;
+        border-bottom: 1px solid var(--admin-soft-line);
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .tabs::-webkit-scrollbar {
+        display: none;
+    }
+
+    .tabs .tab-button {
+        flex: 0 0 auto;
+        min-width: 0;
+        height: var(--rsp-tap);
+        margin-bottom: -1px;
+        padding: 0 14px;
+        border: 0;
+        border-bottom: 3px solid transparent;
+        border-radius: 0;
+        background: none;
+        box-shadow: none;
+        color: var(--admin-muted);
+        font-size: 14px;
+        font-weight: 700;
+        text-transform: none;
+        white-space: nowrap;
+        transform: none;
+    }
+
+    .tabs .tab-button:hover,
+    .tabs .tab-button:focus {
+        box-shadow: none;
+        color: var(--admin-ink);
+        transform: none;
+    }
+
+    .tabs .tab-button:focus-visible {
+        outline: 2px solid rgb(13 20 36 / 30%);
+        outline-offset: -4px;
+    }
+
+    .tabs .tab-button.is-active {
+        border-bottom-color: var(--danger);
+        background: none;
+        color: var(--admin-ink);
+        box-shadow: none;
+    }
+
+    /* Stat figures: short form. */
+    .stat-value > .stat-value-full {
+        display: none;
+    }
+
+    .stat-value > .stat-value-short {
+        display: inline;
+    }
+
+    .metric-row {
+        gap: 10px;
+    }
+
+    .metric-card {
+        min-height: 0;
+        padding: 12px 14px;
+    }
+
+    .metric-card .stat-value {
+        margin-top: 6px;
+        font-size: 22px;
+    }
+
+    .metric-card em {
+        font-size: 12px;
+    }
+
+    /* Bigger tap targets for the buttons people use most. */
+    .btn,
+    .btn.btn-export,
+    .filter-bar .btn {
+        min-height: var(--rsp-tap);
+    }
+
+    .btn-small {
+        min-height: 36px;
+    }
+
+    form.filter-bar :is(input[type="search"], input[type="date"], select),
+    form.filter-bar .filter-date-field input[type="date"],
+    form.filter-bar .filter-date-clear {
+        height: var(--rsp-tap);
+    }
+
+    /* Dashboard. */
+    .dash {
+        gap: 24px;
+    }
+
+    .dash-panel {
+        gap: 16px;
+        padding: 14px;
+    }
+}
+
+/* ------------------------------------------------------------------------------------------------------------------
+   Phone and small tablet (< 768px): tables become cards
+   ------------------------------------------------------------------------------------------------------------------ */
+@media (max-width: 767px) {
+    /* The scroll box becomes a plain list of cards at full width. */
+    .table-wrap:has(> .card-table) {
+        min-height: 0;
+        overflow: visible;
+        border: 0;
+        border-radius: 0;
+        background: none;
+    }
+
+    .table-wrap:has(> .card-table)::after {
+        content: none !important;
+        display: none !important;
+    }
+
+    .table-wrap > table.card-table,
+    table.card-table {
+        display: block;
+        width: 100% !important;
+        min-width: 0 !important;
+        border: 0;
+    }
+
+    /* Kept for screen readers only; display: block so the 1px clip box really contains its rows. */
+    table.card-table thead {
+        position: absolute;
+        display: block;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+    }
+
+    table.card-table tbody {
+        display: grid;
+        gap: 10px;
+    }
+
+    table.card-table tr {
+        position: relative;
+        display: flex !important;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px 10px;
+        min-width: 0;
+        padding: 12px 56px 10px 14px;
+        border: 1px solid var(--admin-soft-line);
+        border-radius: 8px;
+        background: #fff;
+        text-align: left;
+    }
+
+    table.card-table tr[hidden] {
+        display: none !important;
+    }
+
+    /* Rows without an actions menu need no room for it. */
+    table.card-table tr:not(:has(.card-menu-toggle)) {
+        padding-right: 14px;
+    }
+
+    table.card-table tr.row-danger {
+        border-color: var(--danger-soft);
+        border-left: 4px solid var(--danger);
+        background: #fff3f4;
+    }
+
+    table.card-table tr:focus-visible {
+        outline: 2px solid var(--admin-ink);
+        outline-offset: 2px;
+    }
+
+    /* Every cell is a plain block: no table padding, borders, sticky columns or fixed widths. */
+    .table-wrap > table.card-table :is(th, td),
+    table.card-table td {
+        position: static !important;
+        display: block;
+        width: auto !important;
+        min-width: 0 !important;
+        max-width: none !important;
+        height: auto;
+        padding: 0 !important;
+        border: 0 !important;
+        background: none !important;
+        box-shadow: none !important;
+        font-size: 13px !important;
+        line-height: 1.35;
+        text-align: left !important;
+        white-space: normal !important;
+        overflow-wrap: anywhere !important;
+    }
+
+    table.card-table td[hidden],
+    table.card-table td.export-only {
+        display: none !important;
+    }
+
+    /* Empty-state row: one centered line. */
+    table.card-table td.empty-cell {
+        flex: 1 1 100%;
+        padding: 18px 0 !important;
+        color: var(--admin-muted);
+        text-align: center !important;
+    }
+
+    table.card-table tr:has(> td.empty-cell) {
+        padding: 0 14px;
+    }
+
+    /* Line 1: ID (bold) and status badge. */
+    table.card-table td.card-primary {
+        flex: 1 1 auto;
+        order: 1;
+        font-size: 14px !important;
+        font-weight: 800;
+    }
+
+    table.card-table td.card-primary .cell-stack {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 2px 8px;
+    }
+
+    table.card-table td.card-status {
+        flex: none;
+        order: 2;
+    }
+
+    table.card-table .status-badge {
+        width: auto !important;
+        min-width: 0 !important;
+        max-width: none !important;
+        height: auto !important;
+        min-height: 24px !important;
+        padding: 2px 9px !important;
+        font-size: 11px !important;
+        line-height: 1.2 !important;
+        white-space: nowrap !important;
+    }
+
+    /* Key fields and (when expanded) the rest: "Label  value" lines across the card. */
+    table.card-table td.card-key,
+    table.card-table td.card-extra {
+        display: grid;
+        flex: 1 1 100%;
+        grid-template-columns: minmax(96px, 40%) minmax(0, 1fr);
+        gap: 8px;
+        order: 3;
+    }
+
+    table.card-table td.card-extra {
+        display: none;
+        order: 4;
+        padding-top: 4px !important;
+    }
+
+    table.card-table tr.is-expanded td.card-extra {
+        display: grid;
+    }
+
+    table.card-table tr.is-expanded td.card-extra:not(.card-extra ~ .card-extra) {
+        margin-top: 4px;
+        padding-top: 8px !important;
+        border-top: 1px dashed var(--admin-soft-line) !important;
+    }
+
+    table.card-table :is(td.card-key, td.card-extra)::before {
+        content: attr(data-label);
+        color: var(--admin-muted);
+        font-size: 12px;
+        font-weight: 700;
+    }
+
+    table.card-table :is(td.card-key, td.card-extra) .cell-stack {
+        display: grid;
+        gap: 2px;
+    }
+
+    /* Values sit left-aligned at their natural width (badges, buttons and stacked lines included). */
+    table.card-table :is(td.card-key, td.card-extra) > * {
+        justify-self: start;
+    }
+
+    table.card-table :is(.cell-stack, .cell-line) {
+        justify-items: start;
+        text-align: left !important;
+    }
+
+    /* "Show details" line for expandable cards. */
+    table.card-table tr.card-expandable {
+        cursor: pointer;
+    }
+
+    table.card-table tr.card-expandable::after {
+        content: "Show details \25BE";
+        flex: 1 1 100%;
+        order: 5;
+        margin-top: 4px;
+        color: #1d4ed8;
+        font-size: 12px;
+        font-weight: 700;
+    }
+
+    table.card-table tr.card-expandable.is-expanded::after {
+        content: "Hide details \25B4";
+    }
+
+    /* Actions: a "⋮" button top-right that opens a small menu of the row's buttons. */
+    table.card-table td.card-actions {
+        position: absolute !important;
+        top: 6px;
+        right: 6px;
+        z-index: 3;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        width: auto !important;
+    }
+
+    table.card-table td.card-actions > :not(.card-menu-toggle) {
+        display: none !important;
+    }
+
+    .card-menu-toggle {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: var(--rsp-tap);
+        height: var(--rsp-tap);
+        padding: 0;
+        border: 0;
+        border-radius: 8px;
+        background: none;
+        color: var(--admin-ink);
+        cursor: pointer;
+    }
+
+    .card-menu-toggle:hover,
+    .card-menu-toggle[aria-expanded="true"] {
+        background: #eef1f5;
+    }
+
+    table.card-table td.card-actions.is-open {
+        z-index: 20;
+    }
+
+    table.card-table td.card-actions.is-open > :not(.card-menu-toggle) {
+        display: flex !important;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 6px;
+        min-width: 168px;
+        margin-top: 4px;
+        padding: 8px;
+        border: 1px solid var(--admin-soft-line);
+        border-radius: 8px;
+        background: #fff;
+        box-shadow: 0 10px 24px rgb(13 20 36 / 16%);
+    }
+
+    /* Several direct children (e.g. a button and a form) form one panel. */
+    table.card-table td.card-actions.is-open > :not(.card-menu-toggle) + :not(.card-menu-toggle) {
+        margin-top: -10px;
+        border-top: 0;
+        border-radius: 0 0 8px 8px;
+        box-shadow: 0 10px 24px rgb(13 20 36 / 16%);
+    }
+
+    table.card-table td.card-actions.is-open :is(.btn, form, form .btn) {
+        width: 100%;
+        margin: 0;
+    }
+
+    table.card-table td.card-actions.is-open .btn {
+        justify-content: flex-start;
+        min-height: var(--rsp-tap);
+        box-shadow: none;
+        transform: none;
+    }
+
+    /* Pagination under the cards. */
+    .pagination-wrap {
+        overflow-x: auto;
+    }
+
+    /* Alerts: compact cards, buttons small and on one row. */
+    .workflow-alert-stack .alert-bar {
+        grid-template-columns: 30px minmax(0, 1fr);
+        gap: 10px;
+        padding: 10px 12px;
+        border-left-width: 5px;
+        font-size: 13px;
+    }
+
+    .workflow-alert-stack .alert-icon {
+        width: 30px;
+        height: 30px;
+        font-size: 14px;
+    }
+
+    .workflow-alert-heading .alert-title {
+        font-size: 14px;
+    }
+
+    .workflow-alert-actions {
+        grid-column: 2;
+        justify-self: start;
+        flex-wrap: nowrap;
+        gap: 8px;
+        width: auto;
+    }
+
+    .workflow-alert-actions > *,
+    .workflow-alert-actions .btn {
+        flex: 0 0 auto;
+        width: auto;
+    }
+
+    .workflow-alert-actions .btn {
+        min-width: 0;
+        min-height: 36px;
+        padding: 0 12px;
+        font-size: 12px;
+        box-shadow: 0 2px 0 var(--admin-ink);
+    }
+}
+
+/* ------------------------------------------------------------------------------------------------------------------
+   Phone (< 640px)
+   ------------------------------------------------------------------------------------------------------------------ */
+@media (max-width: 639px) {
+    .admin-header h1 {
+        font-size: 16px;
+    }
+
+    .admin-content {
+        padding: 16px var(--rsp-gutter);
+    }
+
+    .section-title {
+        font-size: 18px;
+    }
+
+    .page-heading-row {
+        margin-bottom: 10px;
+    }
+
+    /* Stat cards: two columns, smaller type. */
+    .metric-row,
+    .driver-metric-row,
+    .dash-kpis,
+    .dash-kpis-7 {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        gap: 8px;
+    }
+
+    .metric-card {
+        padding: 10px 12px;
+    }
+
+    .metric-card em {
+        overflow: hidden;
+        font-size: 11px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .metric-card .stat-value {
+        margin-top: 4px;
+        font-size: 19px;
+    }
+
+    .metric-card > span {
+        margin-top: 2px;
+        font-size: 11px;
+    }
+
+    .dash-kpi {
+        gap: 4px;
+        padding: 8px 10px;
+    }
+
+    .dash-kpi .stat-value {
+        font-size: 15px;
+        text-align: left;
+    }
+
+    /* Filters: search + "Filters" button on one line; the other filters open in a bottom sheet. */
+    form.filter-bar,
+    form.dash-filters {
+        display: flex !important;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+    }
+
+    form.filter-bar > input[type="search"],
+    form.dash-filters > input[type="search"] {
+        flex: 1 1 0 !important;
+        width: auto;
+        min-width: 0 !important;
+        max-width: none;
+    }
+
+    form.filter-bar > .filter-toggle,
+    form.dash-filters > .filter-toggle {
+        position: relative;
+        display: inline-flex;
+        flex: none;
+        align-items: center;
+        gap: 6px;
+        height: var(--rsp-tap);
+        padding: 0 12px;
+        border: 1px solid var(--rsp-input-line);
+        border-radius: 6px;
+        background: #fff;
+        color: var(--admin-ink);
+        font: inherit;
+        font-size: 14px;
+        font-weight: 700;
+        cursor: pointer;
+    }
+
+    .filter-toggle[aria-expanded="true"] {
+        border-color: var(--admin-ink);
+    }
+
+    .filter-count {
+        min-width: 20px;
+        height: 20px;
+        padding: 0 6px;
+        border-radius: 10px;
+        background: var(--danger);
+        color: #fff;
+        font-size: 11px;
+        font-weight: 800;
+        line-height: 20px;
+        text-align: center;
+    }
+
+    .filter-count[hidden] {
+        display: none;
+    }
+
+    /* Other buttons in the bar (e.g. "+ Record Purchase") take a full row under the search. */
+    form.filter-bar > .btn {
+        flex: 1 1 100% !important;
+        min-width: 0 !important;
+    }
+
+    /* The bottom sheet. */
+    .filter-panel {
+        position: fixed;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        z-index: 70;
+        display: none;
+        flex-direction: column;
+        gap: 10px;
+        max-height: min(80dvh, 560px);
+        padding: 0 var(--rsp-gutter) calc(16px + env(safe-area-inset-bottom));
+        overflow-y: auto;
+        border-radius: 14px 14px 0 0;
+        background: #fff;
+        box-shadow: 0 -10px 30px rgb(13 20 36 / 20%);
+    }
+
+    form.is-filters-open > .filter-panel {
+        display: flex;
+    }
+
+    .filter-panel-head {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin: 0 calc(-1 * var(--rsp-gutter));
+        padding: 10px var(--rsp-gutter);
+        border-bottom: 1px solid var(--admin-soft-line);
+        background: #fff;
+        font-size: 15px;
+    }
+
+    form.filter-bar .filter-panel-done,
+    .filter-panel-done {
+        flex: none;
+        min-width: 0;
+        min-height: var(--rsp-tap);
+        padding: 0 14px;
+        border: 0;
+        border-radius: 6px;
+        background: var(--admin-ink);
+        color: #fff;
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+    }
+
+    .filter-panel > select,
+    .filter-panel > .filter-date-range {
+        flex: none !important;
+        width: 100% !important;
+        max-width: none !important;
+        min-width: 0 !important;
+    }
+
+    .filter-panel > .filter-date-range {
+        flex-wrap: wrap;
+    }
+
+    .filter-panel .filter-date-field {
+        flex: 1 1 calc(50% - 4px);
+        flex-direction: column;
+        align-items: stretch;
+        gap: 4px;
+    }
+
+    .filter-panel .filter-date-field input[type="date"] {
+        min-width: 0 !important;
+    }
+
+    .filter-panel .filter-date-clear {
+        flex: 1 1 100%;
+    }
+
+    form.is-filters-open > .filter-scrim {
+        position: fixed;
+        inset: 0;
+        z-index: 69;
+        display: block;
+        background: rgb(0 0 0 / 30%);
+    }
+
+    body.has-sheet-open {
+        overflow: hidden;
+    }
+
+    /* Toolbars that are not filter forms keep 8-12px gaps. */
+    .toolbar,
+    .actions-right {
+        gap: 8px;
+    }
+
+    /* Modals use the whole width. */
+    .modal-backdrop {
+        padding: 8px;
+    }
+}
+
+/* ==================================================================================================================
+   System-wide pass (November 2026): modals, dashboard controls, guest pages and remaining tap targets.
+   ================================================================================================================== */
+
+/* -- Modals: in-body action rows stay visible while the form scrolls (tablet and phone). ------------------------- */
+@media (max-width: 1023px) {
+    .modal-body > .modal-actions:last-child,
+    .modal-body > form:last-child > .modal-actions:last-child {
+        position: sticky;
+        bottom: 0;
+        z-index: 4;
+        margin: 16px -26px -26px;
+        padding: 10px 26px;
+        border-top: 1px solid var(--admin-soft-line);
+        background: #fff;
+    }
+
+    .modal-close {
+        width: var(--rsp-tap);
+        height: var(--rsp-tap);
+        top: 10px;
+    }
+
+    .modal-close::before,
+    .modal-close::after {
+        inset: 21px 8px auto;
+    }
+
+    /* Dashboard controls. */
+    .dash-filters input,
+    .dash-filters select,
+    .dash-filters .filter-date-field input[type="date"],
+    .dash-filters .filter-date-clear {
+        height: var(--rsp-tap);
+    }
+
+    .dash-toggle .btn {
+        min-height: var(--rsp-tap);
+    }
+
+    /* Guest pages: text links and the password eye are full-size tap targets. */
+    :is(.login-forgot, .login-register) a {
+        display: inline-flex;
+        align-items: center;
+        min-height: var(--rsp-tap);
+    }
+
+    .password-toggle-btn {
+        min-width: var(--rsp-tap);
+        min-height: var(--rsp-tap);
+    }
+
+    /* Alert buttons stay visually small but are 44px tall. */
+    .workflow-alert-actions .btn {
+        min-height: var(--rsp-tap);
+    }
+}
+
+/* Touch tablets: buttons inside the (still tabular) tables get the 44px target too. */
+@media (min-width: 768px) and (max-width: 1023px) and (pointer: coarse) {
+    .admin-table .btn {
+        min-height: var(--rsp-tap);
+    }
+}
+
+@media (max-width: 767px) {
+    .modal-body > .modal-actions:last-child,
+    .modal-body > form:last-child > .modal-actions:last-child {
+        margin: 16px -16px -16px;
+        padding: 10px 16px;
+    }
+}
+
+/* -- Phones: modals fill the screen; compact title bar; actions two per row. ---------------------------------- */
+@media (max-width: 639px) {
+    .modal-backdrop:has(> .admin-modal:not(.system-confirm-modal)) {
+        align-items: stretch;
+        padding: 0;
+    }
+
+    .modal-backdrop > .admin-modal:not(.system-confirm-modal) {
+        width: 100%;
+        max-width: none;
+        height: 100dvh;
+        max-height: 100dvh;
+        border-radius: 0;
+    }
+
+    .admin-modal > .modal-titlebar,
+    .admin-modal.admin-modal-sales > .modal-titlebar {
+        justify-content: flex-start;
+        height: 60px;
+        padding: 0 64px 0 var(--rsp-gutter);
+    }
+
+    .admin-modal > .modal-titlebar .modal-brand-logo {
+        display: none;
+    }
+
+    .admin-modal > .modal-titlebar h2 {
+        display: -webkit-box;
+        overflow: hidden;
+        font-size: 16px;
+        line-height: 1.2;
+        text-align: left;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+    }
+
+    .admin-modal > .modal-body,
+    .admin-modal.admin-modal-sales > .modal-body {
+        padding: var(--rsp-gutter);
+    }
+
+    /* Footer (always on screen): buttons side by side, two per row, instead of one tall stack. */
+    .admin-modal > .modal-footer {
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: stretch;
+        gap: 8px;
+        padding: 10px var(--rsp-gutter) calc(10px + env(safe-area-inset-bottom));
+    }
+
+    .admin-modal > .modal-footer > *,
+    .admin-modal > .modal-footer .btn,
+    .admin-modal > .modal-footer form .btn {
+        flex: 1 1 calc(50% - 4px);
+        width: auto;
+        min-width: 0;
+        min-height: var(--rsp-tap);
+        margin: 0;
+        white-space: normal;
+        line-height: 1.15;
+    }
+
+    .admin-modal > .modal-footer > form {
+        display: flex;
+    }
+
+    .admin-modal > .modal-footer > form .btn {
+        flex: 1 1 auto;
+    }
+
+    .modal-body .modal-actions {
+        gap: 8px;
+    }
+
+    .modal-body .modal-actions > .btn,
+    .modal-body .modal-actions > form {
+        flex: 1 1 calc(50% - 4px);
+        min-width: 0;
+    }
+
+    .modal-body .modal-actions > form .btn {
+        width: 100%;
+    }
+
+    /* Forms: one column, full-width fields. */
+    .modal-body :is(.form-grid, .fleet-form-grid, .detail-grid) {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .modal-body :is(.form-row, .detail-row) {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 6px;
+    }
+
+    .modal-body :is(input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]), select, textarea) {
+        width: 100%;
+        max-width: none;
+    }
+
+    .modal-body .form-row :is(input:not([type="checkbox"]):not([type="radio"]), select) {
+        min-height: var(--rsp-tap);
+    }
+
+    .modal-body :is(.form-row label, .detail-label) {
+        font-size: 14px;
+    }
+
+    .modal-body .detail-value {
+        font-size: 15px;
+        overflow-wrap: anywhere;
+    }
+
+    /* Tables inside modals scroll in their own box, never the whole modal. */
+    .modal-body .admin-table {
+        font-size: 13px;
+    }
+}
+
+/* -- Tablet (768-1023px): tables scroll sideways as plain tables. The pinned Actions column would sit on top of the
+   Status column until scrolled to the end, so it is unpinned here (it stays pinned on desktop). ------------------ */
+@media (min-width: 768px) and (max-width: 1023px) {
+    .table-wrap .admin-table :is(th, td):last-child {
+        position: static;
+        box-shadow: none;
+    }
+}
+
+/* Phones: an action form with its own field (e.g. the driver's status dropdown + Update, or a receipt upload) takes a
+   full row of the modal's action bar, field and button side by side. */
+@media (max-width: 639px) {
+    .modal-body .modal-actions > form:has(select, input[type="file"]) {
+        flex: 1 1 100%;
+        flex-wrap: nowrap;
+        align-items: stretch;
+        gap: 8px;
+    }
+
+    .modal-body .modal-actions > form:has(select, input[type="file"]) :is(select, input[type="file"]) {
+        flex: 1 1 auto;
+        width: auto;
+        min-width: 0;
+        height: var(--rsp-tap);
+    }
+
+    .modal-body .modal-actions > form:has(select, input[type="file"]) .btn {
+        flex: none;
+        width: auto;
+    }
+
+    .modal-body .modal-actions > :is(.btn, form):only-child,
+    .modal-body .modal-actions > form + .btn:last-child {
+        flex-basis: 100%;
+    }
+}
+
+/* ==================================================================================================================
+   Auth pages (Log In, Sign Up, Forgot / Reset Password) below 1024px. Desktop (>= 1024px) is unchanged.
+   Same markup on all four pages; layout by CSS only (the brand panel is moved above the form with `order`).
+
+   - Below 640px: a compact white brand strip across the top, the form full width under it (16px side padding).
+   - 640-1023px:  header + form form one 420px-wide group, centered horizontally, and vertically when it fits
+                  (auto margins, so a tall form such as Sign Up starts at the top and scrolls instead of clipping).
+   Sizes use clamp() against the viewport width so they scale smoothly from 360px to 1023px.
+   ================================================================================================================== */
+@media (max-width: 1023px) {
+    .login-page {
+        --auth-logo: clamp(64px, calc(56px + 2.2vw), 80px);
+        --auth-brand-name: clamp(15px, calc(12px + .7vw), 19px);
+        --auth-brand-pad: clamp(8px, calc(4px + 1vw), 14px);
+        --auth-heading: clamp(28px, calc(24px + 1vw), 34px);
+        --auth-heading-gap: clamp(12px, calc(8px + 1vw), 20px);
+        --auth-panel-top: clamp(16px, calc(8px + 2.2vw), 28px);
+        --auth-form-gap: clamp(10px, calc(8px + .6vw), 14px);
+    }
+
+    body.login-page {
+        min-height: 100dvh;
+        background: #111827;
+    }
+
+    .login-shell {
+        display: flex;
+        flex-direction: column;
+        min-height: 100dvh;
+        overflow-x: hidden;
+    }
+
+    /* Compact brand header: logo on the left, name + subtitle stacked beside it. */
+    .login-shell > .login-brand-panel {
+        order: -1;
+        flex: none;
+        min-height: 0;
+        padding: var(--auth-brand-pad) var(--rsp-gutter);
+        overflow: visible;
+        background: #fff;
+    }
+
+    .login-brand-panel .login-brand-content {
+        display: grid;
+        grid-template-columns: auto auto;
+        grid-template-rows: auto auto;
+        column-gap: 12px;
+        justify-content: center;
+        align-items: center;
+        width: 100%;
+        max-width: none;
+        text-align: left;
+        transform: none;
+    }
+
+    .login-brand-panel .login-brand-content img {
+        grid-row: 1 / span 2;
+        width: auto;
+        max-width: 40vw;
+        height: var(--auth-logo);
+        margin: 0;
+    }
+
+    .login-brand-panel .login-brand-content h2 {
+        align-self: end;
+        margin: 0;
+        font-size: var(--auth-brand-name);
+        line-height: 1.1;
+    }
+
+    .login-brand-panel .login-brand-content p {
+        align-self: start;
+        margin: 2px 0 0;
+        font-size: 12px;
+        font-weight: 700;
+    }
+
+    /* Form panel: fills the rest of the screen (no gap at the bottom); content starts at the top, never clipped. */
+    .login-shell > .login-panel,
+    .login-shell > .login-panel.register-panel {
+        flex: 1 0 auto;
+        align-items: flex-start;
+        justify-content: center;
+        min-height: 0;
+        width: 100%;
+        padding: var(--auth-panel-top) var(--rsp-gutter) 28px;
+        overflow: visible;
+    }
+
+    .login-panel .login-form-wrap {
+        width: 100%;
+        max-width: none;
+        transform: none;
+    }
+
+    .login-panel .login-form-wrap h1 {
+        margin: 0 0 var(--auth-heading-gap);
+        font-size: var(--auth-heading);
+        line-height: 1.15;
+    }
+
+    .login-panel .login-form,
+    .login-panel .register-form {
+        gap: var(--auth-form-gap);
+    }
+
+    .login-panel .login-field {
+        gap: 6px;
+    }
+
+    .login-panel .login-field label {
+        font-size: 13px;
+    }
+
+    .login-panel .login-field :is(input, select),
+    .login-panel.register-panel .login-field :is(input, select) {
+        height: 50px;
+        padding: 0 16px;
+        font-size: 16px;
+    }
+
+    .login-panel .password-input-wrap input {
+        padding-right: 56px;
+    }
+
+    .login-panel .password-toggle-btn {
+        right: 4px;
+    }
+
+    .login-panel :is(.login-error, .login-notice) {
+        margin: 0;
+    }
+
+    .login-panel .login-submit,
+    .login-panel .register-submit {
+        height: 52px;
+        margin-top: 6px;
+        font-size: 17px;
+    }
+
+    .login-panel :is(.login-forgot, .login-register) {
+        margin-top: 8px;
+    }
+}
+
+/* 640-1023px: header + form are one centered 420px column. */
+@media (min-width: 640px) and (max-width: 1023px) {
+    .login-shell {
+        align-items: center;
+        padding: clamp(24px, 5vh, 56px) 24px;
+    }
+
+    .login-shell > .login-brand-panel {
+        width: 100%;
+        max-width: 420px;
+        margin-top: auto;
+        padding: var(--auth-brand-pad) 20px;
+        border-radius: 12px;
+    }
+
+    .login-shell > .login-panel,
+    .login-shell > .login-panel.register-panel {
+        flex: none;
+        width: 100%;
+        max-width: 420px;
+        margin-bottom: auto;
+        padding: var(--auth-panel-top) 0 0;
+        background: transparent;
+    }
+}
+
+/* Very narrow phones: the subtitle goes, the name sits centered beside the logo. */
+@media (max-width: 399px) {
+    .login-brand-panel .login-brand-content h2 {
+        grid-row: 1 / span 2;
+        align-self: center;
+    }
+
+    .login-brand-panel .login-brand-content p {
+        display: none;
+    }
+}
+
+/* ==================================================================================================================
+   Confirmation dialog (confirm.js / x-confirm-dialog): centered on desktop and tablet, a bottom sheet on phones.
+   ================================================================================================================== */
+.confirm-dialog {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+}
+
+.confirm-dialog[hidden] {
+    display: none;
+}
+
+html.has-confirm-open,
+html.has-confirm-open body {
+    overflow: hidden;
+}
+
+.confirm-scrim {
+    position: absolute;
+    inset: 0;
+    background: rgb(13 20 36 / 55%);
+}
+
+.confirm-panel {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: min(560px, 100%);
+    max-height: min(86dvh, 760px);
+    overflow: hidden;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 24px 64px rgb(0 0 0 / 30%);
+    animation: confirm-in .14s ease-out;
+}
+
+@keyframes confirm-in {
+    from { opacity: 0; transform: translateY(8px) scale(.98); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .confirm-panel { animation: none; }
+}
+
+.confirm-head {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 12px;
+    padding: 18px 20px 10px;
+}
+
+.confirm-head h2 {
+    margin: 0;
+    color: var(--admin-ink);
+    font-size: 19px;
+    line-height: 1.25;
+    font-weight: 800;
+}
+
+.confirm-icon {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: #e8eefc;
+    color: #1d4ed8;
+    font-weight: 900;
+}
+
+.confirm-icon::before {
+    content: "✓";
+}
+
+.confirm-dialog[data-type="status"] .confirm-icon::before { content: "⇄"; }
+.confirm-dialog[data-type="simple"] .confirm-icon::before { content: "?"; }
+
+.confirm-dialog[data-tone="danger"] .confirm-icon {
+    background: #ffe4e8;
+    color: var(--danger);
+}
+
+.confirm-dialog[data-tone="danger"] .confirm-icon::before {
+    content: "!";
+}
+
+.confirm-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 0 20px 6px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    color: #1f2937;
+    font-size: 14px;
+    line-height: 1.45;
+}
+
+.confirm-lead {
+    margin: 0 0 12px;
+    font-size: 15px;
+    font-weight: 700;
+    overflow-wrap: anywhere;
+}
+
+.confirm-message,
+.confirm-undo {
+    margin: 0 0 12px;
+    color: #4b5563;
+}
+
+.confirm-dialog[data-tone="danger"] .confirm-undo {
+    color: #9b001d;
+    font-weight: 700;
+}
+
+/* Review summary: label | value rows; Edit shows Old -> New with the new value highlighted. */
+.confirm-summary {
+    display: grid;
+    margin: 0 0 12px;
+    border: 1px solid var(--admin-soft-line);
+    border-radius: 8px;
+}
+
+.confirm-row {
+    display: grid;
+    grid-template-columns: minmax(110px, 38%) minmax(0, 1fr);
+    gap: 12px;
+    padding: 9px 12px;
+    border-top: 1px solid #eef0f3;
+}
+
+.confirm-row:first-child {
+    border-top: 0;
+}
+
+.confirm-row dt {
+    color: var(--admin-muted);
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.confirm-row dd {
+    margin: 0;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+}
+
+.confirm-old {
+    color: #6b7280;
+    font-weight: 500;
+    text-decoration: line-through;
+}
+
+.confirm-arrow {
+    margin: 0 6px;
+    color: #9ca3af;
+}
+
+mark.confirm-new,
+.confirm-change .confirm-new {
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: #fff4c2;
+    color: #111;
+    font-weight: 800;
+}
+
+.confirm-status-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
+    margin: 0 0 12px;
+}
+
+.confirm-item {
+    font-size: 15px;
+}
+
+.confirm-change .confirm-old {
+    text-decoration: none;
+}
+
+/* Risky values. */
+.confirm-flags {
+    margin: 0 0 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--warning-soft);
+    border-left: 4px solid var(--warning);
+    border-radius: 6px;
+    background: #fff7ec;
+}
+
+.confirm-flags strong {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 13px;
+}
+
+.confirm-flags ul {
+    margin: 0;
+    padding-left: 18px;
+}
+
+/* Type the ID to confirm. */
+.confirm-typed {
+    flex: none;
+    display: grid;
+    gap: 6px;
+    padding: 4px 20px 8px;
+    font-size: 13px;
+}
+
+.confirm-typed[hidden] {
+    display: none;
+}
+
+.confirm-typed input {
+    height: 44px;
+    padding: 0 12px;
+    border: 1px solid var(--rsp-input-line);
+    border-radius: 6px;
+    font: inherit;
+    font-size: 15px;
+    letter-spacing: .02em;
+}
+
+.confirm-typed input:focus-visible {
+    border-color: var(--danger);
+    outline: 2px solid rgb(245 9 61 / 20%);
+}
+
+.confirm-actions {
+    display: flex;
+    flex: none;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 12px 20px 16px;
+    border-top: 1px solid #eef0f3;
+}
+
+.confirm-actions .btn {
+    gap: 8px;
+    min-width: 120px;
+    min-height: var(--rsp-tap);
+}
+
+.confirm-actions .btn[hidden] {
+    display: none;
+}
+
+.confirm-ok:disabled {
+    cursor: not-allowed;
+    opacity: .55;
+}
+
+.confirm-spinner {
+    display: none;
+    width: 16px;
+    height: 16px;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: confirm-spin .7s linear infinite;
+}
+
+.confirm-dialog.is-busy .confirm-spinner {
+    display: inline-block;
+}
+
+.confirm-dialog.is-busy .confirm-ok:disabled {
+    opacity: .85;
+    cursor: progress;
+}
+
+@keyframes confirm-spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Phones: a bottom sheet, buttons side by side and full width. */
+@media (max-width: 639px) {
+    .confirm-dialog {
+        align-items: flex-end;
+        padding: 0;
+    }
+
+    .confirm-panel {
+        width: 100%;
+        max-height: 88dvh;
+        border-radius: 16px 16px 0 0;
+        animation-name: confirm-sheet-in;
+    }
+
+    @keyframes confirm-sheet-in {
+        from { transform: translateY(24px); opacity: .6; }
+    }
+
+    .confirm-head {
+        padding: 16px var(--rsp-gutter) 8px;
+    }
+
+    .confirm-head::before {
+        content: "";
+        position: absolute;
+        top: 6px;
+        left: 50%;
+        width: 40px;
+        height: 4px;
+        margin-left: -20px;
+        border-radius: 2px;
+        background: #d1d5db;
+    }
+
+    .confirm-head h2 {
+        font-size: 17px;
+    }
+
+    .confirm-body,
+    .confirm-typed {
+        padding-inline: var(--rsp-gutter);
+    }
+
+    .confirm-row {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 2px;
+    }
+
+    .confirm-actions {
+        padding: 10px var(--rsp-gutter) calc(12px + env(safe-area-inset-bottom));
+    }
+
+    .confirm-actions .btn {
+        flex: 1 1 0;
+        min-width: 0;
+        white-space: normal;
+        line-height: 1.15;
+    }
+}
+
+/* ==================================================================================================================
+   Bottom navigation (x-nav.bottom). Phones and tablets (< 1024px) and touch screens up to 1366px (e.g. iPad Pro)
+   use a fixed bottom bar instead of the sidebar; laptops and PCs keep the sidebar. The header keeps the title, bell
+   and avatar (the avatar menu also has Sign Out). Layers: bar 30 < header menu 45 < modals 50 < More sheet 60 <
+   filter sheet 70 < toasts 80 < confirm dialog 200.
+   ================================================================================================================== */
+:root {
+    --bottom-nav-h: 60px;
+}
+
+.bottom-nav,
+.more-sheet,
+.header-signout {
+    display: none;
+}
+
+@media (max-width: 1023px), (pointer: coarse) and (max-width: 1366px) {
+    /* No sidebar, no hamburger: the bottom bar replaces them. */
+    .admin-sidebar,
+    .sidebar-scrim,
+    .mobile-menu-button {
+        display: none !important;
+    }
+
+    .admin-main {
+        margin-left: 0;
+        padding-bottom: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom));
+    }
+
+    /* Compact header (same as < 1024px, also for touch screens up to 1366px): title | bell + avatar. */
+    .admin-header {
+        flex-wrap: nowrap;
+        height: 64px;
+        min-height: 0;
+        gap: var(--rsp-gap);
+        padding: 0 var(--rsp-gutter);
+        padding-top: env(safe-area-inset-top);
+        box-sizing: content-box;
+    }
+
+    .admin-header h1 {
+        margin: 0;
+        overflow: hidden;
+        font-size: 18px;
+        line-height: 1.2;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+    }
+
+    .admin-header .header-subtitle {
+        display: none;
+    }
+
+    .header-profile {
+        flex: none;
+        gap: 8px;
+        min-width: 0;
+    }
+
+    .header-bell,
+    .header-avatar {
+        width: var(--rsp-tap);
+        height: var(--rsp-tap);
+    }
+
+    .header-avatar {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        border: 0;
+        border-radius: 50%;
+        background: var(--admin-ink);
+        color: #fff;
+        font-size: 14px;
+        font-weight: 800;
+        cursor: pointer;
+    }
+
+    .header-account-text {
+        position: absolute;
+        top: calc(100% + 8px);
+        right: 0;
+        z-index: 45;
+        display: none;
+        min-width: 200px;
+        max-width: calc(100vw - 2 * var(--rsp-gutter));
+        padding: 12px 14px;
+        border: 1px solid var(--admin-soft-line);
+        border-radius: 8px;
+        background: #fff;
+        box-shadow: 0 8px 24px rgb(13 20 36 / 14%);
+        text-align: left;
+    }
+
+    .header-account.is-open .header-account-text {
+        display: block;
+    }
+
+    .header-signout {
+        display: block;
+        margin: 12px 0 0;
+        padding-top: 12px;
+        border-top: 1px solid #eef0f3;
+    }
+
+    .header-signout .btn {
+        gap: 8px;
+        width: 100%;
+        min-height: var(--rsp-tap);
+        box-shadow: none;
+    }
+
+    /* The bar. */
+    .bottom-nav {
+        position: fixed;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        z-index: 30;
+        display: block;
+        padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+        background: #fff;
+        /* The top line is a shadow, so the bar is exactly --bottom-nav-h tall and matches the page's bottom padding. */
+        box-shadow: 0 -1px 0 var(--admin-soft-line), 0 -4px 16px rgb(13 20 36 / 6%);
+    }
+
+    .bottom-nav ul {
+        display: grid;
+        grid-template-columns: repeat(var(--bottom-nav-slots, 5), minmax(0, 1fr));
+        max-width: 640px;
+        height: var(--bottom-nav-h);
+        margin: 0 auto;
+        padding: 0;
+        list-style: none;
+    }
+
+    .bottom-nav li {
+        min-width: 0;
+    }
+
+    .bottom-nav-item {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 3px;
+        width: 100%;
+        height: 100%;
+        min-height: var(--rsp-tap);
+        padding: 4px 2px;
+        border: 0;
+        background: none;
+        color: #6b7280;
+        font: inherit;
+        font-size: 11px;
+        font-weight: 700;
+        text-decoration: none;
+        cursor: pointer;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .bottom-nav-item:focus-visible {
+        outline: 2px solid var(--admin-ink);
+        outline-offset: -4px;
+        border-radius: 8px;
+    }
+
+    .bottom-nav-item.is-active {
+        color: var(--admin-ink);
+    }
+
+    /* Active page: a red bar on top of the item and a tinted icon pill. */
+    .bottom-nav-item.is-active::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 50%;
+        width: 32px;
+        height: 3px;
+        margin-left: -16px;
+        border-radius: 0 0 3px 3px;
+        background: var(--danger);
+    }
+
+    .bottom-nav-icon {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 48px;
+        height: 28px;
+        border-radius: 14px;
+    }
+
+    .bottom-nav-item.is-active .bottom-nav-icon {
+        background: #eef1f5;
+    }
+
+    .bottom-nav-label {
+        max-width: 100%;
+        overflow: hidden;
+        line-height: 1.1;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+    }
+
+    .bottom-nav-badge {
+        position: absolute;
+        top: -4px;
+        right: 2px;
+        min-width: 18px;
+        height: 18px;
+        padding: 0 5px;
+        border: 2px solid #fff;
+        border-radius: 9px;
+        background: var(--danger);
+        color: #fff;
+        font-size: 10px;
+        font-weight: 800;
+        line-height: 14px;
+        text-align: center;
+    }
+
+    .bottom-nav-badge[hidden] {
+        display: none;
+    }
+
+    .bottom-nav-dot {
+        position: absolute;
+        top: 0;
+        right: 8px;
+        width: 9px;
+        height: 9px;
+        border: 2px solid #fff;
+        border-radius: 50%;
+        background: var(--danger);
+    }
+
+    .bottom-nav-badge.is-inline,
+    .bottom-nav-dot.is-inline {
+        position: static;
+        margin-left: auto;
+    }
+
+    /* "More" sheet. */
+    .more-sheet {
+        position: fixed;
+        inset: 0;
+        z-index: 60;
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+    }
+
+    .more-sheet[hidden] {
+        display: none;
+    }
+
+    .more-scrim {
+        position: absolute;
+        inset: 0;
+        background: rgb(13 20 36 / 45%);
+    }
+
+    .more-panel {
+        position: relative;
+        width: min(560px, 100%);
+        max-height: 85dvh;
+        overflow-y: auto;
+        padding: 8px var(--rsp-gutter) calc(16px + env(safe-area-inset-bottom));
+        border-radius: 16px 16px 0 0;
+        background: #fff;
+        box-shadow: 0 -10px 30px rgb(13 20 36 / 20%);
+    }
+
+    .more-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 6px 0 8px;
+    }
+
+    .more-head h2 {
+        margin: 0;
+        font-size: 17px;
+    }
+
+    .more-close {
+        position: relative;
+        width: var(--rsp-tap);
+        height: var(--rsp-tap);
+        border: 0;
+        border-radius: 8px;
+        background: none;
+        cursor: pointer;
+    }
+
+    .more-close::before,
+    .more-close::after {
+        content: "";
+        position: absolute;
+        top: 21px;
+        left: 12px;
+        width: 20px;
+        height: 2px;
+        background: var(--admin-ink);
+        transform: rotate(45deg);
+    }
+
+    .more-close::after {
+        transform: rotate(-45deg);
+    }
+
+    .more-links {
+        display: grid;
+        gap: 4px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+
+    .more-link {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        min-height: 52px;
+        padding: 0 12px;
+        border-radius: 10px;
+        color: var(--admin-ink);
+        font-size: 15px;
+        font-weight: 700;
+        text-decoration: none;
+    }
+
+    .more-link:hover,
+    .more-link:focus-visible {
+        background: #f4f6f9;
+    }
+
+    .more-link.is-active {
+        background: #eef1f5;
+        box-shadow: inset 3px 0 0 var(--danger);
+    }
+
+    .more-profile {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-top: 12px;
+        padding: 12px 4px 0;
+        border-top: 1px solid #eef0f3;
+    }
+
+    .more-avatar {
+        display: inline-flex;
+        flex: none;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: var(--admin-ink);
+        color: #fff;
+        font-weight: 800;
+    }
+
+    .more-signout {
+        margin-top: 12px;
+    }
+
+    .more-signout .btn {
+        gap: 8px;
+        width: 100%;
+        min-height: var(--rsp-tap);
+        box-shadow: none;
+    }
+
+    /* Toasts sit above the bar. */
+    .toast-stack {
+        bottom: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom) + 12px);
+    }
+
+    /* On-screen keyboard open (responsive.js): the bar steps aside so the field stays visible. */
+    html.is-keyboard-open .bottom-nav {
+        display: none;
+    }
+
+    html.is-keyboard-open .admin-main {
+        padding-bottom: 0;
+    }
+}
+
+/* Landscape phones: a slimmer bar (labels stay). */
+@media (max-height: 480px) and (orientation: landscape) and (max-width: 1023px) {
+    :root {
+        --bottom-nav-h: 52px;
+    }
+
+    .bottom-nav-icon {
+        height: 24px;
+    }
+}

@@ -12,12 +12,14 @@
 
 @component($ledgerLayout, ['title' => 'Inventory Ledger', 'active' => 'ledger'])
     <div data-tabs>
-        <h2 class="section-title">Ledger Tab</h2>
+        <div class="page-heading-row">
+            <h2 class="section-title">Ledger Tab</h2>
+            <x-export-button />
+        </div>
         <div class="tabs">
             <button class="tab-button {{ $activeTab === 'ledger' ? 'is-active' : '' }}" type="button" data-tab-target="ledger" data-tab-url="{{ route($ledgerRoutePrefix) }}">Ledger</button>
             <button class="tab-button {{ $activeTab === 'transactions' ? 'is-active' : '' }}" type="button" data-tab-target="transactions" data-tab-url="{{ route($ledgerRoutePrefix.'.transactions') }}">Transaction</button>
         </div>
-        <div class="actions-right"><button class="btn btn-secondary" type="button" data-export-table>Export</button></div>
 
         <section data-tab-panel="ledger" {{ $activeTab !== 'ledger' ? 'hidden' : '' }}>
             <x-filter.bar class="toolbar-ledger" :action="route($ledgerRoutePrefix)">
@@ -27,7 +29,7 @@
                 <x-filter.select name="fuel_type_id" label="Fuel Type" :options="$filterOptions['fuelTypes']" :selected="$filters['fuel_type_id'] ?? null" />
             </x-filter.bar>
             <div class="table-wrap">
-                <table class="admin-table ledger-table">
+                <table class="admin-table ledger-table" data-card-keys="0,1,5">
                     <thead><tr><th>Purchase ID</th><th>Fuel Type</th><th>Depot</th><th>Purchased Quantity</th><th>Total Lifted</th><th>Remaining Quantity</th><th>Status</th></tr></thead>
                     <tbody>
                         @forelse ($ledger as $row)
@@ -57,7 +59,7 @@
                 <x-filter.select name="fuel_type_id" label="Fuel Type" :options="$filterOptions['fuelTypes']" :selected="$filters['fuel_type_id'] ?? null" />
             </x-filter.bar>
             <div class="table-wrap">
-                <table class="admin-table ledger-table">
+                <table class="admin-table ledger-table" data-card-keys="0,1,5">
                     <thead><tr><th>Purchase ID</th><th>Fuel Type</th><th>Depot</th><th>Purchased Quantity</th><th>Total Lifted</th><th>Remaining Quantity</th><th>Status</th><th>Actions</th></tr></thead>
                     <tbody>
                         @forelse ($transactions as $row)

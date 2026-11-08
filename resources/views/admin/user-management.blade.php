@@ -9,21 +9,16 @@
 
 @component('layouts.admin', ['title' => 'User Management', 'active' => 'user-management'])
     <div data-tabs>
-        <h2 class="section-title" data-tab-heading>{{ ['office' => 'Office Staff', 'drivers' => 'Drivers', 'account-requests' => 'Account Requests'][$activeTab] }}</h2>
-
-
-
+        <div class="page-heading-row">
+            <h2 class="section-title" data-tab-heading>{{ ['office' => 'Office Staff', 'drivers' => 'Drivers', 'account-requests' => 'Account Requests'][$activeTab] }}</h2>
+            <span class="page-heading-actions" @if ($activeTab === 'account-requests') hidden @endif>
+                <x-export-button :href="route('admin.user-management.export', ['tab' => $activeTab])" data-tab-export-url="{{ route('admin.user-management.export', ['tab' => '__TAB__']) }}" />
+            </span>
+        </div>
         <div class="tabs">
             <button class="tab-button {{ $activeTab === 'office' ? 'is-active' : '' }}" type="button" data-tab-target="office" data-heading="Office Staff" data-tab-url="{{ route('admin.user-management', ['tab' => 'office']) }}">Office Staff</button>
             <button class="tab-button {{ $activeTab === 'drivers' ? 'is-active' : '' }}" type="button" data-tab-target="drivers" data-heading="Drivers" data-tab-url="{{ route('admin.user-management', ['tab' => 'drivers']) }}">Drivers</button>
             <button class="tab-button {{ $activeTab === 'account-requests' ? 'is-active' : '' }}" type="button" data-tab-target="account-requests" data-heading="Account Requests" data-tab-url="{{ route('admin.user-management', ['tab' => 'account-requests']) }}">Account Requests</button>
-        </div>
-        <div class="actions-right" @if ($activeTab === 'account-requests') hidden @endif>
-            <a
-                class="btn btn-secondary"
-                href="{{ route('admin.user-management.export', ['tab' => $activeTab]) }}"
-                data-tab-export-url="{{ route('admin.user-management.export', ['tab' => '__TAB__']) }}"
-            >Export</a>
         </div>
 
         <section data-tab-panel="office" {{ $activeTab !== 'office' ? 'hidden' : '' }}>
@@ -36,7 +31,7 @@
                 <button class="btn btn-secondary btn-wide" type="button" data-modal-open="staff-add">+ Add Office Staff</button>
             </x-filter.bar>
             <div class="table-wrap">
-                <table class="admin-table">
+                <table class="admin-table" data-card-keys="0,1,2">
                     <thead><tr><th>Staff ID</th><th>Name</th><th>Position</th><th>Account Status</th><th>Approval Status</th><th>Email</th><th>Contact Number</th><th>Actions</th></tr></thead>
                     <tbody>
                         @forelse ($staff as $row)
@@ -72,7 +67,7 @@
                 <button class="btn btn-secondary btn-wide" type="button" data-modal-open="driver-add">+ Add Driver</button>
             </x-filter.bar>
             <div class="table-wrap">
-                <table class="admin-table">
+                <table class="admin-table" data-card-keys="0,1,2">
                     <thead><tr><th>Driver ID</th><th>Name</th><th>License No.</th><th>Account Status</th><th>Approval Status</th><th>Email</th><th>Contact Number</th><th>Actions</th></tr></thead>
                     <tbody>
                         @forelse ($drivers as $row)
@@ -150,7 +145,7 @@
 
     @foreach ($staff as $row)
         <x-admin.modal id="staff-edit-{{ $row->id }}" title="Edit Staff Record">
-            <form id="staff-update-{{ $row->id }}" method="POST" action="{{ route('admin.user-management.staff.update', $row) }}">
+            <form id="staff-update-{{ $row->id }}" data-confirm-item="{{ $staffId($row) }} ({{ $row->name }})" method="POST" action="{{ route('admin.user-management.staff.update', $row) }}">
                 @csrf
                 @method('PATCH')
             </form>
@@ -169,7 +164,10 @@
             </div>
             <div class="modal-actions">
                 <button class="btn btn-pill btn-secondary" type="submit" form="staff-update-{{ $row->id }}">Apply Changes</button>
-                <form method="POST" action="{{ route('admin.user-management.users.status', $row) }}">
+                <form method="POST" action="{{ route('admin.user-management.users.status', $row) }}"
+                    data-confirm="status" data-confirm-title="{{ $row->status === 'active' ? 'Deactivate account?' : 'Activate account?' }}"
+                    data-confirm-item="{{ $staffId($row) }} ({{ $row->name }})" data-confirm-from="{{ ucfirst($row->status) }}" data-confirm-to="{{ $row->status === 'active' ? 'Inactive' : 'Active' }}"
+                    @if ($row->status === 'active') data-confirm-tone="danger" data-confirm-note="They will not be able to sign in until the account is activated again." @endif>
                     @csrf
                     @method('PATCH')
                     <input type="hidden" name="tab" value="office">
@@ -182,7 +180,7 @@
 
     @foreach ($drivers as $row)
         <x-admin.modal id="driver-edit-{{ $row->id }}" title="Edit Driver Record">
-            <form id="driver-update-{{ $row->id }}" method="POST" action="{{ route('admin.user-management.drivers.update', $row) }}">
+            <form id="driver-update-{{ $row->id }}" data-confirm-item="{{ $driverId($row) }} ({{ $row->name }})" method="POST" action="{{ route('admin.user-management.drivers.update', $row) }}">
                 @csrf
                 @method('PATCH')
             </form>
@@ -202,7 +200,10 @@
             </div>
             <div class="modal-actions">
                 <button class="btn btn-pill btn-secondary" type="submit" form="driver-update-{{ $row->id }}">Apply Changes</button>
-                <form method="POST" action="{{ route('admin.user-management.users.status', $row) }}">
+                <form method="POST" action="{{ route('admin.user-management.users.status', $row) }}"
+                    data-confirm="status" data-confirm-title="{{ $row->status === 'active' ? 'Deactivate account?' : 'Activate account?' }}"
+                    data-confirm-item="{{ $driverId($row) }} ({{ $row->name }})" data-confirm-from="{{ ucfirst($row->status) }}" data-confirm-to="{{ $row->status === 'active' ? 'Inactive' : 'Active' }}"
+                    @if ($row->status === 'active') data-confirm-tone="danger" data-confirm-note="They will not be able to sign in until the account is activated again." @endif>
                     @csrf
                     @method('PATCH')
                     <input type="hidden" name="tab" value="drivers">

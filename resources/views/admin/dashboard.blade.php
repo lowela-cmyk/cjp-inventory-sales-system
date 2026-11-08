@@ -7,27 +7,51 @@
     $keepFilters = fn (string $prefix): array => collect($filterQuery)->reject(fn (mixed $value, string $key): bool => str_starts_with($key, $prefix))->all();
     $margin = $revenue['margin'];
     $peak = $salesTrend['peak'];
+    // Volume cards use the raw liter totals, so every page shows the same "717,791 L" format (see x-stat-value).
+    $rawLiters = [
+        'Total Inventory in Stock' => $inventory['totals']['stock_liters'] ?? null,
+        'Remaining Balance in Depots' => $inventory['totals']['remaining_liters'] ?? null,
+        'Total Delivered' => $salesTrend['totals']['delivered_liters'] ?? null,
+    ];
+    // The Fuel Type / Depot cards only echoed the filters; the active filters show as chips instead.
+    $filterCards = ['Fuel Type', 'Depot'];
+    $optionName = fn (iterable $options, mixed $id, string $field = 'name'): ?string => $id === null || $id === ''
+        ? null
+        : collect($options)->first(fn (object $option): bool => (string) $option->id === (string) $id)?->{$field};
+    $inventoryChips = array_filter([
+        'Fuel' => $optionName($filterOptions['fuelTypes'], $invFilters['fuel_type_id'] ?? null),
+        'Depot' => $optionName($filterOptions['depots'], $invFilters['depot_id'] ?? null),
+        'Search' => ($invFilters['search'] ?? '') !== '' ? $invFilters['search'] : null,
+    ]);
+    $customer = collect($filterOptions['customers'])->first(fn (object $c): bool => (string) $c->id === (string) ($salesFilters['customer_id'] ?? ''));
+    $salesChips = array_filter([
+        'Fuel' => $optionName($filterOptions['fuelTypes'], $salesFilters['fuel_type_id'] ?? null),
+        'Customer' => $customer ? ($customer->company_name ?: $customer->name) : null,
+        'From' => $salesFilters['date_from'] ?? null,
+        'To' => $salesFilters['date_to'] ?? null,
+        'Search' => ($salesFilters['search'] ?? '') !== '' ? $salesFilters['search'] : null,
+    ]);
 @endphp
 
 @component('layouts.admin', ['title' => 'Dashboard and Analytics', 'active' => 'dashboard'])
     <div class="dash">
-        {{-- Part 11: Export the charts, KPI cards and AI insight as one PDF (see dashboard.js). --}}
-        <div class="dash-actions">
-            <form method="POST" action="{{ route('admin.dashboard.export') }}" data-dashboard-export>
-                @csrf
-                @foreach ($filterQuery as $name => $value)
-                    <input type="hidden" name="{{ $name }}" value="{{ $value }}">
-                @endforeach
-                <button class="btn btn-secondary" type="submit" data-dashboard-export-button>Export</button>
-            </form>
-        </div>
         @if ($errors->any())
             <p class="form-alert" role="alert">{{ $errors->first() }}</p>
         @endif
 
         {{-- Current Inventory --}}
         <section class="dash-section" id="current-inventory" aria-labelledby="dash-inventory-title">
-            <h2 class="dash-section-title" id="dash-inventory-title">Current Inventory</h2>
+            <div class="page-heading-row">
+                <h2 class="dash-section-title" id="dash-inventory-title">Current Inventory</h2>
+                {{-- Part 11: Export the charts, KPI cards and AI insight as one PDF (see dashboard.js). --}}
+                <form class="dash-actions" method="POST" action="{{ route('admin.dashboard.export') }}" data-dashboard-export data-confirm="none">
+                    @csrf
+                    @foreach ($filterQuery as $name => $value)
+                        <input type="hidden" name="{{ $name }}" value="{{ $value }}">
+                    @endforeach
+                    <x-export-button type="submit" data-dashboard-export-button />
+                </form>
+            </div>
             <div class="dash-panel">
                 <form class="dash-filters dash-filters-inventory" method="GET" action="{{ route('admin.dashboard') }}#current-inventory" data-auto-filter>
                     @foreach ($keepFilters('inv_') as $name => $value)
@@ -48,9 +72,12 @@
                     </select>
                 </form>
 
+                @include('admin.partials.dashboard-filter-chips', ['chips' => $inventoryChips])
+
                 <div class="dash-kpis dash-kpis-6">
                     @foreach ($inventory['cards'] as [$label, $value])
-                        <div class="dash-kpi"><span>{{ $label }}</span><strong>{{ $value }}</strong></div>
+                        @continue(in_array($label, $filterCards, true))
+                        <div class="dash-kpi"><span>{{ $label }}</span><x-stat-value :value="$value" :liters="$rawLiters[$label] ?? null" /></div>
                     @endforeach
                 </div>
 
@@ -149,9 +176,11 @@
                     </select>
                 </form>
 
+                @include('admin.partials.dashboard-filter-chips', ['chips' => $salesChips])
+
                 <div class="dash-kpis dash-kpis-7">
                     @foreach ($salesTrend['cards'] as [$label, $value])
-                        <div class="dash-kpi"><span>{{ $label }}</span><strong>{{ $value }}</strong></div>
+                        <div class="dash-kpi"><span>{{ $label }}</span><x-stat-value :value="$value" :liters="$rawLiters[$label] ?? null" /></div>
                     @endforeach
                 </div>
 
@@ -191,7 +220,7 @@
             <h2 class="dash-section-title" id="dash-insights-title">Insights and A.I Reporting</h2>
             <div class="dash-panel ai-insight-panel">
                 <div class="dash-insight-head">
-                    <form method="POST" action="{{ route('admin.dashboard.insight') }}" data-ai-generate-form>
+                    <form method="POST" action="{{ route('admin.dashboard.insight') }}" data-ai-generate-form data-confirm="none">
                         @csrf
                         @foreach ($filterQuery as $name => $value)
                             <input type="hidden" name="{{ $name }}" value="{{ $value }}">

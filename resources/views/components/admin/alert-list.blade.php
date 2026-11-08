@@ -19,7 +19,7 @@
                     <a class="btn btn-secondary" href="{{ $alert['action_url'] }}">View</a>
                 @endif
                 @unless ($alert['read'] || ($alert['resolved'] ?? false))
-                    <form method="POST" action="{{ route($readRoute, $alert['id']) }}">
+                    <form method="POST" action="{{ route($readRoute, $alert['id']) }}" data-confirm="status" data-confirm-title="Mark alert as read?" data-confirm-item="{{ $alert['title'] }}" data-confirm-from="Unread" data-confirm-to="Read" data-confirm-ok="Mark Read">
                         @csrf
                         @method('PATCH')
                         <button class="btn btn-primary" type="submit">Mark Read</button>

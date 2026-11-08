@@ -7,6 +7,9 @@ import '../css/dashboard.css';
 import './dashboard';
 // Part 2 revisions: Schedule Lift (purchases + Depot to Client deliveries).
 import './lift-schedule';
+// Responsive layer (mobile / tablet): loaded last so its rules override the page styles above.
+import '../css/responsive.css';
+import './responsive';
 
 // True while a dropdown list rendered in-page (appearance: base-select) is open. Browsers without the :open
 // selector keep the native list, which never passes Escape to the page.

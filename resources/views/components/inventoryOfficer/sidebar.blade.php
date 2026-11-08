@@ -2,11 +2,6 @@
 
 @php
     $user = auth()->user();
-    $links = [
-        ['route' => 'inventory-officer.inventory', 'module' => 'inventory', 'label' => 'Inventory'],
-        ['route' => 'inventory-officer.ledger', 'module' => 'ledger', 'label' => 'Ledger'],
-        ['route' => 'inventory-officer.alerts', 'module' => 'alerts', 'label' => 'Alerts'],
-    ];
 @endphp
 
 <aside class="admin-sidebar" data-sidebar>
@@ -18,16 +13,12 @@
         </div>
     </a>
 
-    <nav class="side-nav inventory-officer-nav" aria-label="Inventory officer navigation">
-        @foreach ($links as $link)
-            <x-sidebar-link :route="$link['route']" :label="$link['label']" :module="$link['module'] ?? null" />
-        @endforeach
-    </nav>
+    <x-nav.sidebar-links role="inventory-officer" />
 
     <div class="sidebar-account">
         <div class="sidebar-user">{{ strtoupper($user?->name ?? 'Account') }}</div>
         <div class="sidebar-role">{{ $user?->role_label ?? 'User' }}</div>
-        <form method="POST" action="{{ route('logout') }}" data-confirm-message="Are you sure you want to sign out of CJP Southern Star?">
+        <form method="POST" action="{{ route('logout') }}" data-confirm="simple" data-confirm-title="Sign out?" data-confirm-ok="Sign Out" data-confirm-message="Are you sure you want to sign out of CJP Southern Star?">
             @csrf
             <button class="btn btn-secondary btn-block" type="submit">Logout</button>
         </form>

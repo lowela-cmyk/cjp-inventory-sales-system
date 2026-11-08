@@ -30,3 +30,7 @@ Thumbs.db
 *.dump
 /database/backups/
 /storage/backups/
+
+# Local artifacts, not part of the app: an old vendor/ snapshot and code-graph tool output.
+/vendor.zip
+/graphify-out/

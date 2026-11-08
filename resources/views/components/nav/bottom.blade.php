@@ -9,14 +9,37 @@
     $nav = config('navigation.'.$role);
     $user = auth()->user();
     $unseen = $user ? app(\App\Services\ModuleActivityService::class)->unseenModules($user) : [];
+    $maxSlots = (int) ($nav['max_slots'] ?? 5);
+    // Current page: the entry's route (or 'active_route'), narrowed by 'query' / 'except_query' for tabbed pages.
+    $isActive = function (array $item): bool {
+        $route = $item['active_route'] ?? $item['route'];
+        if (! (request()->routeIs($route) || request()->routeIs($route.'.*') || request()->routeIs($item['route']))) {
+            return false;
+        }
+        foreach ($item['query'] ?? [] as $key => $value) {
+            if ((string) request()->query($key) !== (string) $value) return false;
+        }
+        foreach ($item['except_query'] ?? [] as $key => $value) {
+            if ((string) request()->query($key) === (string) $value) return false;
+        }
+
+        return true;
+    };
     $items = collect($nav['items'])->map(fn (array $item): array => $item + [
-        'active' => request()->routeIs($item['route']) || request()->routeIs($item['route'].'.*'),
+        'active' => $isActive($item),
         'dot' => isset($item['module']) && in_array($item['module'], $unseen, true),
     ]);
-    $needsMore = $items->count() > 5;
+    $needsMore = $items->count() > $maxSlots;
     $bar = $needsMore
-        ? $items->filter(fn (array $item): bool => isset($item['bar']))->sortBy('bar')->take(4)->values()
+        ? $items->filter(fn (array $item): bool => isset($item['bar']))->sortBy('bar')->take($maxSlots - 1)->values()
         : $items->sortBy(fn (array $item): int => $item['bar'] ?? 99)->values();
+    $slots = $bar->count() + ($needsMore ? 1 : 0);
+    // Tab-aware entries tell responsive.js which tab they stand for, so the highlight follows in-page tab switches.
+    $tabData = fn (array $item): string => isset($item['query']) || isset($item['except_query'])
+        ? ' data-nav-path="'.e(parse_url(route($item['active_route'] ?? $item['route']), PHP_URL_PATH)).'"'
+            .(isset($item['query']) ? ' data-nav-query=\''.e(json_encode($item['query'])).'\'' : '')
+            .(isset($item['except_query']) ? ' data-nav-except-query=\''.e(json_encode($item['except_query'])).'\'' : '')
+        : '';
     $more = $needsMore ? $items->reject(fn (array $item): bool => $bar->contains('route', $item['route']))->values() : collect();
     $moreActive = $more->contains('active', true);
     $moreAlerts = $more->contains('alerts', true);
@@ -25,11 +48,11 @@
     $initials = collect(preg_split('/\s+/', trim($user?->name ?? 'Account')) ?: [])->filter()->take(2)->map(fn (string $p): string => mb_strtoupper(mb_substr($p, 0, 1)))->implode('') ?: '?';
 @endphp
 
-<nav class="bottom-nav" aria-label="{{ $nav['label'] }} (bottom bar)" data-bottom-nav style="--bottom-nav-slots: {{ $bar->count() + ($needsMore ? 1 : 0) }}">
+<nav @class(['bottom-nav', 'is-wide' => $slots > 5]) aria-label="{{ $nav['label'] }} (bottom bar)" data-bottom-nav style="--bottom-nav-slots: {{ $slots }}">
     <ul>
         @foreach ($bar as $item)
             <li>
-                <a @class(['bottom-nav-item', 'is-active' => $item['active']]) href="{{ route($item['route']) }}"{!! $item['active'] ? ' aria-current="page"' : '' !!}>
+                <a @class(['bottom-nav-item', 'is-active' => $item['active']]) href="{{ route($item['route']) }}"{!! $item['active'] ? ' aria-current="page"' : '' !!}{!! $tabData($item) !!}>
                     <span class="bottom-nav-icon">
                         <x-nav.icon :name="$item['icon']" />
                         @if ($item['alerts'] ?? false)

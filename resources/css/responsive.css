@@ -2207,3 +2207,76 @@ mark.confirm-new,
         height: 24px;
     }
 }
+
+/* Wide bar (more than five slots, e.g. Admin's eight pages): compact items that share the width, never narrower than
+   their label (no clipping, no overlap); when they do not fit (under ~360px) the bar scrolls sideways inside itself,
+   never the page. Tablets get the same bar with more room. */
+@media (max-width: 1023px), (pointer: coarse) and (max-width: 1366px) {
+    .bottom-nav.is-wide ul {
+        display: flex;
+        max-width: 760px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        overscroll-behavior-x: contain;
+        scroll-snap-type: x proximity;
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .bottom-nav.is-wide ul::-webkit-scrollbar {
+        display: none;
+    }
+
+    .bottom-nav.is-wide li {
+        flex: 1 0 auto;
+        scroll-snap-align: center;
+    }
+
+    /* Eight items fit one row from 360px: width shared, at least 42px (the tap target is the full 60px bar height). */
+    .bottom-nav.is-wide .bottom-nav-item {
+        min-width: 42px;
+        padding: 4px 1px;
+        gap: 2px;
+        font-size: 10.5px;
+        letter-spacing: -.01em;
+    }
+
+    .bottom-nav.is-wide .bottom-nav-label {
+        overflow: visible;
+        text-overflow: clip;
+    }
+
+    .bottom-nav.is-wide .bottom-nav-icon {
+        width: 38px;
+    }
+
+    .bottom-nav.is-wide .bottom-nav-dot {
+        right: 4px;
+    }
+
+    .bottom-nav.is-wide .bottom-nav-badge {
+        right: -4px;
+    }
+}
+
+/* Narrow phones (under 400px): 10px labels so "Inventory" and "Requests" fit beside six others at 360px. */
+@media (max-width: 399px) {
+    .bottom-nav.is-wide .bottom-nav-item {
+        font-size: 10px;
+        letter-spacing: -.015em;
+    }
+
+    .bottom-nav.is-wide .bottom-nav-icon {
+        width: 34px;
+    }
+}
+
+@media (min-width: 600px) and (max-width: 1023px), (pointer: coarse) and (min-width: 600px) and (max-width: 1366px) {
+    .bottom-nav.is-wide .bottom-nav-item {
+        font-size: 11px;
+    }
+
+    .bottom-nav.is-wide .bottom-nav-icon {
+        width: 48px;
+    }
+}

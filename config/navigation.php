@@ -5,23 +5,33 @@
 | Navigation (one source for the sidebar and the bottom nav)
 |--------------------------------------------------------------------------
 | Per layout: the pages in sidebar order. The bottom nav (phones, tablets and touch screens up to 1366px) shows the
-| entries marked 'bar' in 'bar' order; when a role has more than five pages, only four go on the bar and the rest go
-| into the "More" sheet. 'module' drives the red "new updates" dot; 'short' is the bottom-nav label; 'icon' is one of
-| the icons in resources/views/components/nav/icon.blade.php. Display only: routes and access rules are unchanged.
+| entries marked 'bar' in 'bar' order. 'max_slots' (default 5) is how many fit on the bar: with more pages than that,
+| the first max_slots - 1 go on the bar and the rest into the "More" sheet. 'module' drives the red "new updates" dot;
+| 'short' is the bottom-nav label; 'icon' is one of the icons in resources/views/components/nav/icon.blade.php.
+| 'sidebar' => false keeps an entry off the sidebar (bar only). 'query' / 'except_query' narrow when an entry counts
+| as the current page (e.g. one tab of a page). Display only: routes and access rules are unchanged.
 */
 
 return [
     'admin' => [
         'label' => 'Admin navigation',
         'nav_class' => null,
+        // All eight Admin pages sit on the bar (no "More"); below 360px the bar scrolls sideways inside itself.
+        'max_slots' => 8,
         'items' => [
-            ['route' => 'admin.dashboard', 'label' => 'Dashboard', 'short' => 'Dashboard', 'icon' => 'dashboard', 'bar' => 1],
+            ['route' => 'admin.dashboard', 'label' => 'Dashboard', 'short' => 'Home', 'icon' => 'dashboard', 'bar' => 1],
             ['route' => 'admin.inventory', 'module' => 'inventory', 'label' => 'Inventory', 'short' => 'Inventory', 'icon' => 'inventory', 'bar' => 2],
-            ['route' => 'admin.ledger', 'module' => 'ledger', 'label' => 'Ledger', 'short' => 'Ledger', 'icon' => 'ledger'],
+            ['route' => 'admin.ledger', 'module' => 'ledger', 'label' => 'Ledger', 'short' => 'Ledger', 'icon' => 'ledger', 'bar' => 3],
             ['route' => 'admin.fuel-lifting', 'module' => 'fuel-lifting', 'label' => 'Fuel Lifting', 'short' => 'Lifting', 'icon' => 'truck', 'bar' => 4],
-            ['route' => 'admin.sales', 'module' => 'sales', 'label' => 'Sales', 'short' => 'Sales', 'icon' => 'sales', 'bar' => 3],
-            ['route' => 'admin.alerts', 'module' => 'alerts', 'label' => 'Alerts', 'short' => 'Alerts', 'icon' => 'alerts', 'alerts' => true],
-            ['route' => 'admin.user-management', 'module' => 'user-management', 'label' => 'User Management', 'short' => 'Users', 'icon' => 'users'],
+            ['route' => 'admin.sales', 'module' => 'sales', 'label' => 'Sales', 'short' => 'Sales', 'icon' => 'sales', 'bar' => 5],
+            ['route' => 'admin.alerts', 'module' => 'alerts', 'label' => 'Alerts', 'short' => 'Alerts', 'icon' => 'alerts', 'alerts' => true, 'bar' => 6],
+            // Account Requests is a tab of User Management (commit efc84f5 took it off the sidebar), so it is bar-only.
+            // The link goes through admin.account-requests, which marks the module seen (clears its dot) and redirects
+            // to the tab.
+            ['route' => 'admin.account-requests', 'module' => 'account-requests', 'label' => 'Account Requests', 'short' => 'Requests', 'icon' => 'requests', 'bar' => 7,
+                'sidebar' => false, 'active_route' => 'admin.user-management', 'query' => ['tab' => 'account-requests']],
+            ['route' => 'admin.user-management', 'module' => 'user-management', 'label' => 'User Management', 'short' => 'Users', 'icon' => 'users', 'bar' => 8,
+                'except_query' => ['tab' => 'account-requests']],
         ],
     ],
 

@@ -387,3 +387,34 @@ window.visualViewport?.addEventListener('resize', () => {
     if (keyboardHeight > 150) setKeyboardOpen(true);
     else if (! (TOUCH_QUERY.matches && document.activeElement?.matches?.(TYPING_FIELDS))) setKeyboardOpen(false);
 });
+
+// Wide bottom bar: keep the current page's item in view (it may scroll sideways on narrow phones), and move the
+// highlight when an in-page tab switch changes which entry is current (e.g. User Management > Account Requests).
+const centerActiveNavItem = () => {
+    const list = document.querySelector('.bottom-nav.is-wide ul');
+    const item = list?.querySelector('.bottom-nav-item.is-active')?.closest('li');
+    if (! list || ! item || list.scrollWidth <= list.clientWidth) return;
+    list.scrollLeft = item.offsetLeft - (list.clientWidth - item.offsetWidth) / 2;
+};
+centerActiveNavItem();
+
+const syncTabNavItems = () => {
+    const tabbed = [...document.querySelectorAll('.bottom-nav-item[data-nav-path]')];
+    if (! tabbed.length) return;
+    const params = new URLSearchParams(window.location.search);
+    const parse = (json) => { try { return JSON.parse(json || '{}'); } catch { return {}; } };
+    tabbed.forEach((item) => {
+        const onPath = window.location.pathname === item.dataset.navPath;
+        const wanted = Object.entries(parse(item.dataset.navQuery)).every(([key, value]) => params.get(key) === String(value));
+        const excluded = Object.entries(parse(item.dataset.navExceptQuery)).some(([key, value]) => params.get(key) === String(value));
+        const active = onPath && wanted && ! excluded;
+        item.classList.toggle('is-active', active);
+        if (active) item.setAttribute('aria-current', 'page'); else item.removeAttribute('aria-current');
+    });
+    centerActiveNavItem();
+};
+
+document.addEventListener('click', (event) => {
+    // app.js updates the address (replaceState) for the tab after this listener; read it on the next frame.
+    if (event.target.closest('.tabs [data-tab-url]')) requestAnimationFrame(syncTabNavItems);
+});

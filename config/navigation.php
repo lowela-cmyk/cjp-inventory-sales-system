@@ -16,8 +16,8 @@ return [
     'admin' => [
         'label' => 'Admin navigation',
         'nav_class' => null,
-        // All eight Admin pages sit on the bar (no "More"); below 360px the bar scrolls sideways inside itself.
-        'max_slots' => 8,
+        // All seven Admin pages sit on the bar (no "More"); below 360px the bar scrolls sideways inside itself.
+        'max_slots' => 7,
         'items' => [
             ['route' => 'admin.dashboard', 'label' => 'Dashboard', 'short' => 'Home', 'icon' => 'dashboard', 'bar' => 1],
             ['route' => 'admin.inventory', 'module' => 'inventory', 'label' => 'Inventory', 'short' => 'Inventory', 'icon' => 'inventory', 'bar' => 2],
@@ -25,13 +25,9 @@ return [
             ['route' => 'admin.fuel-lifting', 'module' => 'fuel-lifting', 'label' => 'Fuel Lifting', 'short' => 'Lifting', 'icon' => 'truck', 'bar' => 4],
             ['route' => 'admin.sales', 'module' => 'sales', 'label' => 'Sales', 'short' => 'Sales', 'icon' => 'sales', 'bar' => 5],
             ['route' => 'admin.alerts', 'module' => 'alerts', 'label' => 'Alerts', 'short' => 'Alerts', 'icon' => 'alerts', 'alerts' => true, 'bar' => 6],
-            // Account Requests is a tab of User Management (commit efc84f5 took it off the sidebar), so it is bar-only.
-            // The link goes through admin.account-requests, which marks the module seen (clears its dot) and redirects
-            // to the tab.
-            ['route' => 'admin.account-requests', 'module' => 'account-requests', 'label' => 'Account Requests', 'short' => 'Requests', 'icon' => 'requests', 'bar' => 7,
-                'sidebar' => false, 'active_route' => 'admin.user-management', 'query' => ['tab' => 'account-requests']],
-            ['route' => 'admin.user-management', 'module' => 'user-management', 'label' => 'User Management', 'short' => 'Users', 'icon' => 'users', 'bar' => 8,
-                'except_query' => ['tab' => 'account-requests']],
+            // Account Requests is a tab of User Management, so Users covers it: Users stays the current item on that tab,
+            // and its dot (module user-management, which watches the users table) lights up for new pending sign-ups.
+            ['route' => 'admin.user-management', 'module' => 'user-management', 'label' => 'User Management', 'short' => 'Users', 'icon' => 'users', 'bar' => 7],
         ],
     ],
 

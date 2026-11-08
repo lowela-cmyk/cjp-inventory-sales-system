@@ -45,8 +45,8 @@ class BottomNavTest extends TestCase
     public function test_each_role_gets_its_bar_items_from_the_shared_config(): void
     {
         $cases = [
-            // Admin: all eight pages on the bar, no "More".
-            'admin' => [route('admin.dashboard'), ['Home', 'Inventory', 'Ledger', 'Lifting', 'Sales', 'Alerts', 'Requests', 'Users']],
+            // Admin: all seven pages on the bar, no "More" (Account Requests is a tab under Users).
+            'admin' => [route('admin.dashboard'), ['Home', 'Inventory', 'Ledger', 'Lifting', 'Sales', 'Alerts', 'Users']],
             // Other roles are unchanged.
             'inventory_officer' => [route('inventory-officer.inventory'), ['Inventory', 'Ledger', 'Alerts']],
             'sales_officer' => [route('sales-officer.sales'), ['Sales', 'Alerts']],
@@ -59,16 +59,17 @@ class BottomNavTest extends TestCase
             $this->assertSame($labels, $this->barLabels($html), $role);
             $this->assertStringNotContainsString('data-more-sheet', $html, $role.': no "More" sheet');
             $this->assertStringNotContainsString('data-more-toggle', $html, $role.': no "More" button');
-            // Only the eight-slot Admin bar uses the compact, scrollable layout.
+            // Only the seven-slot Admin bar uses the compact, scrollable layout.
             $this->assertSame($role === 'admin', str_contains($html, '<nav class="bottom-nav is-wide"'), $role);
         }
     }
 
-    public function test_admin_bar_links_every_page_and_carries_the_alerts_badge_and_the_requests_dot(): void
+    public function test_admin_bar_links_every_page_and_carries_the_alerts_badge_and_the_pending_requests_dot_on_users(): void
     {
         $admin = $this->user('admin');
-        // A pending sign-up after the admin last opened Account Requests puts the red dot on Requests.
-        $this->actingAs($admin)->get(route('admin.account-requests'));
+        // A pending sign-up after the admin last opened User Management puts the red dot on Users.
+        $this->actingAs($admin)->get(route('admin.user-management', ['tab' => 'account-requests']))->assertOk();
+        $this->app->forgetScopedInstances(); // the per-request unseen-modules cache; real requests never share it
         $this->travel(1)->minutes();
         $this->user('sales_officer')->forceFill(['approval_status' => 'pending'])->save();
 
@@ -78,15 +79,16 @@ class BottomNavTest extends TestCase
 
         $this->assertSame([
             route('admin.dashboard'), route('admin.inventory'), route('admin.ledger'), route('admin.fuel-lifting'),
-            route('admin.sales'), route('admin.alerts'), route('admin.account-requests'), route('admin.user-management'),
+            route('admin.sales'), route('admin.alerts'), route('admin.user-management'),
         ], $links[1]);
+        $this->assertStringNotContainsString('Requests', $bar);
         $this->assertStringContainsString('data-alert-mirror', $this->between($bar, 'href="'.route('admin.alerts').'"', '</a>'));
-        $this->assertStringContainsString('data-bottom-dot="account-requests"', $this->between($bar, 'href="'.route('admin.account-requests').'"', '</a>'));
+        $this->assertStringContainsString('data-bottom-dot="user-management"', $this->between($bar, 'href="'.route('admin.user-management').'"', '</a>'));
         // Sign Out stays reachable without "More": the avatar menu.
         $this->assertStringContainsString('class="header-signout"', $this->between($html, '<header class="admin-header">', '</header>'));
     }
 
-    public function test_the_current_page_is_highlighted_including_the_account_requests_tab(): void
+    public function test_the_current_page_is_highlighted_and_users_covers_the_account_requests_tab(): void
     {
         $admin = $this->user('admin');
         $active = fn (string $html): array => preg_match_all('/<a class="bottom-nav-item is-active" href="([^"]+)" aria-current="page"/', $this->between($html, 'data-bottom-nav', '</nav>'), $m) ? $m[1] : [];
@@ -94,7 +96,8 @@ class BottomNavTest extends TestCase
         $this->assertSame([route('admin.sales')], $active($this->actingAs($admin)->get(route('admin.sales.customers'))->assertOk()->getContent()));
         $this->assertSame([route('admin.ledger')], $active($this->actingAs($admin)->get(route('admin.ledger'))->assertOk()->getContent()));
         $this->assertSame([route('admin.user-management')], $active($this->actingAs($admin)->get(route('admin.user-management', ['tab' => 'drivers']))->assertOk()->getContent()));
-        $this->assertSame([route('admin.account-requests')], $active($this->actingAs($admin)->get(route('admin.user-management', ['tab' => 'account-requests']))->assertOk()->getContent()));
+        $this->assertSame([route('admin.user-management')], $active($this->actingAs($admin)->get(route('admin.user-management', ['tab' => 'account-requests']))->assertOk()->getContent()));
+        $this->assertSame([route('admin.user-management')], $active($this->actingAs($admin)->get(route('admin.user-management'))->assertOk()->getContent()));
     }
 
     public function test_the_more_sheet_still_works_when_a_role_has_more_pages_than_slots(): void
@@ -106,7 +109,8 @@ class BottomNavTest extends TestCase
         $this->assertSame(['Home', 'Inventory', 'Ledger', 'Lifting', 'More'], $this->barLabels($html));
         $sheet = $this->between($html, 'data-more-sheet', '</section>');
         preg_match_all('/<a class="more-link[^"]*" href="([^"]+)"/', $sheet, $links);
-        $this->assertSame([route('admin.sales'), route('admin.alerts'), route('admin.account-requests'), route('admin.user-management')], $links[1]);
+        $this->assertSame([route('admin.sales'), route('admin.alerts'), route('admin.user-management')], $links[1]);
+        $this->assertStringNotContainsString('Account Requests', $sheet);
         $this->assertStringContainsString('data-confirm="simple" data-confirm-title="Sign out?"', $sheet);
         $this->assertStringContainsString('data-alert-mirror', $this->between($html, 'data-more-toggle', '</button>'));
     }
@@ -129,9 +133,9 @@ class BottomNavTest extends TestCase
         $sidebar = $this->between($html, '<nav class="side-nav"', '</nav>');
         preg_match_all('/<a class="side-link[^"]*" href="([^"]+)"/', $sidebar, $links);
 
-        // Every sidebar entry, in order; Account Requests is bar-only (it is a User Management tab since efc84f5).
-        $sidebarItems = array_values(array_filter(config('navigation.admin.items'), fn (array $item): bool => ($item['sidebar'] ?? true) !== false));
-        $this->assertSame(array_map(fn (array $item): string => route($item['route']), $sidebarItems), $links[1]);
+        // Every page, in order, same as the bar; Account Requests is a User Management tab, not its own entry.
+        $this->assertSame(array_map(fn (array $item): string => route($item['route']), config('navigation.admin.items')), $links[1]);
+        $this->assertCount(7, $links[1]);
         $this->assertStringNotContainsString('Account Requests', $sidebar);
         $this->assertStringContainsString('viewport-fit=cover', $html);
     }

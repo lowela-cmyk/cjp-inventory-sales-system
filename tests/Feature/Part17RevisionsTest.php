@@ -140,6 +140,8 @@ class Part17RevisionsTest extends AuditTestCase
         foreach (['data-f1-ordered>0.00 L', 'data-f1-main>0.00 L', 'data-f1-amount>0.00 L', 'data-f1-total>0.00 L', 'data-sales-main-total>0.00<', 'data-sales-f1-total>0.00<', 'data-sales-line-total>0.00<'] as $output) {
             $this->assertStringContainsString($output, $form);
         }
+        $this->assertStringNotContainsString('>F1 Percentage</span>', $form);
+        $this->assertStringNotContainsString('data-f1-percent>', $form);
 
         $js = File::get(resource_path('js/app.js'));
         $this->assertStringContainsString("set('[data-f1-main]', `\${format(main)} L`);", $js);
@@ -149,6 +151,12 @@ class Part17RevisionsTest extends AuditTestCase
         $this->assertStringContainsString("set('[data-sales-line-total]', format(lineTotal));", $js);
 
         $css = File::get(resource_path('css/part9.css'));
+        $this->assertStringContainsString('grid-template-columns: repeat(4, minmax(0, 1fr));', $css);
+        $this->assertStringContainsString('.admin-modal-sales-wide .sale-order-line > .sale-line-totals {', $css);
+        $this->assertStringContainsString('grid-template-columns: repeat(3, minmax(0, 1fr));', $css);
+        $this->assertStringContainsString('align-items: center;', $css);
+        $this->assertStringContainsString('grid-template-rows: auto auto;', $css);
+        $this->assertStringContainsString('white-space: nowrap;', $css);
         $this->assertStringNotContainsString('[data-f1-main], [data-f1-amount], [data-f1-total])::before', $css);
         $this->assertStringNotContainsString('[data-f1-ordered]::after', $css);
         $this->assertStringContainsString('.admin-modal-sales-wide .sale-line-total-row output::before', $css);

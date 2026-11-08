@@ -350,7 +350,6 @@ function syncSaleItemRow(row) {
     const lineTotal = mainTotal + f1Total;
 
     set('[data-f1-ordered]', `${format(quantity)} L`);
-    set('[data-f1-percent]', `${percent}%`);
     // Part 17 #8: the breakdown row is in liters (fuel / F1 / total liters); the totals bar below stays in pesos.
     // Keep the labels stable even when the primary fuel itself is F1; otherwise the bar showed “F1 Amount” twice.
     set('[data-f1-main-label]', 'Fuel Amount');

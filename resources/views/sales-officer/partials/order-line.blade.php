@@ -2,7 +2,7 @@
     Part 2 Button Revisions (mockup): one order line.
     Fuel Type (a purchase, "PUR-022 · PREMIUM") | Fuel Price
     F1 (an F1 purchase) | F1 Price | F1 %            (Unleaded / Premium only)
-    Ordered Amount | F1 Percentage | Premium Amount | F1 Amount | Total Amount
+    Ordered Amount | Fuel Amount | F1 Amount | Total Amount
     Premium Total = main liters x Fuel Price, F1 Total = F1 liters x F1 Price, Line Total = Premium Total + F1 Total.
     $item: purchase_item_id, unit_price, f1_purchase_item_id, f1_price/f1_unit_price, f1_percentage (and fuel_type_id, fuel_name
     for a line recorded before purchases were chosen).
@@ -119,7 +119,6 @@
 <div class="f1-breakdown" data-f1-breakdown>
     {{-- Part 17 #8: liters (app.js fills them in); Fuel Total / F1 Total / Line Total below stay in pesos. --}}
     <div class="f1-breakdown-cell"><span>Ordered Amount</span><output data-f1-ordered>0.00 L</output></div>
-    <div class="f1-breakdown-cell"><span>F1 Percentage</span><output data-f1-percent>0%</output></div>
     <div class="f1-breakdown-cell"><span data-f1-main-label>Fuel Amount</span><output data-f1-main>0.00 L</output></div>
     <div class="f1-breakdown-cell"><span>F1 Amount</span><output data-f1-amount>0.00 L</output></div>
     <div class="f1-breakdown-cell"><span>Total Amount</span><output data-f1-total>0.00 L</output></div>

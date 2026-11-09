@@ -319,8 +319,8 @@ function syncBankSelect(modeSelect) {
 
 document.querySelectorAll('[data-payment-mode]').forEach(syncBankSelect);
 
-// Part 2 revisions Record Sales: one order line. The Fuel Type is a purchase; an Unleaded / Premium line can carry an
-// F1 portion (F1 purchase, F1 Price, F1 %), otherwise the F1 row is hidden and counts as 0%.
+// Part 2 revisions: Edit Sales lines can carry an F1 portion. Record Sales Receivables deliberately has no F1 UI;
+// its line total is always quantity x Fuel Price.
 // Premium Total = main liters x Fuel Price, F1 Total = F1 liters x F1 Price, Line Total = Premium Total + F1 Total.
 // Returns the Line Total. The server re-checks prices and stock.
 function syncSaleItemRow(row) {
@@ -329,6 +329,24 @@ function syncSaleItemRow(row) {
     const purchase = row.querySelector('[data-sale-purchase]');
     const fuelSource = purchase?.value ? purchase.selectedOptions[0] : row.querySelector('[data-legacy-fuel]');
     const fuelCode = (fuelSource?.dataset?.fuelCode || '').toUpperCase();
+    const hasF1 = Boolean(row.querySelector('[data-f1-enabled]'));
+    const quantity = Number(row.querySelector('[data-sale-quantity]')?.value || 0) || 0;
+    const price = Number(row.querySelector('[data-sale-price]')?.value || 0) || 0;
+    const available = purchase?.value ? Number(purchase.selectedOptions[0].dataset.available || 0) : Infinity;
+
+    if (!hasF1) {
+        const total = Math.round(quantity * price * 100) / 100;
+        set('[data-sale-ordered]', `${format(quantity)} L`);
+        set('[data-sale-fuel-amount]', `${format(quantity)} L`);
+        set('[data-sale-total-amount]', `${format(quantity)} L`);
+        set('[data-main-total-label]', 'Fuel Total');
+        set('[data-sales-main-total]', format(total));
+        set('[data-sales-line-total]', format(total));
+        row.querySelector('[data-sale-quantity]')?.setCustomValidity(quantity > available ? `Only ${format(available)} L of this purchase is available.` : '');
+
+        return total;
+    }
+
     const fuelName = fuelSource?.dataset?.fuelName || 'Fuel';
     const eligible = ['UNL', 'PREM'].includes(fuelCode);
 
@@ -338,7 +356,6 @@ function syncSaleItemRow(row) {
     if (!eligible && f1Select) f1Select.value = '0';
     row.querySelectorAll('[data-f1-row] select, [data-f1-row] input').forEach((field) => { field.disabled = !eligible; });
 
-    const quantity = Number(row.querySelector('[data-sale-quantity]')?.value || 0) || 0;
     const percent = eligible ? Number(f1Select?.value || 0) : 0;
     const f1 = Math.round(quantity * percent) / 100;
     const main = Math.round((quantity - f1) * 100) / 100;
@@ -347,7 +364,6 @@ function syncSaleItemRow(row) {
     if (f1Purchase) f1Purchase.required = eligible && percent > 0;
     if (f1Price) f1Price.required = eligible && percent > 0;
 
-    const price = Number(row.querySelector('[data-sale-price]')?.value || 0) || 0;
     const mainTotal = Math.round(main * price * 100) / 100;
     const f1Total = percent > 0 ? Math.round(f1 * (Number(f1Price?.value || 0) || 0) * 100) / 100 : 0;
     const lineTotal = mainTotal + f1Total;
@@ -366,7 +382,6 @@ function syncSaleItemRow(row) {
 
     // Each purchase may only give what it has available.
     const quantityInput = row.querySelector('[data-sale-quantity]');
-    const available = purchase?.value ? Number(purchase.selectedOptions[0].dataset.available || 0) : Infinity;
     quantityInput?.setCustomValidity(main > available ? `Only ${format(available)} L of this purchase is available.` : '');
     const f1Available = f1Purchase?.value ? Number(f1Purchase.selectedOptions[0].dataset.available || 0) : Infinity;
     f1Purchase?.setCustomValidity(eligible && f1 > f1Available ? `Only ${format(f1Available)} L of this F1 purchase is available.` : '');
@@ -508,7 +523,13 @@ const exportVisibleTable = (trigger) => {
 
     // Export exactly what the table shows: rows hidden by the live search are left out.
     // A stacked cell exports one column per [data-export-part] line, so files keep one value per column.
-    const csvValue = (node) => `"${node.textContent.trim().replace(/\s+/g, ' ').replace(/"/g, '""')}"`;
+    // Keep spreadsheet applications from evaluating exported values as formulas.
+    const csvValue = (node) => {
+        const value = node.textContent.trim().replace(/\s+/g, ' ');
+        const safeValue = /^[=+\-@]/.test(value) ? `'${value}` : value;
+
+        return `"${safeValue.replace(/"/g, '""')}"`;
+    };
     const rows = [...table.querySelectorAll('tr')]
         .filter((row) => ! row.hidden)
         .map((row) => [...row.querySelectorAll('th, td')]

@@ -266,7 +266,11 @@ class Part2ButtonRevisionsTest extends AuditTestCase
         $this->recordOrder($a, ['purchase_item_id' => $diesel, 'quantity_liters' => 2000, 'unit_price' => 60], ['delivery_status' => 'delivered'])->assertSessionHasNoErrors();
 
         $html = $this->actingAs($a['inventory'])->get(route('inventory-officer.inventory'))->assertOk()->getContent();
-        $this->assertStringContainsString('<th>Remaining (L)</th>', $html);
+        $purchasesTable = substr($html, strpos($html, 'data-tab-panel="purchases"'), 5000);
+        $this->assertStringNotContainsString('<th>Remaining (L)</th>', $purchasesTable);
+        $this->assertStringNotContainsString('<th>Driver Name</th>', $purchasesTable);
+        $this->assertStringNotContainsString('<th>Truck</th>', $purchasesTable);
+        $this->assertStringNotContainsString('<th class="inventory-status-column">Inventory Status</th>', $purchasesTable);
         $this->assertStringContainsString('6,000.00', $html);
         foreach (['Assign Tank', 'Pending Garage Receipts', 'Record Stock-In', 'Purchase Stock-In Pipeline', 'tank assignment'] as $retired) {
             $this->assertStringNotContainsString($retired, $html);

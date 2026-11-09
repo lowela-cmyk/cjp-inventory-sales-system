@@ -251,6 +251,19 @@
     background: #fff;
 }
 
+.sale-amount-summary {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    border: 1px solid var(--admin-line);
+    border-radius: 6px;
+    overflow: hidden;
+    background: #fff;
+}
+
+.sale-amount-summary .f1-breakdown-cell:first-child {
+    border-left: 0;
+}
+
 .f1-breakdown[hidden] {
     display: none;
 }
@@ -362,6 +375,7 @@
 .sale-order-line > .form-row-full,
 .sale-order-line > .sale-f1-row,
 .sale-order-line > .f1-breakdown,
+.sale-order-line > .sale-amount-summary,
 .sale-order-line > .sale-line-totals,
 .sale-order-line > .form-row-message {
     grid-column: 1 / -1;
@@ -443,6 +457,7 @@
     .sale-order-line > .form-row-full,
     .sale-order-line > .sale-f1-row,
     .sale-order-line > .f1-breakdown,
+    .sale-order-line > .sale-amount-summary,
     .sale-order-line > .sale-line-totals,
     .sale-order-line > .form-row-message {
         grid-column: auto;
@@ -495,6 +510,10 @@
     grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.admin-modal-sales-wide .sale-amount-summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .admin-modal-sales-wide .f1-breakdown-cell {
     grid-template-rows: auto auto;
     padding: 14px 8px;
@@ -533,6 +552,15 @@
     border-radius: 6px;
     padding: 0;
     background: #fff;
+}
+
+.admin-modal-sales-wide .sale-order-line > .sale-line-totals-no-f1 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.admin-modal-sales-wide .sale-order-line > .sale-amount-summary {
+    justify-self: stretch;
+    width: auto;
 }
 
 .admin-modal-sales-wide .sale-line-total-row {
@@ -653,6 +681,7 @@
     .admin-modal-sales-wide .sale-order-line > .form-row-full,
     .admin-modal-sales-wide .sale-order-line > .sale-f1-row,
     .admin-modal-sales-wide .sale-order-line > .f1-breakdown,
+    .admin-modal-sales-wide .sale-order-line > .sale-amount-summary,
     .admin-modal-sales-wide .sale-order-line > .sale-line-totals,
     .admin-modal-sales-wide .sale-order-line > .form-row-message {
         grid-column: 1 / -1;

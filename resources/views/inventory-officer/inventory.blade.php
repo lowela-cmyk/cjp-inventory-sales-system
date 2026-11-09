@@ -41,17 +41,15 @@
                 <button class="btn btn-secondary btn-wide" type="button" data-modal-open="io-purchase-add">+ Record Purchase</button>
             </x-filter.bar>
             <div class="table-wrap inventory-table-wrap">
-                <table class="admin-table inventory-table inventory-table-actions table-stacked purchases-table" data-card-keys="0,2,5">
+                <table class="admin-table inventory-table inventory-table-actions table-stacked purchases-table" data-card-keys="0,2,4">
                     <thead><tr>
                         <th>Purchase-ID</th><th>Date</th><th>Fuel</th><th>Depot</th>
                         <th>Purchased (L)</th>
-                        <th>Remaining (L)</th><th>Driver Name</th><th>Truck</th>
                         <th>Cost / Liter</th><th>Total Cost</th>
                         {{-- The Bank line is hidden on screen but kept for the export, so the CSV still has a Bank column. --}}
                         <th><span class="th-line" data-export-part>Payment Mode</span><span class="visually-hidden" data-export-part>Bank</span></th>
                         <th>Receipt</th>
                         {{-- Part 12: one status per column. --}}
-                        <th class="inventory-status-column">Inventory Status</th>
                         <th class="inventory-status-column">Purchase Status</th>
                         <th class="inventory-status-column">Payment Status</th>
                         <th>Actions</th>
@@ -66,10 +64,6 @@
                                 <td>{{ $c[2] }}</td>
                                 <td class="cell-wrap">{{ $c[3] }}</td>
                                 <td class="inventory-number">{{ $c[4] }}</td>
-                                {{-- Part 2 revisions: the purchase's stock (ordered - delivered). --}}
-                                <td class="inventory-number">{{ $c[15] }}</td>
-                                <td class="cell-wrap">{{ $row['driver_name'] }}</td>
-                                <td class="cell-wrap">{{ $row['truck_name'] }}</td>
                                 <td class="inventory-number">{{ $c[8] }}</td>
                                 <td class="inventory-number">{{ $c[9] }}</td>
                                 <td><x-table.stack :lines="[['value' => $c[13]], ['value' => $c[14], 'class' => 'is-secondary']]" /></td>
@@ -81,7 +75,6 @@
                                         <span class="receipt-none" aria-label="No receipt uploaded">-</span>
                                     @endif
                                 </td>
-                                <td class="purchase-status-cell"><x-admin.status-badge :status="$c[7]" /></td>
                                 <td class="purchase-status-cell"><x-admin.status-badge :status="$c[11]" /></td>
                                 <td class="purchase-status-cell"><x-admin.status-badge :status="$c[12]" /></td>
                                 <td>
@@ -91,7 +84,7 @@
                                 </td>
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="16">No records found.</td></tr>
+                            <tr><td class="empty-cell" colspan="12">No records found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>

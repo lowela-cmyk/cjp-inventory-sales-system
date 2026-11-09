@@ -8,6 +8,7 @@
     for a line recorded before purchases were chosen).
 --}}
 @php
+    $showF1 = $showF1 ?? true;
     $formAttr = $formId ? 'form="'.$formId.'"' : '';
     $name = fn (string $field): string => "items[$index][$field]";
     $id = fn (string $field): string => $idPrefix.'_'.$field.'_'.$index;
@@ -81,7 +82,8 @@
         @endforeach
     </p>
 @endif
-<div class="sale-f1-row" data-f1-row hidden>
+@if ($showF1)
+<div class="sale-f1-row" data-f1-row data-f1-enabled hidden>
     <div class="form-row">
         <label for="{{ $id('f1_purchase_item_id') }}">F1</label>
         <select {!! $formAttr !!} id="{{ $id('f1_purchase_item_id') }}" name="{{ $name('f1_purchase_item_id') }}" data-sale-f1-purchase @if ($err('f1_purchase_item_id')) aria-invalid="true" @endif>
@@ -123,9 +125,18 @@
     <div class="f1-breakdown-cell"><span>F1 Amount</span><output data-f1-amount>0.00 L</output></div>
     <div class="f1-breakdown-cell"><span>Total Amount</span><output data-f1-total>0.00 L</output></div>
 </div>
-<div class="sale-line-totals">
+@else
+<div class="sale-amount-summary" data-sale-amount-summary>
+    <div class="f1-breakdown-cell"><span>Ordered Amount</span><output data-sale-ordered>0.00 L</output></div>
+    <div class="f1-breakdown-cell"><span>Fuel Amount</span><output data-sale-fuel-amount>0.00 L</output></div>
+    <div class="f1-breakdown-cell"><span>Total Amount</span><output data-sale-total-amount>0.00 L</output></div>
+</div>
+@endif
+<div class="sale-line-totals @unless ($showF1)sale-line-totals-no-f1 @endunless">
     <div class="sale-line-total-row"><span data-main-total-label>Fuel Total</span><output data-sales-main-total>0.00</output></div>
-    <div class="sale-line-total-row"><span>F1 Total</span><output data-sales-f1-total>0.00</output></div>
+    @if ($showF1)
+        <div class="sale-line-total-row"><span>F1 Total</span><output data-sales-f1-total>0.00</output></div>
+    @endif
     <div class="sale-line-total-row sale-line-total"><span>Line Total</span><output data-sales-line-total>0.00</output></div>
 </div>
 @if ($err('quantity_liters'))<p class="field-error form-row-message">{{ $err('quantity_liters') }}</p>@endif

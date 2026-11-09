@@ -132,26 +132,26 @@ class Part17RevisionsTest extends AuditTestCase
         $this->assertStringContainsString('<th class="export-only" hidden>Last Updated By</th>', $html);
     }
 
-    public function test_the_record_sales_breakdown_shows_liters_and_the_totals_bar_stays_in_pesos(): void
+    public function test_record_sales_has_no_f1_fields_and_uses_quantity_for_all_fuel_amounts(): void
     {
         $a = $this->actors();
         $html = $this->actingAs($a['sales'])->get(route('sales-officer.sales'))->assertOk()->getContent();
         $form = substr($html, strpos($html, 'id="record-sale-form"'), 30000);
-        foreach (['data-f1-ordered>0.00 L', 'data-f1-main>0.00 L', 'data-f1-amount>0.00 L', 'data-f1-total>0.00 L', 'data-sales-main-total>0.00<', 'data-sales-f1-total>0.00<', 'data-sales-line-total>0.00<'] as $output) {
+        foreach (['data-sale-ordered>0.00 L', 'data-sale-fuel-amount>0.00 L', 'data-sale-total-amount>0.00 L', 'data-sales-main-total>0.00<', 'data-sales-line-total>0.00<'] as $output) {
             $this->assertStringContainsString($output, $form);
         }
-        $this->assertStringNotContainsString('>F1 Percentage</span>', $form);
-        $this->assertStringNotContainsString('data-f1-percent>', $form);
+        foreach (['name="items[0][f1_purchase_item_id]"', 'name="items[0][f1_unit_price]"', 'name="items[0][f1_percentage]"', '>F1 Amount<', '>F1 Total<'] as $f1Element) {
+            $this->assertStringNotContainsString($f1Element, $form);
+        }
 
         $js = File::get(resource_path('js/app.js'));
-        $this->assertStringContainsString("set('[data-f1-main]', `\${format(main)} L`);", $js);
-        $this->assertStringContainsString("set('[data-f1-amount]', `\${format(f1)} L`);", $js);
-        $this->assertStringContainsString("set('[data-f1-total]', `\${format(main + f1)} L`);", $js);
+        $this->assertStringContainsString("set('[data-sale-fuel-amount]', `\${format(quantity)} L`);", $js);
+        $this->assertStringContainsString("const total = Math.round(quantity * price * 100) / 100;", $js);
         $this->assertStringContainsString("set('[data-sales-main-total]', format(mainTotal));", $js);
         $this->assertStringContainsString("set('[data-sales-line-total]', format(lineTotal));", $js);
 
         $css = File::get(resource_path('css/part9.css'));
-        $this->assertStringContainsString('grid-template-columns: repeat(4, minmax(0, 1fr));', $css);
+        $this->assertStringContainsString('grid-template-columns: repeat(3, minmax(0, 1fr));', $css);
         $this->assertStringContainsString('.admin-modal-sales-wide .sale-order-line > .sale-line-totals {', $css);
         $this->assertStringContainsString('grid-template-columns: repeat(3, minmax(0, 1fr));', $css);
         $this->assertStringContainsString('align-items: center;', $css);
@@ -167,10 +167,10 @@ class Part17RevisionsTest extends AuditTestCase
         $editHtml = $this->actingAs($a['sales'])->get(route('sales-officer.sales'))->assertOk()->getContent();
         $this->assertStringContainsString('name="items[0][quantity_liters]" type="number"', $editHtml);
         $this->assertMatchesRegularExpression('/name="items\[0\]\[quantity_liters\]"[^>]*value="1800(?:\.00)?"/', $editHtml);
-        $this->assertSame(2, substr_count($editHtml, 'data-f1-ordered>0.00 L'));
-        $this->assertSame(2, substr_count($editHtml, 'data-f1-main>0.00 L'));
-        $this->assertSame(2, substr_count($editHtml, 'data-f1-amount>0.00 L'));
-        $this->assertSame(2, substr_count($editHtml, 'data-f1-total>0.00 L'));
+        $this->assertSame(1, substr_count($editHtml, 'data-f1-ordered>0.00 L'));
+        $this->assertSame(1, substr_count($editHtml, 'data-f1-main>0.00 L'));
+        $this->assertSame(1, substr_count($editHtml, 'data-f1-amount>0.00 L'));
+        $this->assertSame(1, substr_count($editHtml, 'data-f1-total>0.00 L'));
     }
 
     public function test_edit_purchase_shows_two_sections_and_keeps_the_part_15_locks(): void

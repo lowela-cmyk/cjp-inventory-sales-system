@@ -91,7 +91,13 @@
             <div class="lift-summary" aria-label="Purchase lifting totals">
                 <span>Purchased: <strong>{{ $row['purchased_liters'] }}</strong></span>
                 <span>Lifted: <strong>{{ $row['lifted_liters'] }}</strong></span>
-                <span>Remaining / Unlifted: <strong>{{ $row['remaining_liters'] }}</strong></span>
+                <span>Remaining Fuel (L): <strong>{{ $row['remaining_liters'] }}</strong></span>
+            </div>
+            <div class="detail-grid transaction-purchase-details">
+                <div class="detail-row"><div class="detail-label">Remaining Fuel (L)</div><div class="detail-value">{{ $row['remaining_liters'] }}</div></div>
+                <div class="detail-row"><div class="detail-label">Driver Name</div><div class="detail-value">{{ $row['driver_names'] }}</div></div>
+                <div class="detail-row"><div class="detail-label">Assigned Truck / Truck Number</div><div class="detail-value">{{ $row['truck_names'] }}</div></div>
+                <div class="detail-row"><div class="detail-label">Inventory Status</div><div class="detail-value"><x-admin.status-badge :status="$row['inventory_status']" /></div></div>
             </div>
             <div class="lift-transaction-modal">
                 <div class="lift-blocks" aria-label="Lift transactions for {{ $row['purchase_code'] }}">
@@ -99,11 +105,15 @@
                         <div class="lift-block {{ $lift['counts_as_lifted'] ? 'is-complete' : 'is-open' }}" tabindex="0" aria-label="Lift {{ $lift['sequence'] }}: {{ $lift['display_quantity'] }}. Lift ID: {{ $lift['code'] }}. Date Lifted: {{ $lift['display_date'] }}.">
                             <span class="visually-hidden">Lift {{ $lift['sequence'] }}</span>
                             <div class="lift-block-meta" aria-label="Lift ID: {{ $lift['details']['Lift ID'] }}">
-                                <span>Lift-ID: {{ $lift['details']['Lift ID'] }}</span>
-                                <span>Date Lifted: {{ $lift['display_date'] }}</span>
+                                <span><b>Lift ID</b>{{ $lift['details']['Lift ID'] ?: 'N/A' }}</span>
+                                <span><b>Date Lifted</b>{{ $lift['display_date'] ?: 'N/A' }}</span>
                             </div>
-                            <strong class="lift-block-quantity">{{ $lift['display_quantity'] }}</strong>
-                            <span class="visually-hidden">Driver: {{ $lift['details']['Driver'] }}. Truck: {{ $lift['details']['Truck'] }}. Status: {{ $lift['status'] }}.</span>
+                            <div class="lift-block-quantity"><span>Quantity Lifted (L)</span><strong>{{ $lift['display_quantity'] ?: 'N/A' }}</strong></div>
+                            <div class="lift-block-details">
+                                <span><b>Assigned Truck / Truck Number</b>{{ $lift['details']['Truck'] ?: 'N/A' }}</span>
+                                <span><b>Driver Name</b>{{ $lift['details']['Driver'] ?: 'N/A' }}</span>
+                                <span><b>Lift Status</b>{{ $lift['status'] ?: 'N/A' }}</span>
+                            </div>
                         </div>
                     @empty
                         <div class="lift-empty">No lift assignments have been created for this purchase yet.</div>

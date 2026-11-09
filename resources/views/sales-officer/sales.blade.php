@@ -177,7 +177,7 @@
                 <p class="form-alert" role="alert">{{ $errors->first('sale') ?: $errors->first('quantity_liters') }}</p>
             @endif
             {{-- Part 2 revisions layout (mockup): Order Details, Order Payment Details, then Delivery Details (Standard). --}}
-            <div class="sale-form" data-sale-form data-f1-codes="{{ implode(',', $f1EligibleCodes) }}">
+            <div class="sale-form" data-sale-form>
                 <h3 class="sale-form-section-title">Order Details</h3>
                 <div class="modal-card sale-form-card" data-sales-items>
                     <div class="sales-item-row sale-order-line" data-sales-item>
@@ -206,7 +206,7 @@
                             <div class="form-row"><label for="sale_date">Order Date</label><input id="sale_date" name="sale_date" type="date" value="{{ old('sale_date', now()->toDateString()) }}" data-default="{{ now()->toDateString() }}" required></div>
                             <div class="form-row"><label for="sale_quantity_liters_0">Qty Ordered</label><div class="input-suffix"><input id="sale_quantity_liters_0" name="items[0][quantity_liters]" type="number" min="0.01" step="0.01" placeholder="Enter Quantity" value="{{ $recordItem['quantity_liters'] ?? '' }}" data-sale-quantity required><span aria-hidden="true">L</span></div></div>
                         </div>
-                        @include('sales-officer.partials.order-line', ['index' => 0, 'item' => $recordItem, 'formId' => null, 'idPrefix' => 'sale', 'lineError' => $recordLineError, 'stockHints' => $stockHints])
+                        @include('sales-officer.partials.order-line', ['index' => 0, 'item' => $recordItem, 'formId' => null, 'idPrefix' => 'sale', 'lineError' => $recordLineError, 'stockHints' => $stockHints, 'showF1' => false])
                     </div>
                 </div>
 

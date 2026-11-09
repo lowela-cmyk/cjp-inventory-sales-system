@@ -23,15 +23,25 @@ class InventoryLedgerService
         $purchaseItemIds = $purchaseRows->pluck('purchase_item_id')->map(fn (mixed $id): int => (int) $id)->all();
         $liftsByPurchaseItem = $this->liftsByPurchaseItem($purchaseItemIds);
         $movementsByPurchaseItem = $this->movementSummariesByPurchaseItem($purchaseItemIds);
+        $stockByPurchaseItem = app(PurchaseStockService::class)->lines($purchaseItemIds);
         $latestBalances = $this->latestBalances();
 
-        $transactions = $purchaseRows->map(function (object $row) use ($liftsByPurchaseItem, $movementsByPurchaseItem): array {
+        $transactions = $purchaseRows->map(function (object $row) use ($liftsByPurchaseItem, $movementsByPurchaseItem, $stockByPurchaseItem): array {
             $purchased = round((float) $row->quantity_ordered_liters, 2);
             $lifted = round(min($purchased, (float) $row->total_lifted_liters), 2);
             $remaining = round(max(0, $purchased - $lifted), 2);
             $lifts = $liftsByPurchaseItem[(int) $row->purchase_item_id] ?? collect();
             $movementSummary = $movementsByPurchaseItem[(int) $row->purchase_item_id] ?? 'No deliveries recorded';
             $status = $this->liftingStatus($lifted, $purchased);
+            $stock = $stockByPurchaseItem->get((int) $row->purchase_item_id);
+            $inventoryStatus = match (true) {
+                $stock === null => 'N/A',
+                (float) $stock->on_hand <= 0 => 'Depleted',
+                (float) $stock->released > 0 => 'Partially Delivered',
+                default => 'In Stock',
+            };
+            $driverNames = $lifts->pluck('details.Driver')->filter()->unique()->values()->implode(', ') ?: 'N/A';
+            $truckNames = $lifts->pluck('details.Truck')->filter()->unique()->values()->implode(', ') ?: 'N/A';
 
             return [
                 'id' => 'ledger-purchase-'.$row->purchase_item_id,
@@ -43,6 +53,9 @@ class InventoryLedgerService
                 'purchased_liters' => $this->formatDisplayLiters($purchased),
                 'lifted_liters' => $this->formatDisplayLiters($lifted),
                 'remaining_liters' => $this->formatDisplayLiters($remaining),
+                'driver_names' => $driverNames,
+                'truck_names' => $truckNames,
+                'inventory_status' => $inventoryStatus,
                 'lifts' => $lifts,
                 'search_text' => strtolower(implode(' ', [
                     $row->purchase_code,
@@ -173,7 +186,10 @@ class InventoryLedgerService
             ])
             ->groupBy('purchase_item_id')
             ->map(fn (Collection $rows): Collection => $rows->values()->map(function (object $row, int $index): array {
-                $truck = TruckLabel::make($row->truck_name, $row->truck_code);
+                $truckLabel = TruckLabel::make($row->truck_name, $row->truck_code);
+                $truck = trim((string) $row->truck_name) !== '' && trim((string) $row->truck_code) !== ''
+                    ? $truckLabel.' / '.$row->truck_code
+                    : ($truckLabel !== '' ? $truckLabel : 'N/A');
                 $details = [
                     'Lift ID' => $row->haul_code,
                     'Date Lifted' => $row->hauled_at ? $this->formatDateTime($row->hauled_at) : (in_array($row->status, ['lifted', 'completed'], true) ? 'Date unavailable' : 'Not yet lifted'),

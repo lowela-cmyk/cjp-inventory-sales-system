@@ -2159,12 +2159,6 @@ table td:has(.status-badge) {
     line-height: 1.25;
     overflow-wrap: anywhere;
     text-align: center;
-    opacity: 0;
-    transition: opacity .15s ease;
-}
-
-.lift-block:hover .lift-block-meta,
-.lift-block:focus .lift-block-meta {
     opacity: 1;
 }
 
@@ -2175,12 +2169,22 @@ table td:has(.status-badge) {
 }
 
 .lift-block-quantity {
-    display: block;
-    margin-top: 34px;
+    display: grid;
+    gap: 6px;
+    margin-top: 24px;
+    color: rgb(255 255 255 / 72%);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-align: center;
+}
+
+.lift-block-quantity strong {
+    color: #fff;
     font-size: clamp(28px, 3vw, 36px);
     font-weight: 400;
+    letter-spacing: 0;
     line-height: 1.1;
-    text-align: center;
 }
 
 .visually-hidden {
@@ -5137,8 +5141,9 @@ body.login-page {
    table scrolls and Edit is at the end of the row, and no column (Payment Status) sits under it. These selectors
    outrank the compact 1599px pinned-table rules above. */
 .table-wrap > .inventory-table-actions.purchases-table {
-    width: max-content;
+    width: 100%;
     min-width: 100%;
+    table-layout: fixed;
 }
 
 .table-wrap > .admin-table.inventory-table-actions.purchases-table.table-stacked :is(th, td) {
@@ -5153,6 +5158,44 @@ body.login-page {
 
 .table-wrap > .admin-table.inventory-table-actions.purchases-table.table-stacked td.cell-wrap {
     min-width: 120px;
+}
+
+.table-wrap > .admin-table.inventory-table-actions.purchases-table.table-stacked :is(th, td) {
+    overflow-wrap: anywhere;
+}
+
+.table-wrap > .inventory-table-actions.purchases-table td.inventory-number,
+.table-wrap > .inventory-table-actions.purchases-table td.purchase-status-cell,
+.table-wrap > .inventory-table-actions.purchases-table td.inventory-receipt-cell {
+    white-space: nowrap;
+}
+
+.transaction-purchase-details {
+    margin: 18px 0;
+}
+
+.transaction-purchase-details .status-badge {
+    width: max-content;
+}
+
+.lift-block-details {
+    display: grid;
+    gap: 6px;
+    margin-top: 12px;
+    color: var(--admin-muted);
+    font-size: 12px;
+    text-align: left;
+}
+
+.lift-block-details span {
+    display: grid;
+    gap: 2px;
+}
+
+.lift-block-details b {
+    color: var(--admin-ink);
+    font-size: 11px;
+    text-transform: uppercase;
 }
 
 .table-wrap > .inventory-table-actions.purchases-table td.purchase-status-cell .status-badge {

@@ -78,9 +78,10 @@ class Part12RevisionsTest extends AuditTestCase
         $page = $this->actingAs($a['inventory'])->get(route('inventory-officer.inventory'))->assertOk()->getContent();
         $this->assertStringContainsString('>Apply Changes</button>', $page);
         $this->assertStringNotContainsString('>Save Changes</button>', $page);
-        foreach (['Inventory Status', 'Purchase Status', 'Payment Status'] as $header) {
+        foreach (['Purchase Status', 'Payment Status'] as $header) {
             $this->assertStringContainsString('<th class="inventory-status-column">'.$header.'</th>', $page);
         }
+        $this->assertStringNotContainsString('<th class="inventory-status-column">Inventory Status</th>', $page);
 
         $stockOut = $this->actingAs($a['inventory'])->get(route('inventory-officer.inventory.stock-out'))->assertOk()->getContent();
         $this->assertStringContainsString('<th>Customer Name</th>', $stockOut);

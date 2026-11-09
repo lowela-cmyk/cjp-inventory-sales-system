@@ -35,7 +35,10 @@ class InventoryLedgerTest extends TestCase
             ->assertOk()
             ->assertSee('PUR-ZERO-LIFT')
             ->assertSee('Lifted: <strong>0 L</strong>', false)
-            ->assertSee('Remaining / Unlifted: <strong>100,000 L</strong>', false)
+            ->assertSee('Remaining Fuel (L): <strong>100,000 L</strong>', false)
+            ->assertSee('Driver Name', false)
+            ->assertSee('Assigned Truck / Truck Number', false)
+            ->assertSee('Inventory Status', false)
             ->assertSee('No lift assignments have been created for this purchase yet.');
     }
 
@@ -68,7 +71,7 @@ class InventoryLedgerTest extends TestCase
             ->assertSee('Purchase ID: PUR-100K-MULTI')
             ->assertSee('status-tone-success', false)
             ->assertSee('Lifted: <strong>100,000 L</strong>', false)
-            ->assertSee('Remaining / Unlifted: <strong>0 L</strong>', false);
+            ->assertSee('Remaining Fuel (L): <strong>0 L</strong>', false);
     }
 
     public function test_cancelled_lifts_remain_historical_but_do_not_count_toward_total_lifted(): void
@@ -107,7 +110,7 @@ class InventoryLedgerTest extends TestCase
         $this->actingAs($records['inventoryOfficer'])
             ->get(route('inventory-officer.ledger.transactions'))
             ->assertOk()
-            ->assertSee('Remaining / Unlifted:')
+            ->assertSee('Remaining Fuel (L):')
             ->assertSee('30,000 L');
     }
 
@@ -115,9 +118,14 @@ class InventoryLedgerTest extends TestCase
     {
         $records = $this->baseRecords();
         $purchase = $this->purchase($records, 'PUR-MODAL-LIFTS', 100000);
+        $secondDriver = User::factory()->create(['name' => 'Driver Two', 'role' => 'driver', 'status' => 'active']);
+        $secondTruck = DB::table('trucks')->insertGetId([
+            'truck_code' => 'TRK-LEDGER-2', 'name' => 'Ledger Tanker 2', 'capacity_liters' => 30000,
+            'truck_type' => 'hauling', 'status' => 'available', 'created_at' => now(), 'updated_at' => now(),
+        ]);
 
-        $this->haul($records, $purchase, 'LFT-MODAL-1', 40000, 'completed');
-        $this->haul($records, $purchase, 'LFT-MODAL-2', 40000, 'completed');
+        $this->haul($records, $purchase, 'LFT-MODAL-1', 40000, 'completed', '2026-09-01 08:00:00');
+        $this->haul($records, $purchase, 'LFT-MODAL-2', 40000, 'completed', '2026-09-02 08:00:00', $secondTruck, $secondDriver->id);
         $this->haul($records, $purchase, 'LFT-MODAL-3', 20000, 'scheduled');
 
         $this->actingAs($records['inventoryOfficer'])
@@ -131,16 +139,19 @@ class InventoryLedgerTest extends TestCase
             ->assertSee('LFT-MODAL-1')
             ->assertSee('LFT-MODAL-2')
             ->assertSee('LFT-MODAL-3')
-            ->assertSee('Lift-ID')
-            ->assertSee('Date Lifted: 9/1/2026')
-            ->assertSee('Date Lifted: Not yet lifted')
+            ->assertSee('Lift ID')
+            ->assertSee('Date Lifted')
+            ->assertSee('9/1/2026')
+            ->assertSee('Not yet lifted')
             ->assertSee('Lifted: <strong>80,000 L</strong>', false)
-            ->assertSee('Remaining / Unlifted: <strong>20,000 L</strong>', false)
+            ->assertSee('Remaining Fuel (L): <strong>20,000 L</strong>', false)
             ->assertSee('tabindex="0"', false)
             ->assertSee('lift-block-meta', false)
             ->assertDontSee('lift-tooltip', false)
             ->assertSee('Driver One')
-            ->assertSee('TRK-LEDGER');
+            ->assertSee('TRK-LEDGER')
+            ->assertSee('Driver Two')
+            ->assertSee('TRK-LEDGER-2');
 
         $this->actingAs($records['dispatchOfficer'])
             ->get(route('dispatch.ledger.transactions'))
@@ -339,7 +350,7 @@ class InventoryLedgerTest extends TestCase
      * @param  array<string, mixed>  $records
      * @param  array<string, int>  $purchase
      */
-    private function haul(array $records, array $purchase, string $code, float $quantity, string $status, string $scheduledAt = '2026-09-01 08:00:00'): int
+    private function haul(array $records, array $purchase, string $code, float $quantity, string $status, string $scheduledAt = '2026-09-01 08:00:00', ?int $truckId = null, ?int $driverId = null): int
     {
         return DB::table('hauls')->insertGetId([
             'haul_code' => $code,
@@ -347,8 +358,8 @@ class InventoryLedgerTest extends TestCase
             'purchase_item_id' => $purchase['purchaseItemId'],
             'depot_id' => $records['depotId'],
             'fuel_type_id' => $records['fuelTypeId'],
-            'truck_id' => $records['truckId'],
-            'driver_user_id' => $records['driver']->id,
+            'truck_id' => $truckId ?? $records['truckId'],
+            'driver_user_id' => $driverId ?? $records['driver']->id,
             'scheduled_at' => $scheduledAt,
             'hauled_at' => $status === 'completed' ? $scheduledAt : null,
             'quantity_liters' => $quantity,

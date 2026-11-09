@@ -23,7 +23,7 @@
         </div>
 
         @if (! empty($summaryCards))
-            <div class="metric-row">
+            <div class="metric-row inventory-summary-row">
                 @foreach ($summaryCards as $card)
                     <div class="metric-card">
                         <em>{{ $card['label'] }}</em>
@@ -66,7 +66,7 @@
                                 <td class="inventory-number">{{ $c[4] }}</td>
                                 <td class="inventory-number">{{ $c[8] }}</td>
                                 <td class="inventory-number">{{ $c[9] }}</td>
-                                <td><x-table.stack :lines="[['value' => $c[13]], ['value' => $c[14], 'class' => 'is-secondary']]" /></td>
+                                <td @class(['payment-mode-cell', 'is-empty' => $c[13] === 'N/A' && $c[14] === 'N/A'])><x-table.stack :lines="[['value' => $c[13]], ['value' => $c[14], 'class' => 'is-secondary']]" /></td>
                                 {{-- Withdrawal receipts the driver uploaded for this purchase's lifts. --}}
                                 <td class="inventory-receipt-cell">
                                     @if (count($row['withdrawals']) > 0)
@@ -173,8 +173,8 @@
                         @endforeach
                         <th>QTY Released</th><th>Cost / Unit</th><th>Total Cost</th><th>Price / Unit</th><th>Total Price</th><th>Total Paid</th>
                         <th class="inventory-status-column">Status</th>
-                        <th><span class="th-hint" tabindex="0" title="Margin = Total Price − Total Cost (expected profit once fully paid)">Margin</span></th>
-                        <th><span class="th-hint" tabindex="0" title="Realized Profit = Total Paid − Total Cost (negative until payments cover the cost)">Realized Profit</span></th>
+                        <th class="stock-out-profit-heading"><span class="th-hint" tabindex="0" title="Margin = Total Price − Total Cost (expected profit once fully paid)">Margin</span></th>
+                        <th class="stock-out-profit-heading"><span class="th-hint" tabindex="0" title="Realized Profit = Total Paid − Total Cost (negative until payments cover the cost)">Realized Profit</span></th>
                         <th>Actions</th>
                     </tr></thead>
                     <tbody>
@@ -203,8 +203,8 @@
                                     <td class="inventory-number">{{ $c[$i] }}</td>
                                 @endforeach
                                 <td><x-admin.status-badge :status="$c[14]" /></td>
-                                <td @class(['inventory-number', 'inventory-profit', 'is-negative' => $negative($row['margin'])])>{{ $c[15] }}</td>
-                                <td @class(['inventory-number', 'inventory-profit', 'is-negative' => $negative($row['profit'])])>{{ $c[16] }}</td>
+                                <td @class(['inventory-number', 'inventory-profit', 'stock-out-profit-cell', 'is-negative' => $negative($row['margin'])])>{{ $c[15] }}</td>
+                                <td @class(['inventory-number', 'inventory-profit', 'stock-out-profit-cell', 'is-negative' => $negative($row['profit'])])>{{ $c[16] }}</td>
                                 <td><div class="inventory-row-actions"><button class="btn btn-secondary" type="button" data-modal-open="{{ $row['modal_id'] }}">View</button></div></td>
                             </tr>
                         @empty

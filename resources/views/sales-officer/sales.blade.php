@@ -351,12 +351,12 @@
                 @endif
                 <div class="table-wrap sales-items-table">
                     <table class="admin-table">
-                        {{-- Part 18 #1: Purchase ID gets the widest column and wraps ("PUR-PREM-002" over "+ F1 PUR-F1-001"). --}}
-                        <colgroup><col><col class="sales-items-col-source"><col span="8"></colgroup>
-                        <thead><tr><th>Fuel</th><th>Purchase ID</th><th>QTY</th><th>F1 %</th><th>F1 (L)</th><th>Fuel (L)</th><th>Fuel Price</th><th>F1 Price</th><th>Line Total</th><th>Fulfilled</th></tr></thead>
+                        {{-- Keep the read-only sales details table on one explicit, equal seven-column grid. --}}
+                        <colgroup><col span="7"></colgroup>
+                        <thead><tr><th>Fuel</th><th>Purchase ID</th><th>QTY</th><th>Fuel (L)</th><th>Fuel Price</th><th>Line Total</th><th>Fulfilled</th></tr></thead>
                         <tbody>
                             @foreach ($row['items'] as $item)
-                                <tr><td>{{ $item['fuel_name'] }}</td><td class="sales-items-source">@foreach (explode(' + ', $item['source']) as $sourcePart)<span>{{ $loop->first ? '' : '+ ' }}{{ $sourcePart }}</span>@endforeach</td><td>{{ number_format((float) $item['quantity_liters'], 2) }}</td><td>{{ rtrim(rtrim(number_format($item['f1_percentage'], 2), '0'), '.') }}%</td><td>{{ number_format($item['f1_quantity_liters'], 2) }}</td><td>{{ number_format($item['main_quantity_liters'], 2) }}</td><td>{{ number_format((float) $item['unit_price'], 2) }}</td><td>{{ $item['f1_quantity_liters'] > 0 ? number_format($item['f1_unit_price'], 2) : '—' }}</td><td>{{ number_format((float) $item['line_total'], 2) }}</td><td>{{ number_format((float) $item['fulfilled_quantity_liters'], 2) }}</td></tr>
+                                <tr><td>{{ $item['fuel_name'] }}</td><td class="sales-items-source">@foreach (explode(' + ', $item['source']) as $sourcePart)<span>{{ $loop->first ? '' : '+ ' }}{{ $sourcePart }}</span>@endforeach</td><td>{{ number_format((float) $item['quantity_liters'], 2) }}</td><td>{{ number_format($item['main_quantity_liters'], 2) }}</td><td>{{ number_format((float) $item['unit_price'], 2) }}</td><td>{{ number_format((float) $item['line_total'], 2) }}</td><td>{{ number_format((float) $item['fulfilled_quantity_liters'], 2) }}</td></tr>
                             @endforeach
                         </tbody>
                     </table>

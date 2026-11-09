@@ -83,43 +83,51 @@
     </div>
 
     @foreach ($transactions as $row)
-        <x-admin.modal id="{{ $row['id'] }}" title="VIEW TRANSACTIONS" :show-brand="false">
-            <div class="modal-heading-row">
+        <x-admin.modal id="{{ $row['id'] }}" title="View Transactions" :show-brand="false">
+            <div class="ledger-transaction-header">
                 <p class="detail-id">Purchase ID: {{ $row['purchase_code'] }}</p>
                 <x-admin.status-badge :status="$row['status']" />
             </div>
-            <div class="lift-summary" aria-label="Purchase lifting totals">
-                <span>Purchased: <strong>{{ $row['purchased_liters'] }}</strong></span>
-                <span>Lifted: <strong>{{ $row['lifted_liters'] }}</strong></span>
-                <span>Remaining Fuel (L): <strong>{{ $row['remaining_liters'] }}</strong></span>
+            <div class="ledger-fuel-summary" aria-label="Purchase lifting totals">
+                <div><span>Purchased</span><strong>{{ $row['purchased_liters'] }}</strong></div>
+                <div><span>Lifted</span><strong>{{ $row['lifted_liters'] }}</strong></div>
+                <div><span>Remaining Fuel</span><strong>{{ $row['remaining_liters'] }}</strong></div>
             </div>
-            <div class="detail-grid transaction-purchase-details">
-                <div class="detail-row"><div class="detail-label">Remaining Fuel (L)</div><div class="detail-value">{{ $row['remaining_liters'] }}</div></div>
+            <div class="ledger-purchase-details">
                 <div class="detail-row"><div class="detail-label">Driver Name</div><div class="detail-value">{{ $row['driver_names'] }}</div></div>
                 <div class="detail-row"><div class="detail-label">Assigned Truck / Truck Number</div><div class="detail-value">{{ $row['truck_names'] }}</div></div>
                 <div class="detail-row"><div class="detail-label">Inventory Status</div><div class="detail-value"><x-admin.status-badge :status="$row['inventory_status']" /></div></div>
             </div>
-            <div class="lift-transaction-modal">
-                <div class="lift-blocks" aria-label="Lift transactions for {{ $row['purchase_code'] }}">
+            <section class="ledger-lift-history" aria-labelledby="{{ $row['id'] }}-lift-history-title">
+                <h3 id="{{ $row['id'] }}-lift-history-title">Lift History</h3>
+                <div class="ledger-lift-cards" aria-label="Lift transactions for {{ $row['purchase_code'] }}">
                     @forelse ($row['lifts'] as $lift)
-                        <div class="lift-block {{ $lift['counts_as_lifted'] ? 'is-complete' : 'is-open' }}" tabindex="0" aria-label="Lift {{ $lift['sequence'] }}: {{ $lift['display_quantity'] }}. Lift ID: {{ $lift['code'] }}. Date Lifted: {{ $lift['display_date'] }}.">
-                            <span class="visually-hidden">Lift {{ $lift['sequence'] }}</span>
-                            <div class="lift-block-meta" aria-label="Lift ID: {{ $lift['details']['Lift ID'] }}">
-                                <span><b>Lift ID</b>{{ $lift['details']['Lift ID'] ?: 'N/A' }}</span>
-                                <span><b>Date Lifted</b>{{ $lift['display_date'] ?: 'N/A' }}</span>
+                        <article class="ledger-lift-card" tabindex="0" aria-label="Lift {{ $lift['sequence'] }}: {{ $lift['display_quantity'] }}. Lift ID: {{ $lift['code'] }}. Date Lifted: {{ $lift['display_date'] }}.">
+                            <div class="ledger-lift-card-header">
+                                <div>
+                                    <span class="ledger-card-label">Lift ID</span>
+                                    <strong>{{ $lift['details']['Lift ID'] ?: 'N/A' }}</strong>
+                                </div>
+                                <div>
+                                    <span class="ledger-card-label">Date Lifted</span>
+                                    <strong>{{ $lift['display_date'] ?: 'N/A' }}</strong>
+                                </div>
+                                <x-admin.status-badge :status="$lift['status'] ?: 'N/A'" />
                             </div>
-                            <div class="lift-block-quantity"><span>Quantity Lifted (L)</span><strong>{{ $lift['display_quantity'] ?: 'N/A' }}</strong></div>
-                            <div class="lift-block-details">
-                                <span><b>Assigned Truck / Truck Number</b>{{ $lift['details']['Truck'] ?: 'N/A' }}</span>
-                                <span><b>Driver Name</b>{{ $lift['details']['Driver'] ?: 'N/A' }}</span>
-                                <span><b>Lift Status</b>{{ $lift['status'] ?: 'N/A' }}</span>
+                            <div class="ledger-lift-quantity">
+                                <span>Quantity Lifted (L)</span>
+                                <strong>{{ $lift['display_quantity'] ?: 'N/A' }}</strong>
                             </div>
-                        </div>
+                            <div class="ledger-lift-crew">
+                                <div><span class="ledger-card-label">Truck</span><strong>{{ $lift['details']['Truck'] ?: 'Unassigned' }}</strong></div>
+                                <div><span class="ledger-card-label">Driver</span><strong>{{ $lift['details']['Driver'] ?: 'Unassigned' }}</strong></div>
+                            </div>
+                        </article>
                     @empty
-                        <div class="lift-empty">No lift assignments have been created for this purchase yet.</div>
+                        <div class="ledger-no-lifts">No lifts recorded</div>
                     @endforelse
                 </div>
-            </div>
+            </section>
         </x-admin.modal>
     @endforeach
 @endcomponent

@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use Tests\Concerns\PurchaseFlows;
 use Tests\Feature\Audit\AuditTestCase;
@@ -82,6 +83,8 @@ class Part12RevisionsTest extends AuditTestCase
             $this->assertStringContainsString('<th class="inventory-status-column">'.$header.'</th>', $page);
         }
         $this->assertStringNotContainsString('<th class="inventory-status-column">Inventory Status</th>', $page);
+        $this->assertStringContainsString('min-width: 1465px;', File::get(resource_path('css/app.css')));
+        $this->assertStringContainsString('.purchases-table th.inventory-status-column', File::get(resource_path('css/app.css')));
 
         $stockOut = $this->actingAs($a['inventory'])->get(route('inventory-officer.inventory.stock-out'))->assertOk()->getContent();
         $this->assertStringContainsString('<th>Customer Name</th>', $stockOut);

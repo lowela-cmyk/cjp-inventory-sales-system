@@ -34,12 +34,12 @@ class InventoryLedgerTest extends TestCase
             ->get(route('inventory-officer.ledger.transactions'))
             ->assertOk()
             ->assertSee('PUR-ZERO-LIFT')
-            ->assertSee('Lifted: <strong>0 L</strong>', false)
-            ->assertSee('Remaining Fuel (L): <strong>100,000 L</strong>', false)
+            ->assertSee('<span>Lifted</span><strong>0 L</strong>', false)
+            ->assertSee('<span>Remaining Fuel</span><strong>100,000 L</strong>', false)
             ->assertSee('Driver Name', false)
             ->assertSee('Assigned Truck / Truck Number', false)
             ->assertSee('Inventory Status', false)
-            ->assertSee('No lift assignments have been created for this purchase yet.');
+            ->assertSee('No lifts recorded');
     }
 
     public function test_multiple_lift_transactions_roll_up_to_one_purchase_and_final_trip_can_be_smaller(): void
@@ -70,8 +70,8 @@ class InventoryLedgerTest extends TestCase
             ->assertOk()
             ->assertSee('Purchase ID: PUR-100K-MULTI')
             ->assertSee('status-tone-success', false)
-            ->assertSee('Lifted: <strong>100,000 L</strong>', false)
-            ->assertSee('Remaining Fuel (L): <strong>0 L</strong>', false);
+            ->assertSee('<span>Lifted</span><strong>100,000 L</strong>', false)
+            ->assertSee('<span>Remaining Fuel</span><strong>0 L</strong>', false);
     }
 
     public function test_cancelled_lifts_remain_historical_but_do_not_count_toward_total_lifted(): void
@@ -110,7 +110,7 @@ class InventoryLedgerTest extends TestCase
         $this->actingAs($records['inventoryOfficer'])
             ->get(route('inventory-officer.ledger.transactions'))
             ->assertOk()
-            ->assertSee('Remaining Fuel (L):')
+            ->assertSee('Remaining Fuel')
             ->assertSee('30,000 L');
     }
 
@@ -131,7 +131,7 @@ class InventoryLedgerTest extends TestCase
         $this->actingAs($records['inventoryOfficer'])
             ->get(route('inventory-officer.ledger.transactions'))
             ->assertOk()
-            ->assertSee('VIEW TRANSACTIONS')
+            ->assertSee('View Transactions')
             ->assertSee('PUR-MODAL-LIFTS')
             ->assertSee('Lift 1')
             ->assertSee('Lift 2')
@@ -143,10 +143,10 @@ class InventoryLedgerTest extends TestCase
             ->assertSee('Date Lifted')
             ->assertSee('9/1/2026')
             ->assertSee('Not yet lifted')
-            ->assertSee('Lifted: <strong>80,000 L</strong>', false)
-            ->assertSee('Remaining Fuel (L): <strong>20,000 L</strong>', false)
+            ->assertSee('<span>Lifted</span><strong>80,000 L</strong>', false)
+            ->assertSee('<span>Remaining Fuel</span><strong>20,000 L</strong>', false)
             ->assertSee('tabindex="0"', false)
-            ->assertSee('lift-block-meta', false)
+            ->assertSee('ledger-lift-card', false)
             ->assertDontSee('lift-tooltip', false)
             ->assertSee('Driver One')
             ->assertSee('TRK-LEDGER')
@@ -156,13 +156,13 @@ class InventoryLedgerTest extends TestCase
         $this->actingAs($records['dispatchOfficer'])
             ->get(route('dispatch.ledger.transactions'))
             ->assertOk()
-            ->assertSee('Lifted: <strong>80,000 L</strong>', false);
+            ->assertSee('<span>Lifted</span><strong>80,000 L</strong>', false);
 
         $admin = User::factory()->create(['role' => 'admin', 'status' => 'active']);
         $this->actingAs($admin)
             ->get(route('admin.ledger'))
             ->assertOk()
-            ->assertSee('Lifted: <strong>80,000 L</strong>', false);
+            ->assertSee('<span>Lifted</span><strong>80,000 L</strong>', false);
     }
 
     public function test_dispatch_schedule_form_shows_only_the_derived_pickup_depot(): void

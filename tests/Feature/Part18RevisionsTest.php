@@ -36,7 +36,13 @@ class Part18RevisionsTest extends AuditTestCase
         [$premiumCode, $f1Code] = [$this->purchaseCode($premium), $this->purchaseCode($f1)];
 
         $modal = $this->saleModal($a, $saleId);
-        $this->assertStringContainsString('<colgroup><col><col class="sales-items-col-source"><col span="8"></colgroup>', $modal);
+        $this->assertStringContainsString('<colgroup><col span="7"></colgroup>', $modal);
+        foreach (['F1 %', 'F1 (L)', 'F1 Price'] as $removedColumn) {
+            $this->assertStringNotContainsString('<th>'.$removedColumn.'</th>', $modal);
+        }
+        foreach (['Fuel', 'Purchase ID', 'QTY', 'Fuel (L)', 'Fuel Price', 'Line Total', 'Fulfilled'] as $visibleColumn) {
+            $this->assertStringContainsString('<th>'.$visibleColumn.'</th>', $modal);
+        }
         $this->assertStringContainsString('<td class="sales-items-source"><span>'.$premiumCode.'</span><span>+ F1 '.$f1Code.'</span></td>', $modal);
 
         // No rule of the line table keeps its cells on one line (that made Purchase ID run over QTY).
@@ -48,7 +54,7 @@ class Part18RevisionsTest extends AuditTestCase
             }
         }
         $css = File::get(resource_path('css/app.css'));
-        $this->assertStringContainsString(".admin-modal-sales .sales-items-table .sales-items-col-source {\n    width: 20%;", $css);
+        $this->assertStringContainsString(".admin-modal-sales .sales-items-table .admin-table col {\n    width: 14.285714%;", $css);
         $this->assertStringContainsString(".admin-modal-sales .sales-items-table .sales-items-source span {\n    display: block;", $css);
     }
 

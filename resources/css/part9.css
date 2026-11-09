@@ -737,12 +737,36 @@
 .admin-modal-sales .sales-items-table .admin-table {
     width: 100%;
     min-width: 920px;
+    table-layout: fixed;
+    border: 1px solid var(--admin-line);
+    border-collapse: collapse;
 }
 
-/* Part 18 #1: cells wrap instead of running into the next column (app.css sizes the Purchase ID column). */
+.admin-modal-sales .sales-items-table .admin-table col {
+    width: 14.285714%;
+}
+
+/* Sales details line-items table: cells wrap within their equal columns instead of changing the grid. */
 .admin-modal-sales .sales-items-table .admin-table th,
 .admin-modal-sales .sales-items-table .admin-table td {
+    padding: 12px 14px;
     white-space: normal;
     overflow-wrap: anywhere;
-    text-align: center;
+    vertical-align: middle;
+    border-bottom: 1px solid var(--admin-soft-line);
+}
+
+.admin-modal-sales .sales-items-table .admin-table thead th {
+    background: var(--admin-head);
+}
+
+.admin-modal-sales .sales-items-table .admin-table th:nth-child(n + 3),
+.admin-modal-sales .sales-items-table .admin-table td:nth-child(n + 3) {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.admin-modal-sales .sales-items-table .admin-table th:nth-child(-n + 2),
+.admin-modal-sales .sales-items-table .admin-table td:nth-child(-n + 2) {
+    text-align: left;
 }

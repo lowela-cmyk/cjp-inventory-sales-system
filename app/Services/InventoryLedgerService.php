@@ -40,8 +40,8 @@ class InventoryLedgerService
                 (float) $stock->released > 0 => 'Partially Delivered',
                 default => 'In Stock',
             };
-            $driverNames = $lifts->pluck('details.Driver')->filter()->unique()->values()->implode(', ') ?: 'N/A';
-            $truckNames = $lifts->pluck('details.Truck')->filter()->unique()->values()->implode(', ') ?: 'N/A';
+            $driverNames = $lifts->pluck('details.Driver')->filter()->unique()->values()->implode(', ') ?: 'Unassigned';
+            $truckNames = $lifts->pluck('details.Truck')->filter()->unique()->values()->implode(', ') ?: 'Unassigned';
 
             return [
                 'id' => 'ledger-purchase-'.$row->purchase_item_id,

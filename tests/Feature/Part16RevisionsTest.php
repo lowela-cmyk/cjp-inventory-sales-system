@@ -26,20 +26,27 @@ class Part16RevisionsTest extends AuditTestCase
         Carbon::setTestNow('2026-10-14 09:00:00');
     }
 
-    public function test_the_f1_dropdown_lists_f1_purchases_and_f1_garage_tanks_for_every_delivery_type(): void
+    public function test_record_sales_modal_renders_without_the_legacy_f1_source_selector_for_admin_and_sales_officer(): void
+    {
+        $a = $this->actors();
+
+        foreach (['admin', 'sales'] as $role) {
+            $modal = $this->recordSalesModal($a[$role]);
+
+            $this->assertStringContainsString('id="so-sales-add"', $modal);
+            $this->assertStringContainsString('Record Sales Receivables', $modal);
+            $this->assertStringNotContainsString('data-sale-f1-purchase', $modal);
+            $this->assertStringNotContainsString('name="items[0][f1_purchase_item_id]"', $modal);
+        }
+    }
+
+    public function test_f1_sources_remain_supported_for_every_delivery_type(): void
     {
         $a = $this->actors();
         $premium = $this->purchaseLine($a, 'PREM', 20000);
         $f1Depot = $this->purchaseLine($a, 'F1', 3000);
         $this->f1Lot($a, 2000);
         $f1Tank = $this->tank('F1', 1);
-
-        $form = $this->recordSalesForm($a);
-        $f1Select = substr($form, strpos($form, 'data-sale-f1-purchase'), 3000);
-        $this->assertStringContainsString('<option value="'.$f1Depot.'" data-source="depot"', $f1Select);
-        // Part 18 add-on: the F1 garage option is the tank itself, at its average cost.
-        $this->assertMatchesRegularExpression('/<option value="tank:'.$f1Tank.'" data-source="garage" data-garage-f1[^>]*>F1 Tank 1 · 2,000 L<\/option>/', $f1Select);
-        $this->assertStringNotContainsString('No F1 stock', $f1Select);
 
         // The server accepts either source whatever the delivery type, and checks the liters of the one picked.
         $this->premiumLot($a);
@@ -316,5 +323,18 @@ class Part16RevisionsTest extends AuditTestCase
         $start = strpos($html, 'id="so-sales-add"');
 
         return substr($html, $start, strpos($html, 'class="modal-backdrop"', $start + 20) - $start);
+    }
+
+    private function recordSalesModal(User $actor): string
+    {
+        $route = $actor->role === 'admin' ? 'admin.sales' : 'sales-officer.sales';
+        $html = $this->actingAs($actor)->get(route($route))->assertOk()->getContent();
+        $start = strpos($html, 'class="modal-backdrop" id="so-sales-add"');
+        $end = strpos($html, 'class="modal-backdrop"', $start + 1);
+
+        $this->assertNotFalse($start);
+        $this->assertNotFalse($end);
+
+        return substr($html, $start, $end - $start);
     }
 }

@@ -34,3 +34,7 @@ Thumbs.db
 # Local artifacts, not part of the app: an old vendor/ snapshot and code-graph tool output.
 /vendor.zip
 /graphify-out/
+
+# Selenium browser-run artifacts are local and may contain application data.
+/tests/selenium/reports/
+/tests/selenium/screenshots/

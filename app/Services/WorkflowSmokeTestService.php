@@ -436,16 +436,6 @@ class WorkflowSmokeTestService
             ->count();
     }
 
-    private function code(string $prefix): string
-    {
-        do {
-            $code = $prefix.'-'.now()->format('ymdHis').'-'.Str::upper(Str::random(5));
-        } while (DB::table('inventory_movements')->where('movement_code', $code)->exists()
-            || DB::table('stock_outs')->where('stock_out_code', $code)->exists());
-
-        return $code;
-    }
-
     private function assertSame(mixed $expected, mixed $actual, string $label): void
     {
         if ($expected !== $actual) {

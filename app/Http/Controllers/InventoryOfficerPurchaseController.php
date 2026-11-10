@@ -38,8 +38,6 @@ class InventoryOfficerPurchaseController extends Controller
 
     private const PAYMENT_STATUSES = ['paid', 'partial', 'unpaid'];
 
-    private const STOCK_OUT_REFERENCE_TYPE = 'stock_out';
-
     private const TABS = ['purchases', 'stock-in', 'stock-out', 'depots', 'garage'];
 
     /** Status filter options per inventory tab (tanks are retired; Stock-In is one record per purchase). */
@@ -371,7 +369,7 @@ class InventoryOfficerPurchaseController extends Controller
         $paginator = $this->stockIns->paginate($filters, $search);
         // Part 15: a lifted purchase's stock fields are locked, so its stock-in is shown read-only.
         $lifted = $this->purchaseService->liftedIds($paginator->getCollection()->pluck('purchase_item_id')->map(fn (mixed $id): int => (int) $id)->all());
-        $paginator->setCollection($paginator->getCollection()->map(fn (object $row): array => [
+        $paginator->setCollection($paginator->getCollection()->map(fn (\stdClass $row): array => [
             'id' => (int) $row->id,
             'modal_id' => 'io-stock-in-edit-'.$row->id,
             'purchase_item_id' => (int) $row->purchase_item_id,
@@ -444,7 +442,7 @@ class InventoryOfficerPurchaseController extends Controller
             ->select(['id', 'depot_code', 'name', 'address', 'contact_person', 'phone', 'status']);
 
         $paginator = $query->paginate(25, ['*'], 'depots_page')->withQueryString();
-        $transformed = collect($paginator->items())->map(fn (object $row): array => [
+        $transformed = collect($paginator->items())->map(fn (\stdClass $row): array => [
             'id' => (int) $row->id,
             'depot_code' => $row->depot_code,
             'name' => $row->name,
@@ -493,7 +491,7 @@ class InventoryOfficerPurchaseController extends Controller
             : collect();
         // Part 18 add-on: the lots (purchases) each tank release drew from.
         $draws = app(GarageStockService::class)->drawsByStockOut(collect($paginator->items())->pluck('id')->map(fn (mixed $id): int => (int) $id)->all());
-        $transformed = collect($paginator->items())->map(function (object $row) use ($sourceChanges, $draws): array {
+        $transformed = collect($paginator->items())->map(function (\stdClass $row) use ($sourceChanges, $draws): array {
             $rowDraws = $draws->get((int) $row->id);
             $amounts = $this->stockOutFinancials->calculate($row);
             // A voided release earns nothing (any payment is a refund due), so it has no margin or profit.
@@ -562,58 +560,12 @@ class InventoryOfficerPurchaseController extends Controller
         return $paginator;
     }
 
-    private function purchaseItemForUpdate(int $purchaseItem): ?object
-    {
-        return DB::table('purchase_items')
-            ->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
-            ->where('purchase_items.id', $purchaseItem)
-            ->whereNull('purchases.deleted_at')
-            ->first([
-                'purchase_items.id',
-                'purchase_items.purchase_id',
-                'purchase_items.fuel_type_id',
-                'purchase_items.quantity_ordered_liters',
-                'purchase_items.quantity_hauled_liters',
-                'purchase_items.unit_cost',
-                'purchases.depot_id',
-                'purchases.purchase_date',
-            ]);
-    }
-
-    private function search(Builder $query, string $term, array $columns): Builder
-    {
-        return $query->where(function (Builder $query) use ($term, $columns): void {
-            foreach ($columns as $column) {
-                $query->orWhere($column, 'like', '%'.$term.'%');
-            }
-        });
-    }
-
-    private function lineTotal(mixed $quantity, mixed $unitCost): float
-    {
-        return round(((float) $quantity) * ((float) $unitCost), 2);
-    }
-
     private function isStoredWithdrawalReceipt(?string $path): bool
     {
         return is_string($path)
             && str_starts_with($path, 'withdrawal-receipts/')
             && ! str_contains($path, '..')
             && Storage::disk('local')->exists($path);
-    }
-
-    private function withdrawalStatus(int $count): string
-    {
-        return $count > 0 ? $count.' Uploaded' : 'No Withdrawal';
-    }
-
-    private function itemStatus(float $hauled, float $ordered): string
-    {
-        return match (true) {
-            $hauled <= 0 => 'unlifted',
-            $hauled >= $ordered => 'lifted',
-            default => 'partial',
-        };
     }
 
     private function stockOutSourceLabel(object $row, bool $fromTank = false): string
@@ -650,11 +602,6 @@ class InventoryOfficerPurchaseController extends Controller
     private function label(?string $value): string
     {
         return ucwords(str_replace('_', ' ', (string) $value));
-    }
-
-    private function referenceKey(?string $type, int $id): string
-    {
-        return ((string) $type).':'.$id;
     }
 
     private function inventoryRouteName(Request $request, ?string $state = null): string

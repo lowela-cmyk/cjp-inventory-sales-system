@@ -766,6 +766,8 @@ document.addEventListener('submit', (event) => {
     submitButtonsFor(form).forEach((button) => {
         button.disabled = true;
         button.setAttribute('aria-disabled', 'true');
+        // Part 20 #4: a long-running action (Generate Insight and Reports) says it is working.
+        if (button.dataset.loadingLabel) button.textContent = button.dataset.loadingLabel;
     });
 });
 
@@ -899,6 +901,9 @@ document.querySelectorAll('[data-withdrawal-upload]').forEach((form) => {
                 link.querySelector('[data-withdrawal-image]').src = data.url;
                 link.hidden = false;
             }
+            // Part 20 #1: the uploaded receipt can now be removed from the same modal.
+            const remove = modal?.querySelector('[data-withdrawal-remove]');
+            if (remove) remove.hidden = false;
             document.querySelectorAll(`[data-receipt-status="${form.dataset.withdrawalUpload}"]`).forEach((cell) => {
                 cell.textContent = 'Uploaded';
                 cell.classList.add('is-uploaded');
@@ -912,7 +917,12 @@ document.querySelectorAll('[data-withdrawal-upload]').forEach((form) => {
         } catch (error) {
             say(error.message, 'error');
         } finally {
+            // Part 20 #1: the page stays open, so undo the generic double-submit lock (app.js / confirm.js) too;
+            // otherwise a second upload or a replacement from the same modal was silently ignored.
+            delete form.dataset.submitted;
+            form.removeAttribute('aria-busy');
             button.disabled = false;
+            button.removeAttribute('aria-disabled');
             button.textContent = button.dataset.done || label;
         }
     });

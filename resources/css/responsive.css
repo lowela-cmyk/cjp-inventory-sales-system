@@ -1248,21 +1248,35 @@ form.filter-bar .filter-date-clear {
 /* Phones: an action form with its own field (e.g. the driver's status dropdown + Update, or a receipt upload) takes a
    full row of the modal's action bar, field and button side by side. */
 @media (max-width: 639px) {
-    .modal-body .modal-actions > form:has(select, input[type="file"]) {
+    /* Part 20 #1: the withdrawal receipt form stacks instead (picker, notes, button, preview), each a full-width row. */
+    .modal-body .modal-actions > form.withdrawal-upload-form {
+        flex: 1 1 100%;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 8px;
+    }
+
+    .modal-body .modal-actions > form.withdrawal-upload-form > :is(.file-button, input[type="text"], .btn) {
+        width: 100%;
+        min-height: var(--rsp-tap);
+        height: auto;
+    }
+
+    .modal-body .modal-actions > form:has(select, input[type="file"]):not(.withdrawal-upload-form) {
         flex: 1 1 100%;
         flex-wrap: nowrap;
         align-items: stretch;
         gap: 8px;
     }
 
-    .modal-body .modal-actions > form:has(select, input[type="file"]) :is(select, input[type="file"]) {
+    .modal-body .modal-actions > form:has(select, input[type="file"]):not(.withdrawal-upload-form) :is(select, input[type="file"]) {
         flex: 1 1 auto;
         width: auto;
         min-width: 0;
         height: var(--rsp-tap);
     }
 
-    .modal-body .modal-actions > form:has(select, input[type="file"]) .btn {
+    .modal-body .modal-actions > form:has(select, input[type="file"]):not(.withdrawal-upload-form) .btn {
         flex: none;
         width: auto;
     }

@@ -181,6 +181,16 @@
                     <img src="{{ $row['withdrawal_url'] ?? '' }}" alt="Uploaded withdrawal receipt for {{ $row['cells'][0] }}" loading="lazy" data-withdrawal-image>
                     <span>View full size</span>
                 </a>
+                {{-- Part 20 #1: the driver may remove the receipt of their own lift (e.g. a wrong photo) and upload again. --}}
+                @if (($row['kind'] ?? '') === 'Lift' && ! empty($row['can_upload_withdrawal']))
+                    <form class="withdrawal-remove-form" method="POST" action="{{ route('driver.fuel-lifting.hauls.withdrawal-receipt.destroy', $row['record_id']) }}"
+                        data-confirm-item="the receipt of {{ $row['cells'][0] }}" data-confirm-action="Remove receipt"
+                        data-confirm-undo="The image is deleted. You can upload a new one afterwards." data-withdrawal-remove @unless ($row['withdrawal_uploaded']) hidden @endunless>
+                        @csrf
+                        @method('DELETE')
+                        <button class="btn btn-small btn-secondary" type="submit">Remove Receipt</button>
+                    </form>
+                @endif
             </div>
             <div class="modal-actions">
                 @if (($row['kind'] ?? '') === 'Lift' && ! empty($row['allowed_driver_statuses']))

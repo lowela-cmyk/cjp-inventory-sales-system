@@ -325,3 +325,213 @@
 .dash-garage-fuel strong {
     font-size: 13px;
 }
+
+/* =================================================================================================================
+   Part 20 #4: Insights and A.I Reporting as a small dashboard: four overview cards (figures from the records) and the
+   AI Recommendations as grouped bullet lists with bold key figures.
+   ================================================================================================================= */
+.ai-report-panel {
+    gap: 18px;
+}
+
+.dash-insight-head.ai-report-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px 20px;
+}
+
+.ai-report-lead {
+    margin: 0;
+    max-width: 62ch;
+    color: var(--admin-muted, #667085);
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.dash .ai-report {
+    display: grid;
+    gap: 18px;
+}
+
+.ai-report-overview {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+    gap: 14px;
+}
+
+.ai-report-card {
+    min-width: 0;
+    border: 1px solid var(--admin-soft-line, #e4e7ec);
+    border-top: 3px solid var(--dash-navy);
+    border-radius: 8px;
+    padding: 14px 16px;
+    background: #fff;
+}
+
+.ai-report-card header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 4px 10px;
+    margin-bottom: 10px;
+}
+
+.ai-report-card h3 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 800;
+}
+
+.ai-report-card small {
+    color: var(--admin-muted, #667085);
+    font-size: 11px;
+}
+
+.ai-report-card dl {
+    display: grid;
+    gap: 0;
+    margin: 0;
+}
+
+.ai-report-metric {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    border-bottom: 1px solid #f0f1f3;
+    padding: 7px 0;
+}
+
+.ai-report-metric:last-child {
+    border-bottom: 0;
+}
+
+.ai-report-metric dt {
+    min-width: 0;
+    color: #475467;
+    font-size: 12.5px;
+}
+
+.ai-report-metric dd {
+    margin: 0;
+    color: #101828;
+    font-size: 13px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+}
+
+.ai-report-metric.is-attention dd {
+    color: var(--dash-red);
+}
+
+.ai-report-recommendations {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+    gap: 14px 28px;
+    border: 1px solid var(--admin-soft-line, #e4e7ec);
+    border-left: 4px solid var(--dash-orange);
+    border-radius: 8px;
+    padding: 16px 20px;
+    background: #fffaf3;
+}
+
+.ai-report-recommendations > h3 {
+    margin: 0 0 12px;
+    font-size: 15px;
+    font-weight: 800;
+}
+
+.ai-report-recommendations > h3,
+.ai-report-recommendations > .ai-report-none {
+    grid-column: 1 / -1;
+}
+
+.ai-report-group {
+    display: block;
+    min-width: 0;
+}
+
+.ai-report-group h4 {
+    margin: 0 0 6px;
+    color: #344054;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+}
+
+.ai-report-group ul {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    padding-left: 20px;
+    list-style: disc;
+}
+
+.ai-report-group li {
+    color: #1d2939;
+    font-size: 13.5px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+.ai-report-group li::marker {
+    color: var(--dash-orange);
+}
+
+.ai-report-group li strong {
+    color: #101828;
+    font-weight: 800;
+}
+
+.ai-report-none {
+    margin: 0;
+    color: var(--admin-muted, #667085);
+    font-size: 13px;
+}
+
+.ai-report-empty {
+    display: grid;
+    gap: 4px;
+    border: 1px dashed var(--admin-soft-line, #d0d5dd);
+    border-radius: 8px;
+    padding: 18px 20px;
+    color: #475467;
+    font-size: 13px;
+}
+
+.ai-report-empty p {
+    margin: 0;
+}
+
+.ai-report-footer {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 4px 16px;
+}
+
+.dash .ai-report-footer p {
+    margin: 0;
+    color: #667085;
+    font-size: 12px;
+}
+
+.ai-report-generated {
+    font-weight: 700;
+}
+
+@media (max-width: 639px) {
+    .ai-report-recommendations {
+        padding: 14px;
+    }
+
+    .dash-insight-head.ai-report-head form,
+    .dash-insight-head.ai-report-head .btn {
+        width: 100%;
+    }
+}

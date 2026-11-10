@@ -8,14 +8,19 @@ use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
+/**
+ * @phpstan-type LedgerLift array{sequence: int, code: mixed, quantity: string, display_quantity: string, display_date: string, status: string, counts_as_lifted: bool, details: array{'Lift ID': mixed, 'Date Lifted': string, Quantity: string, Driver: mixed, Truck: string, Status: string, Receipt: string}, receipt: array{uploaded_at: string, uploaded_by: mixed, notes: string|null, url: string}|null, search_text: string}
+ * @phpstan-type LedgerCells array{mixed, mixed, mixed, string, string, string, string}
+ * @phpstan-type LedgerTransaction array{id: string, purchase_id: int, purchase_item_id: int, purchase_code: mixed, status: string, status_class: string, purchased_liters: string, lifted_liters: string, remaining_liters: string, driver_names: string, truck_names: string, inventory_status: string, lifts: Collection<int, LedgerLift>, lift_export: string, receipt_count: int, search_text: string, cells: LedgerCells, details: array{'Purchase ID': mixed, 'Purchase Date': string, 'Fuel Type': mixed, Depot: mixed, 'Purchased Quantity': string, 'Total Lifted': string, 'Remaining Quantity': string, 'Lift Transactions': string, Deliveries: string, Status: string}}
+ */
 class InventoryLedgerService
 {
     /** Lifting statuses a ledger row can have, keyed by filter value. */
     public const STATUSES = ['incomplete' => 'Incomplete', 'partially_lifted' => 'Partially Lifted', 'complete' => 'Complete'];
 
     /**
-     * @param  array{date?: ?string, depot_id?: mixed, fuel_type_id?: mixed, status?: ?string}  $filters
-     * @return array{ledger: Collection<int, array<string, mixed>>, transactions: Collection<int, array<string, mixed>>, latestBalances: array<string, float>}
+     * @param  array{date_from?: ?string, date_to?: ?string, depot_id?: mixed, fuel_type_id?: mixed, status?: ?string}  $filters
+     * @return array{ledger: Collection<int, LedgerCells>, transactions: Collection<int, LedgerTransaction>, latestBalances: array<string, float>}
      */
     public function rows(?string $search = null, array $filters = []): array
     {
@@ -30,7 +35,7 @@ class InventoryLedgerService
             $purchased = round((float) $row->quantity_ordered_liters, 2);
             $lifted = round(min($purchased, (float) $row->total_lifted_liters), 2);
             $remaining = round(max(0, $purchased - $lifted), 2);
-            $lifts = $liftsByPurchaseItem[(int) $row->purchase_item_id] ?? collect();
+            $lifts = $liftsByPurchaseItem[(int) $row->purchase_item_id] ?? $this->noLifts();
             $movementSummary = $movementsByPurchaseItem[(int) $row->purchase_item_id] ?? 'No deliveries recorded';
             $status = $this->liftingStatus($lifted, $purchased);
             $stock = $stockByPurchaseItem->get((int) $row->purchase_item_id);
@@ -57,6 +62,11 @@ class InventoryLedgerService
                 'truck_names' => $truckNames,
                 'inventory_status' => $inventoryStatus,
                 'lifts' => $lifts,
+                // Part 20 #5: the Transaction export carries every lift with its own truck, driver and receipt status.
+                'lift_export' => $lifts->map(fn (array $lift): string => $lift['code'].' ('.$lift['quantity'].', '.$lift['display_date'].', Truck: '
+                    .($lift['details']['Truck'] ?: 'Unassigned').', Driver: '.($lift['details']['Driver'] ?: 'Unassigned').', Receipt: '.$lift['details']['Receipt'].')')
+                    ->implode('; ') ?: 'No lifts recorded',
+                'receipt_count' => $lifts->whereNotNull('receipt')->count(),
                 'search_text' => strtolower(implode(' ', [
                     $row->purchase_code,
                     $row->fuel_name,
@@ -92,7 +102,7 @@ class InventoryLedgerService
         // Status is derived from lifted quantities, so it is filtered after the rows are built.
         $statusLabel = self::STATUSES[$filters['status'] ?? ''] ?? null;
         if ($statusLabel !== null) {
-            $transactions = $transactions->filter(fn (array $row): bool => $row['status'] === $statusLabel);
+            $transactions = $transactions->where('status', $statusLabel);
         }
 
         return [
@@ -106,7 +116,18 @@ class InventoryLedgerService
     }
 
     /**
-     * @param  array{date?: ?string, depot_id?: mixed, fuel_type_id?: mixed}  $filters
+     * A purchase line without lifts.
+     *
+     * @return Collection<int, LedgerLift>
+     */
+    private function noLifts(): Collection
+    {
+        return collect();
+    }
+
+    /**
+     * @param  array{date_from?: ?string, date_to?: ?string, depot_id?: mixed, fuel_type_id?: mixed, status?: ?string}  $filters
+     * @return Collection<int, \stdClass>
      */
     private function purchaseProgressRows(?string $search, array $filters = []): Collection
     {
@@ -153,7 +174,7 @@ class InventoryLedgerService
 
     /**
      * @param  array<int, int>  $purchaseItemIds
-     * @return array<int, Collection<int, array<string, mixed>>>
+     * @return array<int|string, Collection<int, LedgerLift>>  purchase_item_id => its lifts
      */
     private function liftsByPurchaseItem(array $purchaseItemIds): array
     {
@@ -165,6 +186,7 @@ class InventoryLedgerService
             ->join('trucks', 'trucks.id', '=', 'hauls.truck_id')
             ->join('users as drivers', 'drivers.id', '=', 'hauls.driver_user_id')
             ->leftJoin('driver_profiles', 'driver_profiles.user_id', '=', 'drivers.id')
+            ->leftJoin('users as receipt_uploaders', 'receipt_uploaders.id', '=', 'hauls.withdrawal_receipt_uploaded_by')
             ->whereIn('hauls.purchase_item_id', $purchaseItemIds)
             ->whereNull('hauls.deleted_at')
             ->orderBy('hauls.scheduled_at')
@@ -183,6 +205,10 @@ class InventoryLedgerService
                 'trucks.capacity_liters',
                 'drivers.name as driver_name',
                 'driver_profiles.driver_code',
+                'hauls.withdrawal_receipt_path',
+                'hauls.withdrawal_receipt_notes',
+                'hauls.withdrawal_receipt_uploaded_at',
+                'receipt_uploaders.name as receipt_uploaded_by_name',
             ])
             ->groupBy('purchase_item_id')
             ->map(fn (Collection $rows): Collection => $rows->values()->map(function (object $row, int $index): array {
@@ -197,6 +223,10 @@ class InventoryLedgerService
                     'Driver' => $row->driver_name,
                     'Truck' => $truck,
                     'Status' => $this->label($row->status),
+                    // Part 20 #1: each lift keeps its own withdrawal receipt (one purchase can have several lifts).
+                    'Receipt' => $row->withdrawal_receipt_path
+                        ? 'Uploaded '.$this->formatDateTime($row->withdrawal_receipt_uploaded_at).($row->receipt_uploaded_by_name ? ' by '.$row->receipt_uploaded_by_name : '')
+                        : 'Not uploaded',
                 ];
 
                 return [
@@ -208,6 +238,13 @@ class InventoryLedgerService
                     'status' => $this->label($row->status),
                     'counts_as_lifted' => in_array($row->status, ['lifted', 'completed'], true),
                     'details' => $details,
+                    'receipt' => $row->withdrawal_receipt_path ? [
+                        'uploaded_at' => $this->formatDateTime($row->withdrawal_receipt_uploaded_at),
+                        'uploaded_by' => $row->receipt_uploaded_by_name,
+                        'notes' => is_string($row->withdrawal_receipt_notes) && $row->withdrawal_receipt_notes !== '' ? $row->withdrawal_receipt_notes : null,
+                        // The file is served by the role-gated withdrawal-receipts.show route, never a public URL.
+                        'url' => route('withdrawal-receipts.show', $row->id).'?v='.strtotime((string) $row->withdrawal_receipt_uploaded_at),
+                    ] : null,
                     'search_text' => strtolower(implode(' ', $details)),
                 ];
             }))
@@ -253,63 +290,6 @@ class InventoryLedgerService
     }
 
     /**
-     * @param  Collection<int, object>  $movements
-     * @return array<string, string>
-     */
-    private function referenceLabels(Collection $movements): array
-    {
-        $labels = [];
-        $idsByType = $movements
-            ->groupBy(fn (object $row): string => (string) $row->reference_type)
-            ->map(fn (Collection $rows): array => $rows->pluck('reference_id')->map(fn ($id): int => (int) $id)->unique()->values()->all());
-
-        foreach ($this->purchaseItemReferences($idsByType->get('purchase_item', [])) as $id => $label) {
-            $labels[$this->referenceKey('purchase_item', (int) $id)] = $label;
-        }
-
-        foreach ($this->haulAllocationReferences($idsByType->get('haul_allocation', [])) as $id => $label) {
-            $labels[$this->referenceKey('haul_allocation', (int) $id)] = $label;
-        }
-
-        foreach ($this->stockOutReferences($idsByType->get('stock_out', [])) as $id => $label) {
-            $labels[$this->referenceKey('stock_out', (int) $id)] = $label;
-        }
-
-        return $labels;
-    }
-
-    /**
-     * @param  array<int, int>  $ids
-     * @return array<int, string>
-     */
-    private function purchaseItemReferences(array $ids): array
-    {
-        if ($ids === []) {
-            return [];
-        }
-
-        $haulCodes = DB::table('hauls')
-            ->whereIn('purchase_item_id', $ids)
-            ->whereNull('deleted_at')
-            ->orderBy('scheduled_at')
-            ->orderBy('id')
-            ->get(['purchase_item_id', 'haul_code'])
-            ->groupBy('purchase_item_id')
-            ->map(fn (Collection $rows): string => $rows->pluck('haul_code')->implode(', '));
-
-        return DB::table('purchase_items')
-            ->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
-            ->whereIn('purchase_items.id', $ids)
-            ->get(['purchase_items.id', 'purchases.purchase_code'])
-            ->mapWithKeys(function (object $row) use ($haulCodes): array {
-                $codes = $haulCodes->get($row->id);
-
-                return [(int) $row->id => $row->purchase_code.($codes ? ' / '.$codes : '')];
-            })
-            ->all();
-    }
-
-    /**
      * Stock per fuel (Part 2 revisions): the remaining liters of its purchases, keyed "fuel_type_id".
      *
      * @return array<string, float>
@@ -329,74 +309,6 @@ class InventoryLedgerService
             ->pluck('balance', 'fuel_type_id')
             ->mapWithKeys(fn (mixed $balance, mixed $fuelTypeId): array => [(string) $fuelTypeId => round((float) $balance, 2)])
             ->all();
-    }
-
-    private function cancelledStockOutExists(): \Closure
-    {
-        return function (Builder $query): void {
-            $query->selectRaw('1')
-                ->from('stock_outs')
-                ->whereColumn('stock_outs.id', 'inventory_movements.reference_id')
-                ->where('inventory_movements.reference_type', 'stock_out')
-                ->where('stock_outs.status', 'cancelled');
-        };
-    }
-
-    private function cancelledHaulAllocationExists(): \Closure
-    {
-        return function (Builder $query): void {
-            $query->selectRaw('1')
-                ->from('haul_allocations')
-                ->whereColumn('haul_allocations.id', 'inventory_movements.reference_id')
-                ->where('inventory_movements.reference_type', 'haul_allocation')
-                ->where('haul_allocations.status', 'cancelled');
-        };
-    }
-
-    /**
-     * @param  array<int, int>  $ids
-     * @return array<int, string>
-     */
-    private function haulAllocationReferences(array $ids): array
-    {
-        if ($ids === []) {
-            return [];
-        }
-
-        return DB::table('haul_allocations')
-            ->join('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')
-            ->join('purchases', 'purchases.id', '=', 'hauls.purchase_id')
-            ->whereIn('haul_allocations.id', $ids)
-            ->get(['haul_allocations.id', 'purchases.purchase_code', 'hauls.haul_code'])
-            ->mapWithKeys(fn (object $row): array => [
-                (int) $row->id => $row->purchase_code.' / '.$row->haul_code,
-            ])
-            ->all();
-    }
-
-    /**
-     * @param  array<int, int>  $ids
-     * @return array<int, string>
-     */
-    private function stockOutReferences(array $ids): array
-    {
-        if ($ids === []) {
-            return [];
-        }
-
-        return DB::table('stock_outs')
-            ->leftJoin('sales', 'sales.id', '=', 'stock_outs.sale_id')
-            ->whereIn('stock_outs.id', $ids)
-            ->get(['stock_outs.id', 'stock_outs.stock_out_code', 'sales.sale_code'])
-            ->mapWithKeys(fn (object $row): array => [
-                (int) $row->id => $row->stock_out_code.($row->sale_code ? ' / '.$row->sale_code : ''),
-            ])
-            ->all();
-    }
-
-    private function referenceKey(?string $type, int $id): string
-    {
-        return ((string) $type).':'.$id;
     }
 
     private function label(?string $value): string

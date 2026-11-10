@@ -83,8 +83,9 @@ class Part12RevisionsTest extends AuditTestCase
             $this->assertStringContainsString('<th class="inventory-status-column">'.$header.'</th>', $page);
         }
         $this->assertStringNotContainsString('<th class="inventory-status-column">Inventory Status</th>', $page);
-        $this->assertStringContainsString('min-width: 1465px;', File::get(resource_path('css/app.css')));
-        $this->assertStringContainsString('.purchases-table th.inventory-status-column', File::get(resource_path('css/app.css')));
+        // Part 20 #3: the Purchases table has one compact rule set (the layered 1465px blocks were replaced).
+        $this->assertStringContainsString('Part 20 #3: Inventory -> Purchases table, one compact rule set.', File::get(resource_path('css/app.css')));
+        $this->assertStringNotContainsString('min-width: 1465px', File::get(resource_path('css/app.css')));
 
         $stockOut = $this->actingAs($a['inventory'])->get(route('inventory-officer.inventory.stock-out'))->assertOk()->getContent();
         $this->assertStringContainsString('<th>Customer Name</th>', $stockOut);

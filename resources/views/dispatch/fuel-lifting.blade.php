@@ -343,6 +343,19 @@
                                     <input name="withdrawal_notes" type="text" maxlength="1000" placeholder="Optional notes" aria-label="Receipt notes for {{ $haul['code'] }}">
                                     <button class="btn btn-pill btn-primary" type="submit">{{ $haul['withdrawal_uploaded'] ? 'Replace Receipt' : 'Upload Receipt' }}</button>
                                 </form>
+                                {{-- Part 20 #1: view or remove the receipt already on this lift. --}}
+                                @if ($haul['withdrawal_uploaded'])
+                                    <div class="receipt-line-actions">
+                                        <a class="btn btn-small btn-secondary" href="{{ route('withdrawal-receipts.show', $haul['id']) }}" target="_blank" rel="noopener">View Receipt</a>
+                                        <form method="POST" action="{{ route('admin.fuel-lifting.hauls.withdrawal-receipt.destroy', $haul['id']) }}"
+                                            data-confirm-item="the receipt of {{ $haul['code'] }}" data-confirm-action="Remove receipt"
+                                            data-confirm-undo="The image is deleted. A new one can be uploaded afterwards.">
+                                            @csrf
+                                            @method('DELETE')
+                                            <button class="btn btn-small btn-secondary" type="submit">Remove Receipt</button>
+                                        </form>
+                                    </div>
+                                @endif
                             @else
                                 <p class="receipt-line-note">Available after this lift is marked Lifted.</p>
                             @endif

@@ -13,8 +13,6 @@ class PurchaseService
 {
     public const LOCKED_MESSAGE = 'Locked: this purchase has been lifted.';
 
-    private const STOCK_IN_REFERENCE_TYPE = 'haul_allocation';
-
     /** Part 9: how a purchase was paid. A bank is chosen for Bank Transfer and Cheque only. */
     public const PAYMENT_MODES = ['bank_transfer' => 'Bank Transfer', 'cash' => 'Cash', 'cheque' => 'Cheque'];
 
@@ -269,7 +267,7 @@ class PurchaseService
     }
 
     /**
-     * @param  array{status?: ?string, date?: ?string, depot_id?: mixed, fuel_type_id?: mixed}  $filters
+     * @param  array{status?: ?string, date?: ?string, date_from?: ?string, date_to?: ?string, depot_id?: mixed, fuel_type_id?: mixed}  $filters
      */
     public function purchaseRows(?string $search, int $perPage = 25, string $pageName = 'purchases_page', array $filters = []): LengthAwarePaginator
     {
@@ -360,7 +358,7 @@ class PurchaseService
 
         ['blocked' => $cancelBlocked, 'lifted' => $lifted] = $this->usage($rawRows->pluck('id')->map(fn (mixed $id): int => (int) $id)->all());
 
-        $transformed = $rawRows->map(function (object $row) use ($dependencyMap, $withdrawalsMap, $stock, $cancelBlocked, $lifted): array {
+        $transformed = $rawRows->map(function (\stdClass $row) use ($dependencyMap, $withdrawalsMap, $stock, $cancelBlocked, $lifted): array {
             $line = $stock->get((int) $row->id);
             $released = (float) ($line->released ?? 0);
             // A purchase with no payment mode reads N/A (a null key is deprecated as an array offset in PHP 8.5).

@@ -66,7 +66,7 @@ class TruckController extends Controller
     public function toggleStatus(Request $request, int $truck): RedirectResponse
     {
         $row = DB::table('trucks')->where('id', $truck)->first(['id', 'status']);
-        abort_unless($row, 404);
+        abort_unless($row !== null, 404);
 
         if ($row->status !== 'inactive' && $this->availability->hasActiveAssignment($truck)) {
             return back()->withErrors(['status' => 'A truck with an active lift cannot be deactivated.']);

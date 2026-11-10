@@ -161,7 +161,8 @@ class TruckAvailabilityService
     /** Liters still on the truck from its lifted / completed lifts (not delivered to a customer, not returned). */
     public function leftoverOnTruck(int $truckId): float
     {
-        return round((float) $this->leftoverByTruck()->where('hauls.truck_id', $truckId)->get()->sum('leftover_liters'), 2);
+        // Summed in SQL over the grouped rows (no rows: NULL, read as 0).
+        return round((float) DB::query()->fromSub($this->leftoverByTruck()->where('hauls.truck_id', $truckId), 'truck_leftovers')->sum('leftover_liters'), 2);
     }
 
     /**

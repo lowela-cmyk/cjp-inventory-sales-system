@@ -8,6 +8,8 @@
     };
     $filters = $filters ?? [];
     $filterOptions = $filterOptions ?? ['depots' => collect(), 'fuelTypes' => collect(), 'statuses' => []];
+    // Part 20 #1: the receipt images are served only to the roles the withdrawal-receipts.show route allows.
+    $canViewReceipts = in_array(auth()->user()?->role, ['admin', 'inventory_officer'], true);
 @endphp
 
 @component($ledgerLayout, ['title' => 'Inventory Ledger', 'active' => 'ledger'])
@@ -60,7 +62,9 @@
             </x-filter.bar>
             <div class="table-wrap">
                 <table class="admin-table ledger-table" data-card-keys="0,1,5">
-                    <thead><tr><th>Purchase ID</th><th>Fuel Type</th><th>Depot</th><th>Purchased Quantity</th><th>Total Lifted</th><th>Remaining Quantity</th><th>Status</th><th>Actions</th></tr></thead>
+                    <thead><tr><th>Purchase ID</th><th>Fuel Type</th><th>Depot</th><th>Purchased Quantity</th><th>Total Lifted</th><th>Remaining Quantity</th><th>Status</th>
+                        {{-- Part 20 #5: kept for Export only (each lift with its truck, driver and receipt status). --}}
+                        <th class="export-only" hidden>Lifts (Truck, Driver, Receipt)</th><th class="export-only" hidden>Withdrawal Receipts</th><th>Actions</th></tr></thead>
                     <tbody>
                         @forelse ($transactions as $row)
                             <tr>
@@ -71,10 +75,12 @@
                                         <td>{{ $cell }}</td>
                                     @endif
                                 @endforeach
+                                <td class="export-only" hidden>{{ $row['lift_export'] }}</td>
+                                <td class="export-only" hidden>{{ $row['receipt_count'] }} of {{ count($row['lifts']) }} uploaded</td>
                                 <td><button class="btn btn-secondary" type="button" data-modal-open="{{ $row['id'] }}">View</button></td>
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="8">No inventory movements found.</td></tr>
+                            <tr><td class="empty-cell" colspan="10">No inventory movements found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -121,6 +127,22 @@
                             <div class="ledger-lift-crew">
                                 <div><span class="ledger-card-label">Truck</span><strong>{{ $lift['details']['Truck'] ?: 'Unassigned' }}</strong></div>
                                 <div><span class="ledger-card-label">Driver</span><strong>{{ $lift['details']['Driver'] ?: 'Unassigned' }}</strong></div>
+                            </div>
+                            {{-- Part 20 #1: this lift's own withdrawal receipt. --}}
+                            <div @class(['ledger-lift-receipt', 'is-uploaded' => $lift['receipt']])>
+                                <span class="ledger-card-label">Withdrawal Receipt</span>
+                                @if ($lift['receipt'])
+                                    @if ($canViewReceipts)
+                                        <a class="withdrawal-thumb ledger-receipt-thumb" href="{{ $lift['receipt']['url'] }}" target="_blank" rel="noopener">
+                                            <img src="{{ $lift['receipt']['url'] }}" alt="Withdrawal receipt for {{ $lift['code'] }}" loading="lazy">
+                                            <span>View receipt</span>
+                                        </a>
+                                    @endif
+                                    <strong>Uploaded {{ $lift['receipt']['uploaded_at'] }}@if ($lift['receipt']['uploaded_by']) by {{ $lift['receipt']['uploaded_by'] }}@endif</strong>
+                                    @if ($lift['receipt']['notes'])<small>Notes: {{ $lift['receipt']['notes'] }}</small>@endif
+                                @else
+                                    <strong>Not uploaded</strong>
+                                @endif
                             </div>
                         </article>
                     @empty

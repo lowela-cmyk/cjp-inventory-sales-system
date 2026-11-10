@@ -71,14 +71,7 @@ class DriverDeliveryController extends Controller
         $actorId = (int) $request->user()->id;
         // Admin uploads on behalf of the assigned driver; a driver may only upload for their own lift.
         $actingForDriver = $request->user()->role === 'admin';
-        $row = DB::table('hauls')
-            ->join('purchases', 'purchases.id', '=', 'hauls.purchase_id')
-            ->where('hauls.id', $haul)
-            ->when(! $actingForDriver, fn (Builder $query): Builder => $query->where('hauls.driver_user_id', $actorId))
-            ->whereNull('hauls.deleted_at')
-            ->whereNull('purchases.deleted_at')
-            ->whereIn('hauls.status', ['lifted', 'completed'])
-            ->first(['hauls.id', 'hauls.haul_code', 'hauls.withdrawal_receipt_path']);
+        $row = $this->receiptLift($haul, $actorId, $actingForDriver);
 
         if (! $row) {
             $message = 'The selected lifting task is not assigned to your driver account or is not ready for receipt upload.';
@@ -91,25 +84,34 @@ class DriverDeliveryController extends Controller
         $file = $request->file('withdrawal_receipt');
         $extension = $file->guessExtension() ?: $file->extension();
         $path = $file->storeAs('withdrawal-receipts', (string) Str::uuid().'.'.$extension, 'local');
+        $uploadedAt = now();
 
-        DB::table('hauls')
-            ->where('id', $row->id)
-            ->update([
-                'withdrawal_receipt_path' => $path,
-                'withdrawal_receipt_notes' => $data['withdrawal_notes'] ?? null,
-                'withdrawal_receipt_uploaded_at' => now(),
-                'withdrawal_receipt_uploaded_by' => $actorId,
-                'updated_at' => now(),
-            ]);
+        try {
+            // Part 20 #1: the replaced file is read under a row lock, so two uploads at once never delete each other's file.
+            $previousPath = DB::transaction(function () use ($row, $path, $data, $uploadedAt, $actorId): ?string {
+                $previous = DB::table('hauls')->where('id', $row->id)->lockForUpdate()->value('withdrawal_receipt_path');
+                DB::table('hauls')
+                    ->where('id', $row->id)
+                    ->update([
+                        'withdrawal_receipt_path' => $path,
+                        'withdrawal_receipt_notes' => $data['withdrawal_notes'] ?? null,
+                        'withdrawal_receipt_uploaded_at' => $uploadedAt,
+                        'withdrawal_receipt_uploaded_by' => $actorId,
+                        'updated_at' => $uploadedAt,
+                    ]);
 
-        if ($row->withdrawal_receipt_path && Storage::disk('local')->exists($row->withdrawal_receipt_path)) {
-            Storage::disk('local')->delete($row->withdrawal_receipt_path);
+                return $previous;
+            });
+        } catch (\Throwable $exception) {
+            Storage::disk('local')->delete($path);
+
+            throw $exception;
         }
+
+        $this->deleteStoredReceipt($previousPath);
 
         // Part 11: the Schedule modal uploads in the background and updates itself from this answer.
         if ($request->expectsJson()) {
-            $uploadedAt = now();
-
             return response()->json([
                 'message' => 'Withdrawal receipt uploaded successfully.',
                 'uploaded_at' => $this->formatDateTime($uploadedAt),
@@ -121,6 +123,70 @@ class DriverDeliveryController extends Controller
         return redirect()
             ->route($actingForDriver ? 'admin.fuel-lifting.hauled' : 'driver.fuel-lifting.hauled')
             ->with('status', 'Withdrawal receipt uploaded successfully.');
+    }
+
+    /**
+     * Part 20 #1: remove a lift's withdrawal receipt (the assigned driver for their own lift, or Admin). The lift keeps
+     * its quantity, truck, driver and dates; only the receipt reference and its file go. The request itself is kept in
+     * activity_logs (RecordActivity), so the removal stays auditable.
+     */
+    public function destroyWithdrawalReceipt(Request $request, int $haul): RedirectResponse|JsonResponse
+    {
+        $actingForDriver = $request->user()->role === 'admin';
+        $row = $this->receiptLift($haul, (int) $request->user()->id, $actingForDriver);
+        $message = 'There is no withdrawal receipt to remove on this lift.';
+
+        $removedPath = $row ? DB::transaction(function () use ($row): ?string {
+            $path = DB::table('hauls')->where('id', $row->id)->lockForUpdate()->value('withdrawal_receipt_path');
+            if (! $path) {
+                return null;
+            }
+            DB::table('hauls')->where('id', $row->id)->update([
+                'withdrawal_receipt_path' => null,
+                'withdrawal_receipt_notes' => null,
+                'withdrawal_receipt_uploaded_at' => null,
+                'withdrawal_receipt_uploaded_by' => null,
+                'updated_at' => now(),
+            ]);
+
+            return $path;
+        }) : null;
+
+        if (! $removedPath) {
+            return $request->expectsJson()
+                ? response()->json(['message' => $message, 'errors' => ['withdrawal_receipt' => [$message]]], 422)
+                : back()->withErrors(['withdrawal_receipt' => $message]);
+        }
+
+        $this->deleteStoredReceipt($removedPath);
+
+        if ($request->expectsJson()) {
+            return response()->json(['message' => 'Withdrawal receipt removed.']);
+        }
+
+        return redirect()
+            ->route($actingForDriver ? 'admin.fuel-lifting.hauled' : 'driver.fuel-lifting.hauled')
+            ->with('status', 'Withdrawal receipt removed.');
+    }
+
+    /** The lift a receipt may be uploaded to or removed from: Lifted or Completed, and the user's own unless Admin. */
+    private function receiptLift(int $haul, int $actorId, bool $actingForDriver): ?object
+    {
+        return DB::table('hauls')
+            ->join('purchases', 'purchases.id', '=', 'hauls.purchase_id')
+            ->where('hauls.id', $haul)
+            ->when(! $actingForDriver, fn (Builder $query): Builder => $query->where('hauls.driver_user_id', $actorId))
+            ->whereNull('hauls.deleted_at')
+            ->whereNull('purchases.deleted_at')
+            ->whereIn('hauls.status', ['lifted', 'completed'])
+            ->first(['hauls.id', 'hauls.haul_code', 'hauls.withdrawal_receipt_path']);
+    }
+
+    private function deleteStoredReceipt(?string $path): void
+    {
+        if ($path && str_starts_with($path, 'withdrawal-receipts/') && ! str_contains($path, '..') && Storage::disk('local')->exists($path)) {
+            Storage::disk('local')->delete($path);
+        }
     }
 
     /**

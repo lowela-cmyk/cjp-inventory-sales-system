@@ -1172,28 +1172,6 @@ class DashboardSummaryService
         ]);
     }
 
-    private function cancelledStockOutExists(): Closure
-    {
-        return function (Builder $query): void {
-            $query->selectRaw('1')
-                ->from('stock_outs')
-                ->whereColumn('stock_outs.id', 'inventory_movements.reference_id')
-                ->where('inventory_movements.reference_type', 'stock_out')
-                ->where('stock_outs.status', 'cancelled');
-        };
-    }
-
-    private function cancelledHaulAllocationExists(): Closure
-    {
-        return function (Builder $query): void {
-            $query->selectRaw('1')
-                ->from('haul_allocations')
-                ->whereColumn('haul_allocations.id', 'inventory_movements.reference_id')
-                ->where('inventory_movements.reference_type', 'haul_allocation')
-                ->where('haul_allocations.status', 'cancelled');
-        };
-    }
-
     private function activeCustomers(): int
     {
         return $this->remember('activeCustomers', fn (): int => DB::table('customers')

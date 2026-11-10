@@ -220,7 +220,7 @@ class GarageStockService
      * liters, free space and fill), one row per tank (Part 16 #5) and the lots with liters in the garage, filtered.
      *
      * @param  array{fuel_type_id?: ?int, tank_id?: ?int, date_from?: ?string, date_to?: ?string}  $filters
-     * @return array{fuels: Collection<int, array<string, mixed>>, tankRows: Collection<int, \stdClass>, lots: Collection<int, \stdClass>, tankOptions: array<int, string>, fuelOptions: array<int, string>}
+     * @return array{fuels: Collection<int, array{fuel_type_id: int, fuel_name: mixed, tanks: array<int, \stdClass>, total: float, capacity: float}>, tankRows: Collection<int, \stdClass>, lots: Collection<int, \stdClass>, tankOptions: array<int, string>, fuelOptions: array<int, string>}
      */
     public function tab(array $filters = [], ?string $search = null): array
     {

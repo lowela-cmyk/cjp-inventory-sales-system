@@ -65,6 +65,8 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/fuel-lifting/hauled', [DispatchDeliveryController::class, 'index'])->defaults('state', 'hauled')->name('fuel-lifting.hauled');
         Route::post('/fuel-lifting/hauls', [DispatchDeliveryController::class, 'store'])->name('fuel-lifting.hauls.store');
         Route::post('/fuel-lifting/hauls/{haul}/withdrawal-receipt', [DriverDeliveryController::class, 'storeWithdrawalReceipt'])->name('fuel-lifting.hauls.withdrawal-receipt.store');
+        // Part 20 #1: remove a lift's withdrawal receipt (Admin, or the assigned driver for their own lift).
+        Route::delete('/fuel-lifting/hauls/{haul}/withdrawal-receipt', [DriverDeliveryController::class, 'destroyWithdrawalReceipt'])->name('fuel-lifting.hauls.withdrawal-receipt.destroy');
         // Trucks is a tab of Fuel Lifting; the old page URL keeps working.
         Route::get('/fuel-lifting/trucks', [DispatchDeliveryController::class, 'index'])->defaults('state', 'trucks')->name('fuel-lifting.trucks');
         Route::get('/fuel-lifting/garage', [DispatchDeliveryController::class, 'index'])->defaults('state', 'garage')->name('fuel-lifting.garage');
@@ -184,6 +186,8 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/fuel-lifting', [DriverDeliveryController::class, 'index'])->name('fuel-lifting');
         Route::patch('/fuel-lifting/hauls/{haul}/status', [DriverLiftingStatusController::class, 'updateStatus'])->name('fuel-lifting.hauls.status');
         Route::post('/fuel-lifting/hauls/{haul}/withdrawal-receipt', [DriverDeliveryController::class, 'storeWithdrawalReceipt'])->name('fuel-lifting.hauls.withdrawal-receipt.store');
+        // Part 20 #1: remove a lift's withdrawal receipt (Admin, or the assigned driver for their own lift).
+        Route::delete('/fuel-lifting/hauls/{haul}/withdrawal-receipt', [DriverDeliveryController::class, 'destroyWithdrawalReceipt'])->name('fuel-lifting.hauls.withdrawal-receipt.destroy');
         Route::get('/fuel-lifting/hauled', [DriverDeliveryController::class, 'index'])->defaults('state', 'hauled')->name('fuel-lifting.hauled');
         Route::get('/fuel-lifting/no-schedule', [DriverDeliveryController::class, 'index'])->defaults('state', 'no-schedule')->name('fuel-lifting.no-schedule');
         Route::get('/fuel-lifting/no-hauled', [DriverDeliveryController::class, 'index'])->defaults('state', 'no-hauled')->name('fuel-lifting.no-hauled');

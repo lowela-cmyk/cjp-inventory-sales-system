@@ -66,7 +66,8 @@
                                 <td class="inventory-number">{{ $c[4] }}</td>
                                 <td class="inventory-number">{{ $c[8] }}</td>
                                 <td class="inventory-number">{{ $c[9] }}</td>
-                                <td @class(['payment-mode-cell', 'is-empty' => $c[13] === 'N/A' && $c[14] === 'N/A'])><x-table.stack :lines="[['value' => $c[13]], ['value' => $c[14], 'class' => 'is-secondary']]" /></td>
+                                {{-- Part 20 #3: a bank of "N/A" is hidden on screen (one-line row) but stays in the export. --}}
+                                <td @class(['payment-mode-cell', 'is-empty' => $c[14] === 'N/A'])><x-table.stack :lines="[['value' => $c[13]], ['value' => $c[14], 'class' => 'is-secondary']]" /></td>
                                 {{-- Withdrawal receipts the driver uploaded for this purchase's lifts. --}}
                                 <td class="inventory-receipt-cell">
                                     @if (count($row['withdrawals']) > 0)

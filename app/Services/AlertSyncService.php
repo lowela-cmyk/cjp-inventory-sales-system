@@ -21,6 +21,8 @@ use Illuminate\Support\Str;
  * A resolved alert keeps its row (status resolved) and comes back (open) if its condition returns. The sync is cheap
  * to call on every page: it first compares a fingerprint of the source tables (and today's date, for overdue) with the
  * last run and does nothing when nothing changed.
+ *
+ * @phpstan-type AlertRow array{deduplication_key: string, type: string, severity: string, title: string, message: string, reference_type: string, reference_id: int}
  */
 class AlertSyncService
 {
@@ -70,7 +72,7 @@ class AlertSyncService
         return md5(CarbonImmutable::today()->toDateString().'|'.json_encode(array_values((array) DB::selectOne("SELECT {$parts}"))));
     }
 
-    /** @return Collection<int, array<string, mixed>> */
+    /** @return Collection<int, AlertRow> */
     private function saleBalanceAlerts(): Collection
     {
         $totals = DB::table('sale_items')->groupBy('sale_id')->selectRaw('sale_id, COALESCE(SUM(line_total), 0) as total');
@@ -106,7 +108,7 @@ class AlertSyncService
             });
     }
 
-    /** @return Collection<int, array<string, mixed>> */
+    /** @return Collection<int, AlertRow> */
     private function purchaseLiftAlerts(): Collection
     {
         // Lines of purchases that are not cancelled or deleted, with liters still in the depot.
@@ -132,7 +134,7 @@ class AlertSyncService
             ->values();
     }
 
-    /** @return Collection<int, array<string, mixed>> */
+    /** @return Collection<int, AlertRow> */
     private function orderAlerts(): Collection
     {
         $notOnLift = $this->liftAllocations->directSaleOptions()->map(fn (object $sale): array => [
@@ -171,7 +173,7 @@ class AlertSyncService
     /**
      * Opens, updates and resolves the computed alerts so they match $wanted.
      *
-     * @param  Collection<string, array<string, mixed>>  $wanted
+     * @param  Collection<string, AlertRow>  $wanted
      */
     private function apply(Collection $wanted): void
     {

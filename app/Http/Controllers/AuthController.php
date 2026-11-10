@@ -291,6 +291,9 @@ class AuthController extends Controller
             ->with('toast_context', 'logout');
     }
 
+    /**
+     * @param  'admin'|'inventory_officer'|'sales_officer'|'dispatch_officer'|'driver'  $role  users.role is this enum
+     */
     private function dashboardRouteFor(string $role): string
     {
         return match ($role) {

@@ -410,7 +410,7 @@ class DispatchDeliveryController extends Controller
             throw new \RuntimeException('The selected truck is not eligible for lifting.');
         }
 
-        $purchaseItems = $items->map(function (array $item, int $index) use ($allocations): object {
+        $purchaseItems = $items->map(function (array $item, int $index) use ($allocations): \stdClass {
             $purchaseItem = $this->purchaseItemForAssignment($item['purchase_item_id']);
             if (! $purchaseItem) {
                 throw new \RuntimeException('One or more selected purchases are not eligible for lifting.');
@@ -440,7 +440,7 @@ class DispatchDeliveryController extends Controller
         // Part 2 revisions: a lift takes at most the purchase's fuel still in the depot.
         $stock = $this->purchaseStock->lines($purchaseItems->pluck('id')->map(fn (mixed $id): int => (int) $id)->all(), true);
         foreach ($purchaseItems as $purchaseItem) {
-            $remaining = round((float) ($stock->get((int) $purchaseItem->id)?->remaining_in_depot ?? 0) + (float) ($ownLiters[(int) $purchaseItem->id] ?? 0), 2);
+            $remaining = round((float) ($stock->get((int) $purchaseItem->id)->remaining_in_depot ?? 0) + (float) ($ownLiters[(int) $purchaseItem->id] ?? 0), 2);
             if ((float) $purchaseItem->scheduled_quantity_liters > $remaining) {
                 throw new \RuntimeException('Lift quantity cannot exceed the '.number_format($remaining, 2).' L of '.$purchaseItem->purchase_code.' remaining in the depot.');
             }
@@ -795,7 +795,7 @@ class DispatchDeliveryController extends Controller
             });
     }
 
-    private function purchaseItemForAssignment(int $purchaseItemId): ?object
+    private function purchaseItemForAssignment(int $purchaseItemId): ?\stdClass
     {
         return DB::table('purchase_items')
             ->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
@@ -830,19 +830,6 @@ class DispatchDeliveryController extends Controller
             })
             ->lockForUpdate()
             ->first(['users.id']);
-    }
-
-    private function duplicateHaulExists(object $purchaseItem, int $driverId, int $truckId, float $quantity, CarbonImmutable $scheduledAt): bool
-    {
-        return DB::table('hauls')
-            ->where('purchase_item_id', $purchaseItem->id)
-            ->where('driver_user_id', $driverId)
-            ->where('truck_id', $truckId)
-            ->where('quantity_liters', $quantity)
-            ->where('scheduled_at', $scheduledAt->toDateTimeString())
-            ->where('status', '!=', 'cancelled')
-            ->lockForUpdate()
-            ->first(['id']) !== null;
     }
 
     /**

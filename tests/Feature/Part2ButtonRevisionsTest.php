@@ -130,8 +130,8 @@ class Part2ButtonRevisionsTest extends AuditTestCase
         $saleId = $this->lastSaleId();
         $this->assertDatabaseHas('sales', ['id' => $saleId, 'delivery_type' => 'depot_to_client', 'delivery_truck_id' => null]);
 
-        // Part 18 #5: only the lift sets a Depot to Client order's delivery status.
-        $this->deliverOrder($a, $saleId)->assertSessionHasErrors(['delivery_status' => 'A Depot to Client order is delivered through its lift, so its delivery status cannot be changed here.']);
+        // Part 18 #5 / Part 20 #2: Delivered needs the order's lift to be Lifted first.
+        $this->deliverOrder($a, $saleId)->assertSessionHasErrors(['delivery_status' => 'This Depot to Client sale is delivered through its lift. Add it to a lift in Fuel Lifting and complete the lift first.']);
         $this->assertSame(8000.0, $this->remaining($diesel));
     }
 
@@ -196,7 +196,8 @@ class Part2ButtonRevisionsTest extends AuditTestCase
         $this->actingAs($a['dispatch'])->patch(route('dispatch.fuel-lifting.hauls.status', $haulId), ['idempotency_key' => $this->uuid(), 'status' => 'completed'])->assertSessionHasErrors('lifting');
         $this->actingAs($a['dispatch'])->post(route('dispatch.fuel-lifting.hauls.unload-to-garage', $haulId), ['unload' => [$haulId => [$tank => 24000, $tank2 => 12000]]])->assertSessionHasNoErrors();
         $this->actingAs($a['dispatch'])->patch(route('dispatch.fuel-lifting.hauls.status', $haulId), ['idempotency_key' => $this->uuid(), 'status' => 'completed'])->assertSessionHasNoErrors();
-        $this->deliverOrder($a, $saleId)->assertSessionHasErrors('delivery_status');
+        // Delivering it again by hand is a no-op (Part 20 #2: no longer refused up front): nothing is deducted twice.
+        $this->deliverOrder($a, $saleId)->assertSessionHasNoErrors();
         $this->assertSame([56400.0, 4600.0], [$this->remaining($premium), $this->remaining($f1)]);
         $this->assertSame(2, DB::table('stock_outs')->where('sale_id', $saleId)->where('status', 'released')->count());
         $this->assertSame(2, DB::table('stock_outs')->where('sale_id', $saleId)->whereNotNull('haul_allocation_id')->count());

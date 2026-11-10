@@ -536,14 +536,15 @@ class SalesOfficerCustomerController extends Controller
                     });
                 }
             );
+        } catch (QueryException) {
+            // Caught before RuntimeException (its parent), so a database error never shows its SQL to the user.
+            return back()
+                ->withInput()
+                ->withErrors(['sale' => 'Sale record could not be saved. Please review the details and try again.']);
         } catch (\RuntimeException $exception) {
             return back()
                 ->withInput()
                 ->withErrors(['sale' => $exception->getMessage()]);
-        } catch (QueryException) {
-            return back()
-                ->withInput()
-                ->withErrors(['sale' => 'Sale record could not be saved. Please review the details and try again.']);
         }
 
         if ($idempotency['duplicate']) {
@@ -686,7 +687,8 @@ class SalesOfficerCustomerController extends Controller
                 if ($row->status === 'draft' && $requestedStatus !== 'draft') {
                     $this->saleConfirmationService->confirm($sale, (int) $request->user()->id);
                 } else {
-                    if ($row->status === 'draft' && $requestedStatus === 'draft') {
+                    // Here a draft sale was asked to stay a draft (the branch above handles leaving draft).
+                    if ($row->status === 'draft') {
                         DB::table('sales')->where('id', $sale)->update(['status' => 'draft', 'updated_at' => now()]);
                     }
                     $this->saleConfirmationService->reconcile($sale);
@@ -818,33 +820,41 @@ class SalesOfficerCustomerController extends Controller
     {
         $data = $request->validate([
             'delivery_status' => ['required', Rule::in(self::DELIVERY_STATUSES)],
+            // Part 20 #2: one key per opened form, so a double click or a resent request saves once.
+            'idempotency_key' => ['nullable', 'uuid'],
         ]);
 
-        // Part 18 #5: a Depot to Client order's delivery status is set by its lift only, never by hand.
         $deliveryType = DB::table('sales')->where('id', $sale)->whereNull('deleted_at')->value('delivery_type');
         abort_if($deliveryType === null, 404);
-        if ($deliveryType === 'depot_to_client') {
-            return back()->withErrors(['delivery_status' => 'A Depot to Client order is delivered through its lift, so its delivery status cannot be changed here.']);
-        }
+
+        // Part 20 #2 (revises Part 18 #5): a Depot to Client order may be moved Pending <-> Out for Delivery by hand.
+        // Delivered still needs its lift: SaleConfirmationService refuses it until the order is on a Lifted/Completed
+        // lift, and then releases the stock through that lift exactly as completing the lift does.
+        $write = function () use ($sale, $data, $request): array {
+            $this->saleConfirmationService->updateDeliveryStatus($sale, (string) $data['delivery_status'], (int) $request->user()->id);
+            $this->markUpdatedBy($sale, $request);
+
+            return ['reference_id' => $sale];
+        };
 
         try {
-            $this->saleConfirmationService->updateDeliveryStatus(
-                $sale,
-                (string) $data['delivery_status'],
-                (int) $request->user()->id
-            );
+            $result = $data['idempotency_key'] ?? null
+                ? $this->idempotencyService->run((string) $data['idempotency_key'], 'sales.delivery-status.update', (int) $request->user()->id, $write)
+                : $write();
+        } catch (ValidationException $exception) {
+            return back()->withErrors($exception->errors())->withInput($request->only('delivery_update_sale_id'));
         } catch (\RuntimeException $exception) {
             if ($exception->getMessage() === 'Sale record not found.') {
                 abort(404);
             }
 
-            return back()->withErrors(['delivery_status' => $exception->getMessage()]);
+            // The Update Delivery modal of this sale reopens with the reason.
+            return back()->withErrors(['delivery_status' => $exception->getMessage()])->withInput($request->only('delivery_update_sale_id'));
         }
-        $this->markUpdatedBy($sale, $request);
 
         return redirect()
             ->route($this->salesRedirectRoute($request))
-            ->with('status', 'Delivery status updated successfully.');
+            ->with('status', ($result['duplicate'] ?? false) ? 'This delivery update was already saved.' : 'Delivery status updated successfully.');
     }
 
     public function store(Request $request): RedirectResponse
@@ -992,10 +1002,11 @@ class SalesOfficerCustomerController extends Controller
             $rows = $query->get($columns);
         }
 
+        // Empty ids are dropped before the cast, so the list stays Collection<int, int>.
         $customerIds = $rows
             ->pluck('id')
-            ->map(fn (mixed $id): int => (int) $id)
             ->filter()
+            ->map(fn (mixed $id): int => (int) $id)
             ->unique()
             ->values();
 
@@ -1041,7 +1052,7 @@ class SalesOfficerCustomerController extends Controller
                 ->all();
 
         $transformed = $rows
-            ->map(function (object $row) use ($transactionSummaries, $outstandingTotals, $overdueCustomerIds, $hasSalesCustomerIds, $refundDueTotals): array {
+            ->map(function (\stdClass $row) use ($transactionSummaries, $outstandingTotals, $overdueCustomerIds, $hasSalesCustomerIds, $refundDueTotals): array {
                 $cid = (int) $row->id;
                 $outstanding = (float) ($outstandingTotals[$cid] ?? 0);
                 $hasOverdue = isset($overdueCustomerIds[$cid]);
@@ -1114,7 +1125,7 @@ class SalesOfficerCustomerController extends Controller
     }
 
     /**
-     * @param  array{status?: string, delivery_status?: string, date_from?: string, date_to?: string, fuel_type_id?: int|string}  $filters
+     * @param  array{status?: ?string, delivery_status?: ?string, delivery_type?: ?string, date_from?: ?string, date_to?: ?string, fuel_type_id?: int|string|null}  $filters
      */
     private function salesRows(?string $search, ?int $perPage = 25, array $filters = [])
     {
@@ -1142,6 +1153,8 @@ class SalesOfficerCustomerController extends Controller
             // Part 17 #7: who recorded the sale and who last changed it (older sales: whoever last set its delivery status).
             ->leftJoin('users as sale_creators', 'sale_creators.id', '=', 'sales.created_by')
             ->leftJoin('users as sale_updaters', 'sale_updaters.id', '=', $updatedByJoin)
+            // Part 20 #2: who last set the delivery status, and when.
+            ->leftJoin('users as delivery_updaters', 'delivery_updaters.id', '=', 'sales.delivery_status_updated_by')
             ->whereNull('sales.deleted_at')
             ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
                 'sales.sale_code',
@@ -1198,6 +1211,8 @@ class SalesOfficerCustomerController extends Controller
             'sales.updated_at',
             'sale_creators.name as created_by_name',
             'sale_updaters.name as updated_by_name',
+            'sales.delivery_status_updated_at',
+            'delivery_updaters.name as delivery_updated_by_name',
         ];
 
         $paginator = null;
@@ -1208,10 +1223,11 @@ class SalesOfficerCustomerController extends Controller
             $rows = $query->get($columns);
         }
 
+        // Empty ids are dropped before the cast, so the list stays Collection<int, int>.
         $saleIds = $rows
             ->pluck('sale_id')
-            ->map(fn (mixed $id): int => (int) $id)
             ->filter()
+            ->map(fn (mixed $id): int => (int) $id)
             ->unique()
             ->values();
 
@@ -1226,7 +1242,7 @@ class SalesOfficerCustomerController extends Controller
         $liftsBySale = $this->liftsForSales($saleIds);
 
         $transformed = $rows
-            ->map(function (object $row) use ($itemsBySale, $latestPaymentDates, $dependencyMap, $paymentsBySale, $refundsBySale, $fuelMovedMap, $changeLogsBySale, $schedulesBySale, $liftsBySale): array {
+            ->map(function (\stdClass $row) use ($itemsBySale, $latestPaymentDates, $dependencyMap, $paymentsBySale, $refundsBySale, $fuelMovedMap, $changeLogsBySale, $schedulesBySale, $liftsBySale): array {
                 $saleId = (int) $row->sale_id;
                 $paid = (float) ($row->total_paid ?? 0);
                 $saleTotal = (float) $row->sale_total;
@@ -1272,6 +1288,8 @@ class SalesOfficerCustomerController extends Controller
                     'payment_terms' => $row->payment_terms,
                     'status' => $row->status,
                     'delivery_status' => $row->delivery_status,
+                    // Part 20 #2: the Update Delivery action of the Receivables row.
+                    'delivery_update' => $this->deliveryUpdateAction($row, $liftsBySale[$saleId] ?? null),
                     'receivable_status' => $receivableStatus,
                     'due_date' => $row->due_date,
                     'latest_payment_date' => $latestPaymentDate,
@@ -2215,11 +2233,6 @@ class SalesOfficerCustomerController extends Controller
             && strtotime((string) $dueDate) < strtotime(now()->toDateString());
     }
 
-    private function latestPaymentDateForSale(int $saleId): ?string
-    {
-        return $this->latestPaymentDatesForSales(collect([$saleId]))[$saleId] ?? null;
-    }
-
     /**
      * @param  Collection<int, int>  $saleIds
      * @return array<int, string|null>
@@ -2254,23 +2267,6 @@ class SalesOfficerCustomerController extends Controller
         return $code;
     }
 
-    private function lineTotal(mixed $quantity, mixed $unitPrice): string
-    {
-        $quantityHundredths = $this->decimalToInt($quantity, 2);
-        $unitPriceCents = $this->decimalToInt($unitPrice, 2);
-        $lineTotalCents = intdiv(($quantityHundredths * $unitPriceCents) + 50, 100);
-
-        return number_format($lineTotalCents / 100, 2, '.', '');
-    }
-
-    private function decimalToInt(mixed $value, int $scale): int
-    {
-        $normalized = number_format((float) $value, $scale, '.', '');
-        [$whole, $decimal] = array_pad(explode('.', $normalized, 2), 2, '');
-
-        return ((int) $whole * (10 ** $scale)) + (int) str_pad(substr($decimal, 0, $scale), $scale, '0');
-    }
-
     private function defaultPaymentTerms(string $paymentMethod): string
     {
         return $paymentMethod === 'advance_payment' ? 'advance' : 'installment';
@@ -2286,40 +2282,6 @@ class SalesOfficerCustomerController extends Controller
     private function allowedValues(array $offered, array $legacy, ?string $current): array
     {
         return in_array($current, $legacy, true) ? [...$offered, $current] : $offered;
-    }
-
-    private function statusAllowedByPayments(string $requested, float $saleTotal, float $paidTotal): string
-    {
-        if (in_array($requested, ['draft', 'cancelled'], true)) {
-            return $requested;
-        }
-
-        if ($saleTotal > 0 && $paidTotal >= $saleTotal) {
-            return 'paid';
-        }
-
-        if ($paidTotal > 0) {
-            return 'partially_paid';
-        }
-
-        return $requested === 'unpaid' ? 'unpaid' : 'confirmed';
-    }
-
-    private function receivableStatus(float $saleTotal, float $paidTotal): string
-    {
-        if ($saleTotal > 0 && $paidTotal >= $saleTotal) {
-            return 'clear';
-        }
-
-        return $paidTotal > 0 ? 'partial' : 'pending';
-    }
-
-    /**
-     * @return array<int, array<string, mixed>>
-     */
-    private function itemsForSale(int $saleId): array
-    {
-        return $this->itemsForSales(collect([$saleId]))[$saleId] ?? [];
     }
 
     /**
@@ -2405,7 +2367,7 @@ class SalesOfficerCustomerController extends Controller
         return $ids
             ->mapWithKeys(fn (int $saleId): array => [
                 $saleId => ($items[$saleId] ?? collect())
-                    ->map(function (object $item) use ($tankSource): array {
+                    ->map(function (\stdClass $item) use ($tankSource): array {
                         $main = round((float) $item->quantity_liters - (float) $item->f1_quantity_liters, 2);
                         $mainSource = $item->garage_tank_id ? $tankSource($item->tank_name, $item->garage_tank_id, (int) $item->sale_item_id, 'main') : ($item->purchase_code ?: '—');
                         $f1Source = $item->f1_garage_tank_id ? $tankSource($item->f1_tank_name, $item->f1_garage_tank_id, (int) $item->sale_item_id, 'f1') : ($item->f1_purchase_code ?: '—');
@@ -2525,14 +2487,6 @@ class SalesOfficerCustomerController extends Controller
 
                 return $fuel;
             });
-    }
-
-    /**
-     * @return array<int, array<string, string>>
-     */
-    private function paymentsForSale(int $saleId): array
-    {
-        return $this->paymentsForSales(collect([$saleId]))[$saleId] ?? [];
     }
 
     private function refundsForSales(Collection $saleIds): array
@@ -2658,7 +2612,7 @@ class SalesOfficerCustomerController extends Controller
             ->mapWithKeys(fn (int $saleId): array => [
                 $saleId => ($payments[$saleId] ?? collect())
                     ->values()
-                    ->map(fn (object $row, int $index): array => [
+                    ->map(fn (\stdClass $row, int $index): array => [
                         'sequence' => 'Installment #'.($index + 1),
                         'code' => $row->payment_code,
                         'date' => $this->formatDate($row->payment_date),
@@ -2673,14 +2627,6 @@ class SalesOfficerCustomerController extends Controller
                     ->all(),
             ])
             ->all();
-    }
-
-    /**
-     * @return array<int, array<string, mixed>>
-     */
-    private function paymentSchedulesForSale(int $saleId): array
-    {
-        return $this->paymentSchedulesForSales(collect([$saleId]))[$saleId] ?? [];
     }
 
     /**
@@ -2756,11 +2702,6 @@ class SalesOfficerCustomerController extends Controller
         });
     }
 
-    private function transactionSummary(int $customerId): string
-    {
-        return $this->transactionSummaries(collect([$customerId]))[$customerId] ?? 'No transaction records found';
-    }
-
     /**
      * @param  Collection<int, int>  $customerIds
      * @return array<int, string>
@@ -2809,11 +2750,6 @@ class SalesOfficerCustomerController extends Controller
         return str_starts_with((string) $request->route()?->getName(), 'admin.')
             ? 'admin.sales.customers'
             : 'sales-officer.sales.customers';
-    }
-
-    private function customerOutstandingTotal(int $customerId): float
-    {
-        return $this->customerOutstandingTotals(collect([$customerId]))[$customerId] ?? 0.0;
     }
 
     /**
@@ -2979,6 +2915,36 @@ class SalesOfficerCustomerController extends Controller
      * @param  Collection<int, int>  $saleIds
      * @return array<int, array{codes: string, trucks: string, drivers: string, dates: string}>
      */
+    /**
+     * Part 20 #2: the Update Delivery action of a Receivables row: the statuses it may move to next (the existing
+     * Pending -> Out for Delivery -> Delivered flow, through SaleConfirmationService) and who last changed it. A draft,
+     * cancelled or delivered sale has no action. A Depot to Client order offers Delivered only once its lift is Lifted.
+     *
+     * @param  array<string, mixed>|null  $lifts
+     * @return array{available: bool, current: string, options: array<int, string>, note: ?string, last_update: ?string}
+     */
+    private function deliveryUpdateAction(object $row, ?array $lifts): array
+    {
+        $current = (string) ($row->delivery_status ?: 'pending');
+        $open = ! in_array($current, ['delivered', 'cancelled'], true) && ! in_array($row->status, ['draft', 'cancelled'], true);
+        $isDepot = $row->delivery_type === 'depot_to_client';
+        $canDeliver = ! $isDepot || (bool) ($lifts['lifted'] ?? false);
+        $options = collect(['pending', 'out_for_delivery', 'delivered'])
+            ->reject(fn (string $status): bool => $status === $current || ($status === 'delivered' && ! $canDeliver))
+            ->values()
+            ->all();
+
+        return [
+            'available' => $open && $options !== [],
+            'current' => $current,
+            'options' => $open ? $options : [],
+            'note' => $open && ! $canDeliver ? 'Delivered is available once this order\'s lift is marked Lifted in Fuel Lifting.' : null,
+            'last_update' => $row->delivery_status_updated_at
+                ? $this->actorLine($row->delivery_updated_by_name, $row->delivery_status_updated_at)
+                : null,
+        ];
+    }
+
     private function liftsForSales(Collection $saleIds): array
     {
         if ($saleIds->isEmpty()) {
@@ -2992,7 +2958,7 @@ class SalesOfficerCustomerController extends Controller
             ->whereNull('hauls.deleted_at')
             ->whereIn('haul_allocations.sale_id', $saleIds->all())
             ->orderBy('hauls.id')
-            ->get(['haul_allocations.sale_id', 'hauls.haul_code', 'hauls.scheduled_at', 'hauls.hauled_at', 'trucks.name as truck_name', 'trucks.truck_code', 'drivers.name as driver_name'])
+            ->get(['haul_allocations.sale_id', 'haul_allocations.destination_type', 'haul_allocations.status as allocation_status', 'hauls.status as haul_status', 'hauls.haul_code', 'hauls.scheduled_at', 'hauls.hauled_at', 'trucks.name as truck_name', 'trucks.truck_code', 'drivers.name as driver_name'])
             ->groupBy('sale_id')
             ->map(fn (Collection $lifts): array => [
                 'codes' => $lifts->pluck('haul_code')->unique()->implode(', '),
@@ -3000,6 +2966,10 @@ class SalesOfficerCustomerController extends Controller
                 'drivers' => $lifts->pluck('driver_name')->unique()->implode(', '),
                 // The lift's date: when it was lifted, else when it is scheduled.
                 'dates' => $lifts->map(fn (object $lift): string => $this->formatDateTime($lift->hauled_at ?? $lift->scheduled_at))->unique()->implode(', '),
+                // Part 20 #2: the order is on a lift that already left the depot (what Delivered needs, see SaleConfirmationService).
+                'lifted' => $lifts->contains(fn (object $lift): bool => $lift->destination_type === 'customer'
+                    && $lift->allocation_status !== 'cancelled'
+                    && in_array($lift->haul_status, ['lifted', 'completed'], true)),
             ])
             ->all();
     }

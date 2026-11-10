@@ -403,7 +403,7 @@ class DashboardServiceTest extends TestCase
         });
 
         $this->actingAs($this->admin())->get(route('admin.dashboard'))->assertOk()
-            ->assertSee('AI-assisted insight from the dashboard totals.');
+            ->assertSee('AI-assisted recommendations from the dashboard totals');
     }
 
     public function test_an_ai_provider_failure_falls_back_to_the_rule_based_summary(): void

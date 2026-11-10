@@ -59,7 +59,7 @@ class StockInService
             'unit_cost' => $line->unit_cost,
             'total_cost' => round((float) $line->quantity_ordered_liters * (float) $line->unit_cost, 2),
             'status' => $voided ? 'voided' : 'active',
-            'voided_at' => $voided ? ($existing?->voided_at ?? now()) : null,
+            'voided_at' => $voided ? ($existing->voided_at ?? now()) : null,
             'updated_at' => now(),
         ];
 
@@ -144,7 +144,7 @@ class StockInService
     /**
      * Stock-in records with their liters out, remaining and status, newest first.
      *
-     * @param  array{status?: ?string, date?: ?string, depot_id?: mixed, fuel_type_id?: mixed}  $filters
+     * @param  array{status?: ?string, date?: ?string, date_from?: ?string, date_to?: ?string, depot_id?: mixed, fuel_type_id?: mixed}  $filters
      * @return Collection<int, \stdClass>
      */
     public function records(array $filters = [], ?string $search = null): Collection

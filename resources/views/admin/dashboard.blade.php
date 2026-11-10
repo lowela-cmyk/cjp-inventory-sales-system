@@ -218,24 +218,86 @@
         {{-- Insights and A.I Reporting (includes the inventory variance explanation) --}}
         <section class="dash-section" id="insights" aria-labelledby="dash-insights-title">
             <h2 class="dash-section-title" id="dash-insights-title">Insights and A.I Reporting</h2>
-            <div class="dash-panel ai-insight-panel">
-                <div class="dash-insight-head">
+            {{-- Part 20 #4: a dashboard of four overview cards (database figures) and the AI Recommendations as grouped
+                 bullets. Every bullet is escaped; only its **bold** markers become <strong> (DashboardInsightService::bulletHtml). --}}
+            @php
+                $insight = session('dashboardInsight');
+                $insightSections = $insight['sections'] ?? [];
+                $insightRecommendations = $insight['recommendations'] ?? [];
+                if ($insight && $insightRecommendations === [] && $insightSections !== []) {
+                    $insightRecommendations = app(\App\Services\DashboardInsightService::class)->parseRecommendations((string) ($insight['text'] ?? ''));
+                }
+            @endphp
+            <div class="dash-panel ai-insight-panel ai-report-panel">
+                <div class="dash-insight-head ai-report-head">
+                    <p class="ai-report-lead">Overview of inventory, sales, lifting and open work for the filters above, with recommended next steps.</p>
                     <form method="POST" action="{{ route('admin.dashboard.insight') }}" data-ai-generate-form data-confirm="none">
                         @csrf
                         @foreach ($filterQuery as $name => $value)
                             <input type="hidden" name="{{ $name }}" value="{{ $value }}">
                         @endforeach
-                        <button class="btn btn-primary" type="submit">Generate Insight and Reports</button>
+                        <button class="btn btn-primary" type="submit" data-loading-label="Generating…">{{ $insight ? 'Regenerate Insight and Reports' : 'Generate Insight and Reports' }}</button>
                     </form>
                 </div>
-                @if (session('dashboardInsight'))
-                    <div class="ai-insight-body" aria-live="polite">
-                        @if (session('dashboardInsight.note'))
-                            <p class="dash-insight-note" role="note" data-insight-note>{{ session('dashboardInsight.note') }}</p>
+                @if ($errors->has('insight'))
+                    <p class="form-alert" role="alert">{{ $errors->first('insight') }}</p>
+                @endif
+                @if ($insight)
+                    <div class="ai-insight-body ai-report" aria-live="polite">
+                        @if (! empty($insight['note']))
+                            <p class="dash-insight-note" role="note" data-insight-note>{{ $insight['note'] }}</p>
                         @endif
-                        <div class="ai-insight-text" data-insight-text data-insight-raw="{{ session('dashboardInsight.text') }}">{!! nl2br(e(session('dashboardInsight.text'))) !!}</div>
-                        <p data-insight-source>{{ session('dashboardInsight.source') === 'ai' ? 'AI-assisted insight from the dashboard totals. Use it to support, not replace, record verification.' : 'Summary generated from current dashboard data.' }}</p>
-                        <span data-insight-generated="{{ session('dashboardInsight.generated_at') }}">Generated {{ session('dashboardInsight.generated_at') }}</span>
+                        {{-- The plain-text report goes into the PDF export (dashboard.js). --}}
+                        <div class="ai-insight-text" data-insight-text data-insight-raw="{{ $insight['report'] ?? $insight['text'] }}" hidden></div>
+                        @if ($insightSections === [])
+                            <div class="ai-report-empty" role="status">
+                                <strong>No data to report yet</strong>
+                                <p>{{ $insight['text'] }}</p>
+                            </div>
+                        @else
+                            <div class="ai-report-overview">
+                                @foreach ($insightSections as $section)
+                                    <section class="ai-report-card" aria-labelledby="ai-report-{{ $loop->index }}">
+                                        <header>
+                                            <h3 id="ai-report-{{ $loop->index }}">{{ $section['title'] }}</h3>
+                                            @if ($section['caption'])<small>{{ $section['caption'] }}</small>@endif
+                                        </header>
+                                        <dl>
+                                            @foreach ($section['items'] as $item)
+                                                <div @class(['ai-report-metric', 'is-attention' => $item['tone'] === 'attention'])>
+                                                    <dt>{{ $item['label'] }}</dt>
+                                                    <dd>{{ $item['value'] }}</dd>
+                                                </div>
+                                            @endforeach
+                                        </dl>
+                                    </section>
+                                @endforeach
+                            </div>
+                            <section class="ai-report-recommendations" aria-labelledby="ai-report-recommendations-title" data-ai-recommendations>
+                                <h3 id="ai-report-recommendations-title">AI Recommendations</h3>
+                                @forelse ($insightRecommendations as $group => $bullets)
+                                    <div class="ai-report-group">
+                                        <h4>{{ $group }}</h4>
+                                        <ul>
+                                            @foreach ($bullets as $bullet)
+                                                <li>{{ \App\Services\DashboardInsightService::bulletHtml($bullet) }}</li>
+                                            @endforeach
+                                        </ul>
+                                    </div>
+                                @empty
+                                    <p class="ai-report-none">No recommendations for these filters.</p>
+                                @endforelse
+                            </section>
+                        @endif
+                        <footer class="ai-report-footer">
+                            <p data-insight-source>{{ ($insight['source'] ?? '') === 'ai' ? 'AI-assisted recommendations from the dashboard totals; the overview figures come straight from the records. Use it to support, not replace, record verification.' : 'Summary generated from current dashboard data.' }}</p>
+                            <p class="ai-report-generated" data-insight-generated="{{ $insight['generated_at'] ?? '' }}">Generated {{ $insight['generated_at'] ?? '' }}</p>
+                        </footer>
+                    </div>
+                @else
+                    <div class="ai-report-empty" role="status">
+                        <strong>No report generated yet</strong>
+                        <p>Click <em>Generate Insight and Reports</em> to build the overview and recommendations for the current filters.</p>
                     </div>
                 @endif
             </div>

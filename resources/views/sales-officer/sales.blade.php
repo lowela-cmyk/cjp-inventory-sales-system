@@ -74,6 +74,7 @@
                             {{-- Part 17 #7: who recorded / last updated the order (tooltip on the Order-ID; these keep it in Export). --}}
                             <th class="export-only" hidden>Recorded By</th>
                             <th class="export-only" hidden>Last Updated By</th>
+                            <th class="export-only" hidden>Delivery Status Updated</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -96,16 +97,21 @@
                                 <td><x-admin.status-badge :status="$c[14]" /></td>
                                 <td class="export-only" hidden>{{ $row['recorded'] }}</td>
                                 <td class="export-only" hidden>{{ $row['updated'] }}</td>
+                                <td class="export-only" hidden>{{ $row['delivery_update']['last_update'] ?? 'N/A' }}</td>
                                 <td>
                                     <div class="sales-row-actions row-actions-stack">
                                         <button class="btn btn-secondary" type="button" data-modal-open="{{ $row['modal_id'] }}">View</button>
+                                        {{-- Part 20 #2: every open order (Pending included) can move its delivery on from the row. --}}
+                                        @if ($row['delivery_update']['available'])
+                                            <button class="btn btn-primary" type="button" data-modal-open="{{ $row['modal_id'] }}-delivery">Update Delivery</button>
+                                        @endif
                                         {{-- Part 12: Cancel Sale moved into the Edit Sales Record modal. Part 17: no Delete or Discard
                                              Draft here; an order that is not delivered is taken back with Cancel Sale only. --}}
                                     </div>
                                 </td>
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="11">No records found.</td></tr>
+                            <tr><td class="empty-cell" colspan="12">No records found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -543,6 +549,10 @@
 
         @if ($row['correction_action'] === 'cancel')
             @include('sales-officer.partials.cancel-sale-modal', ['row' => $row, 'salesRoutePrefix' => $salesRoutePrefix])
+        @endif
+
+        @if ($row['delivery_update']['available'])
+            @include('sales-officer.partials.delivery-update-modal', ['row' => $row, 'salesRoutePrefix' => $salesRoutePrefix, 'deliveredConfirm' => $deliveredConfirm])
         @endif
 
         @include('admin.partials.payment-history-modal', [

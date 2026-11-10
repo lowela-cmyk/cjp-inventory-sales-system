@@ -268,14 +268,15 @@ class Part18RevisionsTest extends AuditTestCase
         $saleId = $this->lastSaleId();
         $manual = fn (string $status) => $this->actingAs($a['sales'])->from(route('sales-officer.sales'))
             ->patch(route('sales-officer.sales.delivery-status.update', $saleId), ['delivery_status' => $status]);
-        $refused = 'A Depot to Client order is delivered through its lift, so its delivery status cannot be changed here.';
+        $refused = 'This Depot to Client sale is delivered through its lift. Add it to a lift in Fuel Lifting and complete the lift first.';
 
-        // Every manual status is refused, before and while it is on a lift; nothing leaves stock.
-        foreach (['out_for_delivery', 'delivered', 'pending'] as $status) {
-            $manual($status)->assertSessionHasErrors(['delivery_status' => $refused]);
-        }
-        $this->scheduleLift($a, [['purchase_item_id' => $premium, 'quantity_liters' => 2000, 'atl_number' => 'ATL-1']], [$saleId])->assertSessionHasNoErrors();
+        // Part 20 #2 revises this: Pending <-> Out for Delivery may be set by hand (no stock moves) ...
+        $manual('out_for_delivery')->assertSessionHasNoErrors();
+        $this->assertSame('out_for_delivery', DB::table('sales')->where('id', $saleId)->value('delivery_status'));
+        $manual('pending')->assertSessionHasNoErrors();
+        // ... but Delivered still needs the lift to have left the depot, before and while it is only Scheduled.
         $manual('delivered')->assertSessionHasErrors(['delivery_status' => $refused]);
+        $this->scheduleLift($a, [['purchase_item_id' => $premium, 'quantity_liters' => 2000, 'atl_number' => 'ATL-1']], [$saleId])->assertSessionHasNoErrors();
         $manual('delivered')->assertSessionHasErrors(['delivery_status' => $refused]);
         $this->actingAs($a['admin'])->from(route('admin.sales'))->patch(route('admin.sales.delivery-status.update', $saleId), ['delivery_status' => 'delivered'])
             ->assertSessionHasErrors(['delivery_status' => $refused]);

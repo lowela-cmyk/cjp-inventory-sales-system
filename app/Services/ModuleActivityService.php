@@ -76,7 +76,10 @@ class ModuleActivityService
      */
     private function modulesFor(User $user): array
     {
-        return self::ROLE_MODULES[(string) $user->role] ?? [];
+        // Read as stored: a User not saved yet (or built without a role) has none, and gets no modules.
+        $role = $user->getAttribute('role');
+
+        return is_string($role) ? (self::ROLE_MODULES[$role] ?? []) : [];
     }
 
     public function moduleForRoute(?string $routeName): ?string

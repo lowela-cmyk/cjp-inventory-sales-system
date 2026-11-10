@@ -9,6 +9,9 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
+/**
+ * @property-read string|null $driver_code  Only set when a query joins driver_profiles (e.g. the Drivers list).
+ */
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
@@ -72,7 +75,7 @@ class User extends Authenticatable
             'inventory_officer' => 'Inventory Officer',
             'sales_officer' => 'Sales Officer',
             'dispatch_officer' => 'Dispatch Officer',
-            'driver' => 'Driver',
+            // 'driver' (and any future role) reads as its name: "Driver".
             default => ucfirst(str_replace('_', ' ', (string) $this->role)),
         };
     }

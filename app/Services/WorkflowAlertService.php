@@ -44,7 +44,7 @@ class WorkflowAlertService
             '%s | Fuel: %s | Quantity: %s L | Depot: %s | Purchase date: %s | Status: %s | Created by: %s',
             $purchase->purchase_code,
             $items?->fuel_names ?: 'N/A',
-            number_format((float) ($items?->quantity_liters ?? 0), 2),
+            number_format((float) ($items->quantity_liters ?? 0), 2),
             $purchase->depot_name,
             $purchase->purchase_date,
             ucwords($status),

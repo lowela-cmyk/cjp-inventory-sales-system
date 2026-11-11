@@ -62,7 +62,7 @@ class DashboardService
 
         return [
             'inventory' => $this->inventory($inventoryFilters),
-            'revenue' => $this->revenue($today),
+            'revenue' => $this->revenue($today, $salesFilters),
             'salesTrend' => $this->salesTrend($salesFilters, $today),
             'filterOptions' => $this->filterOptions(),
         ];
@@ -187,12 +187,13 @@ class DashboardService
     /**
      * @return array<string, mixed>
      */
-    public function revenue(?CarbonImmutable $today = null): array
+    public function revenue(?CarbonImmutable $today = null, array $filters = []): array
     {
         $today ??= CarbonImmutable::today();
+        $filters = $this->normalizeSalesFilters($filters);
         $series = [];
         foreach (self::REVENUE_PERIODS as $period => $count) {
-            $series[$period] = $this->revenueSeries($period, $count, $today);
+            $series[$period] = $this->revenueSeries($period, $count, $today, $filters);
         }
 
         return ['series' => $series, 'margin' => $this->stockOutMargin()];
@@ -208,8 +209,9 @@ class DashboardService
      *
      * @return array<string, mixed>
      */
-    public function revenueSeries(string $period, int $count, CarbonImmutable $today): array
+    public function revenueSeries(string $period, int $count, CarbonImmutable $today, array $filters = []): array
     {
+        $filters = $this->normalizeSalesFilters($filters);
         $current = $this->periodStart($period, $today);
         $history = self::MOVING_AVERAGE_PERIODS;
         $starts = [];
@@ -217,7 +219,7 @@ class DashboardService
             $starts[] = $this->shiftPeriod($period, $current, -$offset);
         }
 
-        $daily = $this->validSaleLines()
+        $daily = $this->matchingSaleLines($filters, false)
             ->whereBetween('sales.sale_date', [$starts[0]->toDateString(), $this->shiftPeriod($period, $current, 1)->subDay()->toDateString()])
             ->groupBy('sales.sale_date')
             ->selectRaw('sales.sale_date as day, COALESCE(SUM(sale_items.line_total), 0) as total')
@@ -544,6 +546,18 @@ class DashboardService
             ->join('sales', 'sales.id', '=', 'sale_items.sale_id')
             ->whereNull('sales.deleted_at')
             ->whereIn('sales.status', self::VALID_SALE_STATUSES);
+    }
+
+    /** Normalize the dashboard sales filters shared by revenue and sales-trend calculations. */
+    private function normalizeSalesFilters(array $filters): array
+    {
+        return [
+            'search' => trim((string) ($filters['search'] ?? '')),
+            'date_from' => $filters['date_from'] ?? null ?: null,
+            'date_to' => $filters['date_to'] ?? null ?: null,
+            'fuel_type_id' => ($filters['fuel_type_id'] ?? null) ? (int) $filters['fuel_type_id'] : null,
+            'customer_id' => ($filters['customer_id'] ?? null) ? (int) $filters['customer_id'] : null,
+        ];
     }
 
     /**

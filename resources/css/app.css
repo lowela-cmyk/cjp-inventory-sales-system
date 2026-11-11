@@ -5203,6 +5203,91 @@ body.login-page {
     box-shadow: none;
 }
 
+/* Stock-Out: keep the wide financial table readable instead of squeezing 18 visible columns into the page.
+   The wrapper stays constrained to the content column and owns the horizontal scroll. Below 768px responsive.css
+   changes this table into cards, so the wide-table rules intentionally begin at the tablet breakpoint. */
+@media (min-width: 768px) {
+    section[data-tab-panel="stock-out"] .table-wrap.inventory-table-wrap {
+        width: 100%;
+        max-width: 100%;
+        overflow-x: auto;
+        overscroll-behavior-inline: contain;
+        scrollbar-width: thin;
+    }
+
+    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table {
+        width: max-content;
+        min-width: 2180px;
+        max-width: none;
+        table-layout: auto;
+        margin: 0;
+    }
+
+    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table :is(th, td) {
+        padding: 12px 14px;
+        font-size: 13px;
+        line-height: 1.3;
+        white-space: nowrap;
+        overflow-wrap: normal;
+        word-break: normal;
+        vertical-align: middle;
+    }
+
+    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table .cell-stack {
+        justify-items: start;
+        text-align: left;
+    }
+
+    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table .cell-line {
+        text-align: left;
+    }
+
+    /* Readable text columns. */
+    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table :is(th, td):nth-child(1) { min-width: 170px; text-align: left; }
+    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table :is(th, td):nth-child(2) { min-width: 180px; max-width: none; text-align: left; }
+    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table :is(th, td):nth-child(3) { min-width: 240px; max-width: none; text-align: left; }
+    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table :is(th, td):nth-child(4) { min-width: 150px; text-align: left; }
+    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table :is(th, td):nth-child(5) { min-width: 145px; text-align: left; }
+    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table :is(th, td):nth-child(6) { min-width: 170px; max-width: none; text-align: left; }
+    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table :is(th, td):nth-child(7) { min-width: 140px; max-width: none; text-align: left; }
+    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table :is(th, td):nth-child(8) { min-width: 190px; max-width: none; text-align: left; }
+
+    /* Export-only columns stay hidden on screen; visible financial columns retain comfortable tracks. */
+    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table :is(th, td):is(:nth-child(13), :nth-child(14), :nth-child(15), :nth-child(16), :nth-child(17), :nth-child(18)) {
+        min-width: 118px;
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+    }
+
+    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table :is(th, td):nth-child(19) {
+        min-width: 120px;
+        text-align: center;
+    }
+
+    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table :is(th, td):is(:nth-child(20), :nth-child(21)) {
+        min-width: 135px;
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+    }
+
+    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table :is(th, td):nth-child(22) {
+        min-width: 100px;
+        text-align: center;
+    }
+
+    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table .status-badge {
+        width: auto;
+        min-width: 92px;
+        max-width: none;
+        white-space: nowrap;
+    }
+
+    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table .inventory-row-actions {
+        justify-content: center;
+        align-items: center;
+    }
+}
+
 .inventory-summary-row {
     grid-template-columns: repeat(5, minmax(0, 1fr));
     align-items: stretch;
@@ -5608,35 +5693,366 @@ body.login-page {
     max-height: 90px;
 }
 
-/* Part 20 #2: Update Delivery modal (Sales -> Receivables row). */
+/* =================================================================================================================
+   Part 20 #2: Update Delivery (Sales -> Receivables row): the row button and its modal.
+   - Button: the truck from x-nav.icon drawn as a CSS mask (the label stays plain text); View and Update Delivery share
+     one width in the stacked Actions cell.
+   - Modal: 520px card that sizes to its content; Cancel / Update Delivery sit in the modal's fixed footer, so the body
+     only scrolls when the content is taller than the screen. Phones: bottom sheet (responsive.css).
+   ================================================================================================================= */
+.btn.btn-delivery-update {
+    gap: 6px;
+}
+
+.btn.btn-delivery-update::before {
+    content: "";
+    flex: none;
+    width: 16px;
+    height: 16px;
+    background: currentColor;
+    -webkit-mask: var(--icon-truck) center / contain no-repeat;
+    mask: var(--icon-truck) center / contain no-repeat;
+}
+
+.btn.btn-delivery-update:hover {
+    background: #1d2840;
+}
+
+:root {
+    --icon-truck: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 6h11v10H3z'/%3E%3Cpath d='M14 9h4l3 3v4h-7'/%3E%3Ccircle cx='7' cy='18' r='2'/%3E%3Ccircle cx='17' cy='18' r='2'/%3E%3C/svg%3E");
+    --icon-info: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 11v5'/%3E%3Cpath d='M12 7.5h.01'/%3E%3C/svg%3E");
+    --icon-alert: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10.3 3.9 2.4 17.5A2 2 0 0 0 4.1 20.5h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z'/%3E%3Cpath d='M12 9v4'/%3E%3Cpath d='M12 17h.01'/%3E%3C/svg%3E");
+}
+
+/* Sales -> Receivables Actions: one compact size for View and Update Delivery in every row and at every width, so
+   View is identical whether or not Update Delivery sits under it. Width measured in the browser (Arial 800): 2px border
+   + 8px padding + 13px truck + 5px gap + 86.9px "Update Delivery" at 11.5px + 8px + 2px = 124.9px, so 126px is the
+   smallest box that holds the label on one line without it touching the border. The buttons rule outranks the compact-table rule (.table-wrap > :is(...) .btn: 10px padding,
+   64px minimum). Phones show the same buttons in the row's "⋮" menu (responsive.css); touch screens keep 44px tall
+   buttons (responsive.css). */
+:root {
+    --sales-action-width: 126px;
+}
+
+@media (min-width: 768px) {
+    /* The Actions cell needs no more than 2px beside the bordered buttons (keeps an 820px tablet from scrolling). */
+    .table-wrap > .admin-table:not(.admin-table-fit):not(.depot-table) td:has(> .sales-row-actions.row-actions-stack) {
+        padding-inline: 2px;
+    }
+
+    /* :not(...) as in the compact-table rule, so its 6px gap does not win. */
+    .table-wrap > .admin-table:not(.admin-table-fit):not(.depot-table) td > .sales-row-actions.row-actions-stack {
+        display: inline-grid;
+        grid-template-columns: var(--sales-action-width);
+        justify-content: center;
+        gap: 4px;
+        min-width: 0;
+        vertical-align: middle;
+    }
+}
+
+.table-wrap > .admin-table td > .sales-row-actions.row-actions-stack > .btn.btn {
+    width: var(--sales-action-width);
+    min-width: 0;
+    min-height: 30px;
+    margin: 0;
+    padding: 0 8px;
+    gap: 5px;
+    justify-content: center;
+    font-size: 11.5px;
+    letter-spacing: 0;
+    white-space: nowrap;
+}
+
+.table-wrap > .admin-table td > .sales-row-actions.row-actions-stack > .btn-delivery-update::before {
+    width: 13px;
+    height: 13px;
+}
+
+:is(.btn-delivery-update, .admin-modal-delivery .btn):focus-visible {
+    outline: 2px solid #2563eb;
+    outline-offset: 2px;
+}
+
+/* -- Modal frame ------------------------------------------------------------------------------------------------ */
+.admin-modal.admin-modal-delivery {
+    --du-pad: 22px;
+    --du-line: #e4e7ec;
+    width: min(520px, calc(100vw - 40px));
+    border-radius: 12px;
+}
+
+.admin-modal.admin-modal-delivery > .modal-titlebar {
+    justify-content: flex-start;
+    height: 60px;
+    padding: 0 64px 0 var(--du-pad);
+}
+
+.admin-modal.admin-modal-delivery > .modal-titlebar h2 {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 17px;
+    line-height: 1.2;
+    letter-spacing: .01em;
+    text-align: left;
+    text-transform: none;
+}
+
+.admin-modal.admin-modal-delivery > .modal-titlebar h2::before {
+    content: "";
+    flex: none;
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    background: rgb(255 255 255 / 12%) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 6h11v10H3z'/%3E%3Cpath d='M14 9h4l3 3v4h-7'/%3E%3Ccircle cx='7' cy='18' r='2'/%3E%3Ccircle cx='17' cy='18' r='2'/%3E%3C/svg%3E") center / 19px no-repeat;
+}
+
+.admin-modal-delivery > .modal-titlebar .modal-close {
+    top: 10px;
+    right: 12px;
+    width: 40px;
+    height: 40px;
+    border-color: rgb(255 255 255 / 45%);
+    transition: background-color .12s ease, border-color .12s ease;
+}
+
+.admin-modal-delivery > .modal-titlebar .modal-close::before,
+.admin-modal-delivery > .modal-titlebar .modal-close::after {
+    inset: 19px 11px auto;
+}
+
+.admin-modal-delivery > .modal-titlebar .modal-close:hover {
+    border-color: #fff;
+    background: rgb(255 255 255 / 12%);
+}
+
+.admin-modal-delivery > .modal-titlebar .modal-close:focus-visible {
+    outline: 2px solid #93c5fd;
+    outline-offset: 2px;
+}
+
+.admin-modal.admin-modal-delivery > .modal-body {
+    padding: var(--du-pad);
+}
+
+/* -- Summary card: 2 x 2 on tablets and wider, label / value rows on small phones (responsive.css). -------------- */
+.delivery-update-alert {
+    margin-bottom: 14px;
+    font-size: 13px;
+}
+
 .delivery-update-summary {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px 20px;
-    margin: 0 0 16px;
+    margin: 0 0 18px;
+    overflow: hidden;
+    border: 1px solid var(--du-line);
+    border-radius: 10px;
+    background: #f8fafc;
 }
 
-.delivery-update-summary > div {
+.delivery-update-item {
     display: grid;
-    gap: 4px;
+    align-content: start;
+    gap: 6px;
     min-width: 0;
+    padding: 12px 14px;
 }
 
-.delivery-update-summary dt {
-    color: var(--admin-muted);
-    font-size: 12px;
-    font-weight: 800;
+.delivery-update-item:nth-child(odd) {
+    border-right: 1px solid var(--du-line);
+}
+
+.delivery-update-item:nth-child(n + 3) {
+    border-top: 1px solid var(--du-line);
+}
+
+.delivery-update-item dt {
+    color: #667085;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .06em;
     text-transform: uppercase;
 }
 
-.delivery-update-summary dd {
+.delivery-update-item dd {
     margin: 0;
+    color: var(--admin-ink);
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.35;
     overflow-wrap: anywhere;
 }
 
-@media (max-width: 639px) {
-    .delivery-update-summary {
-        grid-template-columns: minmax(0, 1fr);
+.delivery-update-item dd.delivery-update-code {
+    font-size: 15px;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: .01em;
+}
+
+.delivery-update-item dd.delivery-update-muted {
+    color: #667085;
+    font-weight: 500;
+}
+
+.delivery-update-item:last-child dd {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.delivery-update-summary .status-badge {
+    min-height: 24px;
+    padding: 0 10px;
+    border-width: 1px;
+    box-shadow: none;
+    font-size: 11px;
+    letter-spacing: .03em;
+}
+
+/* -- New Delivery Status ---------------------------------------------------------------------------------------- */
+.delivery-update-field {
+    display: grid;
+    gap: 8px;
+}
+
+.delivery-update-field label {
+    color: var(--admin-ink);
+    font-size: 14px;
+    font-weight: 800;
+}
+
+.delivery-update-field select {
+    width: 100%;
+    height: 46px;
+    border: 1px solid #c9ced6;
+    border-radius: 8px;
+    padding: 0 14px;
+    background-color: #fff;
+    color: var(--admin-ink);
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color .12s ease, box-shadow .12s ease;
+}
+
+.delivery-update-field select:hover {
+    border-color: #98a2b3;
+}
+
+.delivery-update-field select:focus,
+.delivery-update-field select:focus-visible {
+    border-color: var(--admin-ink);
+    outline: none;
+    box-shadow: 0 0 0 3px rgb(37 99 235 / 25%);
+}
+
+.delivery-update-field select[aria-invalid="true"] {
+    border-color: var(--danger);
+    box-shadow: 0 0 0 3px rgb(245 9 61 / 14%);
+}
+
+/* The "Choose the next status" placeholder reads as a hint, not a value. */
+.delivery-update-field select:has(option[value=""]:checked) {
+    color: #667085;
+    font-weight: 500;
+}
+
+/* Browsers without customizable selects (Safari, Firefox) only honour the box styles with appearance: none. */
+@supports not (appearance: base-select) {
+    .delivery-update-field select {
+        appearance: none;
+        padding-right: 40px;
+        background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23475467' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") right 14px center / 16px no-repeat;
+    }
+}
+
+/* -- Notes: compact information rows ---------------------------------------------------------------------------- */
+.delivery-update-notes {
+    display: grid;
+    gap: 8px;
+    margin-top: 14px;
+}
+
+.delivery-update-note {
+    display: grid;
+    grid-template-columns: 16px minmax(0, 1fr);
+    gap: 8px;
+    margin: 0;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 9px 12px;
+    background: #f1f5f9;
+    color: #475467;
+    font-size: 12.5px;
+    line-height: 1.45;
+}
+
+.delivery-update-note::before {
+    content: "";
+    width: 16px;
+    height: 16px;
+    margin-top: 1px;
+    background: currentColor;
+    -webkit-mask: var(--icon-info) center / contain no-repeat;
+    mask: var(--icon-info) center / contain no-repeat;
+}
+
+.delivery-update-note.is-warning {
+    border-color: #fde68a;
+    background: #fffbeb;
+    color: #92400e;
+}
+
+.delivery-update-note.is-warning::before {
+    -webkit-mask-image: var(--icon-alert);
+    mask-image: var(--icon-alert);
+}
+
+/* -- Footer: the modal's fixed footer (outside the scrolling body), directly under the content. ------------------ */
+.admin-modal.admin-modal-delivery > .modal-footer {
+    gap: 10px;
+    border-top-color: var(--du-line);
+    padding: 14px var(--du-pad);
+}
+
+.admin-modal-delivery > .modal-footer .btn {
+    min-width: 132px;
+    min-height: 42px;
+}
+
+.admin-modal-delivery > .modal-footer .btn-secondary:hover {
+    background: #f5f7fa;
+}
+
+.admin-modal-delivery > .modal-footer .btn:disabled {
+    transform: none;
+    box-shadow: 0 3px 0 var(--admin-ink);
+}
+
+/* Loading: app.js disables the button and shows "Updating…" while the request runs; a spinner goes with it. */
+.admin-modal-delivery:has(.delivery-update-form[aria-busy="true"]) [data-delivery-update-submit] {
+    gap: 8px;
+    opacity: .9;
+}
+
+.admin-modal-delivery:has(.delivery-update-form[aria-busy="true"]) [data-delivery-update-submit]::before {
+    content: "";
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgb(255 255 255 / 35%);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: delivery-update-spin .8s linear infinite;
+}
+
+@keyframes delivery-update-spin {
+    to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .admin-modal-delivery:has(.delivery-update-form[aria-busy="true"]) [data-delivery-update-submit]::before {
+        animation: none;
     }
 }
 
@@ -5647,8 +6063,9 @@ body.login-page {
 
    - Cells are 8px x 5px (10px between neighbouring values), 12.5px text, 47px rows (51px when a depot name takes two lines); with the longest real values
      (PARTIALLY LIFTED, View Receipts (2), Bank Transfer / BPI, Batangas Energy Terminal) the table fits the 1,016px
-     box of a 1366px screen, so it no longer scrolls there or wider; the table takes its box and scrolls sideways (one unit) when its
-     columns need more room; Actions is not pinned, so no column sits under it.
+     box of a 1366px screen, so it no longer scrolls there or wider; the table is as wide as its content, starts at the
+     left edge of its box, and scrolls sideways (one unit) only when its columns need more room; Actions is not pinned,
+     so no column sits under it.
    - Dates, IDs, amounts, statuses and buttons stay on one line; Depot and Payment Mode wrap between words.
    - Liters and pesos are right-aligned with tabular figures, the header of each column aligned like its values.
    - Status pills fit their text; Edit buttons share one size and line up.
@@ -5656,21 +6073,28 @@ body.login-page {
    The prefix outranks the shared pinned-table rules (.table-wrap > :is(...)...) without forced priorities.
    ================================================================================================================= */
 @media (min-width: 768px) {
+    /* The bordered box hugs the table (no empty framed area beside it on a wide screen) but never grows past the
+       page; when the table is wider than that, the box scrolls. */
     section[data-tab-panel="purchases"] .table-wrap.inventory-table-wrap {
+        width: 100%;
+        max-width: 100%;
         overflow-x: auto;
         overscroll-behavior-inline: contain;
     }
 
+    /* Content-based width, starting at the left edge of the box: the columns sit at their natural width instead of
+       being spread across a wide screen. In a narrower box Depot and Payment Mode wrap first; the box scrolls sideways
+       only when the columns still do not fit. */
     section[data-tab-panel="purchases"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.purchases-table {
         width: 100%;
-        min-width: 0;
-        table-layout: auto;
+        min-width: 1040px;
+        max-width: none;
+        margin: 0;
+        table-layout: fixed;
     }
 
     section[data-tab-panel="purchases"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.purchases-table :is(th, td) {
-        width: auto;
         min-width: 0;
-        max-width: none;
         padding: 8px 5px;
         border-bottom: 1px solid #e5e7eb;
         font-size: 12.5px;
@@ -5682,6 +6106,20 @@ body.login-page {
         word-break: normal;
     }
 
+    /* Proportional tracks total 100%; the minimum table width keeps status and action columns readable. */
+    section[data-tab-panel="purchases"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.purchases-table :is(th, td):nth-child(1) { width: 8%; }
+    section[data-tab-panel="purchases"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.purchases-table :is(th, td):nth-child(2) { width: 7%; }
+    section[data-tab-panel="purchases"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.purchases-table :is(th, td):nth-child(3) { width: 8%; }
+    section[data-tab-panel="purchases"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.purchases-table :is(th, td):nth-child(4) { width: 11%; }
+    section[data-tab-panel="purchases"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.purchases-table :is(th, td):nth-child(5) { width: 8%; }
+    section[data-tab-panel="purchases"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.purchases-table :is(th, td):nth-child(6) { width: 8%; }
+    section[data-tab-panel="purchases"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.purchases-table :is(th, td):nth-child(7) { width: 9%; }
+    section[data-tab-panel="purchases"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.purchases-table :is(th, td):nth-child(8) { width: 9%; }
+    section[data-tab-panel="purchases"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.purchases-table :is(th, td):nth-child(9) { width: 9%; }
+    section[data-tab-panel="purchases"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.purchases-table :is(th, td):nth-child(10) { width: 8%; }
+    section[data-tab-panel="purchases"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.purchases-table :is(th, td):nth-child(11) { width: 8%; }
+    section[data-tab-panel="purchases"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.purchases-table :is(th, td):nth-child(12) { width: 7%; }
+
     /* Headers may take two lines, so a long label ("Purchase Status") never widens its column beyond its values. */
     section[data-tab-panel="purchases"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.purchases-table thead th {
         padding-block: 10px;
@@ -5692,23 +6130,32 @@ body.login-page {
 
     /* Depot (4) and Payment Mode (8) wrap naturally between words. */
     section[data-tab-panel="purchases"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.purchases-table :is(th, td):nth-child(4) {
-        min-width: 100px;
-        max-width: 220px;
         white-space: normal;
+        overflow-wrap: break-word;
     }
 
     section[data-tab-panel="purchases"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.purchases-table :is(th, td):nth-child(8) {
-        min-width: 0;
         white-space: normal;
+        overflow-wrap: break-word;
+    }
+
+    section[data-tab-panel="purchases"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.purchases-table :is(th, td):nth-child(3) {
+        white-space: normal;
+        overflow-wrap: break-word;
     }
 
     section[data-tab-panel="purchases"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.purchases-table td.payment-mode-cell.is-empty .cell-line.is-secondary {
         display: none;
     }
 
-    /* Purchased (L), Cost / Liter, Total Cost: right-aligned figures. */
+    /* Payment Mode is a left-aligned column, so its bank line sits under the mode, not centered (.cell-stack centers). */
+    section[data-tab-panel="purchases"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.purchases-table td.payment-mode-cell .cell-stack {
+        justify-items: start;
+    }
+
+    /* Purchases uses one consistent left edge for every visible value, including short numeric values. */
     section[data-tab-panel="purchases"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.purchases-table :is(th, td):is(:nth-child(5), :nth-child(6), :nth-child(7)) {
-        text-align: right;
+        text-align: left;
         font-variant-numeric: tabular-nums;
     }
 
@@ -5717,9 +6164,9 @@ body.login-page {
         min-width: 64px;
     }
 
-    /* Receipt (9), Purchase Status (10), Payment Status (11), Actions (12): centered. */
+    /* All non-numeric Purchases columns start at the left edge, including receipt, status, and actions. */
     section[data-tab-panel="purchases"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.purchases-table :is(th, td):is(:nth-child(9), :nth-child(10), :nth-child(11), :nth-child(12)) {
-        text-align: center;
+        text-align: left;
     }
 
     section[data-tab-panel="purchases"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.purchases-table :is(th, td):last-child {
@@ -5731,12 +6178,14 @@ body.login-page {
     /* Pills fit their text; a long label (PARTIALLY LIFTED) takes two short lines instead of widening the column. */
     section[data-tab-panel="purchases"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.purchases-table .status-badge {
         display: inline-flex;
-        width: max-content;
+        width: 88px;
         min-width: 0;
-        max-width: 92px;
+        max-width: 100%;
         height: auto;
         min-height: 24px;
-        margin: 0 auto;
+        margin: 0;
+        margin-inline-start: 0;
+        margin-inline-end: 0;
         padding: 3px 9px;
         overflow: visible;
         font-size: 11px;
@@ -5748,7 +6197,8 @@ body.login-page {
 
     section[data-tab-panel="purchases"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.purchases-table .inventory-row-actions {
         display: flex;
-        justify-content: center;
+        justify-content: flex-start;
+        align-items: flex-start;
         gap: 6px;
     }
 

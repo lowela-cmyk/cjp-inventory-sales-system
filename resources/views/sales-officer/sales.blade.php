@@ -103,7 +103,8 @@
                                         <button class="btn btn-secondary" type="button" data-modal-open="{{ $row['modal_id'] }}">View</button>
                                         {{-- Part 20 #2: every open order (Pending included) can move its delivery on from the row. --}}
                                         @if ($row['delivery_update']['available'])
-                                            <button class="btn btn-primary" type="button" data-modal-open="{{ $row['modal_id'] }}-delivery">Update Delivery</button>
+                                            {{-- The truck icon is drawn in CSS (.btn-delivery-update::before), so the label stays plain text. --}}
+                                            <button class="btn btn-primary btn-delivery-update" type="button" aria-haspopup="dialog" data-modal-open="{{ $row['modal_id'] }}-delivery">Update Delivery</button>
                                         @endif
                                         {{-- Part 12: Cancel Sale moved into the Edit Sales Record modal. Part 17: no Delete or Discard
                                              Draft here; an order that is not delivered is taken back with Cancel Sale only. --}}

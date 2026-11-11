@@ -153,6 +153,53 @@ class DashboardServiceTest extends TestCase
         $this->assertSame(237500.0, $week['actual'][9]);
     }
 
+    public function test_forecast_growth_uses_previous_complete_period_for_combined_and_fuel_filtered_sales(): void
+    {
+        $ids = $this->seed_();
+        $gasoline = $ids['fuel']['PREM'];
+        $diesel = $ids['fuel']['DSL'];
+
+        // The moving-average forecast compares the last complete month with its three-period history window.
+        foreach (['2026-06-10', '2026-07-10', '2026-08-10'] as $date) {
+            $this->sale('SLS-GROWTH-GAS-'.$date, $ids['alpha'], $date, 'confirmed', 'pending', [[$gasoline, 1, 1200000]]);
+            $this->sale('SLS-GROWTH-DIESEL-'.$date, $ids['alpha'], $date, 'confirmed', 'pending', [[$diesel, 1, 900000]]);
+        }
+        foreach (['2026-07-10', '2026-08-10'] as $date) {
+            DB::table('sale_items')->where('sale_id', DB::table('sales')->where('sale_code', 'SLS-GROWTH-GAS-'.$date)->value('id'))->update(['line_total' => 1300000]);
+            DB::table('sale_items')->where('sale_id', DB::table('sales')->where('sale_code', 'SLS-GROWTH-DIESEL-'.$date)->value('id'))->update(['line_total' => 950000]);
+        }
+        $this->sale('SLS-GROWTH-GAS-SEP', $ids['alpha'], '2026-09-10', 'confirmed', 'pending', [[$gasoline, 1, 1000000]]);
+        $this->sale('SLS-GROWTH-DIESEL-SEP', $ids['alpha'], '2026-09-10', 'confirmed', 'pending', [[$diesel, 1, 800000]]);
+
+        // Remove the seed September line so the synthetic September total is exactly PHP 1,800,000.
+        DB::table('sale_items')->where('sale_id', DB::table('sales')->where('sale_code', 'SLS-DASH-C')->value('id'))->update(['line_total' => 0]);
+
+        $combined = $this->dashboard()->revenueSeries('month', 12, $this->today);
+        $gasOnly = $this->dashboard()->revenueSeries('month', 12, $this->today, ['fuel_type_id' => $gasoline]);
+        $dieselOnly = $this->dashboard()->revenueSeries('month', 12, $this->today, ['fuel_type_id' => $diesel]);
+
+        // (2,100,000 - 1,800,000) / 1,800,000 * 100 = 16.67%.
+        $this->assertSame(2100000.0, $combined['forecast']);
+        $this->assertSame(1800000.0, $combined['lastComplete']);
+        $this->assertSame(16.67, $combined['increaseRate']);
+        $this->assertSame('16.67%', $combined['increaseRateLabel']);
+
+        // The same calculation remains dynamic for an individual fuel series when filtered at query level.
+        $this->assertSame(20.0, $gasOnly['increaseRate']);
+        $this->assertSame(12.5, $dieselOnly['increaseRate']);
+
+        // Equal forecast and previous complete period produces exactly zero growth.
+        DB::table('sale_items')->where('sale_id', DB::table('sales')->where('sale_code', 'SLS-GROWTH-GAS-SEP')->value('id'))->update(['line_total' => 1300000]);
+        DB::table('sale_items')->where('sale_id', DB::table('sales')->where('sale_code', 'SLS-GROWTH-DIESEL-SEP')->value('id'))->update(['line_total' => 900000]);
+        foreach (['2026-07-10', '2026-08-10'] as $date) {
+            DB::table('sale_items')->where('sale_id', DB::table('sales')->where('sale_code', 'SLS-GROWTH-DIESEL-'.$date)->value('id'))->update(['line_total' => 900000]);
+        }
+        $this->assertSame(0.0, $this->dashboard()->revenueSeries('month', 12, $this->today)['increaseRate']);
+
+        // A fuel with no previous complete sales has no mathematically valid denominator.
+        $this->assertNull($this->dashboard()->revenueSeries('month', 12, $this->today, ['fuel_type_id' => $ids['fuel']['F1']])['increaseRate']);
+    }
+
     public function test_stock_out_vs_receivables_compares_stock_out_with_the_amount_collected(): void
     {
         $this->seed_();

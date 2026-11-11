@@ -208,7 +208,7 @@ class AIService
             ->values()
             ->all();
 
-        return [
+        $payload = [
             'model' => $model,
             'messages' => $normalizedMessages ?: [
                 ['role' => 'user', 'content' => 'Reply with: AI connection successful.'],
@@ -216,6 +216,16 @@ class AIService
             'temperature' => (float) ($options['temperature'] ?? 0.2),
             'max_tokens' => (int) ($options['max_output_tokens'] ?? 512),
         ];
+
+        // GPT-OSS spends completion tokens on a separate reasoning field by default. The dashboard only
+        // needs the final recommendations; excluding reasoning prevents a short max_tokens budget from
+        // producing HTTP 200 with an empty message.content.
+        if (str_starts_with(strtolower($model), 'openai/gpt-oss-')) {
+            $payload['include_reasoning'] = false;
+            $payload['reasoning_effort'] = $options['reasoning_effort'] ?? 'low';
+        }
+
+        return $payload;
     }
 
     /**
@@ -223,9 +233,49 @@ class AIService
      */
     private function extractGroqText(array $json): string
     {
-        $text = $json['choices'][0]['message']['content'] ?? null;
+        $message = $json['choices'][0]['message'] ?? null;
 
-        return is_string($text) ? trim($text) : '';
+        if (! is_array($message)) {
+            return '';
+        }
+
+        $content = $message['content'] ?? null;
+        $text = is_string($content)
+            ? $content
+            : $this->extractGroqContentParts($content);
+
+        // Groq can return raw reasoning wrapped in <think> tags when reasoning is enabled. Never expose
+        // the reasoning itself; keep only the final answer after the closing tag.
+        $text = preg_replace('/<think>.*?<\/think>/is', '', $text) ?? $text;
+
+        return trim($text);
+    }
+
+    /**
+     * @param  mixed  $content
+     */
+    private function extractGroqContentParts(mixed $content): string
+    {
+        if (! is_array($content)) {
+            return '';
+        }
+
+        return trim(collect($content)
+            ->map(function (mixed $part): string {
+                if (is_string($part)) {
+                    return $part;
+                }
+
+                if (! is_array($part)) {
+                    return '';
+                }
+
+                return is_string($part['text'] ?? null)
+                    ? $part['text']
+                    : (is_string($part['content'] ?? null) ? $part['content'] : '');
+            })
+            ->filter()
+            ->implode("\n"));
     }
 
     /**

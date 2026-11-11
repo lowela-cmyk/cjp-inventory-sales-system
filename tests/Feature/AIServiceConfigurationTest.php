@@ -106,6 +106,54 @@ class AIServiceConfigurationTest extends TestCase
         });
     }
 
+    public function test_groq_gpt_oss_excludes_reasoning_and_extracts_the_final_answer(): void
+    {
+        Http::fake([
+            'api.groq.com/*' => Http::response([
+                'choices' => [[
+                    'message' => [
+                        'reasoning' => 'private reasoning is not a recommendation',
+                        'content' => '### Inventory\n- Restock **Diesel** before accepting new orders.',
+                    ],
+                ]],
+            ]),
+        ]);
+        config($this->aiConfig(['api_key' => 'test-groq-key']));
+
+        $result = app(AIService::class)->generateText('Return one recommendation.', [
+            'attempts' => 1,
+            'cache' => false,
+        ]);
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame('### Inventory\n- Restock **Diesel** before accepting new orders.', $result['text']);
+        Http::assertSent(fn ($request): bool => $request['include_reasoning'] === false
+            && $request['reasoning_effort'] === 'low');
+    }
+
+    public function test_groq_raw_reasoning_markup_is_removed_without_exposing_reasoning(): void
+    {
+        Http::fake([
+            'api.groq.com/*' => Http::response([
+                'choices' => [[
+                    'message' => [
+                        'content' => '<think>do not expose this</think>### Sales\n- Collect **PHP 75,000.00**.',
+                    ],
+                ]],
+            ]),
+        ]);
+        config($this->aiConfig(['api_key' => 'test-groq-key']));
+
+        $result = app(AIService::class)->generateText('Return one recommendation.', [
+            'attempts' => 1,
+            'cache' => false,
+        ]);
+
+        $this->assertTrue($result['ok']);
+        $this->assertStringNotContainsString('do not expose this', $result['text']);
+        $this->assertStringContainsString('### Sales', $result['text']);
+    }
+
     public function test_provider_errors_are_returned_without_crashing(): void
     {
         Http::fake([

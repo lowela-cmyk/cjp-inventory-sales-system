@@ -83,7 +83,14 @@ const open = async () => {
 const dialogText = () => page.locator('[data-confirm-dialog]').innerText();
 const isOpen = () => page.locator('[data-confirm-dialog]').evaluate((d) => ! d.hidden);
 
-before(async () => { browser = await chromium.launch(); });
+before(async () => {
+    // macOS CI/dev hosts can reject Playwright's separate headless-shell process at the Mach-port layer. Use the
+    // installed Chrome-for-Testing binary, while allowing CI to provide an explicit browser executable when needed.
+    browser = await chromium.launch({
+        executablePath: process.env.CJP_BROWSER_EXECUTABLE || chromium.executablePath(),
+        args: ['--no-sandbox'],
+    });
+});
 after(async () => { await browser?.close(); });
 
 test('invalid form: browser validation runs first, no dialog', async () => {

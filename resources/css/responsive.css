@@ -2294,3 +2294,86 @@ mark.confirm-new,
         width: 48px;
     }
 }
+
+/* ==================================================================================================================
+   Part 20 #2: Update Delivery modal (see app.css). It sizes to its content at every width: on phones it is a bottom
+   sheet instead of the full-screen modal above, so there is no blank space under the buttons; the body scrolls only
+   when the content is taller than the screen.
+   ================================================================================================================== */
+@media (max-width: 1023px) {
+    .admin-modal-delivery > .modal-titlebar .modal-close {
+        top: 8px;
+        width: var(--rsp-tap);
+        height: var(--rsp-tap);
+    }
+
+    .admin-modal-delivery > .modal-titlebar .modal-close::before,
+    .admin-modal-delivery > .modal-titlebar .modal-close::after {
+        inset: 21px 12px auto;
+    }
+
+    .admin-modal-delivery > .modal-footer .btn {
+        min-height: var(--rsp-tap);
+    }
+}
+
+@media (max-width: 639px) {
+    .modal-backdrop:has(> .admin-modal.admin-modal-delivery:not(.system-confirm-modal)) {
+        align-items: flex-end;
+        padding: 0;
+    }
+
+    .modal-backdrop > .admin-modal.admin-modal-delivery:not(.system-confirm-modal) {
+        --du-pad: var(--rsp-gutter);
+        width: 100%;
+        height: auto;
+        max-height: calc(100dvh - 24px);
+        border-radius: 16px 16px 0 0;
+    }
+
+    .admin-modal.admin-modal-delivery > .modal-titlebar {
+        height: 60px;
+        padding: 0 64px 0 var(--du-pad);
+    }
+
+    .admin-modal.admin-modal-delivery > .modal-titlebar h2 {
+        display: flex;
+        font-size: 16px;
+    }
+
+    /* Cancel and Update Delivery side by side (the shared phone footer rule), clear of the home indicator. */
+    .admin-modal.admin-modal-delivery > .modal-footer {
+        gap: 8px; /* the shared rule sizes each button calc(50% - 4px) */
+        padding: 12px var(--du-pad) calc(12px + env(safe-area-inset-bottom));
+    }
+
+    .admin-modal-delivery > .modal-footer .btn {
+        min-width: 0;
+    }
+
+    .delivery-update-field select {
+        height: 48px;
+        font-size: 16px; /* 16px keeps iOS from zooming into the field. */
+    }
+}
+
+/* Sales -> Receivables "⋮" menu: the same compact View / Update Delivery as the table (app.css), centered in a panel
+   that fits them (the menu's 168px minimum is dropped), 4px apart, 44px tall for touch. */
+@media (max-width: 767px) {
+    .table-wrap > table.card-table td.card-actions.is-open > .sales-row-actions.row-actions-stack {
+        min-width: 0;
+        align-items: center;
+        gap: 4px;
+    }
+
+    .table-wrap > table.card-table td.card-actions.is-open > .sales-row-actions.row-actions-stack > .btn.btn {
+        min-height: var(--rsp-tap);
+    }
+}
+
+/* Touch tablets: the compact buttons keep the 44px touch target (width unchanged). */
+@media (min-width: 768px) and (max-width: 1023px) and (pointer: coarse) {
+    .table-wrap > .admin-table td > .sales-row-actions.row-actions-stack > .btn.btn {
+        min-height: var(--rsp-tap);
+    }
+}

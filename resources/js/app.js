@@ -23,9 +23,31 @@ const isOpenSelectList = (target) => {
     }
 };
 
+// Focus (opt-in): a modal with a [data-modal-autofocus] field (e.g. Update Delivery) moves focus to that field when it
+// opens, keeps Tab inside the dialog, and gives focus back to the button that opened it when it closes.
+const modalOpeners = new WeakMap();
+
+const visibleFocusables = (root) => [...root.querySelectorAll('a[href], button, input:not([type="hidden"]), select, textarea, [tabindex]:not([tabindex="-1"])')]
+    .filter((node) => !node.disabled && !node.closest('[hidden]') && node.getClientRects().length);
+
+const restoreFocus = (opener) => {
+    // On phones the opener sits in a row's "⋮" menu that has closed since; its toggle takes the focus instead.
+    const target = opener.isConnected && opener.getClientRects().length
+        ? opener
+        : opener.closest('td, tr')?.querySelector('.card-menu-toggle');
+    target?.focus?.({ preventScroll: true });
+};
+
 const closeModal = (modal) => {
+    const wasOpen = modal?.classList.contains('is-open');
     modal?.classList.remove('is-open');
     modal?.setAttribute('aria-hidden', 'true');
+
+    const opener = modal ? modalOpeners.get(modal) : null;
+    if (opener) {
+        modalOpeners.delete(modal);
+        if (wasOpen && !document.querySelector('.modal-backdrop.is-open')) restoreFocus(opener);
+    }
 };
 
 // Receipt lightbox: show one slide at a time; images load on first open (they are private, role-gated files).
@@ -54,10 +76,18 @@ const openModal = (modal) => {
         }
     });
 
+    const opener = document.activeElement;
+
     modal.classList.add('is-open');
     modal.setAttribute('aria-hidden', 'false');
 
     modal.querySelectorAll('[data-sales-items]').forEach(updateSalesTotals);
+
+    const autofocus = modal.querySelector('[data-modal-autofocus]');
+    if (autofocus) {
+        if (opener instanceof HTMLElement && opener !== document.body && !modal.contains(opener)) modalOpeners.set(modal, opener);
+        requestAnimationFrame(() => autofocus.focus({ preventScroll: true }));
+    }
 };
 
 let pendingConfirmForm = null;
@@ -680,6 +710,26 @@ document.addEventListener('keydown', (event) => {
         showReceiptSlide(openLightbox, Number(openLightbox.dataset.receiptIndex || 0) + (event.key === 'ArrowRight' ? 1 : -1));
     }
 
+    // Tab stays inside a focus-managed modal (see modalOpeners), unless the confirm dialog is open on top of it.
+    if (event.key === 'Tab' && !document.documentElement.classList.contains('has-confirm-open')) {
+        const dialog = document.querySelector('.modal-backdrop.is-open:has([data-modal-autofocus]) [role="dialog"]');
+        const nodes = dialog ? visibleFocusables(dialog) : [];
+        if (nodes.length) {
+            const first = nodes[0];
+            const last = nodes[nodes.length - 1];
+            if (!dialog.contains(document.activeElement)) {
+                event.preventDefault();
+                first.focus();
+            } else if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first.focus();
+            }
+        }
+    }
+
     // Escape on an open dropdown list only closes that list (see select-picker.css), not the modal around it.
     if (event.key === 'Escape' && !isOpenSelectList(event.target)) {
         document.querySelectorAll('.modal-backdrop.is-open').forEach((modal) => {
@@ -949,6 +999,22 @@ document.querySelectorAll('[data-withdrawal-upload]').forEach((form) => {
     row.scrollIntoView({ block: 'center', behavior: 'smooth' });
     row.addEventListener('click', () => row.classList.remove('is-highlighted'), { once: true });
 })();
+
+// Part 20 #2: Update Delivery is enabled once a new status is chosen (the list starts on a "Choose" placeholder).
+// The server still validates every transition; this only keeps an empty choice from being sent.
+document.querySelectorAll('[data-delivery-update-form]').forEach((form) => {
+    const select = form.elements.namedItem('delivery_status');
+    // The button sits in the modal footer, tied to the form by its form="" attribute.
+    const submit = submitButtonsFor(form).find((button) => button.matches('[data-delivery-update-submit]'));
+    if (!(select instanceof HTMLSelectElement) || !submit) return;
+    const sync = () => {
+        if (form.dataset.submitted === 'true') return;
+        submit.disabled = select.value === '';
+    };
+    select.addEventListener('change', sync);
+    select.addEventListener('input', sync);
+    sync();
+});
 
 // A modal the server asks to reopen (e.g. after a validation error or a payment) opens last, once every helper above is
 // defined: openModal() uses updateSalesTotals, so calling it earlier stopped the rest of this script on that page.

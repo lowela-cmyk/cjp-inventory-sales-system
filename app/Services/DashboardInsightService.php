@@ -22,7 +22,7 @@ Format rules (strict):
 - Use these group headings, each on its own line, only when the group has a recommendation: "### Inventory", "### Fuel Lifting", "### Sales", "### Operational Improvements".
 - Under each heading write bullet points that start with "- ". One concise, actionable recommendation per bullet (at most 25 words). At most 4 bullets per group.
 - Put the key figure or keyword of each bullet in bold with **double asterisks**.
-- No paragraphs, no introduction, no conclusion, no tables, no repeated points.
+- Return only the final recommendation headings and bullets. Do not include reasoning, analysis, an introduction, a conclusion or tables. Do not repeat points.
 
 Do not invent numbers, transactions, customers, causes or events. Explain the inventory variance (Missing amount and Inventory Variance Rate) when it is not zero. If the data is insufficient for a conclusion, say so in a bullet. Provide decision support only.';
 
@@ -59,7 +59,7 @@ Do not invent numbers, transactions, customers, causes or events. Explain the in
         $result = $this->ai->generateText([
             ['role' => 'system', 'content' => self::SYSTEM_PROMPT],
             ['role' => 'user', 'content' => "Generate the grouped AI Recommendations from these dashboard figures.\n\n".json_encode($payload, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR)],
-        ], ['temperature' => 0.2, 'max_output_tokens' => 520]);
+        ], ['temperature' => 0.2, 'max_output_tokens' => 720, 'reasoning_effort' => 'low']);
 
         if ($result['ok']) {
             // Part 20 final: a bullet citing a figure that is not in the dashboard data is dropped, never shown.

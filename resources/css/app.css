@@ -6224,3 +6224,87 @@ body.login-page {
         color: var(--admin-ink);
     }
 }
+
+/* Ledger / Transaction / Garage table alignment. These overrides are intentionally scoped to the three requested
+   tables so Sales, Stock-In, Stock-Out and Purchases retain their own presentation rules. */
+@media (min-width: 768px) {
+    :is(section[data-tab-panel="ledger"], section[data-tab-panel="transactions"]) .table-wrap {
+        max-width: 100%;
+    }
+
+    :is(section[data-tab-panel="ledger"], section[data-tab-panel="transactions"]) .table-wrap > table.admin-table.ledger-table {
+        width: 100%;
+        min-width: 960px;
+        max-width: none;
+        table-layout: auto;
+    }
+
+    :is(section[data-tab-panel="ledger"], section[data-tab-panel="transactions"]) .table-wrap > table.admin-table.ledger-table :is(th, td),
+    .table-wrap > table.admin-table.garage-table :is(th, td) {
+        padding: 12px 14px;
+        line-height: 1.3;
+        vertical-align: middle;
+        white-space: nowrap;
+        overflow-wrap: normal;
+        word-break: normal;
+        text-align: left;
+    }
+
+    /* Ledger and Transaction: every visible value starts at the left edge, including short quantities. */
+    :is(section[data-tab-panel="ledger"], section[data-tab-panel="transactions"]) .table-wrap > table.admin-table.ledger-table :is(th, td):is(:nth-child(1), :nth-child(2), :nth-child(3)) {
+        text-align: left;
+    }
+
+    :is(section[data-tab-panel="ledger"], section[data-tab-panel="transactions"]) .table-wrap > table.admin-table.ledger-table :is(th, td):is(:nth-child(4), :nth-child(5), :nth-child(6)) {
+        min-width: 140px;
+        text-align: left;
+        font-variant-numeric: tabular-nums;
+    }
+
+    :is(section[data-tab-panel="ledger"], section[data-tab-panel="transactions"]) .table-wrap > table.admin-table.ledger-table :is(th, td):nth-child(7) {
+        min-width: 125px;
+        text-align: left;
+    }
+
+    :is(section[data-tab-panel="ledger"], section[data-tab-panel="transactions"]) .table-wrap > table.admin-table.ledger-table td:has(.status-badge) .status-badge {
+        margin: 0;
+    }
+
+    /* Transaction actions are text-aligned with the rest of the row, not centered in a wide cell. */
+    section[data-tab-panel="transactions"] .table-wrap > table.admin-table.ledger-table :is(th, td):nth-child(10) {
+        min-width: 100px;
+        text-align: left;
+    }
+
+    section[data-tab-panel="transactions"] .table-wrap > table.admin-table.ledger-table :is(th, td):nth-child(10) .btn {
+        margin: 0;
+    }
+
+    /* Garage: every visible value starts at the left edge, including capacity, stock, and average cost. */
+    .table-wrap > table.admin-table.garage-table {
+        width: 100%;
+        min-width: 900px;
+        max-width: none;
+        table-layout: auto;
+    }
+
+    .table-wrap > table.admin-table.garage-table :is(th, td):is(:nth-child(1), :nth-child(5)) {
+        min-width: 170px;
+        text-align: left;
+    }
+
+    .table-wrap > table.admin-table.garage-table :is(th, td):is(:nth-child(2), :nth-child(3), :nth-child(4)) {
+        min-width: 135px;
+        text-align: left;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .table-wrap > table.admin-table.garage-table :is(th, td):nth-child(7) {
+        min-width: 100px;
+        text-align: left;
+    }
+
+    .table-wrap > table.admin-table.garage-table :is(th, td):nth-child(7) .btn {
+        margin: 0;
+    }
+}

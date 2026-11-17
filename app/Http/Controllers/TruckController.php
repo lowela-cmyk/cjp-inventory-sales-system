@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Services\IdempotencyService;
 use App\Services\TruckAvailabilityService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -16,44 +15,45 @@ use Illuminate\Validation\Rule;
 class TruckController extends Controller
 {
     public function __construct(
-        private readonly TruckAvailabilityService $availability,
-        private readonly IdempotencyService $idempotency
+        private readonly TruckAvailabilityService $availability
     ) {}
 
     public function store(Request $request): RedirectResponse
     {
         $this->normalizeIdentifiers($request);
-        $data = $request->validate($this->rules());
+        $data = $request->validate($this->rules(), $this->messages());
 
-        // The code is generated, never typed (Part 8 #7); a colliding concurrent create retries with the next number.
-        $this->idempotency->retryOnCollision('truck_code', fn () => DB::table('trucks')->insert([
-            'truck_code' => $this->availability->nextTruckCode(),
+        // Part 23 #8: the Truck ID is typed by hand (TRUCK-###); the unique rule and index reject a duplicate.
+        DB::table('trucks')->insert([
+            'truck_code' => $data['truck_code'],
             'plate_number' => $data['plate_number'],
-            'name' => $data['name'],
-            'description' => $data['description'] ?? null,
             'capacity_liters' => round((float) $data['capacity_liters'], 2),
             'status' => $data['status'],
             'created_at' => now(),
             'updated_at' => now(),
-        ]), 5);
+        ]);
 
         return redirect()->route($this->routeName($request))->with('status', 'Truck added successfully.');
     }
 
     public function update(Request $request, int $truck): RedirectResponse
     {
-        abort_unless(DB::table('trucks')->where('id', $truck)->exists(), 404);
+        $current = DB::table('trucks')->where('id', $truck)->first(['id', 'truck_code', 'status']);
+        abort_unless($current !== null, 404);
         $this->normalizeIdentifiers($request);
-        $data = $request->validate($this->rules($truck));
+        // A legacy code (e.g. the plate) may be kept as it is; a new code must follow TRUCK-###.
+        if ($request->input('truck_code') === '' || $request->input('truck_code') === null) {
+            $request->merge(['truck_code' => $current->truck_code]);
+        }
+        $data = $request->validate($this->rules($truck, $request->input('truck_code') === $current->truck_code), $this->messages());
 
-        if (in_array($data['status'], ['maintenance', 'inactive'], true) && $this->availability->hasActiveAssignment($truck)) {
-            return back()->withErrors(['status' => 'A truck with an active lift cannot be moved to maintenance or inactive.'])->withInput();
+        if ($data['status'] === 'maintenance' && $this->availability->hasActiveAssignment($truck)) {
+            return back()->withErrors(['status' => 'A truck with an active lift cannot be moved to maintenance.'])->withInput();
         }
 
         DB::table('trucks')->where('id', $truck)->update([
+            'truck_code' => $data['truck_code'],
             'plate_number' => $data['plate_number'],
-            'name' => $data['name'],
-            'description' => $data['description'] ?? null,
             'capacity_liters' => round((float) $data['capacity_liters'], 2),
             'status' => $data['status'],
             'updated_at' => now(),
@@ -63,31 +63,42 @@ class TruckController extends Controller
         return redirect()->route($this->routeName($request))->with('status', 'Truck updated successfully.');
     }
 
+    /** Part 23 #8: Inactive is retired (use Maintenance); this only brings a legacy inactive truck back. */
     public function toggleStatus(Request $request, int $truck): RedirectResponse
     {
         $row = DB::table('trucks')->where('id', $truck)->first(['id', 'status']);
         abort_unless($row !== null, 404);
 
-        if ($row->status !== 'inactive' && $this->availability->hasActiveAssignment($truck)) {
-            return back()->withErrors(['status' => 'A truck with an active lift cannot be deactivated.']);
+        if ($row->status !== 'inactive') {
+            return back()->withErrors(['status' => 'Trucks are no longer deactivated. Set the Operational Status to Maintenance instead.']);
         }
 
-        DB::table('trucks')->where('id', $truck)->update([
-            'status' => $row->status === 'inactive' ? 'available' : 'inactive',
-            'updated_at' => now(),
-        ]);
+        DB::table('trucks')->where('id', $truck)->update(['status' => 'available', 'updated_at' => now()]);
 
-        return redirect()->route($this->routeName($request))->with('status', $row->status === 'inactive' ? 'Truck activated successfully.' : 'Truck deactivated successfully.');
+        return redirect()->route($this->routeName($request))->with('status', 'Truck activated successfully.');
     }
 
-    private function rules(?int $truckId = null): array
+    private function rules(?int $truckId = null, bool $keepsLegacyCode = false): array
     {
         return [
+            'truck_code' => array_filter([
+                'required', 'string', 'max:30',
+                $keepsLegacyCode ? null : 'regex:'.TruckAvailabilityService::CODE_PATTERN,
+                Rule::unique('trucks', 'truck_code')->ignore($truckId),
+            ]),
             'plate_number' => ['required', 'string', 'max:50', Rule::unique('trucks', 'plate_number')->ignore($truckId)],
-            'name' => ['required', 'string', 'max:100'],
-            'description' => ['nullable', 'string', 'max:255'],
-            'capacity_liters' => ['required', 'numeric', 'gt:0', 'max:1000000'],
+            'capacity_liters' => ['required', 'numeric', 'gt:0', 'max:'.TruckAvailabilityService::MAX_CAPACITY_LITERS],
             'status' => ['required', Rule::in(TruckAvailabilityService::MANAGED_STATUSES)],
+        ];
+    }
+
+    private function messages(): array
+    {
+        return [
+            'truck_code.required' => 'Enter the Truck ID (e.g. TRUCK-001).',
+            'truck_code.regex' => 'The Truck ID must look like TRUCK-001.',
+            'truck_code.unique' => 'This Truck ID is already used by another truck.',
+            'capacity_liters.max' => 'A truck holds at most '.number_format(TruckAvailabilityService::MAX_CAPACITY_LITERS).' L.',
         ];
     }
 
@@ -95,6 +106,7 @@ class TruckController extends Controller
     {
         $request->merge([
             'plate_number' => Str::upper(trim((string) $request->input('plate_number'))),
+            'truck_code' => Str::upper(trim((string) $request->input('truck_code'))),
         ]);
     }
 

@@ -75,9 +75,9 @@ class InventoryOfficerPurchaseController extends Controller
             'delivery_type' => $data['delivery_type'] ?? null,
         ];
         $filtersFor = fn (string $tab): array => $tab === $activeTab ? $filters : [];
-        $purchases = $this->purchaseRows($search === '' ? null : $search, $filtersFor('purchases'));
-        $stockIn = $this->stockInRows($search === '' ? null : $search, $filtersFor('stock-in'));
-        $stockOut = $this->stockOutRows($search === '' ? null : $search, $filtersFor('stock-out'));
+        $purchases = $activeTab === 'purchases' ? $this->purchaseRows($search === '' ? null : $search, $filtersFor('purchases')) : collect();
+        $stockIn = $activeTab === 'stock-in' ? $this->stockInRows($search === '' ? null : $search, $filtersFor('stock-in')) : collect();
+        $stockOut = $activeTab === 'stock-out' ? $this->stockOutRows($search === '' ? null : $search, $filtersFor('stock-out')) : collect();
         $purchaseFuelTypeIds = $purchases->pluck('fuel_type_id')->map(fn (mixed $id): int => (int) $id)->unique()->values()->all();
         $purchaseDepotIds = $purchases->pluck('depot_id')->map(fn (mixed $id): int => (int) $id)->unique()->values()->all();
 
@@ -99,9 +99,9 @@ class InventoryOfficerPurchaseController extends Controller
                 ->where('status', 'active')
                 ->orderBy('name')
                 ->get(['id', 'name']),
-            'depotRows' => $this->depotRows($search === '' ? null : $search, $filtersFor('depots')),
+            'depotRows' => $activeTab === 'depots' ? $this->depotRows($search === '' ? null : $search, $filtersFor('depots')) : collect(),
             // Part 13: Garage tab (tank cards per fuel and garage lots).
-            'garage' => $this->garageStock->tab($activeTab === 'garage' ? ['fuel_type_id' => $data['fuel_type_id'] ?? null, 'tank_id' => $data['tank_id'] ?? null, 'date_from' => $unloaded['from'], 'date_to' => $unloaded['to']] : [], $activeTab === 'garage' && $search !== '' ? $search : null),
+            'garage' => $activeTab === 'garage' ? $this->garageStock->tab($activeTab === 'garage' ? ['fuel_type_id' => $data['fuel_type_id'] ?? null, 'tank_id' => $data['tank_id'] ?? null, 'date_from' => $unloaded['from'], 'date_to' => $unloaded['to']] : [], $activeTab === 'garage' && $search !== '' ? $search : null) : ['fuels' => collect(), 'tankRows' => collect(), 'lots' => collect(), 'tankOptions' => [], 'fuelOptions' => []],
             'garageFilters' => $activeTab === 'garage' ? ['fuel_type_id' => $data['fuel_type_id'] ?? null, 'tank_id' => $data['tank_id'] ?? null, 'date_from' => $unloaded['from'], 'date_to' => $unloaded['to']] : [],
             'filters' => $filters,
             'filterOptions' => [
@@ -116,7 +116,7 @@ class InventoryOfficerPurchaseController extends Controller
             'fuelTypes' => DB::table('fuel_types')
                 ->where('status', 'active')
                 ->whereIn('code', array_keys(config('fuels.approved', ['F1' => true, 'UNL' => true, 'DSL' => true, 'PREM' => true])))
-                ->when($search !== '', fn (Builder $query): Builder => $query->whereIn('id', $purchaseFuelTypeIds ?: [0]))
+                ->when($activeTab === 'purchases' && $search !== '', fn (Builder $query): Builder => $query->whereIn('id', $purchaseFuelTypeIds ?: [0]))
                 ->orderBy('name')
                 ->get(['id', 'name']),
             'deliveryTypes' => SalesOfficerCustomerController::DELIVERY_TYPES,
@@ -133,6 +133,7 @@ class InventoryOfficerPurchaseController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $data = $this->validatedPurchaseData($request);
+        $this->assertMinimumDepotOrder((float) $data['quantity_ordered_liters']);
         $idempotencyKey = (string) ($data['idempotency_key'] ?? Str::uuid());
         unset($data['idempotency_key']);
 
@@ -159,6 +160,7 @@ class InventoryOfficerPurchaseController extends Controller
     public function update(Request $request, int $purchaseItem): RedirectResponse
     {
         $data = $this->validatedPurchaseData($request);
+        $this->assertMinimumDepotOrder((float) $data['quantity_ordered_liters'], $purchaseItem);
 
         try {
             $newCode = $this->purchaseService->updatePurchase($purchaseItem, $data, (int) $request->user()->id);
@@ -184,6 +186,7 @@ class InventoryOfficerPurchaseController extends Controller
             'quantity_ordered_liters' => ['required', 'numeric', 'gt:0', 'max:1000000'],
             'unit_cost' => ['required', 'numeric', 'gte:0', 'max:10000'],
         ]);
+        $this->assertMinimumDepotOrder((float) $data['quantity_ordered_liters'], $purchaseItem);
         $purchase = DB::table('purchase_items')
             ->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
             ->where('purchase_items.id', $purchaseItem)
@@ -324,6 +327,28 @@ class InventoryOfficerPurchaseController extends Controller
     /**
      * @return array<string, mixed>
      */
+    /**
+     * Part 23 #2: a depot order is at least config('fuels.min_depot_order_liters') (40,000 L). An edit that keeps the
+     * stored quantity is allowed, so historical smaller orders stay editable for their other fields.
+     */
+    private function assertMinimumDepotOrder(float $liters, ?int $purchaseItemId = null): void
+    {
+        $minimum = (float) config('fuels.min_depot_order_liters', 40000);
+        if ($minimum <= 0 || $liters >= $minimum) {
+            return;
+        }
+        if ($purchaseItemId !== null) {
+            $stored = DB::table('purchase_items')->where('id', $purchaseItemId)->value('quantity_ordered_liters');
+            if ($stored !== null && abs((float) $stored - $liters) < 0.005) {
+                return;
+            }
+        }
+
+        throw ValidationException::withMessages([
+            'quantity_ordered_liters' => 'The minimum order quantity to the depot is '.number_format($minimum).' L.',
+        ]);
+    }
+
     private function validatedPurchaseData(Request $request): array
     {
         $data = $request->validate([
@@ -441,7 +466,8 @@ class InventoryOfficerPurchaseController extends Controller
             ->orderBy('name')
             ->select(['id', 'depot_code', 'name', 'address', 'contact_person', 'phone', 'status']);
 
-        $paginator = $query->paginate(25, ['*'], 'depots_page')->withQueryString();
+        \App\Support\TableSort::apply($query, ['name' => 'name', 'code' => 'depot_code'], 'name', 'id', 'asc');
+        $paginator = $query->paginate(\App\Support\TablePagination::size(), ['*'], 'depots_page')->withQueryString();
         $transformed = collect($paginator->items())->map(fn (\stdClass $row): array => [
             'id' => (int) $row->id,
             'depot_code' => $row->depot_code,
@@ -477,7 +503,8 @@ class InventoryOfficerPurchaseController extends Controller
             ->orderByDesc('stock_outs.stock_out_at')
             ->orderByDesc('stock_outs.id');
 
-        $paginator = $query->paginate(25, ['*'], 'stock_out_page')->withQueryString();
+        \App\Support\TableSort::apply($query, ['date' => 'stock_outs.stock_out_at', 'code' => 'stock_outs.stock_out_code', 'quantity' => 'stock_outs.quantity_liters'], 'date', 'stock_outs.id');
+        $paginator = $query->paginate(\App\Support\TablePagination::size(), ['*'], 'stock_out_page')->withQueryString();
         $sourceChanges = Schema::hasTable('sale_source_changes')
             ? DB::table('sale_source_changes')
                 ->leftJoin('users as source_change_users', 'source_change_users.id', '=', 'sale_source_changes.changed_by')

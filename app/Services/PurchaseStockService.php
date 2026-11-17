@@ -84,6 +84,10 @@ class PurchaseStockService
             $line->available = round(max(0, $line->remaining_in_depot - $line->reserved_depot), 2);
             $line->in_garage = round((float) ($inGarage[$id] ?? 0), 2);
             $line->on_truck = round(max(0, $line->lifted - (float) ($offLifts[$id] ?? 0)), 2);
+            // Do not infer missing historical allocations. Expose the inconsistency and hold future withdrawals.
+            $line->conservation_difference_liters = round($line->remaining_in_depot + $line->on_truck + $line->in_garage + $line->released - $ordered, 2);
+            $line->requires_reconciliation = abs($line->conservation_difference_liters) > .005;
+            if ($line->requires_reconciliation) $line->available = 0.0;
             $line->not_lifted = round(max(0, $ordered - (float) ($physicallyLifted[$id] ?? 0) - (float) ($directFromDepot[$id] ?? 0)), 2);
             $line->label = $line->purchase_code.' · '.mb_strtoupper((string) $line->fuel_name);
             // Record Sales dropdowns: "PUR-002 – PREMIUM – 60,000 L in stock – ₱55.00/L".
@@ -140,6 +144,31 @@ class PurchaseStockService
         return $id === null ? [] : [$id];
     }
 
+    /** SQL equivalent of the existing main/F1/tank promises, used before Stock-In COUNT/LIMIT. */
+    public function reservationTotalsQuery(): Builder
+    {
+        $released = DB::table('stock_outs')->where('status', 'released')->whereNotNull('sale_item_id')
+            ->groupBy('sale_item_id')->selectRaw("sale_item_id, SUM(CASE WHEN stock_outs.portion = 'f1' THEN 0 ELSE stock_outs.quantity_liters END) as main, SUM(CASE WHEN stock_outs.portion = 'f1' THEN stock_outs.quantity_liters ELSE 0 END) as f1");
+        $portion = function (string $column, string $quantity, string $part) use ($released): Builder {
+            $due = "sale_items.$quantity - COALESCE(released.$part, 0)";
+            return DB::table('sale_items')->join('sales', 'sales.id', '=', 'sale_items.sale_id')
+                ->leftJoinSub($released, 'released', 'released.sale_item_id', '=', 'sale_items.id')
+                ->whereNull('sales.deleted_at')->whereIn('sales.status', self::OPEN_SALE_STATUSES)
+                ->whereNotIn('sales.delivery_status', ['delivered', 'cancelled'])->whereNotNull('sale_items.'.$column)
+                ->groupBy('sale_items.'.$column)
+                ->selectRaw("sale_items.$column as purchase_item_id, SUM(CASE WHEN $due > 0 THEN $due ELSE 0 END) as liters");
+        };
+        $union = $portion('purchase_item_id', 'main_quantity_liters', 'main')
+            ->unionAll($portion('f1_purchase_item_id', 'f1_quantity_liters', 'f1'));
+        // Tank reservations retain the established proportional, per-purchase rounding. Only tank lots are read.
+        $tankIds = DB::table('garage_stocks')->distinct()->pluck('purchase_item_id')->map(fn ($id) => (int) $id)->all();
+        foreach (app(GarageStockService::class)->tankReservedByPurchase($tankIds) as $id => $liters) {
+            $union->unionAll(DB::query()->selectRaw('? as purchase_item_id, ? as liters', [(int) $id, $liters]));
+        }
+
+        return DB::query()->fromSub($union, 'promises')->groupBy('purchase_item_id')->selectRaw('purchase_item_id, SUM(liters) as liters');
+    }
+
     /**
      * Sum of a query's purchase stock by fuel: on hand per fuel id (for the dashboard and summary cards).
      *
@@ -148,10 +177,13 @@ class PurchaseStockService
      */
     public function onHandByFuel(?array $purchaseItemIds = null): array
     {
-        return $this->lines($purchaseItemIds)
-            ->groupBy('fuel_type_id')
-            ->map(fn (Collection $lines): float => round((float) $lines->sum('on_hand'), 2))
-            ->all();
+        $released = DB::query()->fromSub(self::releasesByPurchaseQuery(), 'release_rows')->groupBy('purchase_item_id')->selectRaw('purchase_item_id, SUM(liters) as liters');
+        return DB::table('purchase_items')->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
+            ->leftJoinSub($released, 'released', 'released.purchase_item_id', '=', 'purchase_items.id')
+            ->whereNull('purchases.deleted_at')->where('purchases.status', '!=', 'cancelled')
+            ->when($purchaseItemIds !== null, fn (Builder $q) => $q->whereIn('purchase_items.id', $purchaseItemIds ?: [0]))
+            ->groupBy('purchase_items.fuel_type_id')->selectRaw('purchase_items.fuel_type_id, ROUND(SUM(CASE WHEN purchase_items.quantity_ordered_liters > COALESCE(released.liters, 0) THEN purchase_items.quantity_ordered_liters - COALESCE(released.liters, 0) ELSE 0 END), 2) as liters')
+            ->pluck('liters', 'fuel_type_id')->map(fn ($liters) => (float) $liters)->all();
     }
 
     /**

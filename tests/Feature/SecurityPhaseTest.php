@@ -62,7 +62,7 @@ class SecurityPhaseTest extends TestCase
 
         $this->post(route('login.store'), ['username' => $user->email, 'password' => 'wrong'])
             ->assertStatus(429)
-            ->assertSee('Too many attempts. Please try again in 1 minute.')
+            ->assertSee('Too many failed login attempts. Please try again in 15 minutes.')
             ->assertSee('id="username"', false);
     }
 
@@ -76,18 +76,18 @@ class SecurityPhaseTest extends TestCase
     public function test_the_per_account_limit_holds_across_ips_even_behind_a_trusted_proxy(): void
     {
         // Behind a trusted proxy each request may carry a different real client IP;
-        // the account still locks after 10 failures in 15 minutes.
+        // the account still locks on its 10th failure in 15 minutes (Part 21 #3: the failure that reaches the limit locks).
         TrustProxies::at(['127.0.0.1']);
         $user = User::factory()->create(['role' => 'admin', 'status' => 'active', 'approval_status' => 'approved']);
 
         $statuses = [];
-        for ($i = 1; $i <= 11; $i++) {
+        for ($i = 1; $i <= 10; $i++) {
             $statuses[] = $this->withHeader('X-Forwarded-For', '198.51.100.'.$i)
                 ->post(route('login.store'), ['username' => $user->email, 'password' => 'wrong'])->getStatusCode();
         }
 
-        $this->assertNotContains(429, array_slice($statuses, 0, 10), 'Each IP alone stays under its own limit.');
-        $this->assertSame(429, $statuses[10], 'The 11th failure for the same account is throttled.');
+        $this->assertNotContains(429, array_slice($statuses, 0, 9), 'Each IP alone stays under its own limit.');
+        $this->assertSame(429, $statuses[9], 'The 10th failure for the same account locks it.');
     }
 
     public function test_readiness_audit_still_fails_on_a_development_env_file(): void

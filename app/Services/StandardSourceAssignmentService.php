@@ -15,6 +15,38 @@ class StandardSourceAssignmentService
         private readonly TruckAvailabilityService $truckAvailability
     ) {}
 
+    private array $displayPools = [];
+
+    private ?object $displayRequest = null;
+
+    private ?array $displayEligiblePurchaseIds = null;
+
+    /** Reuse fuel-level candidate reads across the visible orders. Mutation paths never use these display caches. */
+    public function displayOptions(object $sale, Collection $items): array
+    {
+        if ($this->displayRequest !== request()) {
+            $this->displayRequest = request();
+            $this->displayPools = [];
+            $this->displayEligiblePurchaseIds = null;
+        }
+        if ($sale->delivery_type !== 'standard' || in_array($sale->delivery_status, ['delivered', 'cancelled'], true)) return ['scheduled' => [], 'truck' => [], 'garage' => []];
+        $fuelIds = $items->pluck('fuel_type_id')->unique();
+        if ($fuelIds->count() !== 1) return ['scheduled' => [], 'truck' => [], 'garage' => []];
+        $fuelId = (int) $fuelIds->first();
+        $needed = round((float) $items->sum(fn ($i) => (float) $i->quantity_liters - (float) $i->fulfilled_quantity_liters), 2);
+        $eligible = $this->displayEligiblePurchaseIds ??= app(PurchaseStockService::class)->lines()->reject(fn ($line) => $line->requires_reconciliation)->keys()->all();
+        $pool = $this->displayPools[$fuelId] ??= [
+            'scheduled' => $this->liftOptions($fuelId, 'scheduled', 0)->whereIn('purchase_item_id', $eligible),
+            'truck' => $this->liftOptions($fuelId, LiftAllocationService::CARRYING_STATUSES, 0)->whereIn('purchase_item_id', $eligible),
+            'garage' => app(GarageStockService::class)->tankOptions($fuelId),
+        ];
+        return [
+            'scheduled' => $pool['scheduled']->filter(fn ($r) => (float) $r->room >= $needed)->map(fn ($r) => ['id' => (int) $r->haul_id, 'label' => $r->haul_code.' · '.number_format($r->room, 2).' L available'])->values()->all(),
+            'truck' => $pool['truck']->filter(fn ($r) => (float) $r->room >= $needed)->map(fn ($r) => ['id' => (int) $r->haul_id, 'label' => $r->haul_code.' · '.number_format($r->room, 2).' L left on truck'])->values()->all(),
+            'garage' => $pool['garage']->filter(fn ($r) => (float) $r->available >= $needed)->map(fn ($r) => ['id' => (int) $r->id, 'label' => $r->name.' · '.number_format($r->available, 2).' L available'])->values()->all(),
+        ];
+    }
+
     public function options(int $saleId): array
     {
         $sale = $this->sale($saleId);
@@ -42,7 +74,7 @@ class StandardSourceAssignmentService
      * for it. Part 18 add-on: the garage source is a TANK ("garage_tank"): fuel in it is mixed, so the order sells from
      * the tank at its average cost and its release draws from the lots in it.
      *
-     * @param  array{delivery_truck_id?: int, delivery_driver_user_id?: int, delivery_date?: string, delivery_status?: string}  $delivery
+     * @param  array{delivery_truck_id?: int, delivery_driver_user_id?: int, delivery_date?: string}  $delivery
      */
     public function assign(int $saleId, string $sourceType, int $sourceId, int $userId, array $delivery = []): void
     {
@@ -112,10 +144,7 @@ class StandardSourceAssignmentService
                     'delivery_date' => $delivery['delivery_date'],
                     'updated_at' => now(),
                 ]);
-                $status = $delivery['delivery_status'] ?? 'pending';
-                if ($status !== 'pending') {
-                    $this->saleConfirmation->updateDeliveryStatus($saleId, $status, $userId);
-                }
+                // Part 21 #1: the order stays Pending; its assigned driver moves the delivery on.
             }
 
             if ($sourceType === 'truck') {
@@ -203,7 +232,7 @@ class StandardSourceAssignmentService
 
     private function truckOptions(int $fuelId, float $needed): array
     {
-        return $this->liftOptions($fuelId, ['lifted', 'completed'], $needed)->map(fn (object $row): array => [
+        return $this->liftOptions($fuelId, LiftAllocationService::CARRYING_STATUSES, $needed)->map(fn (object $row): array => [
             'id' => (int) $row->haul_id,
             'label' => $row->haul_code.' · '.number_format($row->room, 2).' L left on truck',
         ])->all();
@@ -225,8 +254,8 @@ class StandardSourceAssignmentService
                 $join->on('haul_allocations.haul_id', '=', 'hauls.id')->where('haul_allocations.status', '!=', 'cancelled');
             })
             ->whereNull('hauls.deleted_at')->whereIn('hauls.status', (array) $statuses)->where('hauls.fuel_type_id', $fuelId)
-            ->groupBy('hauls.id', 'hauls.haul_code', 'hauls.quantity_liters')
-            ->selectRaw('hauls.id as haul_id, hauls.haul_code, hauls.quantity_liters - COALESCE(SUM(haul_allocations.quantity_liters), 0) as room')
+            ->groupBy('hauls.id', 'hauls.haul_code', 'hauls.quantity_liters', 'hauls.purchase_item_id')
+            ->selectRaw('hauls.id as haul_id, hauls.haul_code, hauls.purchase_item_id, hauls.quantity_liters - COALESCE(SUM(haul_allocations.quantity_liters), 0) as room')
             ->get();
 
         return $rows->filter(fn (object $row): bool => (float) $row->room >= $needed)->values();
@@ -234,19 +263,21 @@ class StandardSourceAssignmentService
 
     private function scheduledSource(int $haulId, int $fuelId, float $needed, bool $allowLifted = false): ?object
     {
-        $statuses = $allowLifted ? ['scheduled', 'lifted', 'completed'] : ['scheduled'];
+        $statuses = $allowLifted ? ['scheduled', ...LiftAllocationService::CARRYING_STATUSES] : ['scheduled'];
         return $this->sourceFromHaul($haulId, $fuelId, $needed, $statuses);
     }
 
     private function truckSource(int $haulId, int $fuelId, float $needed, bool $allowScheduled = false): ?object
     {
-        return $this->sourceFromHaul($haulId, $fuelId, $needed, $allowScheduled ? ['scheduled', 'lifted', 'completed'] : ['lifted', 'completed']);
+        return $this->sourceFromHaul($haulId, $fuelId, $needed, $allowScheduled ? ['scheduled', ...LiftAllocationService::CARRYING_STATUSES] : LiftAllocationService::CARRYING_STATUSES);
     }
 
     private function sourceFromHaul(int $haulId, int $fuelId, float $needed, array $statuses): ?object
     {
         $row = DB::table('hauls')->where('hauls.id', $haulId)->whereNull('hauls.deleted_at')->whereIn('hauls.status', $statuses)->where('hauls.fuel_type_id', $fuelId)->first(['hauls.id as haul_id', 'hauls.haul_code', 'hauls.purchase_item_id', 'hauls.quantity_liters']);
         if (! $row) return null;
+        $purchase = app(PurchaseStockService::class)->line((int) $row->purchase_item_id);
+        if (! $purchase || $purchase->requires_reconciliation) throw ValidationException::withMessages(['source' => 'This source purchase requires inventory reconciliation before another allocation.']);
         $usedQuery = DB::table('haul_allocations')->where('haul_id', $haulId)->where('status', '!=', 'cancelled');
         $used = (float) $usedQuery->sum('quantity_liters');
         $row->room = round((float) $row->quantity_liters - $used, 2);

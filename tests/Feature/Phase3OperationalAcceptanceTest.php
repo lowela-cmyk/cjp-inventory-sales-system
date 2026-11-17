@@ -301,9 +301,8 @@ class Phase3OperationalAcceptanceTest extends TestCase
         $this->assertSame('pending', $sale->delivery_status);
         $this->assertSame(0, DB::table('stock_outs')->where('sale_id', $sale->id)->count());
 
-        $this->actingAs($salesOfficer)
-            ->patch(route('sales-officer.sales.delivery-status.update', $sale->id), ['delivery_status' => 'delivered'])
-            ->assertRedirect(route('sales-officer.sales'));
+        $this->driverDelivery($sale->id, ['delivery_status' => 'delivered'])
+            ->assertRedirect(route('driver.fuel-lifting.deliveries'));
 
         // Delivered creates one released depot stock-out from the purchase; the retired tank ledger is not written.
         $this->assertDatabaseHas('stock_outs', [

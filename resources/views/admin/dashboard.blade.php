@@ -31,6 +31,27 @@
         'To' => $salesFilters['date_to'] ?? null,
         'Search' => ($salesFilters['search'] ?? '') !== '' ? $salesFilters['search'] : null,
     ]);
+    $kpiTone = function (string $label, string $section): string {
+        if ($section === 'inventory') {
+            return 'dash-kpi-inventory';
+        }
+
+        return match (true) {
+            str_contains($label, 'Unpaid') => 'dash-kpi-receivables',
+            in_array($label, ['Collected Revenue', 'Total Delivered', 'Total Sales', 'Total Profit', 'Paid Customers'], true) => 'dash-kpi-sales',
+            default => 'dash-kpi-supporting',
+        };
+    };
+    $salesKpiOrder = [
+        'Collected Revenue',
+        'Total Delivered',
+        'Total Sales',
+        'Total Profit',
+        'Paid Customers',
+        'Unpaid Amount',
+        'Unpaid Customers',
+    ];
+    $salesKpis = collect($salesTrend['cards'])->sortBy(fn (array $card): int => array_search($card[0], $salesKpiOrder, true))->values();
 @endphp
 
 @component('layouts.admin', ['title' => 'Dashboard and Analytics', 'active' => 'dashboard'])
@@ -43,14 +64,18 @@
         <section class="dash-section" id="current-inventory" aria-labelledby="dash-inventory-title">
             <div class="page-heading-row">
                 <h2 class="dash-section-title" id="dash-inventory-title">Current Inventory</h2>
-                {{-- Part 11: Export the charts, KPI cards and AI insight as one PDF (see dashboard.js). --}}
-                <form class="dash-actions" method="POST" action="{{ route('admin.dashboard.export') }}" data-dashboard-export data-confirm="none">
-                    @csrf
-                    @foreach ($filterQuery as $name => $value)
-                        <input type="hidden" name="{{ $name }}" value="{{ $value }}">
-                    @endforeach
-                    <x-export-button type="submit" data-dashboard-export-button />
-                </form>
+                {{-- Part 23 #11: Export the charts (as PNG images), KPI cards and AI insight as one PDF (see dashboard.js). --}}
+                <div class="dash-actions">
+                    <a class="btn btn-secondary" href="{{ route('admin.imports') }}">Data Import</a>
+                    <form method="POST" action="{{ route('admin.dashboard.export') }}" data-dashboard-export data-confirm="none">
+                        @csrf
+                        @foreach ($filterQuery as $name => $value)
+                            <input type="hidden" name="{{ $name }}" value="{{ $value }}">
+                        @endforeach
+                        <x-export-button type="submit" data-dashboard-export-button />
+                    </form>
+                </div>
+
             </div>
             <div class="dash-panel">
                 <form class="dash-filters dash-filters-inventory" method="GET" action="{{ route('admin.dashboard') }}#current-inventory" data-auto-filter>
@@ -77,7 +102,7 @@
                 <div class="dash-kpis dash-kpis-6">
                     @foreach ($inventory['cards'] as [$label, $value])
                         @continue(in_array($label, $filterCards, true))
-                        <div class="dash-kpi"><span>{{ $label }}</span><x-stat-value :value="$value" :liters="$rawLiters[$label] ?? null" /></div>
+                        <div class="dash-kpi {{ $kpiTone($label, 'inventory') }}"><span>{{ $label }}</span><x-stat-value :value="$value" :liters="$rawLiters[$label] ?? null" /></div>
                     @endforeach
                 </div>
 
@@ -119,6 +144,14 @@
             </div>
         </section>
 
+        <section class="dash-section" aria-labelledby="purchase-report-title">
+            <h2 class="dash-section-title" id="purchase-report-title">Purchase Reports</h2>
+            <p class="dash-note">Purchase transactions per month (excluding drafts, cancelled and deleted purchases). Uses Current Inventory filters.</p>
+            <div class="dash-chart dash-chart-panel">
+                @include('admin.partials.dashboard-chart', ['chart' => $purchaseReport, 'label' => 'Number of purchase transactions per month', 'class' => 'dash-chart-canvas-tall'])
+            </div>
+        </section>
+
         {{-- Expected Sales Revenue | Stock Out V.S Receivables Margin --}}
         <div class="dash-revenue-row">
             <section class="dash-section" aria-labelledby="dash-revenue-title">
@@ -130,11 +163,7 @@
                     </div>
                     <div class="dash-chart-footer">
                         <p class="dash-note">Increase Rate: <strong data-revenue-increase>{{ $revenue['series']['month']['increaseRateLabel'] }}</strong></p>
-                        <div class="dash-toggle" role="group" aria-label="Revenue period">
-                            @foreach (['week' => 'Week', 'month' => 'Month', 'year' => 'Year'] as $period => $periodLabel)
-                                <button class="btn {{ $period === 'month' ? 'is-selected' : '' }}" type="button" data-revenue-period="{{ $period }}" aria-pressed="{{ $period === 'month' ? 'true' : 'false' }}">{{ $periodLabel }}</button>
-                            @endforeach
-                        </div>
+
                     </div>
                 </div>
             </section>
@@ -179,8 +208,8 @@
                 @include('admin.partials.dashboard-filter-chips', ['chips' => $salesChips])
 
                 <div class="dash-kpis dash-kpis-7">
-                    @foreach ($salesTrend['cards'] as [$label, $value])
-                        <div class="dash-kpi"><span>{{ $label }}</span><x-stat-value :value="$value" :liters="$rawLiters[$label] ?? null" /></div>
+                    @foreach ($salesKpis as [$label, $value])
+                        <div class="dash-kpi {{ $kpiTone($label, 'sales') }}"><span>{{ $label }}</span><x-stat-value :value="$value" :liters="$rawLiters[$label] ?? null" /></div>
                     @endforeach
                 </div>
 
@@ -202,14 +231,7 @@
                 <div class="dash-chart-block">
                     <h3 class="dash-chart-title">Peak Demands</h3>
                     <div class="dash-chart">
-                        @include('admin.partials.dashboard-chart', ['chart' => $peak['chart'], 'label' => 'Liters sold per month of '.$peak['year'], 'class' => 'dash-chart-canvas-tall'])
-                        <div class="dash-peak-notes">
-                            <div class="dash-notes-stack">
-                                <p class="dash-note">Month With Highest Sales : <strong>{{ $peak['highestMonthLabel'] }}</strong></p>
-                                <p class="dash-note">Expected Month with Most Demand (YoY) : <strong>{{ $peak['yoyMonthLabel'] }}</strong></p>
-                            </div>
-                            <p class="dash-note dash-note-end">Expected Increase Rate by next Month : <strong @class(['dash-red' => ($peak['nextMonthRate'] ?? 0) < 0])>{{ $peak['nextMonthRateLabel'] }}</strong></p>
-                        </div>
+                        @include('admin.partials.dashboard-chart', ['chart' => $peak['chart'], 'label' => 'Number of purchases per month of '.$peak['year'], 'class' => 'dash-chart-canvas-tall'])
                     </div>
                 </div>
             </div>

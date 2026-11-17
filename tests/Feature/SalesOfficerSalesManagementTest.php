@@ -62,17 +62,15 @@ class SalesOfficerSalesManagementTest extends TestCase
         $this->assertSame($beforeInventory, DB::table('inventory_movements')->count());
         $this->assertSame(0, DB::table('stock_outs')->where('sale_id', $sale->id)->count());
 
-        $this->actingAs($records['salesOfficer'])
-            ->patch(route('sales-officer.sales.delivery-status.update', $sale->id), ['delivery_status' => 'out_for_delivery'])
-            ->assertRedirect(route('sales-officer.sales'));
+        $this->driverDelivery($sale->id, ['delivery_status' => 'out_for_delivery'])
+            ->assertRedirect(route('driver.fuel-lifting.deliveries'));
 
         $this->assertDatabaseHas('sales', ['id' => $sale->id, 'delivery_status' => 'out_for_delivery']);
         $this->assertSame($beforeInventory, DB::table('inventory_movements')->count());
         $this->assertSame(0, DB::table('stock_outs')->where('sale_id', $sale->id)->count());
 
-        $this->actingAs($records['salesOfficer'])
-            ->patch(route('sales-officer.sales.delivery-status.update', $sale->id), ['delivery_status' => 'delivered'])
-            ->assertRedirect(route('sales-officer.sales'));
+        $this->driverDelivery($sale->id, ['delivery_status' => 'delivered'])
+            ->assertRedirect(route('driver.fuel-lifting.deliveries'));
 
         $this->assertDatabaseHas('sales', ['id' => $sale->id, 'delivery_status' => 'delivered']);
         // Part 2 revisions: delivery deducts the liters from the order's purchase (one release, no tank movement).
@@ -83,9 +81,8 @@ class SalesOfficerSalesManagementTest extends TestCase
             'fulfilled_quantity_liters' => '1500.25',
         ]);
 
-        $this->actingAs($records['salesOfficer'])
-            ->patch(route('sales-officer.sales.delivery-status.update', $sale->id), ['delivery_status' => 'delivered'])
-            ->assertRedirect(route('sales-officer.sales'));
+        $this->driverDelivery($sale->id, ['delivery_status' => 'delivered'])
+            ->assertRedirect(route('driver.fuel-lifting.deliveries'));
 
         $this->assertSame($beforeInventory, DB::table('inventory_movements')->count());
         $this->assertSame(1, DB::table('stock_outs')->where('sale_id', $sale->id)->count());
@@ -159,8 +156,7 @@ class SalesOfficerSalesManagementTest extends TestCase
         $saleItem = DB::table('sale_items')->where('sale_id', $sale->id)->first();
         $this->assertSame(0, DB::table('stock_outs')->where('sale_id', $sale->id)->count());
 
-        $this->actingAs($records['salesOfficer'])
-            ->patch(route('sales-officer.sales.delivery-status.update', $sale->id), ['delivery_status' => 'delivered'])
+        $this->driverDelivery($sale->id, ['delivery_status' => 'delivered'])
             ->assertSessionHasErrors('delivery_status');
 
         $this->assertDatabaseHas('sales', ['id' => $sale->id, 'delivery_status' => 'pending']);
@@ -428,9 +424,8 @@ class SalesOfficerSalesManagementTest extends TestCase
         // Not delivered yet: the View offers Cancel Sale.
         $this->actingAs($records['salesOfficer'])->get(route('sales-officer.sales'))->assertSee('data-modal-swap="so-sale-cancel-'.$sale->id.'"', false);
 
-        $this->actingAs($records['salesOfficer'])
-            ->patch(route('sales-officer.sales.delivery-status.update', $sale->id), ['delivery_status' => 'delivered'])
-            ->assertRedirect(route('sales-officer.sales'));
+        $this->driverDelivery($sale->id, ['delivery_status' => 'delivered'])
+            ->assertRedirect(route('driver.fuel-lifting.deliveries'));
         $stockOut = DB::table('stock_outs')->where('sale_id', $sale->id)->first();
         $purchaseStock = fn (): float => (float) app(PurchaseStockService::class)->line((int) $stockOut->purchase_item_id)->on_hand;
         $deliveredStock = $purchaseStock();
@@ -475,34 +470,29 @@ class SalesOfficerSalesManagementTest extends TestCase
             ->assertSee('Cancelled');
     }
 
-    public function test_admin_can_update_delivery_status_but_unrelated_roles_cannot(): void
+    public function test_only_the_assigned_driver_can_update_delivery_status(): void
     {
+        // Part 21 #1 (replaces "admin can update delivery status"): every other account is refused, Admin included.
         $records = $this->baseRecords();
         $saleId = $this->createSale($records, ['sale_code' => 'SLS-ADMIN-DELIVERY']);
+        $driver = User::factory()->create(['role' => 'driver', 'status' => 'active']);
+        DB::table('sales')->where('id', $saleId)->update(['delivery_driver_user_id' => $driver->id]);
+        $url = route('driver.fuel-lifting.deliveries.status', $saleId);
 
-        $this->actingAs($records['admin'])
-            ->patch(route('admin.sales.delivery-status.update', $saleId), ['delivery_status' => 'out_for_delivery'])
-            ->assertRedirect(route('admin.sales'));
+        foreach (['admin', 'sales_officer', 'inventory_officer', 'dispatch_officer', 'driver'] as $role) {
+            $user = User::factory()->create(['role' => $role, 'status' => 'active']);
+            $this->actingAs($user)->patch($url, ['delivery_status' => 'delivered'])->assertForbidden();
+        }
+        $this->assertDatabaseHas('sales', ['id' => $saleId, 'delivery_status' => 'pending']);
+        $this->assertSame(0, DB::table('stock_outs')->where('sale_id', $saleId)->count());
 
+        $this->actingAs($driver)->patch($url, ['delivery_status' => 'out_for_delivery'])
+            ->assertRedirect(route('driver.fuel-lifting.deliveries'));
         $this->assertDatabaseHas('sales', [
             'id' => $saleId,
             'delivery_status' => 'out_for_delivery',
-            'delivery_status_updated_by' => $records['admin']->id,
+            'delivery_status_updated_by' => $driver->id,
         ]);
-        $this->assertSame(0, DB::table('stock_outs')->where('sale_id', $saleId)->count());
-
-        foreach (['inventory_officer', 'dispatch_officer', 'driver'] as $role) {
-            $user = User::factory()->create(['role' => $role, 'status' => 'active']);
-
-            $this->actingAs($user)
-                ->patch(route('admin.sales.delivery-status.update', $saleId), ['delivery_status' => 'delivered'])
-                ->assertForbidden();
-
-            $this->actingAs($user)
-                ->patch(route('sales-officer.sales.delivery-status.update', $saleId), ['delivery_status' => 'delivered'])
-                ->assertForbidden();
-        }
-
         $this->assertSame(0, DB::table('stock_outs')->where('sale_id', $saleId)->count());
     }
 
@@ -551,9 +541,8 @@ class SalesOfficerSalesManagementTest extends TestCase
         $this->assertDatabaseHas('sales', ['id' => $saleId, 'status' => 'confirmed']);
         $this->assertSame(0, DB::table('stock_outs')->where('sale_id', $saleId)->count());
 
-        $this->actingAs($records['salesOfficer'])
-            ->patch(route('sales-officer.sales.delivery-status.update', $saleId), ['delivery_status' => 'delivered'])
-            ->assertRedirect(route('sales-officer.sales'));
+        $this->driverDelivery($saleId, ['delivery_status' => 'delivered'])
+            ->assertRedirect(route('driver.fuel-lifting.deliveries'));
 
         $this->assertSame(1, DB::table('stock_outs')->where('sale_id', $saleId)->where('status', 'released')->count());
         $this->assertDatabaseHas('sale_items', [

@@ -86,6 +86,25 @@ class Part13RevisionsTest extends AuditTestCase
         $this->actingAs($a['admin'])->get(route('admin.dashboard'))->assertOk()->assertSee('Payment Status (Customers)');
     }
 
+    public function test_a_settled_sale_does_not_make_an_unpaid_customer_partially_paid(): void
+    {
+        $a = $this->actors();
+        $premium = $this->purchaseLine($a, 'PREM', 10000);
+        // One sale paid in full, then one with no payment at all: the customer owes and paid nothing toward it.
+        $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 100, 'unit_price' => 50])->assertSessionHasNoErrors();
+        $this->pay($a, $this->lastSaleId(), 5000);
+        $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 100, 'unit_price' => 50])->assertSessionHasNoErrors();
+
+        $trend = app(DashboardService::class)->salesTrend([]);
+        $this->assertSame(['paid' => 0, 'unpaid' => 1, 'partial' => 0], $trend['totals']['payment_status']);
+        $this->assertSame([0, 1], [$trend['totals']['paid_customers'], $trend['totals']['unpaid_customers']]);
+        $this->assertSame(5000.0, $trend['totals']['unpaid']);
+
+        // A part payment on the open sale makes the customer Partially Paid.
+        $this->pay($a, $this->lastSaleId(), 1000);
+        $this->assertSame(['paid' => 0, 'unpaid' => 0, 'partial' => 1], app(DashboardService::class)->salesTrend([])['totals']['payment_status']);
+    }
+
     // ----- 3. Unload to Garage ---------------------------------------------------------------------------------
 
     public function test_leftover_fuel_is_unloaded_into_the_chosen_tanks_within_their_capacity(): void
@@ -287,10 +306,17 @@ class Part13RevisionsTest extends AuditTestCase
 
     private function garageOrder(array $a, int $tankId, float $liters, array $line = [], string $status = 'pending')
     {
-        return $this->recordOrder($a, ['purchase_item_id' => 'tank:'.$tankId, 'quantity_liters' => $liters, 'unit_price' => 60] + $line, [
-            'delivery_type' => 'garage_to_client', 'delivery_status' => $status,
+        $before = $this->lastSaleId();
+        $response = $this->recordOrder($a, ['purchase_item_id' => 'tank:'.$tankId, 'quantity_liters' => $liters, 'unit_price' => 60] + $line, [
+            'delivery_type' => 'garage_to_client',
             'delivery_truck_id' => $a['truck'], 'delivery_driver_user_id' => $a['driver']->id, 'delivery_date' => '2026-10-28 10:00',
         ]);
+        // Part 21 #1: an order is recorded Pending; its assigned driver moves the delivery on.
+        if ($status !== 'pending' && $this->lastSaleId() !== $before) {
+            return $this->driverDelivery($this->lastSaleId(), ['delivery_status' => $status]);
+        }
+
+        return $response;
     }
 
     private function tank(string $fuelCode, int $number): int

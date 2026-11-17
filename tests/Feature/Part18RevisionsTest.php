@@ -94,7 +94,8 @@ class Part18RevisionsTest extends AuditTestCase
         foreach (['delivery_truck_id', 'delivery_driver_user_id', 'delivery_date'] as $field) {
             $this->assertMatchesRegularExpression('/name="'.$field.'"[^>]*required/', $garageForm);
         }
-        $this->assertStringContainsString('name="delivery_status"', $garageForm);
+        // Part 21 #1: no Delivery Status to choose; the assigned driver updates it.
+        $this->assertStringNotContainsString('name="delivery_status"', $garageForm);
         $liftForm = substr($modal, strpos($modal, 'value="scheduled_lift"'), 1500);
         $this->assertStringNotContainsString('name="delivery_truck_id"', substr($liftForm, 0, strpos($liftForm, '</form>')));
 
@@ -126,7 +127,7 @@ class Part18RevisionsTest extends AuditTestCase
         $this->assertStringNotContainsString('name="delivery_truck_id"', $this->editSection($this->saleModal($a, $saleId)));
     }
 
-    public function test_a_garage_tank_assigned_as_delivered_is_deducted_once(): void
+    public function test_a_garage_tank_order_is_assigned_pending_and_deducted_once_when_its_driver_delivers(): void
     {
         $a = $this->actors();
         [$premium, $lot, $tank] = $this->garageLot($a);
@@ -134,8 +135,17 @@ class Part18RevisionsTest extends AuditTestCase
         $saleId = $this->lastSaleId();
 
         $this->actingAs($a['sales'])->post(route('sales-officer.sales.assign-source', $saleId), ['source_type' => 'garage_tank', 'source_id' => $tank, 'delivery_status' => 'delivered'] + $this->garageDelivery($a))
+            ->assertSessionHasErrors(['delivery_status' => 'Only the assigned driver can update the delivery status.']);
+        $this->assertDatabaseHas('sales', ['id' => $saleId, 'delivery_type' => 'standard', 'delivery_status' => 'pending']);
+
+        $this->actingAs($a['sales'])->post(route('sales-officer.sales.assign-source', $saleId), ['source_type' => 'garage_tank', 'source_id' => $tank] + $this->garageDelivery($a))
             ->assertSessionHasNoErrors();
-        $this->assertDatabaseHas('sales', ['id' => $saleId, 'delivery_type' => 'garage_to_client', 'delivery_status' => 'delivered']);
+        $this->assertDatabaseHas('sales', ['id' => $saleId, 'delivery_type' => 'garage_to_client', 'delivery_status' => 'pending']);
+        $this->assertSame(0, DB::table('stock_outs')->where('sale_id', $saleId)->count());
+
+        $this->driverDelivery($saleId)->assertSessionHasNoErrors();
+        $this->driverDelivery($saleId)->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('sales', ['id' => $saleId, 'delivery_type' => 'garage_to_client', 'delivery_status' => 'delivered', 'delivery_status_updated_by' => $a['driver']->id]);
         $this->assertSame(1, DB::table('stock_outs')->where('sale_id', $saleId)->where('storage_location_id', $tank)->count());
         $this->assertSame(1000.0, (float) DB::table('stock_out_draws')->where('garage_stock_id', $lot)->sum('liters'));
     }
@@ -169,7 +179,8 @@ class Part18RevisionsTest extends AuditTestCase
 
         // An open order without payments: its customer, date, line and status can still change.
         $edit = $this->editSection($this->saleModal($a, $saleId));
-        $this->assertSame(['delivery_status', 'sales_order_number', 'sale_date', 'customer_id', 'items[0][quantity_liters]', 'items[0][purchase_item_id]', 'items[0][unit_price]', 'items[0][f1_purchase_item_id]', 'items[0][f1_unit_price]', 'items[0][f1_percentage]', 'payment_method', 'payment_terms', 'due_date', 'status'], $this->fieldNames($edit));
+        $this->assertSame(['sales_order_number', 'sale_date', 'customer_id', 'items[0][quantity_liters]', 'items[0][purchase_item_id]', 'items[0][unit_price]', 'items[0][f1_purchase_item_id]', 'items[0][f1_unit_price]', 'payment_method', 'payment_terms', 'due_date', 'status'], $this->fieldNames($edit));
+        $this->assertStringNotContainsString('F1 %', $edit);
         $this->assertNoReadOnlyRows($edit);
 
         // A payment fixes customer, date, sources and status (sent back unchanged, hidden); Part 19: QTY and price may be corrected.
@@ -177,7 +188,10 @@ class Part18RevisionsTest extends AuditTestCase
             'idempotency_key' => (string) Str::uuid(), 'payment_date' => '2026-10-15', 'amount' => 100, 'method' => 'cash_on_delivery',
         ])->assertSessionHasNoErrors();
         $edit = $this->editSection($this->saleModal($a, $saleId));
-        $this->assertSame(['delivery_status', 'sales_order_number', 'items[0][quantity_liters]', 'items[0][unit_price]', 'payment_method', 'payment_terms', 'due_date'], $this->fieldNames($edit));
+        // Part 21 #1: no Delivery Status field; the assigned driver updates it.
+        $this->assertSame(['sales_order_number', 'items[0][quantity_liters]', 'items[0][unit_price]', 'payment_method', 'payment_terms', 'due_date'], $this->fieldNames($edit));
+        $this->assertStringNotContainsString('Update Delivery', $edit);
+        $this->assertStringContainsString('Delivery status is updated by the assigned driver.', $edit);
         $this->assertNoReadOnlyRows($edit);
 
         // Delivered: Sales Order No., the line's prices (Part 19; QTY shown read-only), Payment Method, Payment Terms and Due Date.
@@ -266,11 +280,11 @@ class Part18RevisionsTest extends AuditTestCase
         $premium = $this->purchaseLine($a, 'PREM', 20000);
         $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 2000, 'unit_price' => 70], ['delivery_type' => 'depot_to_client'])->assertSessionHasNoErrors();
         $saleId = $this->lastSaleId();
-        $manual = fn (string $status) => $this->actingAs($a['sales'])->from(route('sales-officer.sales'))
-            ->patch(route('sales-officer.sales.delivery-status.update', $saleId), ['delivery_status' => $status]);
+        $manual = fn (string $status) => $this->driverDelivery($saleId, ['delivery_status' => $status]);
         $refused = 'This Depot to Client sale is delivered through its lift. Add it to a lift in Fuel Lifting and complete the lift first.';
 
-        // Part 20 #2 revises this: Pending <-> Out for Delivery may be set by hand (no stock moves) ...
+        // Part 20 #2 / Part 21 #1: the lift's driver may set Pending <-> Out for Delivery by hand (no stock moves) ...
+        // An order on no lift yet has no driver; driverDelivery() names one, as its Delivery Details would.
         $manual('out_for_delivery')->assertSessionHasNoErrors();
         $this->assertSame('out_for_delivery', DB::table('sales')->where('id', $saleId)->value('delivery_status'));
         $manual('pending')->assertSessionHasNoErrors();
@@ -278,7 +292,7 @@ class Part18RevisionsTest extends AuditTestCase
         $manual('delivered')->assertSessionHasErrors(['delivery_status' => $refused]);
         $this->scheduleLift($a, [['purchase_item_id' => $premium, 'quantity_liters' => 2000, 'atl_number' => 'ATL-1']], [$saleId])->assertSessionHasNoErrors();
         $manual('delivered')->assertSessionHasErrors(['delivery_status' => $refused]);
-        $this->actingAs($a['admin'])->from(route('admin.sales'))->patch(route('admin.sales.delivery-status.update', $saleId), ['delivery_status' => 'delivered'])
+        $this->driverDelivery($saleId, ['delivery_status' => 'delivered'])
             ->assertSessionHasErrors(['delivery_status' => $refused]);
         $this->assertSame('pending', DB::table('sales')->where('id', $saleId)->value('delivery_status'));
         $this->assertSame(0, DB::table('stock_outs')->where('sale_id', $saleId)->count());
@@ -287,7 +301,7 @@ class Part18RevisionsTest extends AuditTestCase
         $this->completeLift($a, $this->lastHaulId());
         $this->assertSame('delivered', DB::table('sales')->where('id', $saleId)->value('delivery_status'));
 
-        // A Standard order can still be delivered by hand.
+        // A Standard order is delivered by hand by its assigned driver.
         $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 500, 'unit_price' => 70])->assertSessionHasNoErrors();
         $this->deliverOrder($a, $this->lastSaleId())->assertSessionHasNoErrors();
         $this->assertSame('delivered', DB::table('sales')->where('id', $this->lastSaleId())->value('delivery_status'));

@@ -22,16 +22,14 @@
                 <button class="btn btn-secondary" type="button" data-modal-close>Close</button>
             </div>
         </form>
-        <form class="fleet-activation-form" method="POST" action="{{ route($truckRoutePrefix.'.status', $truck->id) }}"
-            data-confirm="status" data-confirm-title="{{ $truck->status === 'inactive' ? 'Activate truck?' : 'Deactivate truck?' }}"
-            data-confirm-item="{{ $truck->truck_code }}{{ $truck->plate_number ? ' · '.$truck->plate_number : '' }}{{ $truck->name ? ' ('.$truck->name.')' : '' }}"
-            data-confirm-from="{{ ucwords(str_replace('_', ' ', $truck->status)) }}" data-confirm-to="{{ $truck->status === 'inactive' ? 'Available' : 'Inactive' }}"
-            @if ($truck->status !== 'inactive') data-confirm-tone="danger" data-confirm-note="Historical lift records are kept. You can activate the truck again later." @endif
-            data-confirm-message="{{ $truck->status === 'inactive' ? 'Activate this truck?' : 'Deactivate this truck? Historical lift records will be preserved.' }}">
-            @csrf
-            @method('PATCH')
-            <button class="btn {{ $truck->status === 'inactive' ? 'btn-secondary' : 'btn-danger' }}" type="submit" @disabled((int) $truck->active_lift_count > 0)>{{ $truck->status === 'inactive' ? 'Activate Truck' : 'Deactivate Truck' }}</button>
-            @if ((int) $truck->active_lift_count > 0)<small>Complete or cancel the active lift before deactivating this truck.</small>@endif
-        </form>
+        {{-- Part 23 #8: trucks are no longer deactivated (Maintenance covers it); a legacy inactive truck can be activated. --}}
+        @if ($truck->status === 'inactive')
+            <form class="fleet-activation-form" method="POST" action="{{ route($truckRoutePrefix.'.status', $truck->id) }}" data-confirm="status" data-confirm-title="Activate truck?"
+                data-confirm-item="{{ $truck->truck_code }}{{ $truck->plate_number ? ' · '.$truck->plate_number : '' }}" data-confirm-from="Inactive" data-confirm-to="Available" data-confirm-message="Activate this truck?">
+                @csrf
+                @method('PATCH')
+                <button class="btn btn-secondary" type="submit">Activate Truck</button>
+            </form>
+        @endif
     </x-admin.modal>
 @endforeach

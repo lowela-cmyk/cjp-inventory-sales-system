@@ -45,9 +45,13 @@ class Part18TankAverageCostTest extends AuditTestCase
         $this->liftAndUnload($a, $this->purchaseLine($a, 'PREM', 3000, 60), 3000, [$tank => 3000]);
         $this->assertSame([15000.0, 842400.0, 56.16], $this->tankFigures($tank));
 
-        // View Tank Stock: the tank's average, and each purchase's liters and cost.
+        // The tank table row shows capacity and stock only; the average is on the tank card and in View Tank Stock,
+        // with each purchase's liters and cost.
         $page = $this->actingAs($a['inventory'])->get(route('inventory-officer.inventory.garage'))->assertOk()->getContent();
-        $this->assertMatchesRegularExpression('#<td><strong>Premium Tank 1</strong></td>\s*<td class="inventory-number">24,000.00 L</td>\s*<td class="inventory-number">15,000.00 L</td>\s*<td class="inventory-number">₱56.16/L</td>#', $page);
+        $this->assertMatchesRegularExpression('#<td><strong>Premium Tank 1</strong></td>\s*<td class="inventory-number">24,000.00 L</td>\s*<td class="inventory-number">15,000.00 L</td>\s*<td class="export-only" hidden>#', $page);
+        $this->assertStringNotContainsString('<th>Avg Cost / L</th>', $page);
+        // Part 23 #4: the tank cards no longer show the average; View Tank Stock still does.
+        $this->assertStringNotContainsString('garage-tank-avg', $page);
         $modal = substr($page, strpos($page, 'id="garage-tank-'.$tank.'"'), 8000);
         $this->assertStringContainsString('Average Cost: <strong>₱56.16/L</strong>', $modal);
         foreach (['8,000.00 L</strong>' => '₱54.00/L', '4,000.00 L</strong>' => '₱57.60/L', '3,000.00 L</strong>' => '₱60.00/L'] as $liters => $cost) {

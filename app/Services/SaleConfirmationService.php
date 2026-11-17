@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\DB;
+use App\Support\ActivePayments;
 
 class SaleConfirmationService
 {
@@ -72,6 +73,7 @@ class SaleConfirmationService
 
             if ($current === 'delivered') {
                 if ($deliveryStatus === 'delivered') {
+                    app(DeliveryIntegrityService::class)->assertReleased($saleId);
                     return;
                 }
 
@@ -127,6 +129,8 @@ class SaleConfirmationService
                     }
                 }
 
+                app(DeliveryIntegrityService::class)->assertReleased($saleId);
+
                 if ($allocation) {
                     DB::table('haul_allocations')->where('id', $allocation->id)->update(['status' => 'delivered', 'updated_at' => now()]);
                 }
@@ -168,7 +172,7 @@ class SaleConfirmationService
             ->where('sale_id', $saleId)
             ->sum('line_total'), 2);
 
-        $paidTotal = round((float) DB::table('payments')
+        $paidTotal = round((float) ActivePayments::query()
             ->where('sale_id', $saleId)
             ->sum('amount'), 2);
 
@@ -204,14 +208,12 @@ class SaleConfirmationService
                 'updated_at' => now(),
             ]);
 
-        DB::table('receivables')->updateOrInsert(
-            ['sale_id' => $saleId],
-            [
-                'status' => $receivableStatus,
-                'updated_at' => now(),
-                'created_at' => now(),
-            ]
-        );
+        // created_at is set only when the receivable is first created, never overwritten on later reconciles.
+        if ($receivable) {
+            DB::table('receivables')->where('id', $receivable->id)->update(['status' => $receivableStatus, 'updated_at' => now()]);
+        } else {
+            DB::table('receivables')->insert(['sale_id' => $saleId, 'status' => $receivableStatus, 'created_at' => now(), 'updated_at' => now()]);
+        }
 
         return [
             'sale_status' => $saleStatus,

@@ -1,12 +1,21 @@
 /* Part 10 (October 22, 2026): Dashboard and Analytics, laid out as the System Analysis mockup. */
 .dash {
-    --dash-red: #e8453c;
-    --dash-green: #3b9a35;
-    --dash-orange: #e28a22;
-    --dash-navy: #0d1424;
+    --dash-sage: #8ba284;
+    --dash-ochre: #c78e45;
+    --dash-greige: #bdb8b0;
+    --dash-terracotta: #c0634e;
+    --dash-slate: #5f6468;
+    --dash-red: var(--dash-terracotta);
+    --dash-green: var(--dash-sage);
+    --dash-orange: var(--dash-ochre);
+    --dash-navy: var(--dash-slate);
+    --dash-ink: #303538;
+    --dash-surface: #f7f6f3;
+    --dash-line: color-mix(in srgb, var(--dash-greige) 58%, white);
     display: grid;
     gap: 32px;
     min-width: 0;
+    color: var(--dash-ink);
 }
 
 .dash-section {
@@ -18,18 +27,21 @@
 
 .dash-section-title {
     margin: 0;
+    color: var(--dash-slate);
     font-size: 16px;
     font-weight: 800;
+    letter-spacing: .01em;
 }
 
 .dash-panel {
     display: grid;
     gap: 24px;
     min-width: 0;
-    border: 1px solid var(--admin-soft-line);
-    border-radius: 8px;
+    border: 1px solid var(--dash-line);
+    border-radius: 12px;
     padding: 20px;
-    background: #fff;
+    background: var(--dash-surface);
+    box-shadow: 0 8px 22px rgb(95 100 104 / 7%);
 }
 
 /* Filters: the search takes the free width, the dropdowns keep a fixed width. */
@@ -47,11 +59,11 @@
 .dash-filters select {
     min-width: 0;
     height: 36px;
-    border: 1px solid var(--admin-soft-line);
-    border-radius: 6px;
+    border: 1px solid var(--dash-line);
+    border-radius: 8px;
     padding: 0 10px;
     background: #fff;
-    color: #111;
+    color: var(--dash-ink);
     font-size: 13px;
     font-weight: 700;
 }
@@ -59,7 +71,7 @@
 .dash-kpis {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 16px;
+    gap: 14px;
 }
 
 /* Sales Trend's seven cards fit one row on a desktop, as in the mockup. */
@@ -68,23 +80,77 @@
 }
 
 .dash-kpi {
+    position: relative;
     display: grid;
-    gap: 6px;
+    align-content: space-between;
+    gap: 10px;
     min-width: 0;
-    border: 1px solid var(--admin-soft-line);
-    border-radius: 6px;
-    padding: 10px 14px 12px;
+    min-height: 96px;
+    overflow: hidden;
+    border: 1px solid rgb(255 255 255 / 42%);
+    border-radius: 12px;
+    padding: 14px 16px 15px;
+    box-shadow: 0 7px 15px rgb(95 100 104 / 12%);
+    transition: transform .16s ease, box-shadow .16s ease;
+}
+
+.dash-kpi::before {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 5px;
+    background: rgb(255 255 255 / 58%);
+    content: '';
+}
+
+.dash-kpi:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 20px rgb(95 100 104 / 17%);
+}
+
+.dash-kpi-inventory {
+    background: var(--dash-sage);
+    color: #fff;
+}
+
+.dash-kpi-sales {
+    background: var(--dash-ochre);
+    color: #fff;
+}
+
+.dash-kpi-receivables {
+    background: var(--dash-terracotta);
+    color: #fff;
+}
+
+.dash-kpi-operational {
+    background: var(--dash-slate);
+    color: #fff;
+}
+
+.dash-kpi-supporting {
+    background: var(--dash-greige);
+    color: var(--dash-ink);
+    border-color: rgb(95 100 104 / 18%);
+}
+
+.dash-kpi-supporting::before {
+    background: var(--dash-slate);
 }
 
 .dash-kpi span {
-    color: #555;
+    color: inherit;
     font-size: 11px;
     font-weight: 700;
+    letter-spacing: .02em;
+    opacity: .92;
+    text-transform: uppercase;
 }
 
 .dash-kpi strong {
-    font-size: 16px;
-    text-align: center;
+    color: inherit;
+    font-size: 20px;
+    line-height: 1.1;
+    text-align: left;
     overflow-wrap: anywhere;
     font-variant-numeric: tabular-nums;
 }
@@ -108,9 +174,11 @@
     gap: 8px;
     min-width: 0;
     margin: 0;
-    border: 1px solid var(--admin-soft-line);
-    border-radius: 6px;
+    border: 1px solid var(--dash-line);
+    border-radius: 10px;
     padding: 10px 12px 12px;
+    background: #fff;
+    box-shadow: 0 5px 14px rgb(95 100 104 / 5%);
 }
 
 /* Chart title above its box (mockup), e.g. "Fuel Lifting Status". */
@@ -123,6 +191,7 @@
 
 .dash-chart-title {
     margin: 0;
+    color: var(--dash-slate);
     font-size: 12px;
     font-weight: 800;
 }
@@ -187,29 +256,17 @@
 .dash-toggle .btn {
     min-width: 76px;
     min-height: 30px;
-    border: 1px solid var(--dash-navy);
+    border: 1px solid var(--dash-slate);
     border-radius: 6px;
     background: #fff;
-    color: var(--dash-navy);
+    color: var(--dash-slate);
     font-size: 12px;
     font-weight: 800;
 }
 
 .dash-toggle .btn.is-selected {
-    background: var(--dash-navy);
+    background: var(--dash-slate);
     color: #fff;
-}
-
-.dash-peak-notes {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
-    align-items: start;
-    gap: 6px 18px;
-}
-
-.dash-note-end {
-    text-align: right;
 }
 
 .dash-insight-head {
@@ -221,7 +278,7 @@
     margin: 0 0 10px;
     border-left: 3px solid var(--dash-orange);
     padding: 6px 10px;
-    background: #fdf4e8;
+    background: color-mix(in srgb, var(--dash-ochre) 14%, white);
     font-size: 12px;
     font-weight: 700;
 }
@@ -281,10 +338,10 @@
 .dash-filters .filter-date-field input[type="date"] {
     min-width: 0;
     height: 36px;
-    border: 1px solid var(--admin-soft-line);
-    border-radius: 6px;
+    border: 1px solid var(--dash-line);
+    border-radius: 8px;
     background: #fff;
-    color: #111;
+    color: var(--dash-ink);
     color-scheme: light;
     font-size: 13px;
     font-weight: 700;
@@ -292,7 +349,7 @@
 
 .dash-filters .filter-date-clear {
     height: 36px;
-    border-color: var(--admin-soft-line);
+    border-color: var(--dash-line);
     border-radius: 6px;
 }
 
@@ -316,8 +373,8 @@
 .dash-garage-fuel {
     display: grid;
     gap: 2px;
-    border: 1px solid var(--admin-soft-line);
-    border-radius: 6px;
+    border: 1px solid var(--dash-line);
+    border-radius: 10px;
     padding: 8px 12px;
     font-size: 12px;
 }
@@ -363,11 +420,24 @@
 
 .ai-report-card {
     min-width: 0;
-    border: 1px solid var(--admin-soft-line, #e4e7ec);
-    border-top: 3px solid var(--dash-navy);
-    border-radius: 8px;
+    border: 1px solid var(--dash-line);
+    border-top: 4px solid var(--dash-sage);
+    border-radius: 10px;
     padding: 14px 16px;
-    background: #fff;
+    background: color-mix(in srgb, var(--dash-greige) 10%, white);
+    box-shadow: 0 4px 10px rgb(95 100 104 / 5%);
+}
+
+.ai-report-card:nth-child(2) {
+    border-top-color: var(--dash-ochre);
+}
+
+.ai-report-card:nth-child(3) {
+    border-top-color: var(--dash-terracotta);
+}
+
+.ai-report-card:nth-child(4) {
+    border-top-color: var(--dash-slate);
 }
 
 .ai-report-card header {
@@ -401,7 +471,7 @@
     align-items: baseline;
     justify-content: space-between;
     gap: 12px;
-    border-bottom: 1px solid #f0f1f3;
+    border-bottom: 1px solid color-mix(in srgb, var(--dash-greige) 35%, white);
     padding: 7px 0;
 }
 
@@ -411,13 +481,13 @@
 
 .ai-report-metric dt {
     min-width: 0;
-    color: #475467;
+    color: var(--dash-slate);
     font-size: 12.5px;
 }
 
 .ai-report-metric dd {
     margin: 0;
-    color: #101828;
+    color: var(--dash-ink);
     font-size: 13px;
     font-weight: 800;
     font-variant-numeric: tabular-nums;
@@ -432,11 +502,11 @@
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
     gap: 14px 28px;
-    border: 1px solid var(--admin-soft-line, #e4e7ec);
-    border-left: 4px solid var(--dash-orange);
-    border-radius: 8px;
+    border: 1px solid var(--dash-line);
+    border-left: 4px solid var(--dash-ochre);
+    border-radius: 10px;
     padding: 16px 20px;
-    background: #fffaf3;
+    background: color-mix(in srgb, var(--dash-ochre) 10%, white);
 }
 
 .ai-report-recommendations > h3 {
@@ -457,7 +527,7 @@
 
 .ai-report-group h4 {
     margin: 0 0 6px;
-    color: #344054;
+    color: var(--dash-slate);
     font-size: 12px;
     font-weight: 800;
     letter-spacing: .04em;
@@ -484,7 +554,7 @@
 }
 
 .ai-report-group li strong {
-    color: #101828;
+    color: var(--dash-ink);
     font-weight: 800;
 }
 
@@ -497,10 +567,10 @@
 .ai-report-empty {
     display: grid;
     gap: 4px;
-    border: 1px dashed var(--admin-soft-line, #d0d5dd);
+    border: 1px dashed var(--dash-greige);
     border-radius: 8px;
     padding: 18px 20px;
-    color: #475467;
+    color: var(--dash-slate);
     font-size: 13px;
 }
 

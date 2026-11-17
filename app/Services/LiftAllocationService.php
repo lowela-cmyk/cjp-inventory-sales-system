@@ -20,6 +20,14 @@ use Illuminate\Validation\ValidationException;
  */
 class LiftAllocationService
 {
+    /**
+     * Part 23 #8: lift lines that can still hold fuel on the truck. A line can only be Completed once nothing remains on
+     * the truck (DispatchLiftingStatusController::fuelLeftOnTruck), so Completed lines are empty by definition. Imported
+     * historical lifts were written as Completed without delivery links; counting them made "On Truck" add up every
+     * past trip (e.g. 16,206,000 L on a 30,000 L truck) and left every truck Loaded.
+     */
+    public const CARRYING_STATUSES = ['lifted'];
+
     /** Sale statuses that can still take a delivery. */
     private const OPEN_SALE_STATUSES = ['confirmed', 'partially_paid', 'paid', 'unpaid'];
 
@@ -236,15 +244,16 @@ class LiftAllocationService
      * @param  array<int, array{haul_id: int, purchase_item_id: int, fuel_type_id: int, leftover: float}>  $lines
      * @return Collection<int, \stdClass> each with haul_id (the lift line it would come from) and label
      */
-    public function truckOrderOptions(array $lines, bool $lock = false): Collection
+    public function truckOrderOptions(array $lines, bool $lock = false, ?Collection $openSales = null): Collection
     {
         if ($lines === []) {
             return collect();
         }
 
         // Garage to Client orders sell from garage stock, not from a truck.
-        return $this->openDirectSales($lock, ['depot_to_client', 'standard'])
+        return ($openSales ?? $this->openDirectSales($lock, ['depot_to_client', 'standard']))
             ->map(function (object $sale) use ($lines): ?object {
+                $sale = clone $sale;
                 foreach ($lines as $line) {
                     $carries = $sale->purchase_item_id
                         ? $sale->purchase_item_id === (int) $line['purchase_item_id']

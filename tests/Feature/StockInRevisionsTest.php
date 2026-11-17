@@ -123,7 +123,9 @@ class StockInRevisionsTest extends AuditTestCase
             'idempotency_key' => (string) Str::uuid(), 'purchase_date' => '2026-10-10', 'depot_id' => $north, 'fuel_type_id' => $this->fuel('DSL'),
             'quantity_ordered_liters' => 7000, 'unit_cost' => 50, 'payment_status' => 'paid', 'payment_mode' => 'cash',
         ])->assertSessionHasNoErrors();
-        $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 4000, 'unit_price' => 60], ['delivery_status' => 'delivered'])->assertSessionHasNoErrors();
+        $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 4000, 'unit_price' => 60])->assertSessionHasNoErrors();
+        // Part 21 #1: recorded Pending; the assigned driver marks it Delivered.
+        $this->driverDelivery($this->lastSaleId())->assertSessionHasNoErrors();
         DB::table('stock_outs')->update(['stock_out_at' => '2026-10-14 08:00:00']);
 
         // Total = 16,000 + 7,000 remaining; today's stock-in is the 10/14 purchase; 4,000 L released today.
@@ -180,7 +182,9 @@ class StockInRevisionsTest extends AuditTestCase
         $premium = $this->purchaseLine($a, 'PREM', 40000, 55);
 
         // 3,600 L delivered straight from the depot (Standard), 5,000 L carried by a lift the driver marked Lifted.
-        $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 3600, 'unit_price' => 60], ['delivery_status' => 'delivered'])->assertSessionHasNoErrors();
+        $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 3600, 'unit_price' => 60])->assertSessionHasNoErrors();
+        // Part 21 #1: recorded Pending; the assigned driver marks it Delivered.
+        $this->driverDelivery($this->lastSaleId())->assertSessionHasNoErrors();
         $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 5000, 'unit_price' => 60], ['delivery_type' => 'depot_to_client'])->assertSessionHasNoErrors();
         $this->scheduleLift($a, [['purchase_item_id' => $premium, 'quantity_liters' => 5000]], [$this->lastSaleId()])->assertSessionHasNoErrors();
         $this->completeLift($a, $this->lastHaulId());
@@ -201,8 +205,10 @@ class StockInRevisionsTest extends AuditTestCase
         $stockInId = (int) DB::table('stock_ins')->where('purchase_item_id', $premium)->value('id');
 
         $html = $this->actingAs($a['inventory'])->get(route('inventory-officer.inventory.stock-in'))->assertOk()->getContent();
-        $this->assertStringContainsString('data-modal-open="io-stock-in-edit-'.$stockInId.'">Edit</button>', $html);
-        $this->assertStringContainsString('Edit Stock-In Record', $html);
+        // Part 23 #2: the Stock-In tab opens a read-only View; the correction endpoint below is kept for the purchase rules.
+        $this->assertStringContainsString('data-modal-open="io-stock-in-edit-'.$stockInId.'">View</button>', $html);
+        $this->assertStringContainsString('Stock-In Record', $html);
+        $this->assertStringNotContainsString('Edit Stock-In Record', $html);
 
         $edit = fn (array $changes) => $this->actingAs($a['inventory'])->from(route('inventory-officer.inventory.stock-in'))
             ->patch(route('inventory-officer.inventory.stock-in.update', $premium), $changes + [
@@ -236,7 +242,9 @@ class StockInRevisionsTest extends AuditTestCase
     {
         $a = $this->actors();
         $premium = $this->purchaseLine($a, 'PREM', 20000, 55);
-        $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 1000, 'unit_price' => 65], ['delivery_status' => 'delivered', 'sales_order_number' => 'SO-EDIT'])->assertSessionHasNoErrors();
+        $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 1000, 'unit_price' => 65], ['sales_order_number' => 'SO-EDIT'])->assertSessionHasNoErrors();
+        // Part 21 #1: recorded Pending; the assigned driver marks it Delivered.
+        $this->driverDelivery($this->lastSaleId())->assertSessionHasNoErrors();
         $standard = DB::table('stock_outs')->orderByDesc('id')->first();
 
         $html = $this->actingAs($a['inventory'])->get(route('inventory-officer.inventory.stock-out'))->assertOk()->getContent();

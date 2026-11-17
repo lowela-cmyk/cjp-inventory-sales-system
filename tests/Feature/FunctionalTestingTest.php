@@ -168,9 +168,8 @@ class FunctionalTestingTest extends TestCase
         $this->assertDatabaseHas('sales', ['id' => $sale->id, 'delivery_status' => 'pending']);
         $this->assertSame(0, DB::table('stock_outs')->where('sale_id', $sale->id)->count());
 
-        $this->actingAs($records['salesOfficer'])
-            ->patch(route('sales-officer.sales.delivery-status.update', $sale->id), ['delivery_status' => 'delivered'])
-            ->assertRedirect(route('sales-officer.sales'));
+        $this->driverDelivery($sale->id, ['delivery_status' => 'delivered'])
+            ->assertRedirect(route('driver.fuel-lifting.deliveries'));
 
         $this->assertDatabaseHas('stock_outs', [
             'sale_id' => $sale->id,

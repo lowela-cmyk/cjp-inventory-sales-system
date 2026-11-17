@@ -51,6 +51,27 @@ class Part15RecordCodesTest extends AuditTestCase
         $this->assertSame(DB::table('purchases')->count(), DB::table('purchases')->distinct()->count('purchase_code'));
     }
 
+    /** Production Nov 16: imported records used PUR-DSL-002.. while the sequence stayed at 1, so every save collided. */
+    public function test_a_stale_sequence_behind_imported_codes_still_hands_out_an_unused_code(): void
+    {
+        $a = $this->actors();
+        $first = $this->purchaseLine($a, 'DSL', 20000);
+        $this->assertSame(['PUR-DSL-001'], $this->purchaseCodes([$first]));
+
+        // Imported/historical rows carry explicit codes and never touch code_sequences (it stays at 1).
+        $row = (array) DB::table('purchases')->where('purchase_code', 'PUR-DSL-001')->first();
+        unset($row['id']);
+        foreach (range(2, 6) as $n) {
+            DB::table('purchases')->insert(['purchase_code' => RecordCodeService::format('PUR', 'DSL', $n)] + $row);
+        }
+        $this->assertSame(1, (int) DB::table('code_sequences')->where('prefix', 'PUR')->where('fuel_code', 'DSL')->value('last_number'));
+
+        $next = $this->purchaseLine($a, 'DSL', 1000);
+        $this->assertSame(['PUR-DSL-007'], $this->purchaseCodes([$next]));
+        $this->assertSame(7, (int) DB::table('code_sequences')->where('prefix', 'PUR')->where('fuel_code', 'DSL')->value('last_number'));
+        $this->assertSame(DB::table('purchases')->count(), DB::table('purchases')->distinct()->count('purchase_code'));
+    }
+
     public function test_a_fuel_change_gives_the_next_id_of_the_new_fuel_and_never_reuses_the_old_number(): void
     {
         $a = $this->actors();

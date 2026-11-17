@@ -24,7 +24,7 @@ return Application::configure(basePath: dirname(__DIR__))
             $middleware->trustProxies(at: $trustedProxies === ['*'] ? '*' : $trustedProxies);
         }
         $middleware->append(SecurityHeaders::class);
-        $middleware->web(append: [RecordActivity::class, TrackModuleView::class, ResolveOldCodes::class]);
+        $middleware->web(append: [RecordActivity::class, TrackModuleView::class, ResolveOldCodes::class, \App\Http\Middleware\NormalizeTablePage::class]);
         $middleware->alias([
             'role' => EnsureUserHasRole::class,
         ]);

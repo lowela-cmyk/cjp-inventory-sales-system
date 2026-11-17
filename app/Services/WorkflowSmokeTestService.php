@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use RuntimeException;
 use Throwable;
+use App\Support\ActivePayments;
 
 /**
  * Transactional database workflow smoke test.
@@ -314,7 +315,7 @@ class WorkflowSmokeTestService
             'payment_terms' => 'cod',
             'status' => 'confirmed',
             'delivery_status' => 'pending',
-            'delivery_type' => 'standard',
+            'delivery_type' => 'depot_to_client',
             'created_by' => $records['sales_officer_id'],
             'created_at' => now(),
             'updated_at' => now(),
@@ -331,6 +332,14 @@ class WorkflowSmokeTestService
             'fulfilled_quantity_liters' => 0,
             'created_at' => now(),
             'updated_at' => now(),
+        ]);
+
+        // The smoke sale uses the fuel already on its own lift, never a second direct-depot withdrawal.
+        DB::table('haul_allocations')->insert([
+            'haul_id' => DB::table('hauls')->where('purchase_item_id', $purchase['item_id'])->value('id'),
+            'fuel_type_id' => $records['fuel_type_id'], 'destination_type' => 'customer',
+            'sale_id' => $saleId, 'customer_id' => $records['customer_id'], 'quantity_liters' => $quantity,
+            'status' => 'planned', 'allocated_at' => now(), 'created_at' => now(), 'updated_at' => now(),
         ]);
 
         DB::table('receivables')->insert([
@@ -396,7 +405,7 @@ class WorkflowSmokeTestService
 
     private function paidTotal(int $saleId): float
     {
-        return round((float) DB::table('payments')->where('sale_id', $saleId)->sum('amount'), 2);
+        return round((float) ActivePayments::query()->where('sale_id', $saleId)->sum('amount'), 2);
     }
 
     private function duplicateInventoryEffects(int $saleId): int
@@ -419,7 +428,7 @@ class WorkflowSmokeTestService
         $saleTotals = DB::table('sale_items')
             ->selectRaw('sale_id, COALESCE(SUM(line_total), 0) as total')
             ->groupBy('sale_id');
-        $paymentTotals = DB::table('payments')
+        $paymentTotals = ActivePayments::query()
             ->selectRaw('sale_id, COALESCE(SUM(amount), 0) as paid')
             ->groupBy('sale_id');
 

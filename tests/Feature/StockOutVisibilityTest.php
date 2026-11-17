@@ -35,8 +35,10 @@ class StockOutVisibilityTest extends AuditTestCase
 
         // Standard: delivered by its own truck and driver, with a 10% F1 portion.
         $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 2000, 'unit_price' => 50, 'f1_percentage' => 10, 'f1_purchase_item_id' => $f1, 'f1_unit_price' => 40], [
-            'sales_order_number' => 'SO-STANDARD', 'delivery_truck_id' => $a['truck'], 'delivery_driver_user_id' => $a['driver']->id, 'delivery_date' => '2026-10-21 14:00', 'delivery_status' => 'delivered',
+            'sales_order_number' => 'SO-STANDARD', 'delivery_truck_id' => $a['truck'], 'delivery_driver_user_id' => $a['driver']->id, 'delivery_date' => '2026-10-21 14:00',
         ])->assertSessionHasNoErrors();
+        // Part 21 #1: recorded Pending; the assigned driver marks it Delivered.
+        $this->driverDelivery($this->lastSaleId())->assertSessionHasNoErrors();
         $standard = (string) DB::table('sales')->where('sales_order_number', 'SO-STANDARD')->value('sale_code');
 
         // Depot to Client: delivered by its lift.
@@ -84,7 +86,9 @@ class StockOutVisibilityTest extends AuditTestCase
     {
         $a = $this->actors();
         $diesel = $this->purchaseLine($a, 'DSL', 10000);
-        $this->recordOrder($a, ['purchase_item_id' => $diesel, 'quantity_liters' => 4000, 'unit_price' => 60], ['sales_order_number' => 'SO-VOID', 'delivery_status' => 'delivered'])->assertSessionHasNoErrors();
+        $this->recordOrder($a, ['purchase_item_id' => $diesel, 'quantity_liters' => 4000, 'unit_price' => 60], ['sales_order_number' => 'SO-VOID'])->assertSessionHasNoErrors();
+        // Part 21 #1: recorded Pending; the assigned driver marks it Delivered.
+        $this->driverDelivery($this->lastSaleId())->assertSessionHasNoErrors();
         $sale = DB::table('sales')->where('sales_order_number', 'SO-VOID')->first(['id', 'sale_code']);
         $this->assertSame(6000.0, $this->remaining($diesel));
 

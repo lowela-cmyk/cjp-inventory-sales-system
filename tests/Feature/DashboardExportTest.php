@@ -18,7 +18,7 @@ class DashboardExportTest extends TestCase
     /** A 1x1 PNG, as Chart.js toBase64Image() would send. */
     private const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 
-    public function test_the_dashboard_has_an_export_button_and_downloads_a_pdf_report(): void
+    public function test_dashboard_export_control_is_shown_and_the_report_endpoint_downloads(): void
     {
         $admin = User::factory()->create(['role' => 'admin', 'status' => 'active']);
         $premium = (int) DB::table('fuel_types')->where('code', 'PREM')->value('id');
@@ -38,6 +38,25 @@ class DashboardExportTest extends TestCase
         $response->assertOk()->assertHeader('content-type', 'application/pdf');
         $this->assertStringContainsString('attachment; filename=cjp-dashboard-report-', (string) $response->headers->get('content-disposition'));
         $this->assertStringStartsWith('%PDF', $response->getContent());
+    }
+
+    /** Production Nov 16: the host serves from the document root (no public/ folder), so DomPDF threw "Cannot resolve public path". */
+    public function test_pdf_rendering_uses_the_application_public_path_on_a_flattened_document_root(): void
+    {
+        $docroot = sys_get_temp_dir().'/cjp-docroot-'.uniqid();
+        mkdir($docroot);
+        try {
+            $this->app->usePublicPath($docroot);
+            config(['dompdf.public_path' => null]);
+            (new \App\Providers\AppServiceProvider($this->app))->boot();
+
+            $this->assertSame($docroot, config('dompdf.public_path'));
+            $this->app->forgetInstance('dompdf');
+            $this->app->forgetInstance('dompdf.wrapper');
+            $this->assertStringStartsWith('%PDF', Pdf::loadHTML('<p>CJP</p>')->output());
+        } finally {
+            rmdir($docroot);
+        }
     }
 
     public function test_the_report_view_lists_the_filters_and_notes_a_missing_insight(): void

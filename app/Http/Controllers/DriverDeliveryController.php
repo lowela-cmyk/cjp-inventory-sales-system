@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Rules\ApprovedFuelType;
+use App\Services\DriverSaleDeliveryService;
 use App\Support\DepotLabel;
 use App\Support\FilterDates;
 use App\Support\TruckLabel;
@@ -21,7 +22,7 @@ class DriverDeliveryController extends Controller
 {
     private const TASK_STATUSES = ['scheduled', 'in_transit', 'lifted', 'completed', 'cancelled'];
 
-    public function index(Request $request, string $state = 'tasks'): View
+    public function index(Request $request, DriverSaleDeliveryService $deliveries, string $state = 'tasks'): View
     {
         $data = $request->validate([
             'search' => ['nullable', 'string', 'max:100'],
@@ -45,18 +46,37 @@ class DriverDeliveryController extends Controller
             'date_to' => $dates['to'],
         ];
         $driverId = (int) $request->user()->id;
-        $rows = $this->rows($driverId, $search === '' ? null : $search, $filters);
+        // The Deliveries tab has its own search; it does not filter the lifts.
+        $rows = $this->rows($driverId, $search === '' || $state === 'deliveries' ? null : $search, $filters);
+
+        $activeTab = match (true) {
+            in_array($state, ['hauled', 'no-hauled'], true) => 'hauled',
+            $state === 'deliveries' => 'deliveries',
+            default => 'schedule',
+        };
+        // Part 21 #1: the orders this driver delivers; the search box of the Deliveries tab filters them.
+        $deliveryRows = $request->user()->role === 'driver'
+            ? $deliveries->rows($driverId, $activeTab === 'deliveries' && $search !== '' ? $search : null)
+            : collect();
+
+        $schedulePages = \App\Support\TablePagination::collection($rows->where('group', 'schedule')->values(), 'driver_schedule_page');
+        $hauledPages = \App\Support\TablePagination::collection($rows->where('group', 'hauled')->values(), 'driver_hauled_page');
+        $deliveryPages = \App\Support\TablePagination::collection($deliveryRows, 'driver_deliveries_page');
 
         return view('driver.fuel-lifting', [
-            'activeTab' => in_array($state, ['hauled', 'no-hauled'], true) ? 'hauled' : 'schedule',
+            'schedulePages' => $schedulePages,
+            'hauledPages' => $hauledPages,
+            'deliveryPages' => $deliveryPages,
+            'activeTab' => $activeTab,
+            'deliveryRows' => $deliveryPages->getCollection(),
             'driverName' => $request->user()->name,
             'search' => $search === '' ? null : $search,
             'filters' => $filters,
             'filterOptions' => $this->filterOptions($driverId),
             'driverProfile' => $this->driverProfile($driverId),
             'summaryCards' => $this->summaryCards($driverId),
-            'scheduleRows' => $rows->where('group', 'schedule')->values(),
-            'hauledRows' => $rows->where('group', 'hauled')->values(),
+            'scheduleRows' => $schedulePages->getCollection(),
+            'hauledRows' => $hauledPages->getCollection(),
             'liftingStatusIdempotencyKey' => (string) Str::uuid(),
         ]);
     }

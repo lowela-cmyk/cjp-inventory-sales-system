@@ -191,7 +191,7 @@ class SystemAnalysisRevisionsTest extends TestCase
             ->assertSee('name="bank_name"', false)
             ->assertSee('Metrobank');
 
-        $this->actingAs($admin)->get(route('admin.sales'))
+        $this->actingAs($admin)->get(route('admin.sales.customers'))
             ->assertOk()
             ->assertSee('<th>Bank Name</th>', false)
             ->assertSee('Metrobank');

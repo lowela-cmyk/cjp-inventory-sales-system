@@ -10,10 +10,11 @@
     $filterOptions = $filterOptions ?? ['depots' => collect(), 'fuelTypes' => collect(), 'statuses' => []];
     // Part 20 #1: the receipt images are served only to the roles the withdrawal-receipts.show route allows.
     $canViewReceipts = in_array(auth()->user()?->role, ['admin', 'inventory_officer'], true);
+    $sortOptions = ['date' => 'Purchase Date', 'code' => 'Purchase ID', 'fuel' => 'Fuel', 'quantity' => 'Purchased Liters'];
 @endphp
 
 @component($ledgerLayout, ['title' => 'Inventory Ledger', 'active' => 'ledger'])
-    <div data-tabs>
+    <div data-tabs data-server-tabs>
         <div class="page-heading-row">
             <h2 class="section-title">Ledger Tab</h2>
             <x-export-button />
@@ -22,10 +23,14 @@
             <button class="tab-button {{ $activeTab === 'ledger' ? 'is-active' : '' }}" type="button" data-tab-target="ledger" data-tab-url="{{ route($ledgerRoutePrefix) }}">Ledger</button>
             <button class="tab-button {{ $activeTab === 'transactions' ? 'is-active' : '' }}" type="button" data-tab-target="transactions" data-tab-url="{{ route($ledgerRoutePrefix.'.transactions') }}">Transaction</button>
         </div>
+        @isset($liftingSummary)
+            <p class="table-help" data-ledger-summary>{{ number_format($liftingSummary['completed']) }} Completed · {{ number_format($liftingSummary['incomplete']) }} Incomplete. Newest purchases appear first. Use Status to view completed historical purchases.</p>
+        @endisset
 
         <section data-tab-panel="ledger" {{ $activeTab !== 'ledger' ? 'hidden' : '' }}>
-            <x-filter.bar class="toolbar-ledger" :action="route($ledgerRoutePrefix)">
+            <x-filter.bar :sort-options="$sortOptions" class="toolbar-ledger" :action="route($ledgerRoutePrefix)">
                 <x-filter.search label="Search ledger" :value="$search" />
+                <x-filter.select name="status" label="Status" :options="$filterOptions['statuses']" :selected="$filters['status'] ?? null" />
                 <x-filter.date-range label="Purchase date" :from-value="$filters['date_from'] ?? null" :to-value="$filters['date_to'] ?? null" />
                 <x-filter.select name="depot_id" label="Depot" :options="$filterOptions['depots']" :selected="$filters['depot_id'] ?? null" />
                 <x-filter.select name="fuel_type_id" label="Fuel Type" :options="$filterOptions['fuelTypes']" :selected="$filters['fuel_type_id'] ?? null" />
@@ -50,10 +55,14 @@
                     </tbody>
                 </table>
             </div>
+            @if (isset($ledgerPages) && $activeTab === 'ledger')
+                {{-- Part 23: the pagination bar sits under the table, as on the Inventory tabs. --}}
+                <div class="pagination-wrap" style="margin-top: 16px;">{{ $ledgerPages->links() }}</div>
+            @endif
         </section>
 
         <section data-tab-panel="transactions" {{ $activeTab !== 'transactions' ? 'hidden' : '' }}>
-            <x-filter.bar class="toolbar-ledger" :action="route($ledgerRoutePrefix.'.transactions')">
+            <x-filter.bar :sort-options="$sortOptions" class="toolbar-ledger" :action="route($ledgerRoutePrefix.'.transactions')">
                 <x-filter.search label="Search ledger transactions" :value="$search" />
                 <x-filter.select name="status" label="Status" :options="$filterOptions['statuses']" :selected="$filters['status'] ?? null" />
                 <x-filter.date-range label="Purchase date" :from-value="$filters['date_from'] ?? null" :to-value="$filters['date_to'] ?? null" />
@@ -85,6 +94,10 @@
                     </tbody>
                 </table>
             </div>
+            @if (isset($ledgerPages) && $activeTab === 'transactions')
+                {{-- Part 23: the pagination bar sits under the table, as on the Inventory tabs. --}}
+                <div class="pagination-wrap" style="margin-top: 16px;">{{ $ledgerPages->links() }}</div>
+            @endif
         </section>
     </div>
 

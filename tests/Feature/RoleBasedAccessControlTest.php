@@ -274,7 +274,8 @@ class RoleBasedAccessControlTest extends TestCase
             'password' => 'password',
         ]);
 
-        for ($attempt = 0; $attempt < 5; $attempt++) {
+        // Part 21 #3: four failures are answered with the error; the fifth one locks the login.
+        for ($attempt = 0; $attempt < 4; $attempt++) {
             $this->post('/login', [
                 'username' => 'limited-login@example.com',
                 'role' => 'admin',
@@ -700,7 +701,8 @@ class RoleBasedAccessControlTest extends TestCase
             ->assertSeeInOrder(['Expected Stock Out Rate:', '15.63%'])
             ->assertSeeInOrder(['Collected Revenue', 'PHP 800,000.00'])
             ->assertSeeInOrder(['Unpaid Amount', 'PHP 1,000,000.00'])
-            ->assertSeeInOrder(['Month With Highest Sales :', 'August'])
+            ->assertDontSee('Month With Highest Sales :')
+            ->assertDontSee('Simple Forecast Explanation')
             // Current Stock by Fuel Type chart (Premium, Unleaded, Diesel, F1): 80,000, 0, 1,000, 0 (as above).
             ->assertSee('"label":"Stock","data":[80000,0,1000,0]', false)
             ->assertSee('Premium')

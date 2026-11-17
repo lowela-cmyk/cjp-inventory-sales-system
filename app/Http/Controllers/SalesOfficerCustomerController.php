@@ -25,6 +25,7 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
+use App\Support\ActivePayments;
 
 class SalesOfficerCustomerController extends Controller
 {
@@ -36,6 +37,8 @@ class SalesOfficerCustomerController extends Controller
         private readonly RecordCodeService $codes,
         private readonly StandardSourceAssignmentService $sourceAssignments
     ) {}
+
+    private array $visibleSaleIds = [];
 
     public const PAYMENT_STATUSES = ['clear', 'pending', 'partial', 'unpaid'];
 
@@ -77,7 +80,13 @@ class SalesOfficerCustomerController extends Controller
     public const DELIVERY_TYPES = ['depot_to_client' => 'Depot to Client', 'standard' => 'Standard', 'garage_to_client' => 'Garage to Client'];
 
     /** Delivery statuses a Standard order can be recorded with (Delivered deducts the stock on save). */
-    private const NEW_ORDER_DELIVERY_STATUSES = ['pending', 'out_for_delivery', 'delivered'];
+    /**
+     * Part 21 #1: only the assigned Driver moves a delivery on (DriverSaleDeliveryController). An order recorded or
+     * given a source here always starts Pending; any other value is refused.
+     */
+    private const NEW_ORDER_DELIVERY_STATUSES = ['pending'];
+
+    private const DRIVER_ONLY_DELIVERY_MESSAGE = 'Only the assigned driver can update the delivery status.';
 
     /** Part 18 #5: a Depot to Client order's Delivery Details before a lift carries it. */
     private const NOT_ON_A_LIFT = 'Not on a lift yet';
@@ -97,6 +106,7 @@ class SalesOfficerCustomerController extends Controller
             'delivery_type' => ['nullable', Rule::in(array_keys(self::DELIVERY_TYPES))],
             'fuel_type_id' => ['nullable', 'integer', Rule::exists('fuel_types', 'id')],
             'location' => ['nullable', 'string', 'max:255'],
+            'payment_status' => ['nullable', Rule::in(['clear', 'pending'])],
         ] + FilterDates::rules());
         $dates = FilterDates::range($data);
 
@@ -105,6 +115,7 @@ class SalesOfficerCustomerController extends Controller
         // Filters belong to the tab whose toolbar submitted them; the other tab stays unfiltered.
         $filters = array_filter([
             'status' => $data['status'] ?? null,
+            'payment_status' => $data['payment_status'] ?? null,
             'delivery_status' => $data['delivery_status'] ?? null,
             'delivery_type' => $data['delivery_type'] ?? null,
             'date_from' => $dates['from'],
@@ -121,35 +132,34 @@ class SalesOfficerCustomerController extends Controller
                 'receivableStatuses' => self::RECEIVABLE_FILTER_STATUSES,
                 'deliveryStatuses' => collect(self::DELIVERY_STATUSES)->mapWithKeys(fn (string $status): array => [$status => $this->label($status)])->all(),
                 'deliveryTypes' => self::DELIVERY_TYPES,
+                'customerPaymentStatuses' => ['clear' => 'Clear', 'pending' => 'Pending'],
                 'accountStatuses' => collect(self::ACCOUNT_STATUSES)->mapWithKeys(fn (string $status): array => [$status => $this->label($status)])->all(),
                 'locations' => DB::table('customers')->whereNotNull('location')->where('location', '!=', '')->distinct()->orderBy('location')->pluck('location', 'location'),
             ],
             'summaryCards' => $dashboardSummary->salesCards(),
-            'sales' => $this->salesRows($normalizedSearch, filters: $activeTab === 'receivables' ? $filters : []),
-            'customers' => $this->customerRows($normalizedSearch, filters: $activeTab === 'customers' ? $filters : []),
+            'sales' => $activeTab === 'receivables' ? $this->salesRows($normalizedSearch, perPage: \App\Support\TablePagination::size(), filters: $filters) : collect(),
+            'customers' => $activeTab === 'customers' ? $this->customerRows($normalizedSearch, perPage: \App\Support\TablePagination::size(), filters: $filters) : collect(),
             'customerOptions' => $this->customerOptions($state === 'customers' ? $normalizedSearch : null),
             'fuelTypes' => $this->fuelTypeOptions(),
             'deliveryTypes' => self::DELIVERY_TYPES,
             'f1Percentages' => F1Split::PERCENTAGES,
             'f1EligibleCodes' => F1Split::ELIGIBLE_CODES,
             // Part 2 revisions: the purchases an order's fuel and its F1 portion are deducted from.
-            'purchaseOptions' => $purchaseOptions = $this->purchaseStock->saleOptions($this->purchaseIdsOnSales()),
+            'purchaseOptions' => $purchaseOptions = $activeTab === 'receivables' ? $this->purchaseStock->saleOptions($this->purchaseIdsOnSales()) : collect(),
             'f1PurchaseOptions' => $purchaseOptions->where('fuel_code', F1Split::F1_CODE)->values(),
-            'stockHints' => $this->stockHints(),
+            'stockHints' => $activeTab === 'receivables' ? $this->stockHints() : ['summary' => null, 'fuels' => []],
             // Part 18 add-on: the garage tanks a Garage to Client line, and an F1 portion, sell from ("tank:<id>"), and
             // the lots older open orders still sell from (kept selectable on those orders only).
-            'garageTankOptions' => $garageTanks = app(GarageStockService::class)->tankOptions(null, $this->garageTankIdsOnSales()),
+            'garageTankOptions' => $garageTanks = $activeTab === 'receivables' ? app(GarageStockService::class)->tankOptions(null, $this->garageTankIdsOnSales()) : collect(),
             'f1GarageTankOptions' => $garageTanks->where('fuel_code', F1Split::F1_CODE)->values(),
-            'garageOptions' => $garageOptions = app(GarageStockService::class)->lots(['with_empty' => true], null, $this->garageIdsOnSales() ?: [0])->values(),
+            'garageOptions' => $garageOptions = $activeTab === 'receivables' ? app(GarageStockService::class)->lots(['with_empty' => true], null, $this->garageIdsOnSales() ?: [0])->values() : collect(),
             'f1GarageOptions' => $garageOptions->where('fuel_code', F1Split::F1_CODE)->values(),
-            'newOrderDeliveryStatuses' => self::NEW_ORDER_DELIVERY_STATUSES,
             'deliveryTrucks' => DB::table('trucks')->where('status', '!=', 'inactive')->orderByRaw(TruckLabel::orderSql())->get(['id', 'truck_code', 'name']),
             'deliveryDrivers' => DB::table('users')->where('role', 'driver')->where('status', 'active')->orderBy('name')->get(['id', 'name']),
             'paymentStatuses' => self::PAYMENT_STATUSES,
             'accountStatuses' => self::ACCOUNT_STATUSES,
             'saleStatuses' => self::SALE_STATUSES,
             'editableSaleStatuses' => array_values(array_diff(self::SALE_STATUSES, ['paid', 'cancelled'])),
-            'editableDeliveryStatuses' => array_values(array_diff(self::DELIVERY_STATUSES, ['cancelled'])),
             'paymentMethods' => self::PAYMENT_METHODS,
             'paymentTerms' => self::PAYMENT_TERMS,
             'saleIdempotencyKey' => (string) Str::uuid(),
@@ -280,6 +290,25 @@ class SalesOfficerCustomerController extends Controller
             ->with('status', 'Payment record '.$idempotency['response_reference'].' recorded successfully.');
     }
 
+    /**
+     * Admin only: void a recorded payment. The payment stays in the table and the history; it stops counting toward
+     * totals, balances and statuses, and who voided it, when and why are recorded.
+     */
+    public function voidPayment(Request $request, int $sale, int $payment): RedirectResponse
+    {
+        $data = $request->validate(['void_reason' => ['required', 'string', 'min:5', 'max:500']], [], ['void_reason' => 'void reason']);
+        try {
+            app(\App\Services\PaymentVoidService::class)->void($payment, (int) $request->user()->id, $data['void_reason'], $sale);
+        } catch (ValidationException $e) {
+            return back()->withErrors($e->errors())->with('payment_sale_id', $sale);
+        }
+        $code = DB::table('payments')->where('id', $payment)->value('payment_code');
+
+        return redirect()->route($this->salesRedirectRoute($request))
+            ->with('payment_sale_id', $sale)
+            ->with('status', 'Payment '.$code.' voided. It stays in the payment history and no longer counts toward the balance.');
+    }
+
     public function storeRefund(Request $request, int $sale): RedirectResponse
     {
         if (! Schema::hasTable('sale_refunds')) {
@@ -336,7 +365,7 @@ class SalesOfficerCustomerController extends Controller
      */
     private function validatedRefundData(Request $request, int $sale): array
     {
-        $firstPayment = DB::table('payments')->where('sale_id', $sale)->min('payment_date');
+        $firstPayment = ActivePayments::query()->where('sale_id', $sale)->min('payment_date');
 
         return $request->validate([
             'amount' => ['required', 'numeric', 'gt:0', 'max:999999999999.99'],
@@ -379,7 +408,7 @@ class SalesOfficerCustomerController extends Controller
     {
         $saleRow = DB::table('sales')->where('id', $sale)->where('status', 'cancelled')->whereNull('deleted_at')->first(['id']);
         abort_unless($saleRow !== null, 404);
-        $paid = (float) DB::table('payments')->where('sale_id', $sale)->sum('amount');
+        $paid = (float) ActivePayments::query()->where('sale_id', $sale)->sum('amount');
         $refunded = (float) DB::table('sale_refunds')->where('sale_id', $sale)->when($refundId, fn (Builder $q) => $q->where('id', '!=', $refundId))->sum('amount');
         if (round($refunded + $amount, 2) > round($paid, 2)) {
             throw ValidationException::withMessages(['amount' => 'Refund cannot exceed the customer refund balance of PHP '.number_format(max(0, $paid - $refunded), 2).'.']);
@@ -398,7 +427,7 @@ class SalesOfficerCustomerController extends Controller
             'delivery_driver_user_id' => $garage ? ['required', 'integer', Rule::exists('users', 'id')->where(fn (Builder $query): Builder => $query->where('role', 'driver'))] : ['exclude'],
             'delivery_date' => $garage ? ['required', 'date'] : ['exclude'],
             'delivery_status' => $garage ? ['nullable', Rule::in(self::NEW_ORDER_DELIVERY_STATUSES)] : ['exclude'],
-        ], [], [
+        ], ['delivery_status.in' => self::DRIVER_ONLY_DELIVERY_MESSAGE], [
             'delivery_truck_id' => 'truck',
             'delivery_driver_user_id' => 'driver',
             'delivery_date' => 'delivery date',
@@ -409,7 +438,6 @@ class SalesOfficerCustomerController extends Controller
                 'delivery_truck_id' => (int) $data['delivery_truck_id'],
                 'delivery_driver_user_id' => (int) $data['delivery_driver_user_id'],
                 'delivery_date' => $data['delivery_date'],
-                'delivery_status' => $data['delivery_status'] ?? 'pending',
             ] : []);
         } catch (ValidationException $exception) {
             return back()->withErrors($exception->errors())->withInput();
@@ -522,13 +550,6 @@ class SalesOfficerCustomerController extends Controller
                             );
                         }
 
-                        // A Standard order recorded as Out for Delivery / Delivered moves on now; Delivered deducts its
-                        // liters from its purchases on save.
-                        $deliveryStatus = $data['delivery_status'] ?? 'pending';
-                        if ($deliveryStatus !== 'pending' && ! in_array($requestedStatus, ['draft', 'cancelled'], true)) {
-                            $this->saleConfirmationService->updateDeliveryStatus((int) $saleId, $deliveryStatus, (int) $request->user()->id);
-                        }
-
                         return [
                             'reference_id' => $saleId,
                             'response_reference' => $saleCode,
@@ -536,11 +557,12 @@ class SalesOfficerCustomerController extends Controller
                     });
                 }
             );
-        } catch (QueryException) {
+        } catch (QueryException $exception) {
             // Caught before RuntimeException (its parent), so a database error never shows its SQL to the user.
+            // Part 23 #9: name the actual problem and log the error (it used to be swallowed silently).
             return back()
                 ->withInput()
-                ->withErrors(['sale' => 'Sale record could not be saved. Please review the details and try again.']);
+                ->withErrors(['sale' => $this->saleSaveErrorMessage($exception, $data)]);
         } catch (\RuntimeException $exception) {
             return back()
                 ->withInput()
@@ -816,47 +838,6 @@ class SalesOfficerCustomerController extends Controller
                 : 'Sale cancelled successfully. Related financial and inventory history was preserved and reconciled.');
     }
 
-    public function updateDeliveryStatus(Request $request, int $sale): RedirectResponse
-    {
-        $data = $request->validate([
-            'delivery_status' => ['required', Rule::in(self::DELIVERY_STATUSES)],
-            // Part 20 #2: one key per opened form, so a double click or a resent request saves once.
-            'idempotency_key' => ['nullable', 'uuid'],
-        ]);
-
-        $deliveryType = DB::table('sales')->where('id', $sale)->whereNull('deleted_at')->value('delivery_type');
-        abort_if($deliveryType === null, 404);
-
-        // Part 20 #2 (revises Part 18 #5): a Depot to Client order may be moved Pending <-> Out for Delivery by hand.
-        // Delivered still needs its lift: SaleConfirmationService refuses it until the order is on a Lifted/Completed
-        // lift, and then releases the stock through that lift exactly as completing the lift does.
-        $write = function () use ($sale, $data, $request): array {
-            $this->saleConfirmationService->updateDeliveryStatus($sale, (string) $data['delivery_status'], (int) $request->user()->id);
-            $this->markUpdatedBy($sale, $request);
-
-            return ['reference_id' => $sale];
-        };
-
-        try {
-            $result = $data['idempotency_key'] ?? null
-                ? $this->idempotencyService->run((string) $data['idempotency_key'], 'sales.delivery-status.update', (int) $request->user()->id, $write)
-                : $write();
-        } catch (ValidationException $exception) {
-            return back()->withErrors($exception->errors())->withInput($request->only('delivery_update_sale_id'));
-        } catch (\RuntimeException $exception) {
-            if ($exception->getMessage() === 'Sale record not found.') {
-                abort(404);
-            }
-
-            // The Update Delivery modal of this sale reopens with the reason.
-            return back()->withErrors(['delivery_status' => $exception->getMessage()])->withInput($request->only('delivery_update_sale_id'));
-        }
-
-        return redirect()
-            ->route($this->salesRedirectRoute($request))
-            ->with('status', ($result['duplicate'] ?? false) ? 'This delivery update was already saved.' : 'Delivery status updated successfully.');
-    }
-
     public function store(Request $request): RedirectResponse
     {
         $data = $this->validatedCustomerData($request);
@@ -867,7 +848,6 @@ class SalesOfficerCustomerController extends Controller
                 'name' => $data['name'],
                 'company_name' => $data['company_name'],
                 'location' => $data['location'] ?? null,
-                'email' => $data['email'] ?? null,
                 'phone' => $data['phone'] ?? null,
                 'bank_name' => $this->blankToNull($data['bank_name'] ?? null),
                 'payment_status' => $data['payment_status'],
@@ -898,7 +878,6 @@ class SalesOfficerCustomerController extends Controller
                     'name' => $data['name'],
                     'company_name' => $data['company_name'],
                     'location' => $data['location'] ?? null,
-                    'email' => $data['email'] ?? null,
                     'phone' => $data['phone'] ?? null,
                     'bank_name' => $this->blankToNull($data['bank_name'] ?? null),
                     'payment_status' => $data['payment_status'],
@@ -949,7 +928,6 @@ class SalesOfficerCustomerController extends Controller
                 Rule::unique('customers', 'company_name')->ignore($customerId),
             ],
             'location' => ['nullable', 'string', 'max:255'],
-            'email' => ['nullable', 'email', 'max:255'],
             'phone' => ['nullable', 'string', 'max:30', 'regex:/^[0-9+()\\-\\s]+$/'],
             'bank_name' => ['nullable', 'string', 'max:255'],
             'payment_status' => ['required', Rule::in(self::PAYMENT_STATUSES)],
@@ -963,6 +941,7 @@ class SalesOfficerCustomerController extends Controller
     private function customerRows(?string $search, ?int $perPage = 25, array $filters = [])
     {
         $query = DB::table('customers')
+            ->when($filters['payment_status'] ?? null, fn (Builder $query, string $status) => \App\Support\CustomerPaymentStatus::filter($query, $status))
             ->when($filters['status'] ?? null, fn (Builder $query, string $status): Builder => $query->where('status', $status))
             ->when($filters['location'] ?? null, fn (Builder $query, string $location): Builder => $query->where('location', $location))
             ->when($search, fn (Builder $query): Builder => $this->search($query, $search, [
@@ -994,6 +973,7 @@ class SalesOfficerCustomerController extends Controller
             'updated_at',
         ];
 
+        \App\Support\TableSort::apply($query, ['date' => 'created_at', 'code' => 'customer_code', 'name' => 'name', 'company' => 'company_name', 'location' => 'location'], 'date', 'id');
         $paginator = null;
         if ($perPage !== null) {
             $paginator = $query->paginate($perPage, $columns, 'customers_page')->withQueryString();
@@ -1029,7 +1009,7 @@ class SalesOfficerCustomerController extends Controller
 
         // Payments recorded on cancelled sales are owed back minus recorded refunds.
         $refundDueTotals = $customerIds->isEmpty() ? [] : (function () use ($customerIds): array {
-            $paid = DB::table('payments')->join('sales', 'sales.id', '=', 'payments.sale_id')
+            $paid = ActivePayments::query()->join('sales', 'sales.id', '=', 'payments.sale_id')
                 ->whereIn('sales.customer_id', $customerIds->all())->whereNull('sales.deleted_at')->where('sales.status', 'cancelled')
                 ->groupBy('sales.customer_id')->selectRaw('sales.customer_id, SUM(payments.amount) as total')->pluck('total', 'customer_id');
             $refunded = Schema::hasTable('sale_refunds')
@@ -1073,6 +1053,7 @@ class SalesOfficerCustomerController extends Controller
                     'phone' => $row->phone,
                     'bank_name' => $row->bank_name,
                     'payment_status' => $derivedPaymentStatus,
+                    'stored_payment_status' => $row->payment_status,
                     'status' => $row->status,
                     'created_at' => $row->created_at,
                     'updated_at' => $row->updated_at,
@@ -1082,16 +1063,15 @@ class SalesOfficerCustomerController extends Controller
                         $row->name,
                         $row->company_name,
                         $row->location ?: 'N/A',
-                        $row->email ?: 'N/A',
                         $row->phone ?: 'N/A',
                         $row->bank_name ?: 'N/A',
                         $this->label($derivedPaymentStatus),
+                        $this->label($row->status),
                     ],
                     'details' => [
                         'Customer Name' => $row->name,
                         'Company Name' => $row->company_name,
                         'Location' => $row->location ?: 'N/A',
-                        'Email' => $row->email ?: 'N/A',
                         'Contact Number' => $row->phone ?: 'N/A',
                         'Bank Name' => $row->bank_name ?: 'N/A',
                         'Payment Status' => $this->label($derivedPaymentStatus),
@@ -1134,7 +1114,7 @@ class SalesOfficerCustomerController extends Controller
             ? DB::raw('COALESCE(sales.updated_by, sales.delivery_status_updated_by)')
             : 'sales.delivery_status_updated_by';
 
-        $payments = DB::table('payments')
+        $payments = ActivePayments::query()
             ->selectRaw('sale_id, COALESCE(SUM(amount), 0) as total_paid')
             ->groupBy('sale_id');
 
@@ -1215,6 +1195,7 @@ class SalesOfficerCustomerController extends Controller
             'delivery_updaters.name as delivery_updated_by_name',
         ];
 
+        \App\Support\TableSort::apply($query, ['date' => 'sales.sale_date', 'code' => 'sales.sale_code', 'company' => 'customers.company_name', 'total' => 'items_total.sale_total'], 'date', 'sales.id');
         $paginator = null;
         if ($perPage !== null) {
             $paginator = $query->paginate($perPage, $columns, 'sales_page')->withQueryString();
@@ -1231,6 +1212,7 @@ class SalesOfficerCustomerController extends Controller
             ->unique()
             ->values();
 
+        $this->visibleSaleIds = $saleIds->all();
         $itemsBySale = $this->itemsForSales($saleIds);
         $latestPaymentDates = $this->latestPaymentDatesForSales($saleIds);
         $dependencyMap = $this->saleDependencyMap($saleIds);
@@ -1240,9 +1222,11 @@ class SalesOfficerCustomerController extends Controller
         $changeLogsBySale = $this->changeLogsForSales($saleIds);
         $schedulesBySale = $this->paymentSchedulesForSales($saleIds);
         $liftsBySale = $this->liftsForSales($saleIds);
+        $sourceChanges = $this->sourceChangeFields($saleIds);
+        $correctionModes = $this->saleCorrectionService->correctionModes($saleIds->all());
 
         $transformed = $rows
-            ->map(function (\stdClass $row) use ($itemsBySale, $latestPaymentDates, $dependencyMap, $paymentsBySale, $refundsBySale, $fuelMovedMap, $changeLogsBySale, $schedulesBySale, $liftsBySale): array {
+            ->map(function (\stdClass $row) use ($itemsBySale, $latestPaymentDates, $dependencyMap, $paymentsBySale, $refundsBySale, $fuelMovedMap, $changeLogsBySale, $schedulesBySale, $liftsBySale, $sourceChanges, $correctionModes): array {
                 $saleId = (int) $row->sale_id;
                 $paid = (float) ($row->total_paid ?? 0);
                 $saleTotal = (float) $row->sale_total;
@@ -1258,8 +1242,8 @@ class SalesOfficerCustomerController extends Controller
                 };
                 $saleItems = $itemsBySale[$saleId] ?? [];
                 $latestPaymentDate = $latestPaymentDates[$saleId] ?? null;
-                $sourceChange = $this->sourceChangeField($saleId);
-                $correctionAction = $this->saleCorrectionService->correctionMode($saleId);
+                $sourceChange = $sourceChanges[$saleId] ?? null;
+                $correctionAction = $correctionModes[$saleId] ?? null;
                 $deliveryType = self::DELIVERY_TYPES[$row->delivery_type] ?? self::DELIVERY_TYPES['standard'];
                 $isStandard = $row->delivery_type !== 'depot_to_client';
                 $deliveryTruck = $row->delivery_truck_code ? TruckLabel::make($row->delivery_truck_name, $row->delivery_truck_code) : 'N/A';
@@ -1288,8 +1272,10 @@ class SalesOfficerCustomerController extends Controller
                     'payment_terms' => $row->payment_terms,
                     'status' => $row->status,
                     'delivery_status' => $row->delivery_status,
-                    // Part 20 #2: the Update Delivery action of the Receivables row.
-                    'delivery_update' => $this->deliveryUpdateAction($row, $liftsBySale[$saleId] ?? null),
+                    // Part 21 #1: view only here; the assigned driver updates it. Who last changed it stays in Export.
+                    'delivery_last_update' => $row->delivery_status_updated_at
+                        ? $this->actorLine($row->delivery_updated_by_name, $row->delivery_status_updated_at)
+                        : null,
                     'receivable_status' => $receivableStatus,
                     'due_date' => $row->due_date,
                     'latest_payment_date' => $latestPaymentDate,
@@ -1302,7 +1288,7 @@ class SalesOfficerCustomerController extends Controller
                     'refunds' => $refundsBySale[$saleId] ?? [],
                     'items' => $saleItems,
                     'source_options' => $row->delivery_type === 'standard' && ! in_array($row->delivery_status, ['delivered', 'cancelled'], true)
-                        ? $this->sourceAssignments->options($saleId)
+                        ? $this->sourceAssignments->displayOptions((object) ['id' => $saleId, 'delivery_type' => $row->delivery_type, 'delivery_status' => $row->delivery_status], collect($saleItems)->map(fn ($item) => (object) $item))
                         : ['scheduled' => [], 'truck' => [], 'garage' => []],
                     'source_change_note' => $sourceChange,
                     // Part 13: white by default; red only for a Cancelled sale or a fully Unpaid one (nothing paid yet).
@@ -1452,6 +1438,7 @@ class SalesOfficerCustomerController extends Controller
             'items.required' => 'Add the order line.',
             'items.*.purchase_item_id.required' => 'Select the Fuel Type purchase.',
             'items.*.garage_tank_id.required' => 'Select the garage tank to sell from.',
+            'delivery_status.in' => self::DRIVER_ONLY_DELIVERY_MESSAGE,
         ], [
             'delivery_truck_id' => 'truck',
             'delivery_driver_user_id' => 'driver',
@@ -2015,7 +2002,7 @@ class SalesOfficerCustomerController extends Controller
 
     private function paidTotalForSale(int $saleId): float
     {
-        return round((float) DB::table('payments')
+        return round((float) ActivePayments::query()
             ->where('sale_id', $saleId)
             ->sum('amount'), 2);
     }
@@ -2037,7 +2024,7 @@ class SalesOfficerCustomerController extends Controller
 
     private function paidTotalForSchedule(int $paymentScheduleId): float
     {
-        return round((float) DB::table('payments')
+        return round((float) ActivePayments::query()
             ->where('payment_schedule_id', $paymentScheduleId)
             ->sum('amount'), 2);
     }
@@ -2112,7 +2099,7 @@ class SalesOfficerCustomerController extends Controller
         string $method,
         ?string $referenceNumber
     ): bool {
-        $query = DB::table('payments')
+        $query = ActivePayments::query()
             ->where('sale_id', $saleId)
             ->where('payment_date', $paymentDate)
             ->where('amount', $amount)
@@ -2148,7 +2135,7 @@ class SalesOfficerCustomerController extends Controller
 
         $paidBySchedule = $scheduleIds->isEmpty()
             ? collect()
-            : DB::table('payments')
+            : ActivePayments::query()
                 ->whereIn('payment_schedule_id', $scheduleIds->all())
                 ->selectRaw('payment_schedule_id, COALESCE(SUM(amount), 0) as paid')
                 ->groupBy('payment_schedule_id')
@@ -2249,7 +2236,7 @@ class SalesOfficerCustomerController extends Controller
             return [];
         }
 
-        return DB::table('payments')
+        return ActivePayments::query()
             ->whereIn('sale_id', $ids->all())
             ->selectRaw('sale_id, MAX(payment_date) as latest_payment_date')
             ->groupBy('sale_id')
@@ -2412,7 +2399,7 @@ class SalesOfficerCustomerController extends Controller
     /** @return array<int, int> Part 18 add-on: garage tanks on open sales, so editing such a sale keeps its tank selectable */
     private function garageTankIdsOnSales(): array
     {
-        return DB::table('sale_items')
+        return DB::table('sale_items')->whereIn('sale_items.sale_id', $this->visibleSaleIds)
             ->join('sales', 'sales.id', '=', 'sale_items.sale_id')
             ->whereNull('sales.deleted_at')
             ->whereNotIn('sales.delivery_status', ['delivered', 'cancelled'])
@@ -2424,51 +2411,63 @@ class SalesOfficerCustomerController extends Controller
     /** @return array<int, int> garage lots on open sales, so editing such a sale keeps its lot selectable */
     private function garageIdsOnSales(): array
     {
-        return DB::table('sale_items')
+        return DB::table('sale_items')->whereIn('sale_items.sale_id', $this->visibleSaleIds)
             ->join('sales', 'sales.id', '=', 'sale_items.sale_id')
             ->whereNull('sales.deleted_at')
             ->whereNotIn('sales.delivery_status', ['delivered', 'cancelled'])
             ->selectRaw('sale_items.garage_stock_id as lot_id')->whereNotNull('sale_items.garage_stock_id')
-            ->union(DB::table('sale_items')->whereNotNull('f1_garage_stock_id')->selectRaw('f1_garage_stock_id as lot_id'))
+            ->union(DB::table('sale_items')->whereIn('sale_id', $this->visibleSaleIds)->whereNotNull('f1_garage_stock_id')->selectRaw('f1_garage_stock_id as lot_id'))
             ->pluck('lot_id')->map(fn (mixed $id): int => (int) $id)->unique()->values()->all();
     }
 
     /**
-     * Record Sales hint (Part 16 #2): fuel whose purchases have no liters left to sell from the depot but have fuel in
-     * the garage or on a truck. One compact line per fuel (shown for the selected fuel) and one summary line (shown
-     * while no fuel is selected).
+     * Record Sales hint. Part 23 #9: one short line per fuel, shown once a fuel is chosen, e.g.
+     * "Unleaded: 0 L in depot, 10,000 L in garage, 30,808 L on trucks". The numbers come from the same sources the
+     * dropdown offers and assertPurchaseStock() validates: purchase lines' available depot liters (lines held for
+     * reconciliation excluded), garage tanks' available liters, and fuel still on Lifted trucks.
      *
      * @return array{summary: ?string, fuels: array<string, string>}
      */
     private function stockHints(): array
     {
         $liters = fn (float $value): string => number_format($value, fmod($value, 1.0) === 0.0 ? 0 : 2).' L';
-        $byFuel = $this->purchaseStock->lines()
-            ->filter(fn (object $line): bool => $line->available <= 0 && ($line->in_garage > 0 || $line->on_truck > 0))
-            ->groupBy('fuel_code');
+        $depot = $this->purchaseStock->lines()->reject(fn (object $line): bool => (bool) $line->requires_reconciliation)
+            ->groupBy('fuel_code')->map(fn ($lines): float => round((float) $lines->sum(fn (object $line): float => max(0, (float) $line->available)), 2));
+        $garage = app(GarageStockService::class)->tankOptions()->groupBy('fuel_code')->map(fn ($tanks): float => round((float) $tanks->sum('available'), 2));
+        $carrying = DB::table('hauls')->join('fuel_types', 'fuel_types.id', '=', 'hauls.fuel_type_id')->whereNull('hauls.deleted_at')
+            ->whereIn('hauls.status', \App\Services\LiftAllocationService::CARRYING_STATUSES)->get(['hauls.id', 'fuel_types.code as fuel_code']);
+        $load = app(\App\Services\LiftAllocationService::class)->loadSummaryByHaul($carrying->pluck('id')->map(fn (mixed $id): int => (int) $id)->all());
+        $truck = $carrying->groupBy('fuel_code')->map(fn ($hauls): float => round((float) $hauls->sum(fn (object $haul): float => (float) ($load[(int) $haul->id]['remaining'] ?? 0)), 2));
 
-        $fuels = $byFuel->map(function ($lines) use ($liters): string {
-            $garage = round((float) $lines->sum('in_garage'), 2);
-            $truck = round((float) $lines->sum('on_truck'), 2);
+        $fuels = DB::table('fuel_types')->where('status', 'active')->whereIn('code', array_keys(config('fuels.approved', [])))->orderBy('name')->get(['code', 'name'])
+            ->mapWithKeys(fn (object $fuel): array => [$fuel->code => $fuel->name.': '.$liters($depot[$fuel->code] ?? 0.0).' in depot, '
+                .$liters($garage[$fuel->code] ?? 0.0).' in garage, '.$liters($truck[$fuel->code] ?? 0.0).' on trucks'])
+            ->all();
 
-            return $lines->first()->fuel_name.': '.implode(' and ', array_filter([
-                $garage > 0 ? $liters($garage).' in the garage' : null,
-                $truck > 0 ? $liters($truck).' on a truck' : null,
-            ])).' ('.$lines->pluck('purchase_code')->implode(', ').", 0 L in the depot) \u{2014} "
-                .($garage > 0 ? 'use Garage to Client.' : 'deliver it from the truck in Fuel Lifting.');
-        })->all();
+        return ['summary' => null, 'fuels' => $fuels];
+    }
 
-        $summary = $byFuel->isEmpty() ? null : 'Not in the depot: '.$byFuel
-            ->map(fn ($lines): string => $lines->first()->fuel_name.' '.$liters(round((float) $lines->sum('in_garage') + (float) $lines->sum('on_truck'), 2)))
-            ->implode(', ')." (garage / truck) \u{2014} pick a fuel for details, or use Garage to Client.";
+    /** Part 23 #9: a specific, user-safe reason for a database error while saving a sale (the details go to the log). */
+    private function saleSaveErrorMessage(QueryException $exception, array $data): string
+    {
+        $reference = 'SALE-'.now()->format('YmdHis').'-'.substr(md5($exception->getMessage()), 0, 6);
+        \Illuminate\Support\Facades\Log::error('Sale could not be saved', ['reference' => $reference, 'sql_state' => $exception->getCode(), 'error' => $exception->getMessage()]);
+        // The driver's own error text names the violated key; getMessage() also carries the whole INSERT (every column).
+        $message = (string) ($exception->errorInfo[2] ?? $exception->getPrevious()?->getMessage() ?? $exception->getMessage());
+        $duplicate = str_contains($message, 'UNIQUE constraint failed') || str_contains($message, 'Duplicate entry');
 
-        return ['summary' => $summary, 'fuels' => $fuels];
+        return match (true) {
+            $duplicate && str_contains($message, 'sales_order_number') => 'Sales Order No. '.($data['sales_order_number'] ?? '').' is already used by another sale. Enter a different Sales Order No.',
+            $duplicate && str_contains($message, 'sale_code') => 'A new Sales ID could not be assigned because the next number is already in use. Please try again; if it repeats, contact the administrator (reference '.$reference.').',
+            str_contains($message, 'foreign key') || $exception->getCode() === '23000' => 'The sale refers to a customer, purchase, truck or driver that no longer exists. Reload the page and choose again (reference '.$reference.').',
+            default => 'The sale could not be saved because of a database error. Nothing was recorded. Please try again or contact the administrator (reference '.$reference.').',
+        };
     }
 
     private function purchaseIdsOnSales(): array
     {
-        return DB::table('sale_items')->whereNotNull('purchase_item_id')->distinct()->pluck('purchase_item_id')
-            ->merge(DB::table('sale_items')->whereNotNull('f1_purchase_item_id')->distinct()->pluck('f1_purchase_item_id'))
+        return DB::table('sale_items')->whereIn('sale_items.sale_id', $this->visibleSaleIds)->whereNotNull('purchase_item_id')->distinct()->pluck('purchase_item_id')
+            ->merge(DB::table('sale_items')->whereIn('sale_id', $this->visibleSaleIds)->whereNotNull('f1_purchase_item_id')->distinct()->pluck('f1_purchase_item_id'))
             ->map(fn (mixed $id): int => (int) $id)->unique()->values()->all();
     }
 
@@ -2590,6 +2589,8 @@ class SalesOfficerCustomerController extends Controller
         $payments = DB::table('payments')
             ->leftJoin('users', 'users.id', '=', 'payments.received_by')
             ->leftJoin('payment_schedules', 'payment_schedules.id', '=', 'payments.payment_schedule_id')
+            // Voided payments stay in the history, labelled, with who voided them, when and why.
+            ->when(ActivePayments::voidSupported(), fn (Builder $query): Builder => $query->leftJoin('users as voiders', 'voiders.id', '=', 'payments.voided_by'))
             ->whereIn('payments.sale_id', $ids->all())
             ->orderBy('payments.sale_id')
             ->orderBy('payment_date')
@@ -2605,15 +2606,23 @@ class SalesOfficerCustomerController extends Controller
                 'payments.remarks',
                 'payment_schedules.due_date as schedule_due_date',
                 'users.name as received_by_name',
+                ...(ActivePayments::voidSupported()
+                    ? ['payments.voided_at', 'payments.void_reason', 'voiders.name as voided_by_name']
+                    : [DB::raw('NULL as voided_at'), DB::raw('NULL as void_reason'), DB::raw('NULL as voided_by_name')]),
             ])
             ->groupBy(fn (object $row): int => (int) $row->sale_id);
 
         return $ids
             ->mapWithKeys(fn (int $saleId): array => [
-                $saleId => ($payments[$saleId] ?? collect())
-                    ->values()
-                    ->map(fn (\stdClass $row, int $index): array => [
-                        'sequence' => 'Installment #'.($index + 1),
+                $saleId => (function () use ($payments, $saleId): array {
+                    $installment = 0;
+
+                    // A by-reference closure: an arrow function would copy $installment and number every row #1.
+                    return ($payments[$saleId] ?? collect())->values()->map(function (\stdClass $row) use (&$installment): array {
+                        return [
+                        'id' => (int) $row->id,
+                        // Only payments that still count are numbered as installments.
+                        'sequence' => $row->voided_at ? 'Voided' : 'Installment #'.(++$installment),
                         'code' => $row->payment_code,
                         'date' => $this->formatDate($row->payment_date),
                         'amount' => $this->formatNumber($row->amount),
@@ -2622,9 +2631,14 @@ class SalesOfficerCustomerController extends Controller
                         'schedule' => $row->schedule_due_date ? 'Due '.$this->formatDate($row->schedule_due_date) : 'Unscheduled',
                         'recorded_by' => $row->received_by_name ?: 'N/A',
                         'remarks' => $row->remarks ?: 'N/A',
-                        'status' => 'Recorded',
-                    ])
-                    ->all(),
+                        'status' => $row->voided_at ? 'Voided' : 'Recorded',
+                        'voided' => $row->voided_at !== null,
+                        'void_note' => $row->voided_at
+                            ? 'Voided '.$this->formatDate($row->voided_at).' by '.($row->voided_by_name ?: 'N/A').': '.($row->void_reason ?: 'No reason recorded')
+                            : null,
+                        ];
+                    })->all();
+                })(),
             ])
             ->all();
     }
@@ -2645,7 +2659,7 @@ class SalesOfficerCustomerController extends Controller
             return [];
         }
 
-        $schedulePayments = DB::table('payments')
+        $schedulePayments = ActivePayments::query()
             ->selectRaw('payment_schedule_id, COALESCE(SUM(amount), 0) as paid')
             ->whereNotNull('payment_schedule_id')
             ->groupBy('payment_schedule_id');
@@ -2768,7 +2782,7 @@ class SalesOfficerCustomerController extends Controller
             return [];
         }
 
-        $payments = DB::table('payments')
+        $payments = ActivePayments::query()
             ->selectRaw('sale_id, COALESCE(SUM(amount), 0) as total_paid')
             ->groupBy('sale_id');
 
@@ -2889,24 +2903,17 @@ class SalesOfficerCustomerController extends Controller
         return ($name ?: 'N/A').($at ? ' · '.$this->formatDateTime($at) : '');
     }
 
-    private function sourceChangeField(int $saleId): ?string
+    private function sourceChangeFields(Collection $saleIds): array
     {
-        if (! Schema::hasTable('sale_source_changes')) {
-            return null;
-        }
-
-        $change = DB::table('sale_source_changes')
-            ->leftJoin('users as source_change_users', 'source_change_users.id', '=', 'sale_source_changes.changed_by')
-            ->where('sale_source_changes.sale_id', $saleId)
-            ->orderByDesc('sale_source_changes.changed_at')
-            ->first(['sale_source_changes.to_delivery_type', 'sale_source_changes.source_label', 'sale_source_changes.changed_at', 'source_change_users.name as changed_by_name']);
-        if (! $change) {
-            return null;
-        }
-
-        $type = self::DELIVERY_TYPES[$change->to_delivery_type] ?? $this->label($change->to_delivery_type);
-
-        return 'Changed from Standard to '.$type.' ('.$change->source_label.') on '.$this->formatDateTime($change->changed_at).' by '.($change->changed_by_name ?: 'N/A');
+        if ($saleIds->isEmpty() || ! Schema::hasTable('sale_source_changes')) return [];
+        return DB::table('sale_source_changes')->leftJoin('users as source_change_users', 'source_change_users.id', '=', 'sale_source_changes.changed_by')
+            ->whereIn('sale_source_changes.sale_id', $saleIds)->orderByDesc('sale_source_changes.changed_at')->orderByDesc('sale_source_changes.id')
+            ->get(['sale_source_changes.sale_id', 'sale_source_changes.to_delivery_type', 'sale_source_changes.source_label', 'sale_source_changes.changed_at', 'source_change_users.name as changed_by_name'])
+            ->groupBy('sale_id')->map(function ($changes): string {
+                $change = $changes->first();
+                $type = self::DELIVERY_TYPES[$change->to_delivery_type] ?? $this->label($change->to_delivery_type);
+                return 'Changed from Standard to '.$type.' ('.$change->source_label.') on '.$this->formatDateTime($change->changed_at).' by '.($change->changed_by_name ?: 'N/A');
+            })->all();
     }
 
     /**
@@ -2915,36 +2922,6 @@ class SalesOfficerCustomerController extends Controller
      * @param  Collection<int, int>  $saleIds
      * @return array<int, array{codes: string, trucks: string, drivers: string, dates: string}>
      */
-    /**
-     * Part 20 #2: the Update Delivery action of a Receivables row: the statuses it may move to next (the existing
-     * Pending -> Out for Delivery -> Delivered flow, through SaleConfirmationService) and who last changed it. A draft,
-     * cancelled or delivered sale has no action. A Depot to Client order offers Delivered only once its lift is Lifted.
-     *
-     * @param  array<string, mixed>|null  $lifts
-     * @return array{available: bool, current: string, options: array<int, string>, note: ?string, last_update: ?string}
-     */
-    private function deliveryUpdateAction(object $row, ?array $lifts): array
-    {
-        $current = (string) ($row->delivery_status ?: 'pending');
-        $open = ! in_array($current, ['delivered', 'cancelled'], true) && ! in_array($row->status, ['draft', 'cancelled'], true);
-        $isDepot = $row->delivery_type === 'depot_to_client';
-        $canDeliver = ! $isDepot || (bool) ($lifts['lifted'] ?? false);
-        $options = collect(['pending', 'out_for_delivery', 'delivered'])
-            ->reject(fn (string $status): bool => $status === $current || ($status === 'delivered' && ! $canDeliver))
-            ->values()
-            ->all();
-
-        return [
-            'available' => $open && $options !== [],
-            'current' => $current,
-            'options' => $open ? $options : [],
-            'note' => $open && ! $canDeliver ? 'Delivered is available once this order\'s lift is marked Lifted in Fuel Lifting.' : null,
-            'last_update' => $row->delivery_status_updated_at
-                ? $this->actorLine($row->delivery_updated_by_name, $row->delivery_status_updated_at)
-                : null,
-        ];
-    }
-
     private function liftsForSales(Collection $saleIds): array
     {
         if ($saleIds->isEmpty()) {

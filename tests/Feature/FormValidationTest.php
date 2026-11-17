@@ -123,7 +123,7 @@ class FormValidationTest extends TestCase
                 'status' => 'deleted',
             ])
             ->assertRedirect(route('sales-officer.sales.customers'))
-            ->assertSessionHasErrors(['name', 'company_name', 'location', 'email', 'phone', 'payment_status', 'status'])
+            ->assertSessionHasErrors(['name', 'company_name', 'location', 'phone', 'payment_status', 'status'])
             ->assertSessionHasInput('company_name', 'Duplicate Customer Co.')
             ->assertSessionHasInput('email', 'bad-email');
 

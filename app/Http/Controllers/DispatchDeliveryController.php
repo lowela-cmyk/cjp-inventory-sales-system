@@ -28,6 +28,7 @@ use Illuminate\View\View;
 
 class DispatchDeliveryController extends Controller
 {
+    private ?\Illuminate\Pagination\LengthAwarePaginator $haulPages = null;
     public function __construct(
         private readonly IdempotencyService $idempotencyService,
         private readonly PurchaseWorkflowService $purchaseWorkflow,
@@ -81,12 +82,13 @@ class DispatchDeliveryController extends Controller
             'lift_date_from' => $liftDates['from'],
             'lift_date_to' => $liftDates['to'],
         ];
-        $rows = $this->haulRows($search === '' ? null : $search, $filters);
+        $rows = in_array($activeTab, ['trucks', 'garage'], true) ? collect() : $this->haulRows($search === '' ? null : $search, $filters + ['page_tab' => $activeTab]);
 
         $truckSearch = trim((string) ($truckFilters['search'] ?? ''));
 
         return view('dispatch.fuel-lifting', [
             'activeTab' => $activeTab,
+            'haulPages' => $this->haulPages,
             'search' => $search === '' ? null : $search,
             'truckDirectory' => $this->truckAvailability->directory($truckSearch, $truckFilters['status'] ?? null),
             'truckSearch' => $truckSearch === '' ? null : $truckSearch,
@@ -173,19 +175,25 @@ class DispatchDeliveryController extends Controller
                     [$driver, $truck, $purchaseItems, $scheduledAt] = $this->checkedLift($data, $items, $allocations);
 
                     // Part 15 #6: LFT-FUEL-NUMBER for the lift's fuel; its haul lines are LFT-FUEL-NUMBER-01, -02, ...
-                    $scheduleCode = $this->codes->next(RecordCodeService::LIFT, $this->codes->liftFuel($purchaseItems->pluck('fuel_type_id')));
-                    $scheduleId = DB::table('lifting_schedules')->insertGetId([
-                        'schedule_code' => $scheduleCode,
-                        'depot_id' => $purchaseItems->first()->depot_id,
-                        'truck_id' => $truck->id,
-                        'driver_user_id' => $driver->id,
-                        'dr_number' => $data['dr_number'] ?? null,
-                        'scheduled_at' => $scheduledAt->toDateTimeString(),
-                        'status' => 'scheduled',
-                        'created_by' => $request->user()->id,
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ]);
+                    // The code is read under the sequence lock and checked against every stored code (soft-deleted
+                    // rows included); a collision with a concurrent import still retries with the next number.
+                    $scheduleCode = null;
+                    $scheduleId = $this->idempotencyService->retryOnCollision('schedule_code', function () use (&$scheduleCode, $purchaseItems, $truck, $driver, $data, $scheduledAt, $request): int {
+                        $scheduleCode = $this->codes->next(RecordCodeService::LIFT, $this->codes->liftFuel($purchaseItems->pluck('fuel_type_id')));
+
+                        return (int) DB::table('lifting_schedules')->insertGetId([
+                            'schedule_code' => $scheduleCode,
+                            'depot_id' => $purchaseItems->first()->depot_id,
+                            'truck_id' => $truck->id,
+                            'driver_user_id' => $driver->id,
+                            'dr_number' => $data['dr_number'] ?? null,
+                            'scheduled_at' => $scheduledAt->toDateTimeString(),
+                            'status' => 'scheduled',
+                            'created_by' => $request->user()->id,
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ]);
+                    });
 
                     foreach ($purchaseItems as $index => $purchaseItem) {
                         $haulCode = $scheduleCode.'-'.str_pad((string) ($index + 1), 2, '0', STR_PAD_LEFT);
@@ -462,12 +470,12 @@ class DispatchDeliveryController extends Controller
             ->selectRaw('schedule_hauls.lifting_schedule_id, GROUP_CONCAT(DISTINCT schedule_purchases.purchase_code) as purchase_codes, GROUP_CONCAT(DISTINCT schedule_fuels.name) as fuel_names, SUM(schedule_hauls.quantity_liters) as scheduled_quantity_liters')
             ->groupBy('schedule_hauls.lifting_schedule_id');
 
-        $rows = DB::table('hauls')
+        $query = DB::table('hauls')
             ->join('purchases', 'purchases.id', '=', 'hauls.purchase_id')
             ->join('depots', 'depots.id', '=', 'hauls.depot_id')
             ->join('fuel_types', 'fuel_types.id', '=', 'hauls.fuel_type_id')
             ->join('trucks', 'trucks.id', '=', 'hauls.truck_id')
-            ->join('users as drivers', 'drivers.id', '=', 'hauls.driver_user_id')
+            ->leftJoin('users as drivers', 'drivers.id', '=', 'hauls.driver_user_id')
             ->leftJoin('driver_profiles', 'driver_profiles.user_id', '=', 'drivers.id')
             ->leftJoin('lifting_schedules', 'lifting_schedules.id', '=', 'hauls.lifting_schedule_id')
             ->leftJoinSub($scheduleItems, 'schedule_items', 'schedule_items.lifting_schedule_id', '=', 'hauls.lifting_schedule_id')
@@ -494,8 +502,14 @@ class DispatchDeliveryController extends Controller
             ->when($filters['truck_id'] ?? null, fn (Builder $query, mixed $truckId): Builder => $query->where('hauls.truck_id', (int) $truckId))
             ->tap(fn (Builder $query): Builder => FilterDates::apply($query, 'hauls.scheduled_at', ['from' => $filters['lift_date_from'] ?? null, 'to' => $filters['lift_date_to'] ?? null]))
             ->orderByDesc('hauls.scheduled_at')
-            ->orderByDesc('hauls.id')
-            ->get([
+            ->orderByDesc('hauls.id');
+
+        $query->whereIn('hauls.status', ($filters['page_tab'] ?? 'schedule') === 'hauled' ? ['completed', 'cancelled'] : self::ACTIVE_HAUL_STATUSES);
+        $groupSql = "COALESCE(CONCAT('schedule-', hauls.lifting_schedule_id), CONCAT('haul-', hauls.id))";
+        $this->haulPages = (clone $query)->reorder()->selectRaw($groupSql.' AS schedule_group, MAX(hauls.scheduled_at) AS latest')
+            ->groupByRaw($groupSql)->orderByDesc('latest')->orderBy('schedule_group')->paginate(\App\Support\TablePagination::size(), ['*'], 'lifts_page')->withQueryString();
+        $groups = collect($this->haulPages->items())->pluck('schedule_group')->all();
+        $rows = $query->whereIn(DB::raw($groupSql), $groups)->get([
                 'hauls.id',
                 'hauls.lifting_schedule_id',
                 'hauls.haul_code',
@@ -528,16 +542,22 @@ class DispatchDeliveryController extends Controller
                 'trucks.truck_code',
                 'trucks.name as truck_name',
                 'trucks.capacity_liters',
-                'drivers.name as driver_name',
+                DB::raw('COALESCE(drivers.name, hauls.historical_driver_name) as driver_name'),
                 'drivers.phone as driver_phone',
                 'driver_profiles.driver_code',
             ]);
         $liftRows = $this->liftRowsByHaul($rows->pluck('id')->all());
         $loads = $this->liftAllocations->loadSummaryByHaul($rows->pluck('id')->map(fn (mixed $id): int => (int) $id)->all());
+        $openSales = $this->liftAllocations->directSaleOptions();
+        // Part 23 #7: a historical lift names its driver without an account; use the phone of the driver account
+        // with that name when there is one (matched in PHP: portable across SQLite/MariaDB and their collations).
+        $driverPhones = DB::table('users')->where('role', 'driver')->whereNotNull('phone')->where('phone', '!=', '')
+            ->get(['name', 'phone'])->mapWithKeys(fn (object $driver): array => [mb_strtolower(trim((string) $driver->name)) => $driver->phone])->all();
 
         return $rows
-            ->map(function (object $row) use ($liftRows, $loads): array {
+            ->map(function (object $row) use ($liftRows, $loads, $driverPhones): array {
                 $truck = TruckLabel::make($row->truck_name, $row->truck_code);
+                $driverPhone = $row->driver_phone ?: ($driverPhones[mb_strtolower(trim((string) $row->driver_name))] ?? null);
 
                 return [
                     'id' => 'dispatch-haul-'.$row->id,
@@ -551,8 +571,9 @@ class DispatchDeliveryController extends Controller
                         $this->formatDateTime($row->hauled_at ?: $row->scheduled_at),
                         DepotLabel::make($row->depot_name, $row->depot_address),
                         $row->driver_name,
-                        $row->driver_phone ?: 'N/A',
-                        $truck,
+                        $driverPhone ?: 'N/A',
+                        // Part 23 #7: the table shows the truck ID only (e.g. TRUCK-001); View keeps the full label.
+                        $row->truck_code ?: $truck,
                         $this->formatNumber($row->capacity_liters),
                         $this->formatLiters($row->scheduled_quantity_liters ?: $row->quantity_liters),
                     ],
@@ -565,7 +586,7 @@ class DispatchDeliveryController extends Controller
                         'Pickup Depot' => $row->depot_name,
                         'Depot Address' => $row->depot_address ?: 'N/A',
                         'Driver' => $row->driver_name,
-                        "Driver's Contact" => $row->driver_phone ?: 'N/A',
+                        "Driver's Contact" => $driverPhone ?: 'N/A',
                         'Driver Code' => $row->driver_code ?: 'N/A',
                         'Truck-ID' => $truck,
                         'Capacity' => $this->formatLiters($row->capacity_liters),
@@ -601,7 +622,7 @@ class DispatchDeliveryController extends Controller
                         // Part 11: only a lift that is still Scheduled (no receipt, not hauled) can be deleted.
                         'deletable' => $row->status === 'scheduled' && ! $row->withdrawal_receipt_path && ! $row->hauled_at,
                         // Part 12: what fuel left on the truck can still deliver (lifted / completed lines only).
-                        'is_done' => in_array($row->status, ['lifted', 'completed'], true),
+                        'is_done' => in_array($row->status, \App\Services\LiftAllocationService::CARRYING_STATUSES, true),
                         'purchase_item_id' => (int) $row->purchase_item_id,
                         'fuel_type_id' => (int) $row->fuel_type_id,
                         'quantity_liters' => round((float) $row->quantity_liters, 2),
@@ -616,7 +637,7 @@ class DispatchDeliveryController extends Controller
             })
             // One table row per lifting schedule; keep every haul of the schedule for per-lift actions.
             ->groupBy('schedule_group')
-            ->map(function ($group): array {
+            ->map(function ($group) use ($openSales): array {
                 $row = $group->first();
                 $row['hauls'] = $group->pluck('haul')->values()->all();
                 $row['can_delete'] = collect($row['hauls'])->every(fn (array $haul): bool => $haul['deletable']);
@@ -638,7 +659,7 @@ class DispatchDeliveryController extends Controller
                     ->values()->all();
                 $row['truck_leftover'] = round((float) collect($lines)->sum('leftover'), 2);
                 $row['truck_leftover_label'] = $this->formatLiters($row['truck_leftover']);
-                $row['truck_order_options'] = $row['truck_leftover'] > 0 ? $this->liftAllocations->truckOrderOptions($lines) : collect();
+                $row['truck_order_options'] = $row['truck_leftover'] > 0 ? $this->liftAllocations->truckOrderOptions($lines, false, $openSales) : collect();
                 $returned = round((float) collect($row['hauls'])->sum('returned'), 2);
                 $row['details'] = array_merge($row['details'], [
                     'Delivered Quantity' => $row['load']['delivered'],

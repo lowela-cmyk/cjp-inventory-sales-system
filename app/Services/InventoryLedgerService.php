@@ -15,8 +15,10 @@ use Illuminate\Support\Facades\DB;
  */
 class InventoryLedgerService
 {
+    public ?\Illuminate\Pagination\LengthAwarePaginator $pages = null;
+    public array $summary = [];
     /** Lifting statuses a ledger row can have, keyed by filter value. */
-    public const STATUSES = ['incomplete' => 'Incomplete', 'partially_lifted' => 'Partially Lifted', 'complete' => 'Complete'];
+    public const STATUSES = ['incomplete' => 'Incomplete', 'partially_lifted' => 'Incomplete (partially lifted)', 'complete' => 'Completed'];
 
     /**
      * @param  array{date_from?: ?string, date_to?: ?string, depot_id?: mixed, fuel_type_id?: mixed, status?: ?string}  $filters
@@ -99,15 +101,8 @@ class InventoryLedgerService
             ];
         });
 
-        // Status is derived from lifted quantities, so it is filtered after the rows are built.
-        $statusLabel = self::STATUSES[$filters['status'] ?? ''] ?? null;
-        if ($statusLabel !== null) {
-            $transactions = $transactions->where('status', $statusLabel);
-        }
-
         return [
             'ledger' => $transactions
-                ->filter(fn (array $row): bool => (float) str_replace(',', '', $row['cells'][5]) > 0)
                 ->map(fn (array $row): array => $row['cells'])
                 ->values(),
             'transactions' => $transactions->values(),
@@ -137,7 +132,7 @@ class InventoryLedgerService
             ->selectRaw('purchase_item_id, COALESCE(SUM(quantity_liters), 0) as total_lifted_liters')
             ->groupBy('purchase_item_id');
 
-        return DB::table('purchase_items')
+        $query = DB::table('purchase_items')
             ->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
             ->join('depots', 'depots.id', '=', 'purchases.depot_id')
             ->join('fuel_types', 'fuel_types.id', '=', 'purchase_items.fuel_type_id')
@@ -159,8 +154,18 @@ class InventoryLedgerService
             ->when($filters['depot_id'] ?? null, fn (Builder $query, mixed $depotId): Builder => $query->where('purchases.depot_id', (int) $depotId))
             ->when($filters['fuel_type_id'] ?? null, fn (Builder $query, mixed $fuelTypeId): Builder => $query->where('purchase_items.fuel_type_id', (int) $fuelTypeId))
             ->orderByDesc('purchases.purchase_date')
-            ->orderByDesc('purchase_items.id')
-            ->get([
+            ->orderByDesc('purchase_items.id');
+        if (($filters['status'] ?? null) === 'complete') $query->whereRaw('COALESCE(completed_lifts.total_lifted_liters, 0) >= purchase_items.quantity_ordered_liters');
+        if (($filters['status'] ?? null) === 'incomplete') $query->whereRaw('COALESCE(completed_lifts.total_lifted_liters, 0) < purchase_items.quantity_ordered_liters');
+        if (($filters['status'] ?? null) === 'partially_lifted') $query->whereRaw('COALESCE(completed_lifts.total_lifted_liters, 0) > 0 AND COALESCE(completed_lifts.total_lifted_liters, 0) < purchase_items.quantity_ordered_liters');
+        \App\Support\TableSort::apply($query, ['date' => 'purchases.purchase_date', 'code' => 'purchases.purchase_code', 'fuel' => 'fuel_types.name', 'quantity' => 'purchase_items.quantity_ordered_liters'], 'date', 'purchase_items.id');
+        if (isset($filters['_page_tab'])) {
+            $summary = (clone $query)->reorder()->selectRaw('COUNT(*) AS purchases, SUM(purchase_items.quantity_ordered_liters) AS purchased, SUM(CASE WHEN COALESCE(completed_lifts.total_lifted_liters, 0) >= purchase_items.quantity_ordered_liters THEN 1 ELSE 0 END) AS completed')->first();
+            $this->summary = ['completed' => (int) $summary->completed, 'incomplete' => (int) $summary->purchases - (int) $summary->completed];
+            $this->pages = (clone $query)->paginate(\App\Support\TablePagination::size(), ['purchase_items.id'], 'ledger_page')->withQueryString();
+            $query->whereIn('purchase_items.id', collect($this->pages->items())->pluck('id'));
+        }
+        return $query->get([
                 'purchase_items.id as purchase_item_id',
                 'purchase_items.purchase_id',
                 'purchase_items.quantity_ordered_liters',
@@ -184,7 +189,7 @@ class InventoryLedgerService
 
         return DB::table('hauls')
             ->join('trucks', 'trucks.id', '=', 'hauls.truck_id')
-            ->join('users as drivers', 'drivers.id', '=', 'hauls.driver_user_id')
+            ->leftJoin('users as drivers', 'drivers.id', '=', 'hauls.driver_user_id')
             ->leftJoin('driver_profiles', 'driver_profiles.user_id', '=', 'drivers.id')
             ->leftJoin('users as receipt_uploaders', 'receipt_uploaders.id', '=', 'hauls.withdrawal_receipt_uploaded_by')
             ->whereIn('hauls.purchase_item_id', $purchaseItemIds)
@@ -203,7 +208,7 @@ class InventoryLedgerService
                 'trucks.truck_code',
                 'trucks.name as truck_name',
                 'trucks.capacity_liters',
-                'drivers.name as driver_name',
+                DB::raw('COALESCE(drivers.name, hauls.historical_driver_name) as driver_name'),
                 'driver_profiles.driver_code',
                 'hauls.withdrawal_receipt_path',
                 'hauls.withdrawal_receipt_notes',
@@ -253,11 +258,7 @@ class InventoryLedgerService
 
     private function liftingStatus(float $lifted, float $purchased): string
     {
-        return match (true) {
-            $lifted <= 0 => 'Incomplete',
-            round($lifted, 2) >= round($purchased, 2) => 'Complete',
-            default => 'Partially Lifted',
-        };
+        return round($lifted, 2) >= round($purchased, 2) ? 'Completed' : 'Incomplete';
     }
 
     /**

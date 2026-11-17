@@ -47,8 +47,8 @@ class AdminUserManagementController extends Controller
         $filtersFor = fn (string $tab): array => $tab === $activeTab ? $filters : [];
 
         return view('admin.user-management', [
-            'staff' => $this->staffRows(25, $filtersFor('office')),
-            'drivers' => $this->driverRows(25, $filtersFor('drivers')),
+            'staff' => $this->staffRows(\App\Support\TablePagination::size(), $filtersFor('office')),
+            'drivers' => $this->driverRows(\App\Support\TablePagination::size(), $filtersFor('drivers')),
             'requests' => $this->accountRequestRows(),
             'officeRoles' => self::OFFICE_ROLES,
             'roles' => self::ROLES,

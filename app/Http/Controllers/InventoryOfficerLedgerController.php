@@ -31,13 +31,14 @@ class InventoryOfficerLedgerController extends Controller
             'date_to' => $dates['to'],
             'depot_id' => $data['depot_id'] ?? null,
             'fuel_type_id' => $data['fuel_type_id'] ?? null,
-            // The Ledger tab only lists purchases with fuel left to lift, so status filters the Transaction tab.
-            'status' => $activeTab === 'transactions' ? ($data['status'] ?? null) : null,
+            'status' => $data['status'] ?? null,
         ];
-        $rows = $ledgerService->rows($search === '' ? null : $search, $filters);
+        $rows = $ledgerService->rows($search === '' ? null : $search, $filters + ['_page_tab' => $activeTab]);
 
         return view('inventory-officer.ledger', [
             'activeTab' => $activeTab,
+            'ledgerPages' => $ledgerService->pages,
+            'liftingSummary' => $ledgerService->summary,
             'search' => $search === '' ? null : $search,
             'filters' => $filters,
             'filterOptions' => [

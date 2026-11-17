@@ -6,6 +6,7 @@ use Carbon\CarbonImmutable;
 use Closure;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
+use App\Support\ActivePayments;
 
 class DashboardSummaryService
 {
@@ -611,7 +612,7 @@ class DashboardSummaryService
 
     public function paymentTotalsQuery(): Builder
     {
-        return DB::table('payments')
+        return ActivePayments::query()
             ->join('sales', 'sales.id', '=', 'payments.sale_id')
             ->whereNull('sales.deleted_at')
             ->whereIn('sales.status', self::VALID_SALE_STATUSES)
@@ -740,7 +741,7 @@ class DashboardSummaryService
      */
     private function collectedRevenueByPaymentMonth(int $year): array
     {
-        return DB::table('payments')
+        return ActivePayments::query()
             ->join('sales', 'sales.id', '=', 'payments.sale_id')
             ->whereNull('sales.deleted_at')
             ->whereIn('sales.status', self::VALID_SALE_STATUSES)

@@ -133,9 +133,10 @@ class Part16RevisionsTest extends AuditTestCase
         // Not inside the Fuel Type cell: the cell ends before the hint starts.
         $cell = substr($form, strpos($form, 'for="sale_purchase_item_id_0"'));
         $this->assertGreaterThan(strpos($cell, '</select>'), strpos($cell, 'data-stock-hint '));
-        $this->assertStringContainsString('<span data-stock-hint-fuel="PREM" hidden>Premium: 8,000 L in the garage (', $form);
-        $this->assertStringNotContainsString('data-stock-hint-fuel="DSL"', $form, 'Diesel still has depot stock');
-        $this->assertStringContainsString('<span data-stock-hint-summary>Not in the depot: Premium 8,000 L', $form);
+        // Part 23 #9: one short line per fuel (depot / garage / trucks), no purchase-ID list and no summary warning.
+        $this->assertMatchesRegularExpression('/<span data-stock-hint-fuel="PREM" hidden>Premium: [\d,.]+ L in depot, 8,000 L in garage, 0 L on trucks<\/span>/', $form);
+        $this->assertStringContainsString('<span data-stock-hint-fuel="DSL" hidden>Diesel: 5,000 L in depot, 0 L in garage, 0 L on trucks</span>', $form);
+        $this->assertStringNotContainsString('Not in the depot:', $form);
     }
 
     public function test_a_purchase_cannot_be_added_twice_to_one_lift(): void
@@ -237,7 +238,11 @@ class Part16RevisionsTest extends AuditTestCase
         foreach ([[$a['inventory'], 'inventory-officer.inventory.garage'], [$a['dispatch'], 'dispatch.fuel-lifting.garage']] as [$user, $route]) {
             $page = $this->actingAs($user)->get(route($route))->assertOk()->getContent();
             $this->assertSame(8, substr_count($page, 'data-modal-open="garage-tank-'));
-            $this->assertMatchesRegularExpression('#<td><strong>Diesel Tank 1</strong></td>\s*<td class="inventory-number">24,000.00 L</td>\s*<td class="inventory-number">4,000.00 L</td>\s*<td class="inventory-number">₱[\d.,]+/L</td>\s*<td>'.$codes[0].', '.$codes[1].'</td>#', $page);
+            $this->assertMatchesRegularExpression('#<td><strong>Diesel Tank 1</strong></td>\s*<td class="inventory-number">24,000.00 L</td>\s*<td class="inventory-number">4,000.00 L</td>\s*<td class="export-only" hidden>.*?</td>\s*<td><button[^>]+>View</button></td>#s', $page);
+            $table = substr($page, strpos($page, '<table class="admin-table garage-table garage-tank-table"'), strpos($page, '</table>', strpos($page, '<table class="admin-table garage-table garage-tank-table"')) - strpos($page, '<table class="admin-table garage-table garage-tank-table"'));
+            $this->assertStringContainsString('<th>Tank</th><th>Capacity</th><th>Stock Quantity</th>', $table);
+            $this->assertStringNotContainsString('Avg Cost / L', $table);
+            $this->assertStringNotContainsString('<th>Purchase IDs</th>', $table);
 
             $modal = substr($page, strpos($page, 'id="garage-tank-'.$tank1.'"'), 8000);
             $this->assertStringContainsString('Quantity: <strong>4,000.00 L</strong>', $modal);

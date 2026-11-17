@@ -1,9 +1,10 @@
 {{--
-    Part 18 #3: a Garage to Client order's Delivery Details (Truck, Driver, Delivery Date, and Delivery Status when the
-    order is recorded or assigned). Required while the order is not Delivered; Depot to Client orders take them from
-    their lift (Part 18 #5). Used by Record Sales, Edit Sales and the garage-lot Assign Source form.
+    Part 18 #3: a Garage to Client order's Delivery Details (Truck, Driver, Delivery Date). Required while the order is
+    not Delivered; Depot to Client orders take them from their lift (Part 18 #5). Used by Record Sales, Edit Sales and
+    the garage-tank Assign Source form. Part 21 #1: no Delivery Status here; the order starts Pending and the driver
+    named here updates it.
     $idPrefix, $formId (null: the fields sit inside their form), $value(key): the current / old value,
-    $withStatus, $deliveryStatus, $disabled (Record Sales while another type is picked), $showErrors.
+    $disabled (Record Sales while another type is picked), $showErrors.
 --}}
 @php
     $formAttr = $formId ? 'form="'.$formId.'"' : '';
@@ -36,14 +37,3 @@
     <input {!! $formAttr !!} id="{{ $idPrefix }}_delivery_date" name="delivery_date" type="datetime-local" value="{{ $value('delivery_date') }}" required @disabled($disabled) @if ($error('delivery_date')) aria-invalid="true" @endif>
     @if ($error('delivery_date'))<p class="field-error form-row-message">{{ $error('delivery_date') }}</p>@endif
 </div>
-@if ($withStatus)
-    <div class="form-row">
-        <label for="{{ $idPrefix }}_delivery_status">Delivery Status</label>
-        <select {!! $formAttr !!} id="{{ $idPrefix }}_delivery_status" name="delivery_status" data-default="pending" @disabled($disabled) @if ($error('delivery_status')) aria-invalid="true" @endif>
-            @foreach ($newOrderDeliveryStatuses as $deliveryStatusOption)
-                <option value="{{ $deliveryStatusOption }}" @selected(($deliveryStatus ?? 'pending') === $deliveryStatusOption)>{{ ucwords(str_replace('_', ' ', $deliveryStatusOption)) }}</option>
-            @endforeach
-        </select>
-        @if ($error('delivery_status'))<p class="field-error form-row-message">{{ $error('delivery_status') }}</p>@endif
-    </div>
-@endif

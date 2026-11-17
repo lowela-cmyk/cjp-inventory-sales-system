@@ -165,6 +165,27 @@ document.addEventListener('click', (event) => {
     const tabButton = event.target.closest('[data-tab-target]');
     if (tabButton) {
         const scope = tabButton.closest('[data-tabs]');
+        if (scope?.hasAttribute('data-server-tabs') && tabButton.dataset.tabUrl && !tabButton.classList.contains('is-active')) {
+            tabButton.disabled = true;
+            tabButton.setAttribute('aria-busy', 'true');
+            const current = new URL(window.location.href);
+            const target = new URL(tabButton.dataset.tabUrl, current);
+            // Each tab owns its filters and page. Remember that URL, rather than reusing another tab's paginator.
+            try {
+                sessionStorage.setItem(`cjp:tab:${current.pathname}`, current.search);
+                const saved = sessionStorage.getItem(`cjp:tab:${target.pathname}`);
+                if (saved) target.search = saved;
+            } catch { /* Navigation still works when storage is disabled. */ }
+            if (current.searchParams.has('per_page')) {
+                const size = current.searchParams.get('per_page');
+                if (target.searchParams.get('per_page') !== size) {
+                    [...target.searchParams.keys()].filter(key => key === 'page' || key.endsWith('_page')).forEach(key => target.searchParams.delete(key));
+                }
+                target.searchParams.set('per_page', size);
+            }
+            window.location.assign(target);
+            return;
+        }
         const target = tabButton.dataset.tabTarget;
         scope.querySelectorAll('[data-tab-target]').forEach((button) => {
             button.classList.toggle('is-active', button === tabButton);
@@ -426,8 +447,10 @@ function syncStockHint(purchase) {
     const fuel = purchase.selectedOptions[0]?.value ? purchase.selectedOptions[0].dataset.fuelCode : '';
     const line = fuel ? hint.querySelector(`[data-stock-hint-fuel="${CSS.escape(fuel)}"]`) : null;
     hint.querySelectorAll('[data-stock-hint-fuel]').forEach((span) => { span.hidden = span !== line; });
-    hint.querySelector('[data-stock-hint-summary]').hidden = Boolean(fuel);
-    hint.classList.toggle('is-empty', Boolean(fuel) && !line);
+    // Part 23 #9: nothing until a fuel is chosen, then that fuel's single line.
+    hint.querySelector('[data-stock-hint-summary]').hidden = true;
+    hint.hidden = !line;
+    hint.classList.toggle('is-empty', !line);
 }
 
 function syncDeliveryType(select) {
@@ -443,7 +466,8 @@ function syncDeliveryType(select) {
     // F1 dropdown lists F1 purchases and F1 garage tanks for every delivery type.
     const garage = select.value === 'garage_to_client';
     // The "not in the depot" hint is for the depot delivery types only.
-    form?.querySelectorAll('[data-depot-only]').forEach((hint) => { hint.hidden = garage; });
+    // Part 23 #9: the stock hint stays hidden while no fuel is chosen (is-empty).
+    form?.querySelectorAll('[data-depot-only]').forEach((hint) => { hint.hidden = garage || (hint.hasAttribute('data-stock-hint') && hint.classList.contains('is-empty')); });
     form?.querySelectorAll('[data-sale-purchase], [data-sale-f1-purchase]').forEach((stock) => {
         const isF1 = stock.matches('[data-sale-f1-purchase]');
         [...stock.options].forEach((option) => {
@@ -543,7 +567,7 @@ const sortVisibleTable = (trigger, columnIndex) => {
     trigger.dataset.sortDirection = direction;
 };
 
-const exportVisibleTable = (trigger) => {
+const exportVisibleTable = async (trigger) => {
     const scope = trigger.closest('[data-tabs]') || document;
     const table = visibleTableFor(trigger);
 
@@ -551,7 +575,38 @@ const exportVisibleTable = (trigger) => {
         return;
     }
 
-    // Export exactly what the table shows: rows hidden by the live search are left out.
+    // Fetch every filtered page through the same authorized module route.
+    const panel = table.closest('[data-tab-panel]');
+    const pagination = panel?.querySelector('[data-table-pagination]') || scope.querySelector('[data-table-pagination]');
+    let exportRows = [...table.querySelectorAll('tr')];
+    if (pagination && Number(pagination.dataset.total) > 0) {
+        trigger.disabled = true;
+        try {
+            const active = scope.querySelector('[data-tab-target].is-active');
+            const url = new URL(window.location.href);
+            if (active?.dataset.tabUrl) url.pathname = new URL(active.dataset.tabUrl, url).pathname;
+            const tableIndex = [...document.querySelectorAll('table')].indexOf(table);
+            const pageName = pagination.dataset.pageName;
+            url.searchParams.set('per_page', '100');
+            exportRows = [];
+            for (let page = 1; page <= Math.ceil(Number(pagination.dataset.total) / 100); page++) {
+                url.searchParams.set(pageName, String(page));
+                const response = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+                if (!response.ok || response.redirected) throw new Error('Export could not load the filtered records. Refresh the page and retry.');
+                const parsed = new DOMParser().parseFromString(await response.text(), 'text/html');
+                const pageTable = parsed.querySelectorAll('table')[tableIndex];
+                if (!pageTable) throw new Error('Export could not find the module table.');
+                if (page === 1) exportRows.push(...pageTable.querySelectorAll('thead tr'));
+                exportRows.push(...pageTable.querySelectorAll('tbody tr:not(:has(.empty-cell))'));
+            }
+        } catch (error) {
+            window.alert(error.message || 'Export failed. Please retry.');
+            return;
+        } finally {
+            trigger.disabled = false;
+        }
+    }
+
     // A stacked cell exports one column per [data-export-part] line, so files keep one value per column.
     // Keep spreadsheet applications from evaluating exported values as formulas.
     const csvValue = (node) => {
@@ -560,7 +615,7 @@ const exportVisibleTable = (trigger) => {
 
         return `"${safeValue.replace(/"/g, '""')}"`;
     };
-    const rows = [...table.querySelectorAll('tr')]
+    const rows = exportRows
         .filter((row) => ! row.hidden)
         .map((row) => [...row.querySelectorAll('th, td')]
             .flatMap((cell) => {
@@ -599,7 +654,7 @@ const exportVisibleTable = (trigger) => {
 document.addEventListener('input', (event) => {
     const search = event.target;
 
-    if (!(search instanceof HTMLInputElement) || search.type !== 'search') {
+    if (!(search instanceof HTMLInputElement) || search.type !== 'search' || search.closest('[data-auto-filter]')) {
         return;
     }
 
@@ -1000,7 +1055,34 @@ document.querySelectorAll('[data-withdrawal-upload]').forEach((form) => {
     row.addEventListener('click', () => row.classList.remove('is-highlighted'), { once: true });
 })();
 
-// Part 20 #2: Update Delivery is enabled once a new status is chosen (the list starts on a "Choose" placeholder).
+// Part 21 #3: a locked login counts its wait down and keeps LOG IN disabled until it is over. The server enforces the
+// lockout; this only shows the time left.
+(() => {
+    const notice = document.querySelector('[data-login-lockout]');
+    const message = notice?.querySelector('[data-login-lockout-message]');
+    const submit = notice?.closest('form')?.querySelector('[type="submit"]');
+    let remaining = Number.parseInt(notice?.dataset.loginLockout ?? '', 10);
+    if (!notice || !message || !(remaining > 0)) return;
+    const endsAt = Date.now() + remaining * 1000;
+    const render = () => {
+        remaining = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+        if (remaining === 0) {
+            message.textContent = 'You can try to log in again.';
+            if (submit) submit.disabled = false;
+            window.clearInterval(timer);
+            return;
+        }
+        const minutes = Math.floor(remaining / 60);
+        const seconds = String(remaining % 60).padStart(2, '0');
+        message.textContent = `Too many failed login attempts. Please try again in ${minutes}:${seconds}.`;
+        if (submit) submit.disabled = true;
+    };
+    const timer = window.setInterval(render, 1000);
+    render();
+})();
+
+// Part 20 #2 / Part 21 #1 (driver's Deliveries tab): Update Delivery is enabled once a new status is chosen (the list
+// starts on a "Choose" placeholder).
 // The server still validates every transition; this only keeps an empty choice from being sent.
 document.querySelectorAll('[data-delivery-update-form]').forEach((form) => {
     const select = form.elements.namedItem('delivery_status');
@@ -1014,6 +1096,191 @@ document.querySelectorAll('[data-delivery-update-form]').forEach((form) => {
     select.addEventListener('change', sync);
     select.addEventListener('input', sync);
     sync();
+});
+
+// Import confirmation is intentionally separate from file selection: after the confirmation dialog is accepted,
+// expose a small progress state while the transactional batch is processed on the server.
+document.querySelectorAll('[data-import-confirm]').forEach((form) => {
+    form.addEventListener('submit', () => {
+        const progress = form.querySelector('[data-import-progress]');
+        if (progress) progress.hidden = false;
+    });
+});
+
+// Browsers may restore a previously submitted preview from the back/forward cache. Only a server-confirmed
+// preview may be reset; completed or processing batches never render this form.
+window.addEventListener('pageshow', () => {
+    document.querySelectorAll('[data-import-confirm][data-import-status="preview"]').forEach((form) => {
+        if (form.dataset.submitted !== 'true') return;
+        delete form.dataset.submitted;
+        form.removeAttribute('aria-busy');
+        form.querySelectorAll('button').forEach((button) => {
+            button.disabled = false;
+            button.removeAttribute('aria-disabled');
+            if (button.matches('[data-import-submit]')) button.textContent = 'Confirm Import';
+        });
+        const progress = form.querySelector('[data-import-progress]');
+        if (progress) progress.hidden = true;
+    });
+});
+
+// File analysis is a non-mutating request. It must bypass the generic "Review / Saving…" confirmation dialog,
+// while still giving feedback during PhpSpreadsheet's server-side chunked scan.
+document.querySelectorAll('[data-analysis-form]').forEach((form) => {
+    const input = form.querySelector('input[type="file"]');
+    const dropzone = form.querySelector('[data-import-dropzone]');
+    const selected = form.querySelector('[data-selected-file]');
+    const selectedName = form.querySelector('[data-selected-name]');
+    const selectedSize = form.querySelector('[data-selected-size]');
+    const dropzoneTitle = form.querySelector('[data-dropzone-title]');
+    const dropzoneHelp = form.querySelector('[data-dropzone-help]');
+    const formatBytes = (bytes) => {
+        if (!Number.isFinite(bytes) || bytes < 1024) return `${bytes || 0} B`;
+        const units = ['KB', 'MB', 'GB'];
+        let size = bytes / 1024;
+        let unit = 0;
+        while (size >= 1024 && unit < units.length - 1) { size /= 1024; unit += 1; }
+        return `${size.toFixed(size >= 10 ? 0 : 1)} ${units[unit]}`;
+    };
+    const showFile = (file) => {
+        if (!file || !selected) return;
+        if (selectedName) selectedName.textContent = file.name;
+        if (selectedSize) selectedSize.textContent = `${formatBytes(file.size)} · Ready to analyze`;
+        selected.hidden = false;
+        if (dropzone) dropzone.hidden = true;
+    };
+    input?.addEventListener('change', () => showFile(input.files?.[0]));
+    form.querySelector('[data-remove-file]')?.addEventListener('click', () => {
+        if (input) input.value = '';
+        if (selected) selected.hidden = true;
+        if (dropzone) dropzone.hidden = false;
+    });
+    ['dragenter', 'dragover'].forEach((eventName) => dropzone?.addEventListener(eventName, (event) => {
+        event.preventDefault();
+        dropzone.classList.add('is-dragging');
+    }));
+    ['dragleave', 'drop'].forEach((eventName) => dropzone?.addEventListener(eventName, (event) => {
+        event.preventDefault();
+        dropzone.classList.remove('is-dragging');
+    }));
+    dropzone?.addEventListener('drop', (event) => {
+        const file = event.dataTransfer?.files?.[0];
+        if (!file || !input) return;
+        const transfer = new DataTransfer();
+        transfer.items.add(file);
+        input.files = transfer.files;
+        showFile(file);
+    });
+    dropzone?.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            input?.click();
+        }
+    });
+    input?.addEventListener('change', () => {
+        if (input.files?.[0] && dropzoneTitle && dropzoneHelp) {
+            dropzoneTitle.textContent = 'File selected';
+            dropzoneHelp.textContent = 'You can change it before analysis';
+        }
+    });
+    form.addEventListener('submit', () => {
+        const submit = form.querySelector('[data-analysis-submit]');
+        if (submit) {
+            submit.disabled = true;
+            submit.setAttribute('aria-busy', 'true');
+            submit.textContent = 'Analyzing…';
+        }
+    });
+});
+
+const historyRows = [...document.querySelectorAll('[data-import-history-row]')];
+const filterHistory = () => {
+    const query = document.querySelector('[data-import-history-search]')?.value.toLowerCase().trim() || '';
+    const status = document.querySelector('[data-import-history-filter]')?.value || 'all';
+    historyRows.forEach((row) => {
+        const matchesName = !query || row.dataset.fileName?.includes(query);
+        const matchesStatus = status === 'all' || row.dataset.status === status;
+        row.hidden = !matchesName || !matchesStatus;
+    });
+};
+document.querySelector('[data-import-history-search]')?.addEventListener('input', filterHistory);
+document.querySelector('[data-import-history-filter]')?.addEventListener('change', filterHistory);
+document.querySelector('[data-import-result-close]')?.addEventListener('click', (event) => {
+    event.currentTarget.closest('[data-import-result-panel]')?.remove();
+});
+
+document.querySelectorAll('[data-cancel-mapping]').forEach((button) => {
+    button.addEventListener('click', () => {
+        const form = button.closest('[data-mapping-form]');
+        form?.querySelectorAll('select').forEach((select) => { select.value = select.dataset.defaultValue ?? select.querySelector('option[selected]')?.value ?? ''; });
+        form?.querySelectorAll('[data-mapping-hidden]').forEach((input) => { input.value = input.dataset.defaultValue || ''; });
+        form?.querySelectorAll('[data-missing-field]').forEach((select) => { select.dataset.selectedColumn = ''; [...select.options].forEach((option) => { option.disabled = false; }); });
+        closeModal(button.closest('.modal-backdrop'));
+    });
+});
+document.querySelectorAll('[data-missing-field]').forEach((select) => {
+    select.addEventListener('change', () => {
+        const form = select.closest('[data-mapping-form]');
+        const sheet = select.dataset.sheet;
+        const column = select.value;
+        const requiredField = select.dataset.requiredField;
+        const hiddenInputs = [...(form?.querySelectorAll('[data-mapping-hidden]') || [])];
+        const previousColumn = select.dataset.selectedColumn || '';
+        hiddenInputs.forEach((input) => {
+            if (input.dataset.sheet === sheet && input.dataset.column === previousColumn) input.value = '';
+            if (input.dataset.sheet === sheet && input.dataset.column === column) input.value = requiredField;
+        });
+        select.dataset.selectedColumn = column;
+        const sheetSelectors = [...(form?.querySelectorAll('[data-missing-field]') || [])].filter((other) => other.dataset.sheet === sheet);
+        const selectedColumns = new Set(sheetSelectors.filter((other) => other !== select && other.value).map((other) => other.value));
+        if (column) selectedColumns.add(column);
+        sheetSelectors.forEach((other) => {
+            [...other.options].forEach((option) => {
+                option.disabled = Boolean(option.value && selectedColumns.has(option.value) && option.value !== other.value);
+            });
+        });
+    });
+});
+
+// Once the shared confirmation dialog has approved cancellation, remove the pending batch from the UI immediately.
+// The server marks the batch cancelled and deletes its staged file; this client-side update avoids a manual refresh
+// while retaining the audit row outside the user-facing history.
+document.querySelectorAll('[data-import-cancel]').forEach((form) => {
+    form.addEventListener('submit', async (event) => {
+        if (form.dataset.confirmed !== 'true') return;
+        event.preventDefault();
+        const button = form.querySelector('button[type="submit"]');
+        if (button) { button.disabled = true; button.textContent = 'Cancelling…'; }
+        try {
+            const response = await fetch(form.action, {
+                method: 'POST',
+                body: new FormData(form),
+                headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+            });
+            const result = await response.json();
+            if (!response.ok || !result.removed) throw new Error(result.message || 'The import could not be cancelled.');
+            if (form.dataset.cancelRedirect) {
+                window.location.assign(form.dataset.cancelRedirect);
+                return;
+            }
+            const row = form.closest('[data-import-history-row]');
+            row?.remove();
+            const container = document.querySelector('[data-import-history-container]');
+            if (container && !container.querySelector('[data-import-history-row]')) {
+                container.innerHTML = '<div class="import-empty-state"><span class="import-empty-icon" aria-hidden="true">▤</span><h3>No import history available.</h3><p>Upload your first workbook above. You’ll get a full analysis and preview before anything is saved.</p></div>';
+            }
+        } catch (error) {
+            if (button) { button.disabled = false; button.textContent = 'Cancel'; }
+            let message = form.querySelector('[data-import-cancel-error]');
+            if (!message) {
+                message = document.createElement('span');
+                message.dataset.importCancelError = 'true';
+                message.className = 'import-cancel-error';
+                form.append(message);
+            }
+            message.textContent = error.message || 'The import could not be cancelled.';
+        }
+    });
 });
 
 // A modal the server asks to reopen (e.g. after a validation error or a payment) opens last, once every helper above is

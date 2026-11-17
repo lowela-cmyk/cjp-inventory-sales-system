@@ -11,7 +11,7 @@
         'received', 'garage_received', 'garage_received_with_direct', 'uploaded', 'completed', 'complete', 'paid', 'active', 'approved', 'clear', 'settled', 'stock_posted', 'read', 'delivered', 'released', 'recorded' => 'success',
         'cancelled', 'rejected', 'failed', 'overdue', 'critical', 'depleted', 'unpaid' => 'danger',
         'available', 'direct_to_client' => 'available',
-        'inactive', 'dismissed', 'resolved' => 'inactive',
+        'inactive', 'dismissed', 'resolved', 'voided' => 'inactive',
         default => 'neutral',
     };
 @endphp

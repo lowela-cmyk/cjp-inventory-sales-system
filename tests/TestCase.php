@@ -86,6 +86,41 @@ abstract class TestCase extends BaseTestCase
 
     protected bool $defaultPaymentMode = true;
 
+    /**
+     * Part 21 #1: only the assigned driver updates a delivery. Sends the driver's Update Delivery for the sale as its
+     * assigned driver (Delivery Details, else the driver of its lift). A sale with no driver yet (e.g. a Standard order
+     * written straight into the database) is given one first, as Sales would name them in the Delivery Details. The
+     * user who was signed in before stays signed in afterwards.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    protected function driverDelivery(int $saleId, array $data = ['delivery_status' => 'delivered']): TestResponse
+    {
+        $previous = auth()->user();
+        $driverId = DB::table('sales')->where('id', $saleId)->value('delivery_driver_user_id')
+            ?? DB::table('haul_allocations')
+                ->join('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')
+                ->where('haul_allocations.sale_id', $saleId)
+                ->where('haul_allocations.destination_type', 'customer')
+                ->where('haul_allocations.status', '!=', 'cancelled')
+                ->where('hauls.status', '!=', 'cancelled')
+                ->whereNull('hauls.deleted_at')
+                ->value('hauls.driver_user_id');
+        if (! $driverId) {
+            $driverId = \App\Models\User::factory()->create(['role' => 'driver', 'status' => 'active', 'approval_status' => 'approved'])->id;
+            DB::table('sales')->where('id', $saleId)->update(['delivery_driver_user_id' => $driverId]);
+        }
+
+        $response = $this->actingAs(\App\Models\User::findOrFail($driverId))
+            ->from(route('driver.fuel-lifting.deliveries'))
+            ->patch(route('driver.fuel-lifting.deliveries.status', $saleId), $data);
+        if ($previous) {
+            $this->actingAs($previous);
+        }
+
+        return $response;
+    }
+
     /** The HTML of one tab panel: every tab renders on the page and only the active one is visible. */
     protected function tabPanel(string $html, string $tab): string
     {

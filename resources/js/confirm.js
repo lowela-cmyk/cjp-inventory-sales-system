@@ -302,8 +302,9 @@ export const buildConfirmation = (form, submitter = null) => {
         type: 'simple', tone, item,
         title: form.dataset.confirmTitle || 'Please confirm',
         lead: form.dataset.confirmMessage || 'Continue?',
-        cancelLabel: 'Cancel',
+        cancelLabel: form.dataset.confirmCancel || 'Cancel',
         okLabel: form.dataset.confirmOk || 'Continue',
+        busyLabel: form.dataset.confirmBusyLabel || 'Saving…',
     };
 };
 
@@ -377,7 +378,7 @@ const setBusy = (busy) => {
     root.classList.toggle('is-busy', busy);
     ok.disabled = busy || (state?.config.typed ? ! typedMatches() : Boolean(state?.config.noChanges));
     ok.setAttribute('aria-busy', busy ? 'true' : 'false');
-    root.querySelector('[data-cd-ok-label]').textContent = busy ? 'Saving…' : state?.config.okLabel || 'Confirm';
+    root.querySelector('[data-cd-ok-label]').textContent = busy ? (state?.config.busyLabel || 'Saving…') : state?.config.okLabel || 'Confirm';
     root.querySelectorAll('[data-cd-cancel]').forEach((button) => { button.disabled = busy; });
 };
 

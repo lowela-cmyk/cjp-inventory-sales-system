@@ -70,8 +70,7 @@ trait PurchaseFlows
      */
     protected function deliverOrder(array $a, int $saleId): TestResponse
     {
-        return $this->actingAs($a['sales'])->from(route('sales-officer.sales'))
-            ->patch(route('sales-officer.sales.delivery-status.update', $saleId), ['delivery_status' => 'delivered']);
+        return $this->driverDelivery($saleId, ['delivery_status' => 'delivered']);
     }
 
     /**

@@ -38,8 +38,14 @@
                         </div>
                     </div>
 
+                    {{-- Part 21 #3: the last-attempt warning sits under the error; a lockout counts its wait down (app.js). --}}
                     @if ($errors->any())
-                        <p class="login-error">{{ $errors->first() }}</p>
+                        <p class="login-error" role="alert" @isset($lockoutSeconds) data-login-lockout="{{ $lockoutSeconds }}" @endisset>
+                            <span data-login-lockout-message>{{ $errors->first() }}</span>
+                            @if (session('login_warning'))
+                                <span class="login-warning">{{ session('login_warning') }}</span>
+                            @endif
+                        </p>
                     @endif
 
                     @if (session('status') && session('toast_context') !== 'logout')

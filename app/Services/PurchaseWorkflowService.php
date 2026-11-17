@@ -8,7 +8,7 @@ class PurchaseWorkflowService
 {
     public function __construct(private readonly WorkflowAlertService $alerts) {}
 
-    public function transition(int $purchaseId, string $newStatus, ?int $userId = null, ?int $haulId = null): void
+    public function transition(int $purchaseId, string $newStatus, ?int $userId = null, ?int $haulId = null, bool $notify = true): void
     {
         $purchase = DB::table('purchases')->where('id', $purchaseId)->lockForUpdate()->first(['id', 'workflow_status']);
 
@@ -31,10 +31,13 @@ class PurchaseWorkflowService
             'updated_at' => now(),
         ]);
 
-        $this->alerts->purchase($purchaseId, $newStatus, $userId, $haulId);
+        if ($notify) {
+            $this->alerts->purchase($purchaseId, $newStatus, $userId, $haulId);
+        }
     }
 
-    public function synchronize(int $purchaseId, ?int $userId = null, ?int $haulId = null): void
+    /** Part 23 #15: $notify = false for imported history, so a backfill records status and history without alerts. */
+    public function synchronize(int $purchaseId, ?int $userId = null, ?int $haulId = null, bool $notify = true): void
     {
         $purchase = DB::table('purchases')->where('id', $purchaseId)->lockForUpdate()->first(['id', 'status']);
         if (! $purchase) {
@@ -42,7 +45,7 @@ class PurchaseWorkflowService
         }
 
         if ($purchase->status === 'cancelled') {
-            $this->transition($purchaseId, 'cancelled', $userId, $haulId);
+            $this->transition($purchaseId, 'cancelled', $userId, $haulId, $notify);
 
             return;
         }
@@ -61,6 +64,6 @@ class PurchaseWorkflowService
             default => 'pending',
         };
 
-        $this->transition($purchaseId, $newStatus, $userId, $haulId);
+        $this->transition($purchaseId, $newStatus, $userId, $haulId, $notify);
     }
 }

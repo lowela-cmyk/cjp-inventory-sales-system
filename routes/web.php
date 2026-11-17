@@ -3,6 +3,7 @@
 use App\Http\Controllers\AdminDashboardController;
 use App\Http\Controllers\AdminDashboardExportController;
 use App\Http\Controllers\AdminDashboardInsightController;
+use App\Http\Controllers\AdminImportController;
 use App\Http\Controllers\AdminMonitoringController;
 use App\Http\Controllers\AdminUserManagementController;
 use App\Http\Controllers\AuthController;
@@ -10,6 +11,7 @@ use App\Http\Controllers\DispatchDeliveryController;
 use App\Http\Controllers\DispatchLiftingStatusController;
 use App\Http\Controllers\DriverDeliveryController;
 use App\Http\Controllers\DriverLiftingStatusController;
+use App\Http\Controllers\DriverSaleDeliveryController;
 use App\Http\Controllers\HaulTruckAssignmentController;
 use App\Http\Controllers\LiftLeftoverController;
 use App\Http\Controllers\InventoryOfficerLedgerController;
@@ -41,12 +43,21 @@ Route::middleware(['auth'])->group(function () {
     Route::redirect('/admin', '/admin/dashboard')->middleware('role:admin')->name('admin.shortcut');
     Route::prefix('admin')->name('admin.')->middleware('role:admin')->group(function () {
         Route::get('/dashboard', AdminDashboardController::class)->name('dashboard');
+        Route::get('/imports', [AdminImportController::class, 'index'])->name('imports');
+        Route::get('/imports/template', [AdminImportController::class, 'template'])->name('imports.template');
+        Route::post('/imports', [AdminImportController::class, 'upload'])->name('imports.upload');
+        Route::get('/imports/{batch}/preview', [AdminImportController::class, 'preview'])->name('imports.preview');
+        Route::patch('/imports/{batch}/mapping', [AdminImportController::class, 'updateMapping'])->name('imports.mapping');
+        Route::post('/imports/{batch}/confirm', [AdminImportController::class, 'confirm'])->name('imports.confirm');
+        Route::post('/imports/{batch}/cancel', [AdminImportController::class, 'cancel'])->name('imports.cancel');
         // Part 10: "Insights and A.I Reporting" (the inventory variance explanation is part of it).
         Route::post('/dashboard/insight', AdminDashboardInsightController::class)->name('dashboard.insight');
         // Part 11: the dashboard's charts, KPI cards and AI insight as one PDF report.
         Route::post('/dashboard/export', AdminDashboardExportController::class)->name('dashboard.export');
         Route::get('/inventory', [InventoryOfficerPurchaseController::class, 'index'])->name('inventory');
         Route::post('/inventory/purchases', [InventoryOfficerPurchaseController::class, 'store'])->name('inventory.purchases.store');
+        // A refresh or bookmark of the form's POST URL opens the Purchases tab instead of a 405/500 page.
+        Route::get('/inventory/purchases', fn (\Illuminate\Http\Request $request) => redirect()->route(\Illuminate\Support\Str::before((string) $request->route()->getName(), 'inventory.').'inventory', $request->query()))->name('inventory.purchases');
         Route::patch('/inventory/purchases/{purchaseItem}', [InventoryOfficerPurchaseController::class, 'update'])->name('inventory.purchases.update');
         Route::patch('/inventory/purchases/{purchaseItem}/cancel', [InventoryOfficerPurchaseController::class, 'cancel'])->name('inventory.purchases.cancel');
         // Part 2 revisions: Stock-In (tank receipts) is retired; the old URL opens Purchases.
@@ -89,11 +100,12 @@ Route::middleware(['auth'])->group(function () {
         Route::patch('/sales/customers/{customer}/deactivate', [SalesOfficerCustomerController::class, 'deactivate'])->name('sales.customers.deactivate');
         Route::post('/sales', [SalesOfficerCustomerController::class, 'storeSale'])->name('sales.store');
         Route::post('/sales/{sale}/payments', [SalesOfficerCustomerController::class, 'storePayment'])->name('sales.payments.store');
+        // Voiding a payment is admin only (Sales Officers record payments but cannot void them).
+        Route::patch('/sales/{sale}/payments/{payment}/void', [SalesOfficerCustomerController::class, 'voidPayment'])->whereNumber(['sale', 'payment'])->name('sales.payments.void');
         Route::post('/sales/{sale}/refunds', [SalesOfficerCustomerController::class, 'storeRefund'])->name('sales.refunds.store');
         Route::patch('/sales/{sale}/refunds/{refund}', [SalesOfficerCustomerController::class, 'updateRefund'])->name('sales.refunds.update');
         Route::post('/sales/{sale}/assign-source', [SalesOfficerCustomerController::class, 'assignSource'])->name('sales.assign-source');
         Route::patch('/sales/{sale}', [SalesOfficerCustomerController::class, 'updateSale'])->name('sales.update');
-        Route::patch('/sales/{sale}/delivery-status', [SalesOfficerCustomerController::class, 'updateDeliveryStatus'])->name('sales.delivery-status.update');
         Route::patch('/sales/{sale}/cancel', [SalesOfficerCustomerController::class, 'cancelSale'])->name('sales.cancel');
         Route::delete('/sales/{sale}', [SalesOfficerCustomerController::class, 'destroySale'])->name('sales.destroy');
         // Part 12: Reports was removed (the Dashboard has Insights and A.I Reporting); old links open the Dashboard.
@@ -142,6 +154,8 @@ Route::middleware(['auth'])->group(function () {
     Route::prefix('inventory-officer')->name('inventory-officer.')->middleware('role:inventory_officer')->group(function () {
         Route::get('/inventory', [InventoryOfficerPurchaseController::class, 'index'])->name('inventory');
         Route::post('/inventory/purchases', [InventoryOfficerPurchaseController::class, 'store'])->name('inventory.purchases.store');
+        // A refresh or bookmark of the form's POST URL opens the Purchases tab instead of a 405/500 page.
+        Route::get('/inventory/purchases', fn (\Illuminate\Http\Request $request) => redirect()->route(\Illuminate\Support\Str::before((string) $request->route()->getName(), 'inventory.').'inventory', $request->query()))->name('inventory.purchases');
         Route::patch('/inventory/purchases/{purchaseItem}', [InventoryOfficerPurchaseController::class, 'update'])->name('inventory.purchases.update');
         Route::patch('/inventory/purchases/{purchaseItem}/cancel', [InventoryOfficerPurchaseController::class, 'cancel'])->name('inventory.purchases.cancel');
         // Part 2 revisions: Stock-In (tank receipts) is retired; the old URL opens Purchases.
@@ -169,7 +183,6 @@ Route::middleware(['auth'])->group(function () {
         Route::patch('/sales/{sale}/refunds/{refund}', [SalesOfficerCustomerController::class, 'updateRefund'])->name('sales.refunds.update');
         Route::post('/sales/{sale}/assign-source', [SalesOfficerCustomerController::class, 'assignSource'])->name('sales.assign-source');
         Route::patch('/sales/{sale}', [SalesOfficerCustomerController::class, 'updateSale'])->name('sales.update');
-        Route::patch('/sales/{sale}/delivery-status', [SalesOfficerCustomerController::class, 'updateDeliveryStatus'])->name('sales.delivery-status.update');
         Route::patch('/sales/{sale}/cancel', [SalesOfficerCustomerController::class, 'cancelSale'])->name('sales.cancel');
         Route::delete('/sales/{sale}', [SalesOfficerCustomerController::class, 'destroySale'])->name('sales.destroy');
         Route::get('/sales/customers', [SalesOfficerCustomerController::class, 'index'])->defaults('state', 'customers')->name('sales.customers');
@@ -189,6 +202,10 @@ Route::middleware(['auth'])->group(function () {
         // Part 20 #1: remove a lift's withdrawal receipt (Admin, or the assigned driver for their own lift).
         Route::delete('/fuel-lifting/hauls/{haul}/withdrawal-receipt', [DriverDeliveryController::class, 'destroyWithdrawalReceipt'])->name('fuel-lifting.hauls.withdrawal-receipt.destroy');
         Route::get('/fuel-lifting/hauled', [DriverDeliveryController::class, 'index'])->defaults('state', 'hauled')->name('fuel-lifting.hauled');
+        // Part 21 #1: the orders this driver delivers. Only the assigned driver may move their delivery status (the
+        // controller refuses every other account, Admin included).
+        Route::get('/fuel-lifting/deliveries', [DriverDeliveryController::class, 'index'])->defaults('state', 'deliveries')->name('fuel-lifting.deliveries');
+        Route::patch('/fuel-lifting/deliveries/{sale}/status', [DriverSaleDeliveryController::class, 'updateStatus'])->name('fuel-lifting.deliveries.status');
         Route::get('/fuel-lifting/no-schedule', [DriverDeliveryController::class, 'index'])->defaults('state', 'no-schedule')->name('fuel-lifting.no-schedule');
         Route::get('/fuel-lifting/no-hauled', [DriverDeliveryController::class, 'index'])->defaults('state', 'no-hauled')->name('fuel-lifting.no-hauled');
     });

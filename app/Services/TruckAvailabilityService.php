@@ -16,32 +16,38 @@ class TruckAvailabilityService
      */
     public const ACTIVE_HAUL_STATUSES = ['scheduled', 'in_transit'];
 
-    public const MANAGED_STATUSES = ['available', 'maintenance', 'inactive'];
+    /** Part 23 #8: Inactive is no longer offered (Maintenance covers it); a legacy inactive truck can still be activated. */
+    public const MANAGED_STATUSES = ['available', 'maintenance'];
+
+    /** Part 23 #8: the largest truck the fleet runs. */
+    public const MAX_CAPACITY_LITERS = 40000.0;
+
+    /** Part 23 #8: truck codes are typed by hand as TRUCK-### (TRUCK-001, TRUCK-002, ...). */
+    public const CODE_PATTERN = '/^TRUCK-\d{3,}$/';
 
     /**
      * Every availability a truck can show: the managed statuses plus the ones derived from its lifts. Part 12: "loaded"
      * = a lifted or completed lift left fuel on the truck (not yet delivered or returned to the depot); a loaded truck
      * cannot take a new lift until the leftover reaches 0.
      */
-    public const DISPLAY_STATUSES = ['available', 'assigned', 'in_use', 'loaded', 'maintenance', 'inactive'];
+    public const DISPLAY_STATUSES = ['available', 'assigned', 'in_use', 'loaded', 'maintenance'];
 
     /** Liters below this count as empty (rounding). */
     private const EMPTY_LITERS = 0.005;
 
     /**
-     * Next automatic truck code: TRK-NNN after the highest existing TRK number (Part 8 #7).
-     * Callers insert with IdempotencyService::retryOnCollision('truck_code', …): the unique index on
-     * trucks.truck_code turns a simultaneous create into a retry that picks the following number.
+     * Part 23 #8: the suggested next truck code, TRUCK-NNN after the highest TRUCK (or legacy TRK) number. The Add Truck
+     * form pre-fills it; the code itself is typed and validated (required, unique, TRUCK-###).
      */
     public function nextTruckCode(): string
     {
         $highest = DB::table('trucks')
-            ->where('truck_code', 'like', 'TRK-%')
+            ->where(fn ($query) => $query->where('truck_code', 'like', 'TRUCK-%')->orWhere('truck_code', 'like', 'TRK-%'))
             ->pluck('truck_code')
-            ->map(fn (string $code): int => preg_match('/^TRK-(\d+)$/', $code, $match) ? (int) $match[1] : 0)
+            ->map(fn (string $code): int => preg_match('/^(?:TRUCK|TRK)-(\d+)$/', $code, $match) ? (int) $match[1] : 0)
             ->max() ?? 0;
 
-        return 'TRK-'.str_pad((string) ($highest + 1), 3, '0', STR_PAD_LEFT);
+        return 'TRUCK-'.str_pad((string) ($highest + 1), 3, '0', STR_PAD_LEFT);
     }
 
     /**
@@ -49,6 +55,7 @@ class TruckAvailabilityService
      */
     public function directory(string $search = '', ?string $status = null, int $perPage = 20): LengthAwarePaginator
     {
+        $perPage = \App\Support\TablePagination::size();
         $activeLifts = DB::table('hauls')
             ->whereNull('deleted_at')
             ->whereIn('status', self::ACTIVE_HAUL_STATUSES)
@@ -179,7 +186,7 @@ class TruckAvailabilityService
         return DB::table('hauls')
             ->leftJoinSub($rows, 'rows_on_lift', 'rows_on_lift.haul_id', '=', 'hauls.id')
             ->whereNull('hauls.deleted_at')
-            ->whereIn('hauls.status', ['lifted', 'completed'])
+            ->whereIn('hauls.status', LiftAllocationService::CARRYING_STATUSES)
             // The constant is written into the SQL: SQLite compares a bound decimal as text, never as a number.
             ->whereRaw('hauls.quantity_liters - COALESCE(rows_on_lift.allocated, 0) > '.self::EMPTY_LITERS)
             ->groupBy('hauls.truck_id')

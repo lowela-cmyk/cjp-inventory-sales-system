@@ -9,6 +9,7 @@ use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
+use App\Support\ActivePayments;
 
 class AIDataPreparationService
 {
@@ -371,7 +372,7 @@ class AIDataPreparationService
      */
     private function periodCollectedRevenue(array $dateRange): float
     {
-        return (float) DB::table('payments')
+        return (float) ActivePayments::query()
             ->join('sales', 'sales.id', '=', 'payments.sale_id')
             ->whereNull('sales.deleted_at')
             ->whereIn('sales.status', DashboardSummaryService::VALID_SALE_STATUSES)

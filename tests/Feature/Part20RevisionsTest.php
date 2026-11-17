@@ -23,7 +23,7 @@ use Tests\Feature\Audit\AuditTestCase;
 /**
  * Part 20 (November 10, 2026): Fuel Lifting Operations & Inventory module revisions.
  * 1. Driver withdrawal receipts per lift (upload, replace, remove, view in Ledger -> View Transactions).
- * 2. Sales -> Receivables: a visible Update Delivery action, Pending included.
+ * 2. A visible Update Delivery action, Pending included (Part 21 #1: on the assigned driver's Deliveries tab).
  * 3. Inventory -> Purchases: one compact table rule set.
  * 4. Insights and A.I Reporting: overview dashboard and grouped bullet recommendations.
  * 5. Persistence and module exports.
@@ -222,39 +222,44 @@ class Part20RevisionsTest extends AuditTestCase
 
     // ----- 2. Sales delivery status ---------------------------------------------------------------------------
 
+    // Part 21 #1 moved this action from Sales -> Receivables to the assigned driver's Deliveries tab; the flow is the same.
     public function test_a_pending_sale_has_a_visible_update_delivery_action_that_persists_and_keeps_payments(): void
     {
         $a = $this->actors();
         $line = $this->purchaseLine($a, 'DSL', 10000);
-        $this->recordOrder($a, ['purchase_item_id' => $line, 'quantity_liters' => 1000, 'unit_price' => 70])->assertSessionHasNoErrors();
+        $this->recordOrder($a, ['purchase_item_id' => $line, 'quantity_liters' => 1000, 'unit_price' => 70], ['delivery_truck_id' => $a['truck'], 'delivery_driver_user_id' => $a['driver']->id])->assertSessionHasNoErrors();
         $saleId = $this->lastSaleId();
-        $modal = 'so-sales-edit-'.$saleId.'-delivery';
+        $modal = 'driver-delivery-'.$saleId.'-delivery';
+        $driverRow = fn (): array => collect($this->actingAs($a['driver'])->get(route('driver.fuel-lifting.deliveries'))->viewData('deliveryRows'))->firstWhere('id', $saleId);
 
-        $page = $this->actingAs($a['sales'])->get(route('sales-officer.sales'))->assertOk()->getContent();
+        $page = $this->actingAs($a['driver'])->get(route('driver.fuel-lifting.deliveries'))->assertOk()->getContent();
         $this->assertStringContainsString('data-modal-open="'.$modal.'">Update Delivery</button>', $page);
         $this->assertStringContainsString('id="'.$modal.'"', $page);
         $receivableBefore = DB::table('receivables')->where('sale_id', $saleId)->first();
         $saleBefore = DB::table('sales')->where('id', $saleId)->first(['status']);
 
         $key = (string) Str::uuid();
-        $send = fn (string $status, string $key) => $this->actingAs($a['sales'])->from(route('sales-officer.sales'))
-            ->patch(route('sales-officer.sales.delivery-status.update', $saleId), ['delivery_status' => $status, 'idempotency_key' => $key, 'delivery_update_sale_id' => $saleId]);
+        $send = fn (string $status, string $key) => $this->driverDelivery($saleId, ['delivery_status' => $status, 'idempotency_key' => $key, 'delivery_update_sale_id' => $saleId]);
 
         $send('out_for_delivery', $key)->assertSessionHasNoErrors()->assertSessionHas('status', 'Delivery status updated successfully.');
         $sale = DB::table('sales')->where('id', $saleId)->first();
         $this->assertSame('out_for_delivery', $sale->delivery_status);
-        $this->assertSame((int) $a['sales']->id, (int) $sale->delivery_status_updated_by);
+        $this->assertSame((int) $a['driver']->id, (int) $sale->delivery_status_updated_by);
         $this->assertSame('2026-11-10 09:00:00', Carbon::parse($sale->delivery_status_updated_at)->format('Y-m-d H:i:s'));
         $this->assertSame(0, DB::table('stock_outs')->where('sale_id', $saleId)->count());
 
         // The same submission again (double click / resend) saves nothing more.
         $send('out_for_delivery', $key)->assertSessionHas('status', 'This delivery update was already saved.');
 
-        // After a refresh the row shows the new status and offers Delivered next.
-        $row = collect($this->actingAs($a['sales'])->get(route('sales-officer.sales'))->viewData('sales')->items())->firstWhere('id', $saleId);
+        // After a refresh the driver's row shows the new status and offers Delivered next; Sales sees it, view only.
+        $row = $driverRow();
         $this->assertSame('out_for_delivery', $row['delivery_status']);
         $this->assertSame(['pending', 'delivered'], $row['delivery_update']['options']);
-        $this->assertStringContainsString($a['sales']->name, $row['delivery_update']['last_update']);
+        $this->assertStringContainsString($a['driver']->name, $row['delivery_update']['last_update']);
+        $salesRow = collect($this->actingAs($a['sales'])->get(route('sales-officer.sales'))->viewData('sales')->items())->firstWhere('id', $saleId);
+        $this->assertSame('out_for_delivery', $salesRow['delivery_status']);
+        $this->assertStringContainsString($a['driver']->name, $salesRow['delivery_last_update']);
+        $this->assertArrayNotHasKey('delivery_update', $salesRow);
 
         $send('delivered', (string) Str::uuid())->assertSessionHasNoErrors();
         $this->assertSame('delivered', DB::table('sales')->where('id', $saleId)->value('delivery_status'));
@@ -268,8 +273,7 @@ class Part20RevisionsTest extends AuditTestCase
         $this->assertSame(0, DB::table('payments')->where('sale_id', $saleId)->count());
 
         // Delivered is final: no more action on the row, and the server refuses a step back.
-        $row = collect($this->actingAs($a['sales'])->get(route('sales-officer.sales'))->viewData('sales')->items())->firstWhere('id', $saleId);
-        $this->assertFalse($row['delivery_update']['available']);
+        $this->assertFalse($driverRow()['delivery_update']['available']);
         $send('pending', (string) Str::uuid())->assertSessionHasErrors(['delivery_status' => 'A delivered sale cannot be moved back because its inventory was already released.']);
     }
 
@@ -277,23 +281,42 @@ class Part20RevisionsTest extends AuditTestCase
     {
         $a = $this->actors();
         $line = $this->purchaseLine($a, 'DSL', 10000);
-        $this->recordOrder($a, ['purchase_item_id' => $line, 'quantity_liters' => 1000, 'unit_price' => 70])->assertSessionHasNoErrors();
+        $this->recordOrder($a, ['purchase_item_id' => $line, 'quantity_liters' => 1000, 'unit_price' => 70], ['delivery_truck_id' => $a['truck'], 'delivery_driver_user_id' => $a['driver']->id])->assertSessionHasNoErrors();
         $saleId = $this->lastSaleId();
+        $url = route('driver.fuel-lifting.deliveries.status', $saleId);
 
-        foreach (['inventory', 'dispatch', 'driver'] as $role) {
-            $this->actingAs($a[$role])->patch(route('sales-officer.sales.delivery-status.update', $saleId), ['delivery_status' => 'out_for_delivery'])->assertForbidden();
+        // Part 21 #1: only the assigned driver. Admin, Sales and every other role are refused; so is another driver.
+        $otherDriver = \App\Models\User::factory()->create(['role' => 'driver', 'status' => 'active', 'approval_status' => 'approved']);
+        foreach ([$a['admin'], $a['sales'], $a['inventory'], $a['dispatch'], $otherDriver] as $user) {
+            $this->actingAs($user)->patch($url, ['delivery_status' => 'out_for_delivery'])->assertForbidden();
         }
-        $this->actingAs($a['sales'])->from(route('sales-officer.sales'))->patch(route('sales-officer.sales.delivery-status.update', $saleId), ['delivery_status' => 'shipped'])
+        $this->assertSame('pending', DB::table('sales')->where('id', $saleId)->value('delivery_status'));
+        // The Sales routes for it are gone.
+        foreach (['sales-officer', 'admin'] as $prefix) {
+            $this->assertFalse(\Illuminate\Support\Facades\Route::has($prefix.'.sales.delivery-status.update'));
+        }
+        $this->actingAs($a['sales'])->patch('/sales-officer/sales/'.$saleId.'/delivery-status', ['delivery_status' => 'delivered'])->assertNotFound();
+        $this->actingAs($a['admin'])->patch('/admin/sales/'.$saleId.'/delivery-status', ['delivery_status' => 'delivered'])->assertNotFound();
+
+        $this->driverDelivery($saleId, ['delivery_status' => 'shipped'])
             ->assertSessionHasErrors('delivery_status');
-        $this->actingAs($a['sales'])->from(route('sales-officer.sales'))->patch(route('sales-officer.sales.delivery-status.update', $saleId), ['delivery_status' => 'cancelled'])
-            ->assertSessionHasErrors(['delivery_status' => 'Use the Cancel action to preserve and reconcile the sale audit history.']);
+        // Cancelling stays a Sales action (Cancel Sale); it is not a delivery status a driver can send.
+        $this->driverDelivery($saleId, ['delivery_status' => 'cancelled'])
+            ->assertSessionHasErrors('delivery_status');
         $this->assertSame('pending', DB::table('sales')->where('id', $saleId)->value('delivery_status'));
 
-        // Admin works the same action.
-        $this->actingAs($a['admin'])->from(route('admin.sales'))->patch(route('admin.sales.delivery-status.update', $saleId), ['delivery_status' => 'out_for_delivery'])
-            ->assertSessionHasNoErrors()->assertRedirect(route('admin.sales'));
-        $this->assertSame((int) $a['admin']->id, (int) DB::table('sales')->where('id', $saleId)->value('delivery_status_updated_by'));
-        $this->assertStringContainsString('data-modal-open="so-sales-edit-'.$saleId.'-delivery">Update Delivery</button>', $this->actingAs($a['admin'])->get(route('admin.sales'))->getContent());
+        $this->driverDelivery($saleId, ['delivery_status' => 'out_for_delivery'])
+            ->assertSessionHasNoErrors()->assertRedirect(route('driver.fuel-lifting.deliveries'));
+        $this->assertSame((int) $a['driver']->id, (int) DB::table('sales')->where('id', $saleId)->value('delivery_status_updated_by'));
+        // Admin and Sales see the status but have no Update Delivery.
+        foreach ([[$a['admin'], 'admin.sales'], [$a['sales'], 'sales-officer.sales']] as [$user, $route]) {
+            $html = $this->actingAs($user)->get(route($route))->assertOk()->getContent();
+            $this->assertStringNotContainsString('Update Delivery', $html);
+            // The only delivery_status control left is the Receivables filter.
+            $this->assertSame(1, substr_count($html, 'name="delivery_status"'));
+            $this->assertStringContainsString('<select name="delivery_status" aria-label="Filter by delivery status"', $html);
+            $this->assertStringContainsString('Out For Delivery', $html);
+        }
     }
 
     public function test_a_depot_to_client_order_moves_out_for_delivery_by_hand_and_delivers_once_its_lift_is_lifted(): void
@@ -302,19 +325,24 @@ class Part20RevisionsTest extends AuditTestCase
         $premium = $this->purchaseLine($a, 'PREM', 20000);
         $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 2000, 'unit_price' => 70], ['delivery_type' => 'depot_to_client'])->assertSessionHasNoErrors();
         $saleId = $this->lastSaleId();
-        $row = fn (): array => collect($this->actingAs($a['sales'])->get(route('sales-officer.sales'))->viewData('sales')->items())->firstWhere('id', $saleId);
+        $row = fn (): ?array => collect($this->actingAs($a['driver'])->get(route('driver.fuel-lifting.deliveries'))->viewData('deliveryRows'))->firstWhere('id', $saleId);
 
-        // The screenshot case: a Pending Depot to Client order now has Update Delivery (Out for Delivery only for now).
+        // Part 21 #1: on no lift yet, the order has no driver, so nobody can move it.
+        $this->assertNull($row());
+        $this->actingAs($a['driver'])->patch(route('driver.fuel-lifting.deliveries.status', $saleId), ['delivery_status' => 'out_for_delivery'])->assertForbidden();
+
+        // On a lift: its driver has Update Delivery (Out for Delivery only until the lift is Lifted).
+        $this->scheduleLift($a, [['purchase_item_id' => $premium, 'quantity_liters' => 2000, 'atl_number' => 'ATL-1']], [$saleId])->assertSessionHasNoErrors();
+        $haulId = $this->lastHaulId();
         $this->assertTrue($row()['delivery_update']['available']);
         $this->assertSame(['out_for_delivery'], $row()['delivery_update']['options']);
         $this->assertStringContainsString('marked Lifted', $row()['delivery_update']['note']);
-        $this->actingAs($a['sales'])->from(route('sales-officer.sales'))->patch(route('sales-officer.sales.delivery-status.update', $saleId), ['delivery_status' => 'out_for_delivery'])
+        $this->driverDelivery($saleId, ['delivery_status' => 'out_for_delivery'])
             ->assertSessionHasNoErrors();
         $this->assertSame('out_for_delivery', DB::table('sales')->where('id', $saleId)->value('delivery_status'));
+        $this->assertSame((int) $a['driver']->id, (int) DB::table('sales')->where('id', $saleId)->value('delivery_status_updated_by'));
 
-        // Lifted: Delivered is offered and releases the stock through the lift, once.
-        $this->scheduleLift($a, [['purchase_item_id' => $premium, 'quantity_liters' => 2000, 'atl_number' => 'ATL-1']], [$saleId])->assertSessionHasNoErrors();
-        $haulId = $this->lastHaulId();
+        // Lifted: the lift delivers it and releases the stock, once.
         $this->actingAs($a['driver'])->patch(route('driver.fuel-lifting.hauls.status', $haulId), ['idempotency_key' => (string) Str::uuid(), 'lifting_status' => 'in_transit'])->assertSessionHasNoErrors();
         $this->assertSame(['pending'], $row()['delivery_update']['options']);
         $this->actingAs($a['driver'])->patch(route('driver.fuel-lifting.hauls.status', $haulId), ['idempotency_key' => (string) Str::uuid(), 'lifting_status' => 'lifted'])->assertSessionHasNoErrors();
@@ -342,7 +370,7 @@ class Part20RevisionsTest extends AuditTestCase
         $this->assertStringNotContainsString('!important', $block);
         $this->assertStringContainsString('@media (min-width: 768px)', $block);
         $this->assertStringContainsString('padding: 8px 5px;', $block);
-        $this->assertMatchesRegularExpression('/:nth-child\(5\), :nth-child\(6\), :nth-child\(7\)\)\s*\{\s*text-align: right;/', $block);
+        $this->assertMatchesRegularExpression('/:nth-child\(5\), :nth-child\(6\), :nth-child\(7\)\)\s*\{\s*text-align: left;/', $block);
         $this->assertStringContainsString('tr.row-danger > td', $block);
         // No other stylesheet rule targets the Purchases table any more.
         $this->assertSame(substr_count($css, '.purchases-table'), substr_count($block, '.purchases-table'));
@@ -468,10 +496,13 @@ class Part20RevisionsTest extends AuditTestCase
         // Sales export: the delivery status column and who last updated it.
         $this->recordOrder($a, ['purchase_item_id' => $lifts['line'], 'quantity_liters' => 500, 'unit_price' => 70])->assertSessionHasNoErrors();
         $saleId = $this->lastSaleId();
-        $this->actingAs($a['sales'])->from(route('sales-officer.sales'))->patch(route('sales-officer.sales.delivery-status.update', $saleId), ['delivery_status' => 'out_for_delivery'])->assertSessionHasNoErrors();
+        $this->driverDelivery($saleId, ['delivery_status' => 'out_for_delivery'])->assertSessionHasNoErrors();
         $sales = $this->actingAs($a['sales'])->get(route('sales-officer.sales'))->getContent();
         $this->assertStringContainsString('<th class="export-only" hidden>Delivery Status Updated</th>', $sales);
-        $this->assertStringContainsString('<td class="export-only" hidden>'.e($a['sales']->name).' · 11/10/2026', $sales);
+        // Part 21 #1: the driver who updated it (driverDelivery() names one for an order without Delivery Details).
+        $updater = \App\Models\User::find(DB::table('sales')->where('id', $saleId)->value('delivery_status_updated_by'));
+        $this->assertSame('driver', $updater->role);
+        $this->assertStringContainsString('<td class="export-only" hidden>'.e($updater->name).' · 11/10/2026', $sales);
     }
 
     // ----- Final fixes: AI safeguards, error state, PDF, delivery rules, Larastan fixes ---------------------------
@@ -578,8 +609,7 @@ class Part20RevisionsTest extends AuditTestCase
         ];
         $before = $money();
         $refused = 'This Depot to Client sale is delivered through its lift. Add it to a lift in Fuel Lifting and complete the lift first.';
-        $deliver = fn () => $this->actingAs($a['sales'])->from(route('sales-officer.sales'))
-            ->patch(route('sales-officer.sales.delivery-status.update', $saleId), ['delivery_status' => 'delivered', 'idempotency_key' => (string) Str::uuid()]);
+        $deliver = fn () => $this->driverDelivery($saleId, ['delivery_status' => 'delivered', 'idempotency_key' => (string) Str::uuid()]);
 
         $this->scheduleLift($a, [['purchase_item_id' => $premium, 'quantity_liters' => 2000, 'atl_number' => 'ATL-9']], [$saleId])->assertSessionHasNoErrors();
         $haulId = $this->lastHaulId();
@@ -597,7 +627,7 @@ class Part20RevisionsTest extends AuditTestCase
         $this->assertEquals(2000, DB::table('stock_outs')->where('sale_id', $saleId)->sum('quantity_liters'));
         $this->assertSame(18000.0, $this->remaining($premium));
         $this->assertSame($before, $money());
-        $this->assertDatabaseHas('activity_logs', ['route_name' => 'sales-officer.sales.delivery-status.update', 'user_id' => $a['sales']->id, 'succeeded' => false]);
+        $this->assertDatabaseHas('activity_logs', ['route_name' => 'driver.fuel-lifting.deliveries.status', 'user_id' => $a['driver']->id, 'succeeded' => false]);
     }
 
     public function test_a_database_error_while_recording_a_sale_shows_the_friendly_message_not_the_sql(): void
@@ -609,7 +639,9 @@ class Part20RevisionsTest extends AuditTestCase
             ->andThrow(new QueryException('mysql', 'insert into sales (secret_column) values (?)', [1], new \Exception('SQLSTATE[23000] secret detail'))));
 
         $this->recordOrder($a, ['purchase_item_id' => $line, 'quantity_liters' => 100, 'unit_price' => 70])
-            ->assertSessionHasErrors(['sale' => 'Sale record could not be saved. Please review the details and try again.']);
+            ->assertSessionHasErrors('sale');
+        // Part 23 #9: a specific message with a log reference instead of the generic one; never the SQL.
+        $this->assertStringStartsWith('The sale could not be saved because of a database error.', (string) session('errors')->first('sale'));
         $this->assertStringNotContainsString('secret', (string) session('errors')->first('sale'));
     }
 }

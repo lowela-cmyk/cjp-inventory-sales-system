@@ -195,7 +195,7 @@ class LiftLeftoverController extends Controller
             ->join('fuel_types', 'fuel_types.id', '=', 'hauls.fuel_type_id')
             ->when($row->lifting_schedule_id, fn ($query) => $query->where('hauls.lifting_schedule_id', $row->lifting_schedule_id), fn ($query) => $query->where('hauls.id', $row->id))
             ->whereNull('hauls.deleted_at')
-            ->whereIn('hauls.status', ['lifted', 'completed'])
+            ->whereIn('hauls.status', \App\Services\LiftAllocationService::CARRYING_STATUSES)
             ->orderBy('hauls.id')
             ->lockForUpdate()
             ->get(['hauls.id', 'hauls.purchase_id', 'hauls.purchase_item_id', 'hauls.fuel_type_id', 'hauls.truck_id', 'hauls.driver_user_id', 'purchases.purchase_code', 'purchase_items.unit_cost', 'fuel_types.name as fuel_name']);

@@ -6,6 +6,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use App\Support\ActivePayments;
 
 /**
  * Part 10 (October 22, 2026): the Admin "Dashboard and Analytics" page.
@@ -18,18 +19,18 @@ class DashboardService
 {
     public const VALID_SALE_STATUSES = DashboardSummaryService::VALID_SALE_STATUSES;
 
-    public const RED = '#E8453C';
+    public const RED = '#C0634E';
 
-    public const GREEN = '#3B9A35';
+    public const GREEN = '#8BA284';
 
-    public const ORANGE = '#E28A22';
+    public const ORANGE = '#C78E45';
 
-    public const NAVY = '#0D1424';
+    public const NAVY = '#5F6468';
 
     /** Week / Month / Year toggle of Expected Sales Revenue: how many periods the x-axis shows. */
     public const REVENUE_PERIODS = ['week' => 12, 'month' => 12, 'year' => 5];
 
-    /** Forecasts are the average of this many previous complete periods (moving average). */
+    /** Forecasts use the average change across this many previous period-to-period movements. */
     public const MOVING_AVERAGE_PERIODS = 3;
 
     /** Current Stock by Fuel Type: mockup order and colors. */
@@ -64,8 +65,30 @@ class DashboardService
             'inventory' => $this->inventory($inventoryFilters),
             'revenue' => $this->revenue($today, $salesFilters),
             'salesTrend' => $this->salesTrend($salesFilters, $today),
+            'purchaseReport' => $this->purchaseReport($inventoryFilters, $today),
             'filterOptions' => $this->filterOptions(),
         ];
+    }
+
+    /** Count each active transaction once, even when a purchase has multiple fuel lines. */
+    public function purchaseReport(array $filters = [], ?CarbonImmutable $today = null): array
+    {
+        $today ??= CarbonImmutable::today();
+        $start = $today->startOfMonth()->subMonths(11);
+        $query = DB::table('purchases')->whereNull('deleted_at')->whereNotIn('status', ['draft', 'cancelled'])
+            ->whereBetween('purchase_date', [$start->toDateString(), $today->endOfMonth()->toDateString()])
+            ->when($filters['search'] ?? null, fn (Builder $q, string $search) => $q->where('purchase_code', 'like', '%'.$search.'%'))
+            ->when($filters['depot_id'] ?? null, fn (Builder $q, $id) => $q->where('depot_id', $id))
+            ->when($filters['fuel_type_id'] ?? null, fn (Builder $q, $id) => $q->whereExists(fn (Builder $items) => $items->selectRaw('1')->from('purchase_items')->whereColumn('purchase_items.purchase_id', 'purchases.id')->where('fuel_type_id', $id)));
+        $month = DB::connection()->getDriverName() === 'sqlite' ? "strftime('%Y-%m', purchase_date)" : "DATE_FORMAT(purchase_date, '%Y-%m')";
+        $counts = $query->selectRaw($month.' as month, COUNT(DISTINCT id) as total')->groupByRaw($month)->pluck('total', 'month');
+        $months = collect(range(0, 11))->map(fn (int $i) => $start->addMonths($i));
+
+        return $this->chart('bar', 'count', $months->map(fn ($date) => $date->format('M Y'))->all(), [[
+            'label' => 'Purchase transactions',
+            'data' => $months->map(fn ($date) => (int) ($counts[$date->format('Y-m')] ?? 0))->all(),
+            'backgroundColor' => self::GREEN,
+        ]], extra: ['axisTitle' => 'Number of purchases']);
     }
 
     // ----- Section 1: Current Inventory ------------------------------------------------------------------
@@ -203,8 +226,8 @@ class DashboardService
      * Expected Sales Revenue for one toggle (week / month / year).
      * - Actual: sales billed in the period (sum of line totals of sales that are not cancelled); the current period
      *   is to date.
-     * - Expected: average Actual of the 3 previous periods, plotted for each period and for the next one (the next
-     *   period's forecast uses the 3 most recent complete periods, so it equals the current period's).
+     * - Expected: the last complete Actual plus the average change across the 3 previous period-to-period movements,
+     *   plotted for each period and for the next one.
      * - Increase Rate: (Expected next period - Actual of the last complete period) / that Actual x 100.
      *
      * @return array<string, mixed>
@@ -230,6 +253,8 @@ class DashboardService
             $byPeriod[$key] = round(($byPeriod[$key] ?? 0) + (float) $row->total, 2);
         }
         $all = array_map(fn (CarbonImmutable $start): float => (float) ($byPeriod[$start->toDateString()] ?? 0), $starts);
+        $completeValues = array_slice($all, 0, -1);
+        $completeStarts = array_slice($starts, 0, -1);
 
         $labels = [];
         $actual = [];
@@ -237,16 +262,30 @@ class DashboardService
         for ($index = $history; $index < count($starts); $index++) {
             $labels[] = $this->periodLabel($period, $starts[$index]);
             $actual[] = $all[$index];
-            $expected[] = $this->average(array_slice($all, $index - $history, $history));
+            // Forecast from completed periods only. The current period may be partial, so it is excluded from the
+            // forecast used for the current chart point.
+            $expected[] = $this->trendForecast(array_slice($all, 0, $index), $history);
         }
         // The next period: forecast only.
-        $nextForecast = $this->average(array_slice($all, -1 - $history, $history));
+        // Exclude the current period because it is still in progress and may only contain partial sales.
+        $nextForecast = $this->trendForecast(array_slice($all, 0, -1), $history);
         $labels[] = $this->periodLabel($period, $this->shiftPeriod($period, $current, 1));
         $actual[] = null;
         $expected[] = $nextForecast;
 
         $lastComplete = $all[count($all) - 2];
         $increaseRate = $lastComplete > 0 ? round(($nextForecast - $lastComplete) / $lastComplete * 100, 2) : null;
+        $forecastWindowValues = array_slice($completeValues, -($history + 1));
+        $forecastWindowStarts = array_slice($completeStarts, -($history + 1));
+        $forecastChanges = [];
+        for ($index = 1; $index < count($forecastWindowValues); $index++) {
+            $forecastChanges[] = [
+                'from' => $this->periodLabel($period, $forecastWindowStarts[$index - 1]),
+                'to' => $this->periodLabel($period, $forecastWindowStarts[$index]),
+                'value' => round($forecastWindowValues[$index] - $forecastWindowValues[$index - 1], 2),
+            ];
+        }
+        $averageChange = $forecastChanges === [] ? 0.0 : $this->average(array_column($forecastChanges, 'value'));
 
         return [
             'labels' => $labels,
@@ -256,6 +295,27 @@ class DashboardService
             'forecast' => $nextForecast,
             'increaseRate' => $increaseRate,
             'increaseRateLabel' => $increaseRate === null ? 'N/A (no sales in the last complete '.$period.')' : $this->percent($increaseRate),
+            // This explanation is generated from the same database aggregate used by the chart and forecast. The
+            // browser only renders it, so the user can audit exactly which completed periods produced the prediction.
+            'forecastExplanation' => [
+                'method' => 'Last completed period + average historical change',
+                'last_complete_label' => $this->periodLabel($period, $starts[count($starts) - 2]),
+                'last_complete_value' => round($lastComplete, 2),
+                'average_change' => $averageChange,
+                'forecast_label' => $this->periodLabel($period, $this->shiftPeriod($period, $current, 1)),
+                'forecast_value' => $nextForecast,
+                'increase_rate' => $increaseRate,
+                'increase_rate_label' => $increaseRate === null ? 'N/A' : $this->percent($increaseRate),
+                'periods' => array_map(
+                    fn (CarbonImmutable $start, int $index): array => [
+                        'label' => $this->periodLabel($period, $start),
+                        'value' => round($forecastWindowValues[$index], 2),
+                    ],
+                    $forecastWindowStarts,
+                    array_keys($forecastWindowStarts)
+                ),
+                'changes' => $forecastChanges,
+            ],
             'empty' => array_sum(array_map('floatval', array_filter($actual, fn (?float $value): bool => $value !== null))) <= 0 && $nextForecast <= 0,
         ];
     }
@@ -279,7 +339,7 @@ class DashboardService
 
         $stockOut = round((float) $this->releasesQuery()->whereIn('stock_outs.sale_id', $delivered())
             ->sum(DB::raw('stock_outs.quantity_liters * '.$this->releasePriceSql())), 2);
-        $collected = round((float) DB::table('payments')->whereIn('sale_id', $delivered())->sum('amount'), 2);
+        $collected = round((float) ActivePayments::query()->whereIn('sale_id', $delivered())->sum('amount'), 2);
         $missing = round($stockOut - $collected, 2);
         $rate = $stockOut > 0 ? round($missing / $stockOut * 100, 2) : 0.0;
 
@@ -310,8 +370,9 @@ class DashboardService
      *   without a recorded cost are left out.
      * - Unpaid Amount: sum of (total - paid) per sale where something is still owed.
      * - Paid / Unpaid Customers: customers whose matching sales are all paid, vs customers owing on any.
-     * - Payment Status (Customers), Part 13: the same customers split into Paid, Partially Paid (owes, paid something)
-     *   and Unpaid (owes, paid nothing); the three add up to every customer with a matching sale.
+     * - Payment Status (Customers), Part 13: the same customers split into Paid, Partially Paid (owes, paid something
+     *   toward a still-open sale) and Unpaid (owes, paid nothing toward the open sales); the three add up to every
+     *   customer with a matching sale.
      * - Fuel Sold: ordered liters per fuel (a line with an F1 % counts under its own fuel).
      * - Peak Demands: liters sold per month of the selected year (the year of the date filter, else this year).
      *
@@ -339,15 +400,17 @@ class DashboardService
             ->selectRaw('COALESCE(SUM(CASE WHEN ROUND(paid, 2) <= 0 AND ROUND(total, 2) > 0 THEN 1 ELSE 0 END), 0) as unpaid_count')
             ->first();
         // Part 13: customers, for both the KPI cards and the Payment Status chart (same sales, same filters):
-        // Paid = every sale fully paid; Partially Paid = still owes and made at least one payment; Unpaid = still owes
-        // and paid nothing. Unpaid Customers = Partially Paid + Unpaid.
+        // Paid = every sale fully paid; Partially Paid = still owes and has paid something toward a sale that is still
+        // open; Unpaid = still owes and has paid nothing toward the open sales. Payments on sales that are already
+        // settled do not count: a customer with a paid history and one untouched invoice is Unpaid, not Partially
+        // Paid. Unpaid Customers = Partially Paid + Unpaid.
         $customers = DB::query()->fromSub(
             DB::query()->fromSub($perSale, 'per_sale')->groupBy('customer_id')
-                ->selectRaw('customer_id, SUM(CASE WHEN ROUND(total, 2) > ROUND(paid, 2) THEN 1 ELSE 0 END) as open_sales, COALESCE(SUM(paid), 0) as paid_total'),
+                ->selectRaw('customer_id, SUM(CASE WHEN ROUND(total, 2) > ROUND(paid, 2) THEN 1 ELSE 0 END) as open_sales, COALESCE(SUM(CASE WHEN ROUND(total, 2) > ROUND(paid, 2) THEN paid ELSE 0 END), 0) as paid_on_open'),
             'per_customer'
         )->selectRaw('COALESCE(SUM(CASE WHEN open_sales = 0 THEN 1 ELSE 0 END), 0) as paid')
-            ->selectRaw('COALESCE(SUM(CASE WHEN open_sales > 0 AND ROUND(paid_total, 2) > 0 THEN 1 ELSE 0 END), 0) as partial')
-            ->selectRaw('COALESCE(SUM(CASE WHEN open_sales > 0 AND ROUND(paid_total, 2) <= 0 THEN 1 ELSE 0 END), 0) as unpaid_only')
+            ->selectRaw('COALESCE(SUM(CASE WHEN open_sales > 0 AND ROUND(paid_on_open, 2) > 0 THEN 1 ELSE 0 END), 0) as partial')
+            ->selectRaw('COALESCE(SUM(CASE WHEN open_sales > 0 AND ROUND(paid_on_open, 2) <= 0 THEN 1 ELSE 0 END), 0) as unpaid_only')
             ->selectRaw('COALESCE(SUM(CASE WHEN open_sales > 0 THEN 1 ELSE 0 END), 0) as unpaid')
             ->first();
 
@@ -414,12 +477,14 @@ class DashboardService
     }
 
     /**
-     * - Liters per month of the selected year.
-     * - Month With Highest Sales: the month with the most liters that year.
-     * - Expected Month with Most Demand (YoY): the calendar month with the highest average liters over the past
+     * Part 23 #14: every figure counts customer purchases (sales orders), not liters.
+     * - Purchases per month of the selected year.
+     * - Month With Highest Sales: the month with the most purchases that year.
+     * - Expected Month with Most Demand (YoY): the calendar month with the highest average purchases over the past
      *   years that have sales (before the selected year); needs at least one such year.
-     * - Expected Increase Rate by Next Month: forecast (average of the last 3 complete months) vs the last complete
-     *   month, relative to today. The date filter is not applied to the YoY and next-month figures.
+     * - Expected Increase Rate by Next Month: trend forecast (the last complete month plus the average movement across
+     *   the previous complete months) vs the last complete month, relative to today. The date filter is not applied
+     *   to the YoY and next-month figures.
      *
      * @param  array<string, mixed>  $filters
      * @return array<string, mixed>
@@ -427,18 +492,18 @@ class DashboardService
     private function peakDemand(array $filters, CarbonImmutable $today): array
     {
         $year = (int) CarbonImmutable::parse($filters['date_to'] ?? $filters['date_from'] ?? $today)->year;
-        $monthly = array_fill(0, 12, 0.0);
-        foreach ($this->litersByDay($filters, true, "$year-01-01", "$year-12-31") as $row) {
+        $monthly = array_fill(0, 12, 0);
+        foreach ($this->ordersByDay($filters, true, "$year-01-01", "$year-12-31") as $row) {
             $month = (int) CarbonImmutable::parse($row->day)->month - 1;
-            $monthly[$month] = round($monthly[$month] + (float) $row->liters, 2);
+            $monthly[$month] += (int) $row->orders;
         }
         $highest = max($monthly) > 0 ? self::MONTHS[array_search(max($monthly), $monthly, true)] : null;
 
         // Past years, by calendar month.
         $history = [];
-        foreach ($this->litersByDay($filters, false, null, ($year - 1).'-12-31') as $row) {
+        foreach ($this->ordersByDay($filters, false, null, ($year - 1).'-12-31') as $row) {
             $date = CarbonImmutable::parse($row->day);
-            $history[$date->year][$date->month - 1] = ($history[$date->year][$date->month - 1] ?? 0) + (float) $row->liters;
+            $history[$date->year][$date->month - 1] = ($history[$date->year][$date->month - 1] ?? 0) + (float) $row->orders;
         }
         $history = array_filter($history, fn (array $months): bool => array_sum($months) > 0);
         $yoyMonth = null;
@@ -447,16 +512,18 @@ class DashboardService
             $yoyMonth = self::MONTHS[array_search(max($averages), $averages, true)];
         }
 
-        // Next month, from the last 3 complete months.
+        // Next month, by extending the average movement across the last complete months.
         $thisMonth = $today->startOfMonth();
-        $from = $thisMonth->subMonthsNoOverflow(self::MOVING_AVERAGE_PERIODS);
-        $recent = array_fill(0, self::MOVING_AVERAGE_PERIODS, 0.0);
-        foreach ($this->litersByDay($filters, false, $from->toDateString(), $thisMonth->subDay()->toDateString()) as $row) {
+        $periods = self::MOVING_AVERAGE_PERIODS + 1;
+        $from = $thisMonth->subMonthsNoOverflow($periods);
+        $recent = array_fill(0, $periods, 0.0);
+        foreach ($this->ordersByDay($filters, false, $from->toDateString(), $thisMonth->subDay()->toDateString()) as $row) {
             $index = (int) $from->diffInMonths(CarbonImmutable::parse($row->day)->startOfMonth());
-            $recent[$index] = round($recent[$index] + (float) $row->liters, 2);
+            $recent[$index] = round($recent[$index] + (float) $row->orders, 2);
         }
-        $lastComplete = $recent[self::MOVING_AVERAGE_PERIODS - 1];
-        $forecast = $this->average($recent);
+        $lastComplete = $recent[$periods - 1];
+        // Part 23 #14: counts are small whole numbers, so the forecast keeps its decimals until the rate is rounded.
+        $forecast = $this->trendForecast($recent, self::MOVING_AVERAGE_PERIODS, 6);
         $nextRate = $lastComplete > 0 ? round(($forecast - $lastComplete) / $lastComplete * 100, 2) : null;
 
         return [
@@ -468,11 +535,12 @@ class DashboardService
             'highestMonthLabel' => $highest ?? 'No sales yet',
             'yoyMonthLabel' => $yoyMonth ?? 'Not enough history',
             'nextMonthRateLabel' => $nextRate === null ? 'N/A (no sales last month)' : $this->percent($nextRate),
-            'chart' => $this->chart('bar', 'liters', self::MONTHS, [[
-                'label' => 'Liters sold ('.$year.')',
+            // Part 23 #14: the number of customer purchases (sales orders) per month, not liters.
+            'chart' => $this->chart('bar', 'count', self::MONTHS, [[
+                'label' => 'Purchases ('.$year.')',
                 'data' => $monthly,
                 'backgroundColor' => self::GREEN,
-            ]]),
+            ]], false, 'ticks', ['axisTitle' => 'Number of purchases', 'tooltipSuffix' => ' purchases']),
         ];
     }
 
@@ -596,7 +664,7 @@ class DashboardService
             ->groupBy('sales.id', 'sales.customer_id')
             ->selectRaw('sales.id as sale_id, sales.customer_id, COALESCE(SUM(sale_items.line_total), 0) as total');
         $saleTotals = DB::table('sale_items')->groupBy('sale_id')->selectRaw('sale_id, COALESCE(SUM(line_total), 0) as sale_total');
-        $payments = DB::table('payments')->groupBy('sale_id')->selectRaw('sale_id, COALESCE(SUM(amount), 0) as paid');
+        $payments = ActivePayments::query()->groupBy('sale_id')->selectRaw('sale_id, COALESCE(SUM(amount), 0) as paid');
 
         return DB::query()->fromSub($matching, 'matching')
             ->leftJoinSub($saleTotals, 'sale_totals', 'sale_totals.sale_id', '=', 'matching.sale_id')
@@ -609,13 +677,14 @@ class DashboardService
      * @param  array<string, mixed>  $filters
      * @return Collection<int, \stdClass>
      */
-    private function litersByDay(array $filters, bool $withDates, ?string $from, string $to): Collection
+    /** Part 23 #14: customer purchases (distinct sales orders) per sale date, under the dashboard's sales filters (matchingSaleLines()). */
+    private function ordersByDay(array $filters, bool $withDates, ?string $from, string $to): Collection
     {
         return $this->matchingSaleLines($filters, $withDates)
             ->when($from, fn (Builder $query, string $date): Builder => $query->where('sales.sale_date', '>=', $date))
             ->where('sales.sale_date', '<=', $to)
             ->groupBy('sales.sale_date')
-            ->selectRaw('sales.sale_date as day, COALESCE(SUM(sale_items.quantity_liters), 0) as liters')
+            ->selectRaw('sales.sale_date as day, COUNT(DISTINCT sales.id) as orders')
             ->get();
     }
 
@@ -721,6 +790,35 @@ class DashboardService
     private function average(array $values): float
     {
         return $values === [] ? 0.0 : round(array_sum($values) / count($values), 2);
+    }
+
+    /**
+     * Forecast the next period by extending the average historical movement.
+     *
+     * Example: 900,000 -> 1,200,000 -> 1,500,000 -> 1,800,000 has an average
+     * movement of 300,000, so the next forecast is 2,100,000.
+     *
+     * @param  array<int, float|int>  $values
+     */
+    private function trendForecast(array $values, int $movements = self::MOVING_AVERAGE_PERIODS, int $precision = 2): float
+    {
+        if ($values === []) {
+            return 0.0;
+        }
+
+        $values = array_values(array_map('floatval', array_slice($values, -($movements + 1))));
+        $last = (float) end($values);
+
+        if (count($values) < 2) {
+            return round($last, $precision);
+        }
+
+        $changes = [];
+        for ($index = 1; $index < count($values); $index++) {
+            $changes[] = $values[$index] - $values[$index - 1];
+        }
+
+        return round($last + ($changes === [] ? 0.0 : array_sum($changes) / count($changes)), $precision);
     }
 
     public function money(float $value): string

@@ -11,26 +11,28 @@ use Tests\Feature\Audit\AuditTestCase;
  */
 class Part8RevisionsTest extends AuditTestCase
 {
-    public function test_truck_codes_are_generated_and_cannot_be_typed_or_edited(): void
+    /** Part 23 #8 replaces Part 8 #7: the Truck ID is typed (TRUCK-###, unique); the next free number is suggested. */
+    public function test_truck_codes_are_typed_in_the_truck_format_and_the_next_one_is_suggested(): void
     {
         $a = $this->actors();
         DB::table('trucks')->insert(['truck_code' => 'TRK-007', 'capacity_liters' => 1000, 'truck_type' => 'hauling', 'status' => 'available', 'created_at' => now(), 'updated_at' => now()]);
-        $payload = fn (string $plate): array => ['truck_code' => 'HACK-1', 'plate_number' => $plate, 'name' => 'New Tanker', 'capacity_liters' => 20000, 'truck_type' => 'hauling', 'status' => 'available'];
+        $payload = fn (string $code, string $plate): array => ['truck_code' => $code, 'plate_number' => $plate, 'capacity_liters' => 20000, 'status' => 'available'];
 
         $this->actingAs($a['dispatch'])->get(route('dispatch.fuel-lifting.trucks'))->assertOk()
-            ->assertSee('value="TRK-008" readonly', false)
-            ->assertSee('Generated automatically when the truck is saved.')
-            ->assertDontSee('name="truck_code"', false);
+            ->assertSee('name="truck_code"', false)
+            ->assertSee('value="TRUCK-008"', false)
+            ->assertSee('Suggested: TRUCK-008.');
 
-        $this->actingAs($a['dispatch'])->post(route('dispatch.trucks.store'), $payload('NEW-0001'))->assertSessionHasNoErrors();
-        $this->actingAs($a['admin'])->post(route('admin.trucks.store'), $payload('NEW-0002'))->assertSessionHasNoErrors();
-        $this->assertSame('TRK-008', DB::table('trucks')->where('plate_number', 'NEW-0001')->value('truck_code'));
-        $this->assertSame('TRK-009', DB::table('trucks')->where('plate_number', 'NEW-0002')->value('truck_code'));
+        $this->actingAs($a['dispatch'])->post(route('dispatch.trucks.store'), $payload('HACK-1', 'NEW-0001'))->assertSessionHasErrors('truck_code');
+        $this->actingAs($a['dispatch'])->post(route('dispatch.trucks.store'), $payload('TRUCK-008', 'NEW-0001'))->assertSessionHasNoErrors();
+        $this->actingAs($a['admin'])->post(route('admin.trucks.store'), $payload('TRUCK-008', 'NEW-0002'))->assertSessionHasErrors('truck_code');
+        $this->actingAs($a['admin'])->post(route('admin.trucks.store'), $payload('TRUCK-009', 'NEW-0002'))->assertSessionHasNoErrors();
+        $this->assertSame('TRUCK-008', DB::table('trucks')->where('plate_number', 'NEW-0001')->value('truck_code'));
         $this->assertDatabaseMissing('trucks', ['truck_code' => 'HACK-1']);
 
         $truckId = (int) DB::table('trucks')->where('plate_number', 'NEW-0001')->value('id');
-        $this->actingAs($a['dispatch'])->patch(route('dispatch.trucks.update', $truckId), $payload('NEW-0001'))->assertSessionHasNoErrors();
-        $this->assertSame('TRK-008', DB::table('trucks')->where('id', $truckId)->value('truck_code'));
+        $this->actingAs($a['dispatch'])->patch(route('dispatch.trucks.update', $truckId), $payload('TRUCK-008', 'NEW-0001'))->assertSessionHasNoErrors();
+        $this->assertSame('TRUCK-008', DB::table('trucks')->where('id', $truckId)->value('truck_code'));
     }
 
     public function test_advance_payment_and_cod_are_retired_but_existing_records_still_show_them(): void

@@ -149,81 +149,64 @@ class StockInService
      */
     public function records(array $filters = [], ?string $search = null): Collection
     {
-        // Purchases written outside Purchases get (or refresh) their stock-in first, once per service instance.
+        return $this->query($filters, $search)->orderByDesc('stock_in_date')->orderByDesc('id')->get()->map(fn ($row) => $this->normalizeQuantities($row));
+    }
+
+    /** Derived quantities are filtered and counted in SQL. No stock-in rows are loaded before LIMIT/OFFSET. */
+    public function query(array $filters = [], ?string $search = null): Builder
+    {
         if (! $this->repaired) {
             $this->repair();
             $this->repaired = true;
         }
-
-        $rows = DB::table('stock_ins')
-            ->join('purchases', 'purchases.id', '=', 'stock_ins.purchase_id')
-            ->join('fuel_types', 'fuel_types.id', '=', 'stock_ins.fuel_type_id')
-            ->join('depots', 'depots.id', '=', 'stock_ins.depot_id')
+        $released = DB::query()->fromSub(PurchaseStockService::releasesByPurchaseQuery(), 'release_rows')
+            ->groupBy('purchase_item_id')->selectRaw('purchase_item_id, SUM(liters) as liters');
+        $reserved = $this->purchaseStock->reservationTotalsQuery();
+        $used = '(COALESCE(released.liters, 0) + COALESCE(reserved.liters, 0))';
+        $remaining = "CASE WHEN stock_ins.status = 'voided' THEN 0 WHEN stock_ins.quantity_liters > $used THEN stock_ins.quantity_liters - $used ELSE 0 END";
+        $query = $this->baseQuery($filters, $search)
             ->leftJoin('users', 'users.id', '=', 'stock_ins.created_by')
-            ->when($search, fn (Builder $query, string $term): Builder => $query->where(function (Builder $query) use ($term): void {
-                foreach (['purchases.purchase_code', 'fuel_types.name', 'depots.name'] as $column) {
-                    $query->orWhere($column, 'like', '%'.$term.'%');
-                }
-            }))
-            ->when($filters['date'] ?? null, fn (Builder $query, string $date): Builder => $query->whereDate('stock_ins.stock_in_date', $date))
-            ->tap(fn (Builder $query): Builder => FilterDates::apply($query, 'stock_ins.stock_in_date', ['from' => $filters['date_from'] ?? null, 'to' => $filters['date_to'] ?? null]))
-            ->when($filters['depot_id'] ?? null, fn (Builder $query, mixed $id): Builder => $query->where('stock_ins.depot_id', (int) $id))
-            ->when($filters['fuel_type_id'] ?? null, fn (Builder $query, mixed $id): Builder => $query->where('stock_ins.fuel_type_id', (int) $id))
-            ->orderByDesc('stock_ins.stock_in_date')
-            ->orderByDesc('stock_ins.id')
-            ->get([
-                'stock_ins.*',
-                'purchases.purchase_code',
-                'purchases.payment_status',
-                // When the purchase was recorded (a backfilled stock-in's own created_at is the migration time).
-                'purchases.created_at as recorded_at',
-                'fuel_types.name as fuel_name',
-                'fuel_types.code as fuel_code',
-                'depots.name as depot_name',
-                'users.name as created_by_name',
-            ]);
+            ->leftJoinSub($released, 'released', 'released.purchase_item_id', '=', 'stock_ins.purchase_item_id')
+            ->leftJoinSub($reserved, 'reserved', 'reserved.purchase_item_id', '=', 'stock_ins.purchase_item_id')
+            ->select('stock_ins.*', 'purchases.purchase_code', 'purchases.payment_status', 'purchases.created_at as recorded_at', 'fuel_types.name as fuel_name', 'fuel_types.code as fuel_code', 'depots.name as depot_name', 'users.name as created_by_name')
+            ->selectRaw("ROUND(COALESCE(released.liters, 0), 2) as delivered, ROUND(COALESCE(reserved.liters, 0), 2) as reserved, ROUND($used, 2) as stock_out, ROUND($remaining, 2) as remaining")
+            ->selectRaw("CASE WHEN stock_ins.status = 'voided' THEN 'cancelled' WHEN ROUND($remaining, 2) <= 0 THEN 'depleted' WHEN $used > 0 THEN 'partially_used' ELSE 'available' END as stock_status");
 
-        $usage = $this->purchaseStock->usage($rows->pluck('purchase_item_id')->map(fn (mixed $id): int => (int) $id)->all());
-
-        return $rows->map(function (object $row) use ($usage): object {
-            $id = (int) $row->purchase_item_id;
-            $purchased = round((float) $row->quantity_liters, 2);
-            $row->delivered = round((float) ($usage['released'][$id] ?? 0), 2);
-            $row->reserved = round((float) ($usage['reserved'][$id] ?? 0), 2);
-            $row->stock_out = round($row->delivered + $row->reserved, 2);
-            $row->remaining = $row->status === 'voided' ? 0.0 : round(max(0, $purchased - $row->stock_out), 2);
-            $row->stock_status = match (true) {
-                $row->status === 'voided' => 'cancelled',
-                $row->remaining <= 0 => 'depleted',
-                $row->stock_out > 0 => 'partially_used',
-                default => 'available',
-            };
-
-            return $row;
-        })
-            ->when($filters['status'] ?? null, fn (Collection $rows, string $status): Collection => $rows->where('stock_status', $status))
-            ->values();
+        return DB::query()->fromSub($query, 'stock_rows')
+            ->when($filters['status'] ?? null, fn (Builder $q, string $status) => $q->where('stock_status', $status));
     }
 
-    /**
-     * @param  array<string, mixed>  $filters
-     */
+    private function baseQuery(array $filters, ?string $search): Builder
+    {
+        return DB::table('stock_ins')->join('purchases', 'purchases.id', '=', 'stock_ins.purchase_id')
+            ->join('fuel_types', 'fuel_types.id', '=', 'stock_ins.fuel_type_id')->join('depots', 'depots.id', '=', 'stock_ins.depot_id')
+            ->when($search, fn (Builder $q, string $term) => $q->where(fn (Builder $q) => $q->where('purchases.purchase_code', 'like', '%'.$term.'%')->orWhere('fuel_types.name', 'like', '%'.$term.'%')->orWhere('depots.name', 'like', '%'.$term.'%')))
+            ->when($filters['date'] ?? null, fn (Builder $q, string $date) => $q->whereDate('stock_ins.stock_in_date', $date))
+            ->tap(fn (Builder $q) => FilterDates::apply($q, 'stock_ins.stock_in_date', ['from' => $filters['date_from'] ?? null, 'to' => $filters['date_to'] ?? null]))
+            ->when($filters['depot_id'] ?? null, fn (Builder $q, $id) => $q->where('stock_ins.depot_id', $id))
+            ->when($filters['fuel_type_id'] ?? null, fn (Builder $q, $id) => $q->where('stock_ins.fuel_type_id', $id));
+    }
+
     public function paginate(array $filters, ?string $search, int $perPage = 25, string $pageName = 'stock_in_page'): LengthAwarePaginator
     {
-        $records = $this->records($filters, $search);
-        $page = Paginator::resolveCurrentPage($pageName);
-        $items = $records->forPage($page, $perPage)->values();
-        $deductions = $this->deductions($items->pluck('purchase_item_id')->map(fn (mixed $id): int => (int) $id)->all());
+        $query = $this->query($filters, $search);
+        \App\Support\TableSort::apply($query, ['date' => 'stock_in_date', 'code' => 'purchase_code', 'fuel' => 'fuel_name', 'quantity' => 'quantity_liters', 'cost' => 'unit_cost', 'remaining' => 'remaining'], 'date', 'id');
+        $total = ($filters['status'] ?? null) ? null : $this->baseQuery($filters, $search)->count('stock_ins.id');
+        $paginator = $query->paginate(\App\Support\TablePagination::size(), ['*'], $pageName, total: $total)->withQueryString();
+        $deductions = $this->deductions($paginator->getCollection()->pluck('purchase_item_id')->map(fn ($id) => (int) $id)->all());
+        $paginator->getCollection()->each(function (object $row) use ($deductions): void {
+            $this->normalizeQuantities($row);
+            $row->deductions = $deductions[(int) $row->purchase_item_id] ?? [];
+        });
 
-        $paginator = new LengthAwarePaginator(
-            $items->map(fn (object $row): object => tap($row, fn (object $row) => $row->deductions = $deductions[(int) $row->purchase_item_id] ?? [])),
-            $records->count(),
-            $perPage,
-            $page,
-            ['path' => Paginator::resolveCurrentPath(), 'pageName' => $pageName]
-        );
+        return $paginator;
+    }
 
-        return $paginator->withQueryString();
+    private function normalizeQuantities(object $row): object
+    {
+        foreach (['delivered', 'reserved', 'stock_out', 'remaining'] as $field) $row->$field = (float) $row->$field;
+
+        return $row;
     }
 
     /**
@@ -327,16 +310,14 @@ class StockInService
     public function totals(array $filters = [], ?CarbonImmutable $today = null): array
     {
         $date = ($filters['date'] ?? null) ?: ($today ?? CarbonImmutable::now())->toDateString();
-        $records = $this->records(array_merge($filters, ['date' => null]));
-        $onDate = fn (object $row): bool => substr((string) $row->stock_in_date, 0, 10) === $date;
-        $active = $records->where('status', 'active');
+        $query = $this->query(array_merge($filters, ['date' => null]));
+        $totals = (clone $query)->selectRaw("COALESCE(SUM(remaining), 0) as remaining_total, COALESCE(SUM(CASE WHEN status = 'active' AND stock_in_date = ? THEN quantity_liters ELSE 0 END), 0) as received, COALESCE(SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END), 0) as active", [$date])->first();
+        $inventory = ($filters['date'] ?? null) ? (clone $query)->whereDate('stock_in_date', $date)->sum('remaining') : $totals->remaining_total;
 
         return [
-            'total_inventory' => round((float) (($filters['date'] ?? null) ? $records->filter($onDate) : $records)->sum('remaining'), 2),
-            'stock_in' => round((float) $active->filter($onDate)->sum('quantity_liters'), 2),
-            'stock_out' => $this->stockOutOn($filters, ($filters['status'] ?? null) ? $records->pluck('purchase_item_id')->map(fn (mixed $id): int => (int) $id)->all() : null, $date),
-            'date' => $date,
-            'active' => $active->count(),
+            'total_inventory' => round((float) $inventory, 2), 'stock_in' => round((float) $totals->received, 2),
+            'stock_out' => $this->stockOutOn($filters, ($filters['status'] ?? null) ? (clone $query)->select('purchase_item_id') : null, $date),
+            'date' => $date, 'active' => (int) $totals->active,
         ];
     }
 
@@ -348,12 +329,8 @@ class StockInService
      */
     public function remainingByFuel(array $filters = []): array
     {
-        return $this->records($filters)
-            ->where('status', 'active')
-            ->groupBy('fuel_type_id')
-            ->map(fn (Collection $rows): float => round((float) $rows->sum('remaining'), 2))
-            ->mapWithKeys(fn (float $liters, mixed $id): array => [(int) $id => $liters])
-            ->all();
+        return $this->query($filters)->where('status', 'active')->groupBy('fuel_type_id')
+            ->selectRaw('fuel_type_id, ROUND(SUM(remaining), 2) as liters')->pluck('liters', 'fuel_type_id')->map(fn ($liters) => (float) $liters)->all();
     }
 
     /** @return array<int, string> distinct stock-in dates, newest first (Date filter options) */
@@ -369,7 +346,7 @@ class StockInService
      * @param  array<string, mixed>  $filters
      * @param  array<int, int>|null  $purchaseItemIds
      */
-    private function stockOutOn(array $filters, ?array $purchaseItemIds, string $date): float
+    private function stockOutOn(array $filters, array|Builder|null $purchaseItemIds, string $date): float
     {
         // Narrowed to purchases, a tank release counts by its draws (Part 18 add-on); otherwise every release counts.
         $query = $purchaseItemIds === null

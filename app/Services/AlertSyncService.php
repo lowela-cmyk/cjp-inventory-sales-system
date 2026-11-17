@@ -7,6 +7,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use App\Support\ActivePayments;
 
 /**
  * Part 12 (October 26, 2026): alerts for records that are not settled yet, computed from the data (existing records
@@ -76,7 +77,7 @@ class AlertSyncService
     private function saleBalanceAlerts(): Collection
     {
         $totals = DB::table('sale_items')->groupBy('sale_id')->selectRaw('sale_id, COALESCE(SUM(line_total), 0) as total');
-        $paid = DB::table('payments')->groupBy('sale_id')->selectRaw('sale_id, COALESCE(SUM(amount), 0) as paid');
+        $paid = ActivePayments::query()->groupBy('sale_id')->selectRaw('sale_id, COALESCE(SUM(amount), 0) as paid');
         $today = CarbonImmutable::today()->toDateString();
 
         return DB::table('sales')

@@ -99,9 +99,8 @@ class DatabaseIntegrityTest extends TestCase
         $this->assertDatabaseHas('sales', ['id' => $sale['saleId'], 'delivery_status' => 'pending']);
         $this->assertSame(0, DB::table('stock_outs')->where('sale_id', $sale['saleId'])->count());
 
-        $this->actingAs($records['salesOfficer'])
-            ->patch(route('sales-officer.sales.delivery-status.update', $sale['saleId']), ['delivery_status' => 'delivered'])
-            ->assertRedirect(route('sales-officer.sales'));
+        $this->driverDelivery($sale['saleId'], ['delivery_status' => 'delivered'])
+            ->assertRedirect(route('driver.fuel-lifting.deliveries'));
 
         $stockOut = DB::table('stock_outs')->where('sale_id', $sale['saleId'])->first();
 

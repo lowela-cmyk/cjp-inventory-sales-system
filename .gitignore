@@ -38,3 +38,7 @@ Thumbs.db
 # Selenium browser-run artifacts are local and may contain application data.
 /tests/selenium/reports/
 /tests/selenium/screenshots/
+
+# Local reports, client-data exports, release bundles, and temporary deployment credentials.
+/outputs/
+/deploy-control-*.php

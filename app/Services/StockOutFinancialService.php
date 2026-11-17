@@ -4,12 +4,13 @@ namespace App\Services;
 
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
+use App\Support\ActivePayments;
 
 class StockOutFinancialService
 {
     public function query(?string $search = null): Builder
     {
-        $payments = DB::table('payments')
+        $payments = ActivePayments::query()
             ->selectRaw('sale_id, COALESCE(SUM(amount), 0) as total_paid')
             ->groupBy('sale_id');
 
@@ -106,7 +107,8 @@ class StockOutFinancialService
                 'release_purchase.purchase_code as release_purchase_code',
                 'delivery_truck.truck_code as delivery_truck_code',
                 'delivery_truck.name as delivery_truck_name',
-                'delivery_driver.name as delivery_driver_name',
+                // Part 23 #3: historical lifts name their driver in historical_driver_name (no account).
+                DB::raw('COALESCE(delivery_driver.name, hauls.historical_driver_name) as delivery_driver_name'),
                 DB::raw('COALESCE(hauls.hauled_at, hauls.scheduled_at, sales.delivery_date, stock_outs.stock_out_at) as delivery_date'),
                 'hauls.atl_number',
                 DB::raw('COALESCE(hauls.dr_number, lifting_schedules.dr_number) as dr_number'),

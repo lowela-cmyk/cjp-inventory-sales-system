@@ -32,6 +32,11 @@ class StockOutReleaseService
      */
     public function releaseSaleItem(int $saleItemId, string $stockOutAt, int $createdBy, ?object $allocation = null, ?string $remarks = null): ?string
     {
+        return DB::transaction(fn () => $this->releaseLocked($saleItemId, $stockOutAt, $createdBy, $allocation, $remarks));
+    }
+
+    private function releaseLocked(int $saleItemId, string $stockOutAt, int $createdBy, ?object $allocation, ?string $remarks): ?string
+    {
         $item = DB::table('sale_items')
             ->join('sales', 'sales.id', '=', 'sale_items.sale_id')
             ->join('fuel_types', 'fuel_types.id', '=', 'sale_items.fuel_type_id')
@@ -54,11 +59,25 @@ class StockOutReleaseService
                 'sale_items.f1_quantity_liters',
                 'sales.customer_id',
                 'sales.sale_code',
+                'sales.delivery_type',
                 'fuel_types.name as fuel_name',
             ]);
 
         if (! $item) {
             return 'The selected sale is not eligible for stock-out.';
+        }
+
+        $lift = null;
+        if ($allocation) {
+            $lift = DB::table('haul_allocations')->join('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')
+                ->where('haul_allocations.id', $allocation->id)->where('haul_allocations.haul_id', $allocation->haul_id)
+                ->where('haul_allocations.sale_id', $item->sale_id)->where('haul_allocations.customer_id', $item->customer_id)
+                ->where('haul_allocations.destination_type', 'customer')->where('haul_allocations.status', '!=', 'cancelled')
+                ->whereNull('hauls.deleted_at')->whereIn('hauls.status', ['lifted', 'completed'])->lockForUpdate()
+                ->first(['hauls.purchase_item_id', 'haul_allocations.quantity_liters']);
+            if (! $lift) return 'The delivery allocation does not belong to this sale and an eligible lifted purchase.';
+        } elseif ($item->delivery_type === 'depot_to_client') {
+            return 'A Depot to Client delivery requires its own lifted allocation.';
         }
 
         $f1 = round((float) $item->f1_quantity_liters, 2);
@@ -113,6 +132,7 @@ class StockOutReleaseService
             $tank = $this->garageStock->tank($tankId, true);
             $tankLots = $this->garageStock->lots(['with_empty' => true, 'storage_location_id' => $tankId], null, null, true);
             $draws = $tank ? GarageStockService::proportionalDraws($tankLots, $liters) : null;
+            if ($tank && (int) $tank->fuel_type_id !== $fuelTypeId) return 'The selected garage tank contains a different fuel.';
             if (! $tank || $draws === null || $tank->avg_cost === null) {
                 return ($tank->name ?? 'The garage tank').' has only '.number_format((float) $tankLots->sum('available'), 2).' L left for the '.number_format($liters, 2).' L '.($portion === 'f1' ? 'F1 portion ' : '').'of order '.$item->sale_code.'.';
             }
@@ -138,7 +158,7 @@ class StockOutReleaseService
             }
         }
         $needed = [];
-        foreach ($portions as [$portion, $purchaseItemId, , $liters]) {
+        foreach ($portions as [$portion, $purchaseItemId, $portionFuelId, $liters, $lotId]) {
             $line = $lines->get($purchaseItemId);
             $needed[$purchaseItemId] = round(($needed[$purchaseItemId] ?? 0) + $liters, 2);
             if (! $line) {
@@ -147,6 +167,19 @@ class StockOutReleaseService
             if ($needed[$purchaseItemId] > $line->on_hand) {
                 return $line->purchase_code.' has only '.number_format($line->on_hand, 2).' L of '.$line->fuel_name.' left for the '.number_format($liters, 2).' L of order '.$item->sale_code.'.';
             }
+            if ($lotId && (int) $lots->get($lotId)->purchase_item_id !== $purchaseItemId) return 'The garage lot does not belong to the selected source purchase.';
+            if ((int) $line->fuel_type_id !== $portionFuelId || in_array($line->purchase_status, ['draft', 'cancelled'], true)) return 'The source purchase fuel or status is not eligible for this delivery.';
+            if ($line->requires_reconciliation) return 'The source purchase has unreconciled inventory relationships. Review its historical movements before another withdrawal.';
+            if (! $lotId) {
+                $ownLift = $lift && (int) $lift->purchase_item_id === $purchaseItemId;
+                if ($lift && $portion === 'main' && ! $ownLift) return 'The delivery lift does not carry this sale item source purchase.';
+                if (! $ownLift && $needed[$purchaseItemId] > $line->remaining_in_depot + .005) return 'This fuel has already left the depot. Deliver it through its actual lift or garage source; do not release it from the depot twice.';
+                if ($ownLift) {
+                    $already = (float) DB::table('stock_outs')->where('haul_allocation_id', $allocation->id)->where('purchase_item_id', $purchaseItemId)->where('status', 'released')->sum('quantity_liters');
+                    if ($already + $needed[$purchaseItemId] > (float) $lift->quantity_liters + .005) return 'Delivery exceeds its allocated lift quantity.';
+                }
+            }
+
         }
 
         foreach ($portions as [$portion, $purchaseItemId, $fuelTypeId, $liters, $lotId]) {
@@ -174,7 +207,7 @@ class StockOutReleaseService
     {
         $line = $this->purchaseStock->lines()
             ->where('fuel_type_id', $fuelTypeId)
-            ->first(fn (object $line): bool => $line->on_hand >= $liters);
+            ->first(fn (object $line): bool => ! $line->requires_reconciliation && $line->remaining_in_depot >= $liters);
 
         return $line ? (int) $line->id : null;
     }
@@ -227,7 +260,7 @@ class StockOutReleaseService
             ->update(['status' => 'cancelled', 'updated_at' => now()]);
 
         DB::table('sale_items')->where('id', $item->id)->update([
-            'fulfilled_quantity_liters' => DB::raw('fulfilled_quantity_liters + '.$liters),
+            'fulfilled_quantity_liters' => round((float) DB::table('stock_outs')->where('sale_item_id', $item->id)->where('status', 'released')->sum('quantity_liters') + $liters, 2),
             'updated_at' => now(),
         ]);
     }

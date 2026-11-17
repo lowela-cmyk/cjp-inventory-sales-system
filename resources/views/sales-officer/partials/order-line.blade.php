@@ -9,6 +9,8 @@
 --}}
 @php
     $showF1 = $showF1 ?? true;
+    // Record Sales and existing sales keep the F1 portion functional, but the percentage is not edited here.
+    $showF1Percentage = $showF1Percentage ?? true;
     $formAttr = $formId ? 'form="'.$formId.'"' : '';
     $name = fn (string $field): string => "items[$index][$field]";
     $id = fn (string $field): string => $idPrefix.'_'.$field.'_'.$index;
@@ -72,11 +74,11 @@
         <input {!! $formAttr !!} id="{{ $id('unit_price') }}" name="{{ $name('unit_price') }}" type="number" min="0.01" step="0.01" placeholder="Enter Fuel Price" value="{{ $item['unit_price'] ?? '' }}" data-sale-price required>
     </div>
 </div>
-{{-- Part 16 #2 (Record Sales): one compact full-width line under Fuel Type, outside the field grid: the selected fuel's
-     garage / truck stock, or a one-line summary while no fuel is selected. Hidden for Garage to Client (app.js). --}}
-@if (($stockHints['summary'] ?? null) !== null)
-    <p class="sale-stock-hint" data-depot-only data-stock-hint role="note">
-        <span data-stock-hint-summary>{{ $stockHints['summary'] }}</span>
+{{-- Part 23 #9 (Record Sales): one short line under Fuel Type once a fuel is chosen, e.g. "Unleaded: 0 L in depot,
+     10,000 L in garage, 30,808 L on trucks". Hidden until then and for Garage to Client (app.js). --}}
+@if (($stockHints['fuels'] ?? []) !== [])
+    <p class="sale-stock-hint is-empty" data-depot-only data-stock-hint role="note" hidden>
+        <span data-stock-hint-summary hidden>{{ $stockHints['summary'] }}</span>
         @foreach ($stockHints['fuels'] as $fuelCode => $hint)
             <span data-stock-hint-fuel="{{ $fuelCode }}" hidden>{{ $hint }}</span>
         @endforeach
@@ -107,16 +109,20 @@
         <input {!! $formAttr !!} id="{{ $id('f1_unit_price') }}" name="{{ $name('f1_unit_price') }}" type="number" min="0" step="0.01" placeholder="Enter F1 Price" value="{{ ($item['f1_price'] ?? $item['f1_unit_price'] ?? 0) > 0 ? ($item['f1_price'] ?? $item['f1_unit_price']) : '' }}" data-sale-f1-price @if ($err('f1_unit_price')) aria-invalid="true" @endif>
         @if ($err('f1_unit_price'))<p class="field-error form-row-message">{{ $err('f1_unit_price') }}</p>@endif
     </div>
-    <div class="form-row">
-        <label for="{{ $id('f1_percentage') }}">F1 %</label>
-        <select {!! $formAttr !!} id="{{ $id('f1_percentage') }}" name="{{ $name('f1_percentage') }}" data-f1-percentage @if ($err('f1_percentage')) aria-invalid="true" @endif>
-            <option value="0" @selected((float) ($item['f1_percentage'] ?? 0) === 0.0)>Select F1 %</option>
-            @foreach ($f1Percentages as $percentage)
-                <option value="{{ $percentage }}" @selected((float) ($item['f1_percentage'] ?? 0) === (float) $percentage)>{{ $percentage }}%</option>
-            @endforeach
-        </select>
-        @if ($err('f1_percentage'))<p class="field-error form-row-message">{{ $err('f1_percentage') }}</p>@endif
-    </div>
+    @if ($showF1Percentage)
+        <div class="form-row">
+            <label for="{{ $id('f1_percentage') }}">F1 %</label>
+            <select {!! $formAttr !!} id="{{ $id('f1_percentage') }}" name="{{ $name('f1_percentage') }}" data-f1-percentage @if ($err('f1_percentage')) aria-invalid="true" @endif>
+                <option value="0" @selected((float) ($item['f1_percentage'] ?? 0) === 0.0)>Select F1 %</option>
+                @foreach ($f1Percentages as $percentage)
+                    <option value="{{ $percentage }}" @selected((float) ($item['f1_percentage'] ?? 0) === (float) $percentage)>{{ $percentage }}%</option>
+                @endforeach
+            </select>
+            @if ($err('f1_percentage'))<p class="field-error form-row-message">{{ $err('f1_percentage') }}</p>@endif
+        </div>
+    @else
+        <input {!! $formAttr !!} type="hidden" name="{{ $name('f1_percentage') }}" value="{{ $item['f1_percentage'] ?? 0 }}" data-f1-percentage>
+    @endif
 </div>
 <div class="f1-breakdown" data-f1-breakdown>
     {{-- Part 17 #8: liters (app.js fills them in); Fuel Total / F1 Total / Line Total below stay in pesos. --}}

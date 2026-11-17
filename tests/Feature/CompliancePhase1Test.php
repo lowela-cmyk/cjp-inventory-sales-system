@@ -50,13 +50,13 @@ class CompliancePhase1Test extends AuditTestCase
         $saleId = $this->recordSale($a, 2000, 65, 0);
         $this->assertSame(0, DB::table('stock_outs')->where('sale_id', $saleId)->count(), 'Recording a sale must not post a stock-out.');
 
-        $this->actingAs($a['sales'])->patch(route('sales-officer.sales.delivery-status.update', $saleId), ['delivery_status' => 'delivered'])
+        $this->driverDelivery($saleId, ['delivery_status' => 'delivered'])
             ->assertSessionHasNoErrors();
         $this->assertDatabaseHas('stock_outs', ['sale_id' => $saleId, 'source_type' => 'depot', 'quantity_liters' => 2000, 'status' => 'released']);
         $this->assertSame(1, DB::table('stock_outs')->where('sale_id', $saleId)->count());
 
         // Only once: setting Delivered again does not post a second stock-out.
-        $this->actingAs($a['sales'])->patch(route('sales-officer.sales.delivery-status.update', $saleId), ['delivery_status' => 'delivered']);
+        $this->driverDelivery($saleId, ['delivery_status' => 'delivered']);
         $this->assertSame(1, DB::table('stock_outs')->where('sale_id', $saleId)->count(), 'Delivered must post the stock-out only once.');
         $this->assertSame(2000.0, (float) DB::table('stock_outs')->where('sale_id', $saleId)->sum('quantity_liters'));
 
@@ -77,7 +77,7 @@ class CompliancePhase1Test extends AuditTestCase
 
         // 2,000 L at 65 against a cost of 50: margin 30,000. Only 40,000 is paid so far, so realized profit is -60,000.
         $saleId = $this->recordSale($a, 2000, 65, 40000);
-        $this->actingAs($a['sales'])->patch(route('sales-officer.sales.delivery-status.update', $saleId), ['delivery_status' => 'delivered'])->assertSessionHasNoErrors();
+        $this->driverDelivery($saleId, ['delivery_status' => 'delivered'])->assertSessionHasNoErrors();
 
         $this->actingAs($a['admin'])->get(route('admin.inventory.stock-out'))->assertOk()
             // Part 4 #6: Source shares the Delivery column, so the table fits without scrolling.

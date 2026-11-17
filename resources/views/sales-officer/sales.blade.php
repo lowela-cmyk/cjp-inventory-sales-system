@@ -14,18 +14,19 @@
     $filters = $filters ?? [];
     $receivableFilters = $activeTab === 'receivables' ? $filters : [];
     $customerFilters = $activeTab === 'customers' ? $filters : [];
-    // Part 17 #4: asked before an order is marked Delivered (Record Sales or Update Delivery).
-    $deliveredConfirm = 'This sale will be deducted from stock (Stock Out). Continue?';
     $paymentMethodLabels = [
         'cash_on_delivery' => 'COD',
         'cheque' => 'Cheque',
         'advance_payment' => 'Advance Payment',
         'bank_transfer' => 'Banking',
     ];
+    $sortOptions = $activeTab === 'customers'
+        ? ['date' => 'Date Added', 'code' => 'Customer ID', 'name' => 'Name', 'company' => 'Company', 'location' => 'Location']
+        : ['date' => 'Transaction Date', 'code' => 'Order ID', 'company' => 'Company', 'total' => 'Sale Total'];
 @endphp
 
 @component($salesLayout, ['title' => 'Sales Management', 'active' => 'sales'])
-    <div data-tabs>
+    <div data-tabs data-server-tabs>
         <div class="page-heading-row">
             <h2 class="section-title" data-tab-heading>{{ $activeTab === 'customers' ? 'Customers' : 'Receivables' }}</h2>
             <x-export-button />
@@ -48,7 +49,7 @@
         @endif
 
         <section data-tab-panel="receivables" @if ($activeTab !== 'receivables') hidden @endif>
-            <x-filter.bar class="toolbar-narrow" :action="route($salesRoutePrefix.'.sales')">
+            <x-filter.bar :sort-options="$sortOptions" class="toolbar-narrow" :action="route($salesRoutePrefix.'.sales')">
                 <x-filter.search label="Search receivables" :value="$search" />
                 <x-filter.select name="status" label="Status" :options="$filterOptions['receivableStatuses']" :selected="$receivableFilters['status'] ?? null" />
                 <x-filter.select name="delivery_status" label="Delivery Status" :options="$filterOptions['deliveryStatuses']" :selected="$receivableFilters['delivery_status'] ?? null" />
@@ -97,15 +98,12 @@
                                 <td><x-admin.status-badge :status="$c[14]" /></td>
                                 <td class="export-only" hidden>{{ $row['recorded'] }}</td>
                                 <td class="export-only" hidden>{{ $row['updated'] }}</td>
-                                <td class="export-only" hidden>{{ $row['delivery_update']['last_update'] ?? 'N/A' }}</td>
+                                <td class="export-only" hidden>{{ $row['delivery_last_update'] ?? 'N/A' }}</td>
                                 <td>
                                     <div class="sales-row-actions row-actions-stack">
                                         <button class="btn btn-secondary" type="button" data-modal-open="{{ $row['modal_id'] }}">View</button>
-                                        {{-- Part 20 #2: every open order (Pending included) can move its delivery on from the row. --}}
-                                        @if ($row['delivery_update']['available'])
-                                            {{-- The truck icon is drawn in CSS (.btn-delivery-update::before), so the label stays plain text. --}}
-                                            <button class="btn btn-primary btn-delivery-update" type="button" aria-haspopup="dialog" data-modal-open="{{ $row['modal_id'] }}-delivery">Update Delivery</button>
-                                        @endif
+                                        {{-- Part 21 #1: no Update Delivery here. The Delivery Status column is view only; the assigned
+                                             driver updates it from their Deliveries tab. --}}
                                         {{-- Part 12: Cancel Sale moved into the Edit Sales Record modal. Part 17: no Delete or Discard
                                              Draft here; an order that is not delivered is taken back with Cancel Sale only. --}}
                                     </div>
@@ -125,9 +123,10 @@
         </section>
 
         <section data-tab-panel="customers" @if ($activeTab !== 'customers') hidden @endif>
-            <x-filter.bar class="toolbar-narrow" :action="route($salesRoutePrefix.'.sales.customers')">
+            <x-filter.bar :sort-options="$sortOptions" class="toolbar-narrow" :action="route($salesRoutePrefix.'.sales.customers')">
                 <x-filter.search label="Search customers" :value="$search" />
                 <x-filter.select name="status" label="Status" :options="$filterOptions['accountStatuses']" :selected="$customerFilters['status'] ?? null" />
+                <x-filter.select name="payment_status" label="Payment Status" :options="$filterOptions['customerPaymentStatuses']" :selected="$customerFilters['payment_status'] ?? null" />
                 <x-filter.select name="location" label="Location" :options="$filterOptions['locations']" :selected="$customerFilters['location'] ?? null" />
                 <button class="btn btn-secondary btn-wide" type="button" data-modal-open="so-customer-add">+ Add Customers</button>
             </x-filter.bar>
@@ -139,10 +138,10 @@
                             <th>Name</th>
                             <th>Company Name</th>
                             <th>Location</th>
-                            <th>Email</th>
                             <th>Contact Number</th>
                             <th>Bank Name</th>
                             <th>Payment Status</th>
+                            <th>Status</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -150,7 +149,7 @@
                         @forelse ($customers as $row)
                             <tr class="{{ $row['class'] }}">
                                 @foreach ($row['cells'] as $cell)
-                                    @if ($loop->last)
+                                    @if ($loop->index >= 6)
                                         <td><x-admin.status-badge :status="$cell" /></td>
                                     @else
                                         <td>{{ $cell }}</td>
@@ -176,7 +175,7 @@
         @if ($recordSaleFailed)
             <span hidden data-open-modal-on-load="so-sales-add"></span>
         @endif
-        <form id="record-sale-form" method="POST" action="{{ route($salesRoutePrefix.'.sales.store') }}" data-confirm-when="delivery_status=delivered" data-confirm-message="{{ $deliveredConfirm }}">
+        <form id="record-sale-form" method="POST" action="{{ route($salesRoutePrefix.'.sales.store') }}">
             @csrf
             <input type="hidden" name="idempotency_key" value="{{ old('idempotency_key', $saleIdempotencyKey) }}">
             <input type="hidden" name="form_context" value="record-sale">
@@ -266,7 +265,7 @@
                     <h3 class="sale-form-section-title">Delivery Details</h3>
                     <div class="modal-card sale-form-card">
                         <div class="form-grid">
-                            @include('sales-officer.partials.delivery-fields', ['idPrefix' => 'sale', 'formId' => null, 'value' => fn (string $key) => old($key), 'withStatus' => true, 'deliveryStatus' => old('delivery_status', 'pending'), 'disabled' => $recordDeliveryType !== 'garage_to_client', 'showErrors' => $recordSaleFailed])
+                            @include('sales-officer.partials.delivery-fields', ['idPrefix' => 'sale', 'formId' => null, 'value' => fn (string $key) => old($key), 'disabled' => $recordDeliveryType !== 'garage_to_client', 'showErrors' => $recordSaleFailed])
                         </div>
                     </div>
                 </div>
@@ -303,14 +302,6 @@
                 @method('PATCH')
                 <input type="hidden" name="edit_sale_id" value="{{ $row['id'] }}">
             </form>
-            @if (! in_array($row['delivery_status'], ['delivered', 'cancelled'], true))
-                <form id="sale-delivery-{{ $row['id'] }}" method="POST" action="{{ route($salesRoutePrefix.'.sales.delivery-status.update', $row['id']) }}" data-confirm-when="delivery_status=delivered" data-confirm-message="{{ $deliveredConfirm }}"
-                    data-confirm="status" data-confirm-title="Update delivery status?" data-confirm-item="{{ $row['sale_code'] }}"
-                    data-confirm-from="{{ ucwords(str_replace('_', ' ', $row['delivery_status'])) }}" data-confirm-to-field="delivery_status">
-                    @csrf
-                    @method('PATCH')
-                </form>
-            @endif
             <div class="modal-card">
                 <div class="sales-modal-summary">
                     <div class="sales-row-actions"><x-admin.status-badge :status="$row['delivery_status']" /><x-admin.status-badge :status="$row['cells'][14]" /></div>
@@ -329,7 +320,7 @@
                             'garage' => ['title' => 'Garage tank', 'type' => 'garage_tank', 'options' => $row['source_options']['garage']],
                         ] as $sourceGroup)
                             @php $isGarageSource = $sourceGroup['type'] === 'garage_tank'; @endphp
-                            <form method="POST" action="{{ route($salesRoutePrefix.'.sales.assign-source', $row['id']) }}" data-confirm-message="Assign this source and change the order from Standard? This can only be done once.{{ $isGarageSource ? ' If the Delivery Status is Delivered, the order is deducted from stock (Stock Out).' : '' }}">
+                            <form method="POST" action="{{ route($salesRoutePrefix.'.sales.assign-source', $row['id']) }}" data-confirm-message="Assign this source and change the order from Standard? This can only be done once.">
                                 @csrf
                                 <input type="hidden" name="edit_sale_id" value="{{ $row['id'] }}">
                                 <input type="hidden" name="source_type" value="{{ $sourceGroup['type'] }}">
@@ -349,7 +340,7 @@
                                     {{-- Part 18 #3: the order becomes Garage to Client, so its Delivery Details are asked in the same step. --}}
                                     <div class="form-grid source-assignment-delivery" data-garage-delivery>
                                         <p class="sale-locked-note">Garage to Client Delivery Details: required to assign a garage tank.</p>
-                                        @include('sales-officer.partials.delivery-fields', ['idPrefix' => 'assign_'.$row['id'], 'formId' => null, 'value' => $editOld, 'withStatus' => true, 'deliveryStatus' => $editOld('delivery_status', 'pending'), 'showErrors' => $isEditedSale])
+                                        @include('sales-officer.partials.delivery-fields', ['idPrefix' => 'assign_'.$row['id'], 'formId' => null, 'value' => $editOld, 'showErrors' => $isEditedSale])
                                     </div>
                                 @endif
                             </form>
@@ -372,17 +363,9 @@
                      values (Transaction Date, Customer, Delivery Type, Payment Status, Status...) are in the cards above. --}}
                 @if ($row['status'] !== 'cancelled')
                     <div class="form-grid sale-edit-fields" data-sale-edit-fields>
-                        {{-- Part 18 #5: a Depot to Client order is delivered by its lift, so it has no Delivery Status here. --}}
-                        @if ($isOpenSale && ! $isDepotSale)
-                            <div class="form-row">
-                                <label for="sale_delivery_status_{{ $row['id'] }}">Delivery Status</label>
-                                <select form="sale-delivery-{{ $row['id'] }}" id="sale_delivery_status_{{ $row['id'] }}" name="delivery_status">
-                                    @foreach ($editableDeliveryStatuses as $deliveryStatus)
-                                        <option value="{{ $deliveryStatus }}" @selected($row['delivery_status'] === $deliveryStatus)>{{ ucwords(str_replace('_', ' ', $deliveryStatus)) }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
-                            <div class="form-row"><label>Inventory</label><button class="btn btn-primary" type="submit" form="sale-delivery-{{ $row['id'] }}">Update Delivery</button></div>
+                        {{-- Part 21 #1: the Delivery Status is view only (badge above); the assigned driver updates it. --}}
+                        @if ($isOpenSale)
+                            <p class="sale-locked-note form-row-full" data-delivery-driver-note>{{ $isDepotSale ? 'Delivery status follows this order\'s lift and its assigned driver.' : 'Delivery status is updated by the assigned driver.' }}</p>
                         @endif
                         <div class="form-row"><label for="sales_order_number_{{ $row['id'] }}">Sales Order Number</label><input form="sale-update-{{ $row['id'] }}" id="sales_order_number_{{ $row['id'] }}" name="sales_order_number" type="text" maxlength="60" value="{{ $editOld('sales_order_number', $row['sales_order_number']) }}"></div>
                         @if ($linesEditable)
@@ -419,7 +402,7 @@
                                     <div class="sales-item-row" data-sales-item>
                                         <div class="form-row"><label for="sale_qty_{{ $row['id'] }}_{{ $itemIndex }}">Qty Ordered</label><input form="sale-update-{{ $row['id'] }}" id="sale_qty_{{ $row['id'] }}_{{ $itemIndex }}" name="items[{{ $itemIndex }}][quantity_liters]" type="number" min="0.01" step="0.01" value="{{ $editOld("items.$itemIndex.quantity_liters", $item['quantity_liters']) }}" data-sale-quantity required></div>
                                         {{-- The Record Sales "not in the depot" hint is left out: the delivery type is fixed here. --}}
-                                        @include('sales-officer.partials.order-line', ['index' => $itemIndex, 'item' => $editItem, 'formId' => 'sale-update-'.$row['id'], 'idPrefix' => 'sale_'.$row['id'], 'lineError' => $editLineError, 'lineDeliveryType' => $row['delivery_type'], 'stockHints' => []])
+                                    @include('sales-officer.partials.order-line', ['index' => $itemIndex, 'item' => $editItem, 'formId' => 'sale-update-'.$row['id'], 'idPrefix' => 'sale_'.$row['id'], 'lineError' => $editLineError, 'lineDeliveryType' => $row['delivery_type'], 'stockHints' => [], 'showF1Percentage' => false])
                                     </div>
                                 @endforeach
                             </div>
@@ -431,10 +414,10 @@
                             <input form="sale-update-{{ $row['id'] }}" type="hidden" name="sale_date" value="{{ $row['sale_date'] }}">
                             <input form="sale-update-{{ $row['id'] }}" type="hidden" name="customer_id" value="{{ $row['customer_id'] }}">
                             {{-- Part 19: a sale with payment, delivery or lift activity keeps its fuel and sources; its line
-                                 figures may be corrected (QTY and F1 % only until fuel moves, prices always). The server
+                                 figures may be corrected (QTY only until fuel moves, prices always). The server
                                  checks every change against deliveries, stock and payments. --}}
                             <div class="sale-correction" data-sale-correction>
-                                <p class="sale-locked-note">{{ $row['fuel_moved'] ? 'Fuel of this order already moved, so only the prices can be corrected.' : 'Correct QTY, F1 % or prices. The fuel and purchase stay as recorded.' }}</p>
+                                <p class="sale-locked-note">{{ $row['fuel_moved'] ? 'Fuel of this order already moved, so only the prices can be corrected.' : 'Correct QTY or prices. The fuel and purchase stay as recorded.' }}</p>
                                 @foreach ($row['items'] as $itemIndex => $item)
                                     @php
                                         $fieldId = 'sale_fix_'.$row['id'].'_'.$itemIndex;
@@ -446,16 +429,9 @@
                                     @endforeach
                                     <div class="form-grid sale-correction-line">
                                         <div class="form-row"><label for="{{ $fieldId }}_qty">{{ $item['fuel_name'] }} QTY</label><input form="sale-update-{{ $row['id'] }}" id="{{ $fieldId }}_qty" name="items[{{ $itemIndex }}][quantity_liters]" type="number" min="0.01" step="0.01" value="{{ $editOld("items.$itemIndex.quantity_liters", $item['quantity_liters']) }}" required @readonly($row['fuel_moved'])>@if ($lineError('quantity_liters'))<p class="field-error form-row-message">{{ $lineError('quantity_liters') }}</p>@endif @if ($lineError('purchase_item_id'))<p class="field-error form-row-message">{{ $lineError('purchase_item_id') }}</p>@endif</div>
-                                        @if ($hasF1Source)
-                                            @if ($row['fuel_moved'])
-                                                <input form="sale-update-{{ $row['id'] }}" type="hidden" name="items[{{ $itemIndex }}][f1_percentage]" value="{{ $item['f1_percentage'] }}">
-                                                <div class="form-row"><label>F1 %</label><output class="sale-readonly-field">{{ rtrim(rtrim(number_format((float) $item['f1_percentage'], 2), '0'), '.') }}%</output></div>
-                                            @else
-                                                <div class="form-row"><label for="{{ $fieldId }}_f1">F1 %</label><select form="sale-update-{{ $row['id'] }}" id="{{ $fieldId }}_f1" name="items[{{ $itemIndex }}][f1_percentage]"><option value="0">0%</option>@foreach ($f1Percentages as $percentage)<option value="{{ $percentage }}" @selected((float) $editOld("items.$itemIndex.f1_percentage", $item['f1_percentage']) === (float) $percentage)>{{ $percentage }}%</option>@endforeach</select>@if ($lineError('f1_percentage'))<p class="field-error form-row-message">{{ $lineError('f1_percentage') }}</p>@endif</div>
-                                            @endif
-                                        @else
-                                            <input form="sale-update-{{ $row['id'] }}" type="hidden" name="items[{{ $itemIndex }}][f1_percentage]" value="0">
-                                        @endif
+                                        {{-- Part 21 #2: no F1 % field here. A line recorded with an F1 portion keeps its percentage
+                                             (sent unchanged), so its F1 liters, prices and totals stay as recorded. --}}
+                                        <input form="sale-update-{{ $row['id'] }}" type="hidden" name="items[{{ $itemIndex }}][f1_percentage]" value="{{ $hasF1Source ? number_format((float) $item['f1_percentage'], 2, '.', '') : '0.00' }}">
                                         <div class="form-row"><label for="{{ $fieldId }}_price">Fuel Price</label><input form="sale-update-{{ $row['id'] }}" id="{{ $fieldId }}_price" name="items[{{ $itemIndex }}][unit_price]" type="number" min="0.01" step="0.01" value="{{ $editOld("items.$itemIndex.unit_price", $item['unit_price']) }}" required>@if ($lineError('unit_price'))<p class="field-error form-row-message">{{ $lineError('unit_price') }}</p>@endif</div>
                                         @if ($hasF1Source)
                                             <div class="form-row"><label for="{{ $fieldId }}_f1_price">F1 Price</label><input form="sale-update-{{ $row['id'] }}" id="{{ $fieldId }}_f1_price" name="items[{{ $itemIndex }}][f1_unit_price]" type="number" min="0" step="0.01" value="{{ $editOld("items.$itemIndex.f1_unit_price", $item['f1_unit_price']) }}">@if ($lineError('f1_unit_price'))<p class="field-error form-row-message">{{ $lineError('f1_unit_price') }}</p>@endif</div>
@@ -466,7 +442,7 @@
                         @endif
                         {{-- Part 18 #3: a Garage to Client order's Delivery Details stay editable (and required) until Delivered. --}}
                         @if ($isGarageSale && $isOpenSale)
-                            @include('sales-officer.partials.delivery-fields', ['idPrefix' => 'sale_'.$row['id'], 'formId' => 'sale-update-'.$row['id'], 'value' => fn (string $key) => $editOld($key, $row[$key]), 'withStatus' => false, 'showErrors' => $isEditedSale])
+                            @include('sales-officer.partials.delivery-fields', ['idPrefix' => 'sale_'.$row['id'], 'formId' => 'sale-update-'.$row['id'], 'value' => fn (string $key) => $editOld($key, $row[$key]), 'showErrors' => $isEditedSale])
                         @endif
                         <div class="form-row">
                             <label for="sale_method_{{ $row['id'] }}">Payment Method</label>
@@ -552,10 +528,6 @@
             @include('sales-officer.partials.cancel-sale-modal', ['row' => $row, 'salesRoutePrefix' => $salesRoutePrefix])
         @endif
 
-        @if ($row['delivery_update']['available'])
-            @include('sales-officer.partials.delivery-update-modal', ['row' => $row, 'salesRoutePrefix' => $salesRoutePrefix, 'deliveredConfirm' => $deliveredConfirm])
-        @endif
-
         @include('admin.partials.payment-history-modal', [
             'row' => $row,
             'salesRoutePrefix' => $salesRoutePrefix,
@@ -580,7 +552,6 @@
                     <div class="form-row"><label for="customer_name">Customer Name</label><input id="customer_name" name="name" type="text" placeholder="Enter Customer Name" value="{{ old('name') }}" required></div>
                     <div class="form-row"><label for="customer_company_name">Company Name</label><input id="customer_company_name" name="company_name" type="text" placeholder="Enter Company Name" value="{{ old('company_name') }}" required></div>
                     <div class="form-row"><label for="customer_location">Location</label><input id="customer_location" name="location" type="text" placeholder="Enter Location" value="{{ old('location') }}"></div>
-                    <div class="form-row"><label for="customer_email">Email</label><input id="customer_email" name="email" type="email" placeholder="Enter Email" value="{{ old('email') }}"></div>
                     <div class="form-row"><label for="customer_phone">Contact Number</label><input id="customer_phone" name="phone" type="tel" placeholder="Enter Contact Number" value="{{ old('phone') }}"></div>
                     <div class="form-row"><label for="customer_bank_name">Bank Name</label><input id="customer_bank_name" name="bank_name" type="text" maxlength="255" placeholder="Enter Bank Name" value="{{ old('bank_name') }}"></div>
                     <div class="form-row"><label for="customer_payment_status">Payment Status</label><select id="customer_payment_status" name="payment_status" required data-default="clear">@foreach ($paymentStatuses as $status)<option value="{{ $status }}" @selected(old('payment_status', 'clear') === $status)>{{ ucwords($status) }}</option>@endforeach</select></div>
@@ -621,10 +592,9 @@
                     <div class="form-row"><label for="customer_name_{{ $row['id'] }}">Customer Name</label><input form="customer-update-{{ $row['id'] }}" id="customer_name_{{ $row['id'] }}" name="name" type="text" value="{{ $customerOld('name', $row['name']) }}" required></div>
                     <div class="form-row"><label for="customer_company_name_{{ $row['id'] }}">Company Name</label><input form="customer-update-{{ $row['id'] }}" id="customer_company_name_{{ $row['id'] }}" name="company_name" type="text" value="{{ $customerOld('company_name', $row['company_name']) }}" required></div>
                     <div class="form-row"><label for="customer_location_{{ $row['id'] }}">Location</label><input form="customer-update-{{ $row['id'] }}" id="customer_location_{{ $row['id'] }}" name="location" type="text" value="{{ $customerOld('location', $row['location']) }}"></div>
-                    <div class="form-row"><label for="customer_email_{{ $row['id'] }}">Email</label><input form="customer-update-{{ $row['id'] }}" id="customer_email_{{ $row['id'] }}" name="email" type="email" value="{{ $customerOld('email', $row['email']) }}"></div>
                     <div class="form-row"><label for="customer_phone_{{ $row['id'] }}">Contact Number</label><input form="customer-update-{{ $row['id'] }}" id="customer_phone_{{ $row['id'] }}" name="phone" type="tel" value="{{ $customerOld('phone', $row['phone']) }}"></div>
                     <div class="form-row"><label for="customer_bank_name_{{ $row['id'] }}">Bank Name</label><input form="customer-update-{{ $row['id'] }}" id="customer_bank_name_{{ $row['id'] }}" name="bank_name" type="text" maxlength="255" value="{{ $customerOld('bank_name', $row['bank_name']) }}"></div>
-                    <div class="form-row"><label for="customer_payment_status_{{ $row['id'] }}">Payment Status</label><select form="customer-update-{{ $row['id'] }}" id="customer_payment_status_{{ $row['id'] }}" name="payment_status" required>@foreach ($paymentStatuses as $status)<option value="{{ $status }}" @selected($customerOld('payment_status', $row['payment_status']) === $status)>{{ ucwords($status) }}</option>@endforeach</select></div>
+                    <div class="form-row"><label for="customer_payment_status_{{ $row['id'] }}">Payment Status</label><select form="customer-update-{{ $row['id'] }}" id="customer_payment_status_{{ $row['id'] }}" name="payment_status" required>@foreach ($paymentStatuses as $status)<option value="{{ $status }}" @selected($customerOld('payment_status', $row['stored_payment_status']) === $status)>{{ ucwords($status) }}</option>@endforeach</select></div>
                     <div class="form-row"><label for="customer_status_{{ $row['id'] }}">Status</label><select form="customer-update-{{ $row['id'] }}" id="customer_status_{{ $row['id'] }}" name="status" required>@foreach ($accountStatuses as $status)<option value="{{ $status }}" @selected($customerOld('status', $row['status']) === $status)>{{ ucwords($status) }}</option>@endforeach</select></div>
                 </div>
             </div>

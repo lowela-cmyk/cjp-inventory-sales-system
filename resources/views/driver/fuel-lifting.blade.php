@@ -6,17 +6,21 @@
     $filters = $filters ?? [];
     $filterOptions = $filterOptions ?? ['statuses' => [], 'fuelTypes' => collect(), 'depots' => collect()];
     $liftingStatusIdempotencyKey = $liftingStatusIdempotencyKey ?? (string) \Illuminate\Support\Str::uuid();
+    $deliveryRows = $deliveryRows ?? collect();
+    $tabHeadings = ['schedule' => 'Schedule', 'hauled' => 'Hauled', 'deliveries' => 'Deliveries'];
 @endphp
 
 @component('layouts.driver', ['title' => 'Fuel Lifting Operations', 'active' => 'fuel-lifting', 'driverName' => $driverName])
-    <div data-tabs>
+    <div data-tabs data-server-tabs>
         <div class="page-heading-row">
-            <h2 class="section-title" data-driver-heading>{{ $activeTab === 'hauled' ? 'Hauled' : 'Schedule' }}</h2>
+            <h2 class="section-title" data-driver-heading>{{ $tabHeadings[$activeTab] ?? 'Schedule' }}</h2>
             <x-export-button />
         </div>
         <div class="tabs">
             <button class="tab-button {{ $activeTab === 'schedule' ? 'is-active' : '' }}" type="button" data-tab-target="schedule" data-tab-url="{{ route('driver.fuel-lifting') }}" data-heading="Schedule">Schedule</button>
             <button class="tab-button {{ $activeTab === 'hauled' ? 'is-active' : '' }}" type="button" data-tab-target="hauled" data-tab-url="{{ route('driver.fuel-lifting.hauled') }}" data-heading="Hauled">Hauled</button>
+            {{-- Part 21 #1: the orders this driver delivers; only they update the delivery status. --}}
+            <button class="tab-button {{ $activeTab === 'deliveries' ? 'is-active' : '' }}" type="button" data-tab-target="deliveries" data-tab-url="{{ route('driver.fuel-lifting.deliveries') }}" data-heading="Deliveries">Deliveries</button>
         </div>
 
 
@@ -52,7 +56,7 @@
 
         <section data-tab-panel="schedule" {{ $activeTab !== 'schedule' ? 'hidden' : '' }}>
             <x-filter.bar class="driver-filter-row" :action="route('driver.fuel-lifting')">
-                <x-filter.search label="Search scheduled lifts" :value="$search" />
+                <x-filter.search label="Search scheduled lifts" :value="$activeTab === 'deliveries' ? null : $search" />
                 <x-filter.select name="task_status" label="Status" :selected="$filters['task_status'] ?? null"
                     :options="collect($filterOptions['statuses'])->mapWithKeys(fn (string $status): array => [$status => ucwords(str_replace('_', ' ', $status))])" />
                 <x-filter.date-range label="Lift date" :from-value="$filters['date_from'] ?? null" :to-value="$filters['date_to'] ?? null" />
@@ -101,11 +105,12 @@
                     </tbody>
                 </table>
             </div>
+            {{ $schedulePages->links() }}
         </section>
 
         <section data-tab-panel="hauled" {{ $activeTab !== 'hauled' ? 'hidden' : '' }}>
             <x-filter.bar class="driver-filter-row" :action="route('driver.fuel-lifting.hauled')">
-                <x-filter.search label="Search hauled lifts" :value="$search" />
+                <x-filter.search label="Search hauled lifts" :value="$activeTab === 'deliveries' ? null : $search" />
                 <x-filter.select name="task_status" label="Status" :selected="$filters['task_status'] ?? null"
                     :options="collect($filterOptions['statuses'])->mapWithKeys(fn (string $status): array => [$status => ucwords(str_replace('_', ' ', $status))])" />
                 <x-filter.date-range label="Lift date" :from-value="$filters['date_from'] ?? null" :to-value="$filters['date_to'] ?? null" />
@@ -155,8 +160,68 @@
                     </tbody>
                 </table>
             </div>
+            {{ $hauledPages->links() }}
+        </section>
+
+        <section data-tab-panel="deliveries" {{ $activeTab !== 'deliveries' ? 'hidden' : '' }}>
+            <x-filter.bar class="driver-filter-row" :action="route('driver.fuel-lifting.deliveries')">
+                <x-filter.search label="Search deliveries" :value="$activeTab === 'deliveries' ? $search : null" />
+            </x-filter.bar>
+            <p class="table-help">Orders assigned to you. Update the delivery status as you go; Delivered deducts the order from stock.</p>
+
+            <div class="table-wrap driver-table-wrap">
+                <table class="admin-table driver-table" data-card-keys="0,1,6">
+                    <thead>
+                        <tr>
+                            <th>Order-ID</th>
+                            <th>Customer</th>
+                            <th>Delivery Type</th>
+                            <th>Fuel</th>
+                            <th>QTY</th>
+                            <th>Truck-ID</th>
+                            <th>Delivery Date</th>
+                            <th>Delivery Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @forelse ($deliveryRows as $row)
+                            <tr>
+                                <td>{{ $row['sale_code'] }}</td>
+                                <td>{{ $row['customer'] }}</td>
+                                <td>{{ $row['delivery_type_label'] }}</td>
+                                <td>{{ $row['fuel'] }}</td>
+                                <td>{{ $row['quantity'] }}</td>
+                                <td>{{ $row['truck'] }}</td>
+                                <td>{{ $row['date'] }}</td>
+                                <td><x-admin.status-badge :status="ucwords(str_replace('_', ' ', $row['delivery_status']))" /></td>
+                                <td>
+                                    <div class="driver-row-actions">
+                                        @if ($row['delivery_update']['available'])
+                                            <button class="btn btn-primary btn-delivery-update" type="button" aria-haspopup="dialog" data-modal-open="{{ $row['modal_id'] }}-delivery">Update Delivery</button>
+                                        @else
+                                            <span class="driver-delivery-final">{{ $row['delivery_update']['note'] ?? 'No action' }}</span>
+                                        @endif
+                                    </div>
+                                </td>
+                            </tr>
+                        @empty
+                            <tr>
+                                <td class="driver-empty-cell" colspan="9">No Deliveries Assigned</td>
+                            </tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+            {{ $deliveryPages->links() }}
         </section>
     </div>
+
+    @foreach ($deliveryRows as $row)
+        @if ($row['delivery_update']['available'])
+            @include('driver.partials.delivery-update-modal', ['row' => $row])
+        @endif
+    @endforeach
 
     @foreach ($scheduleRows->merge($hauledRows) as $row)
         <x-admin.modal id="{{ $row['id'] }}" title="Schedule">

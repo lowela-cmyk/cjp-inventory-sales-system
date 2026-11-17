@@ -4,8 +4,9 @@ import Chart from 'chart.js/auto';
 // server (DashboardService); this file only draws them. A chart with no data is rendered as "No data yet" by the
 // server, so no canvas is created for it.
 
-const RED = '#E8453C';
-const GREEN = '#3B9A35';
+const RED = '#C0634E';
+const GREEN = '#8BA284';
+const SLATE = '#5F6468';
 
 const number = (value, digits = 2) => Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
 
@@ -36,7 +37,7 @@ const sliceLabels = {
         const arcs = chart.getDatasetMeta(0).data;
         ctx.save();
         ctx.font = '700 10px Arial, Helvetica, sans-serif';
-        ctx.fillStyle = '#555';
+        ctx.fillStyle = SLATE;
         arcs.forEach((arc, index) => {
             if (!chart.data.datasets[0].data[index]) return;
             const angle = (arc.startAngle + arc.endAngle) / 2;
@@ -59,7 +60,7 @@ const barValues = {
         const { ctx } = chart;
         ctx.save();
         ctx.font = '700 11px Arial, Helvetica, sans-serif';
-        ctx.fillStyle = '#111';
+        ctx.fillStyle = SLATE;
         ctx.textAlign = 'center';
         chart.data.datasets.forEach((dataset, datasetIndex) => {
             chart.getDatasetMeta(datasetIndex).data.forEach((bar, index) => {
@@ -98,7 +99,7 @@ const renderChart = (canvas) => {
                 legend: { display: false },
                 tooltip: {
                     callbacks: {
-                        label: (context) => (isPie ? `${context.label}: ${format(context.raw)}` : format(context.raw)),
+                        label: (context) => (isPie ? `${context.label}: ${format(context.raw)}` : `${format(context.raw)}${config.tooltipSuffix || ''}`),
                     },
                 },
                 dashBarValues: { display: Boolean(config.showValues), format },
@@ -106,7 +107,7 @@ const renderChart = (canvas) => {
             },
             scales: isPie ? {} : {
                 x: { grid: { display: false }, border: { display: config.yAxis !== 'none' }, ticks: { font: { size: 10 } } },
-                y: yScale(config.yAxis || 'ticks', config.format),
+                y: { ...yScale(config.yAxis || 'ticks', config.format), title: { display: Boolean(config.axisTitle), text: config.axisTitle } },
             },
         },
         plugins: [barValues, sliceLabels],
@@ -140,7 +141,6 @@ document.querySelectorAll('[data-dashboard-revenue]').forEach((root) => {
             button.setAttribute('aria-pressed', selected ? 'true' : 'false');
         });
         if (rate) rate.textContent = data.increaseRateLabel;
-
         canvas.hidden = data.empty;
         if (empty) empty.hidden = !data.empty;
         if (data.empty) return;
@@ -148,8 +148,8 @@ document.querySelectorAll('[data-dashboard-revenue]').forEach((root) => {
         const chartData = {
             labels: data.labels,
             datasets: [
-                { label: 'Actual', data: data.actual, borderColor: RED, backgroundColor: RED, borderWidth: 2, pointRadius: 3, tension: 0, spanGaps: false },
-                { label: 'Expected', data: data.expected, borderColor: GREEN, backgroundColor: GREEN, borderWidth: 2, pointRadius: 3, tension: 0 },
+                { label: 'Actual Sales', data: data.actual, borderColor: RED, backgroundColor: RED, borderWidth: 2, pointRadius: 3, tension: 0, spanGaps: false },
+                { label: 'Estimated Sales', data: data.expected, borderColor: GREEN, backgroundColor: GREEN, borderWidth: 2, pointRadius: 3, tension: 0 },
             ],
         };
 
@@ -182,8 +182,8 @@ document.querySelectorAll('[data-dashboard-revenue]').forEach((root) => {
     show(root.dataset.defaultPeriod || 'month');
 });
 
-// Part 11: Export. Each visible chart is captured with Chart.js toBase64Image() and posted with the AI insight shown on
-// the page; the server adds the KPI figures for the same filters and returns one PDF. No insight yet: the PDF says so.
+// Part 23 #11 (restores Part 11): Export. Each visible chart is captured with Chart.js toBase64Image() and posted with the
+// AI insight shown on the page; the server adds the KPI figures for the same filters and returns one PDF.
 document.querySelectorAll('[data-dashboard-export]').forEach((form) => {
     const button = form.querySelector('[data-dashboard-export-button]');
 
@@ -199,10 +199,8 @@ document.querySelectorAll('[data-dashboard-export]').forEach((form) => {
     const chartTitle = (canvas) => {
         const block = canvas.closest('.dash-chart-block');
         const title = block?.querySelector('.dash-chart-title') || canvas.closest('.dash-section')?.querySelector('.dash-section-title');
-        const period = canvas.closest('[data-dashboard-revenue]')?.querySelector('[data-revenue-period].is-selected');
 
-        return [title?.textContent.trim() || canvas.getAttribute('aria-label') || 'Chart', period ? `(${period.textContent.trim()})` : '']
-            .filter(Boolean).join(' ');
+        return title?.textContent.trim() || canvas.getAttribute('aria-label') || 'Chart';
     };
 
     form.addEventListener('submit', (event) => {
@@ -229,7 +227,6 @@ document.querySelectorAll('[data-dashboard-export]').forEach((form) => {
         // The PDF downloads in place; the button shows it is working for a moment.
         if (button) {
             button.disabled = true;
-            // Only the label changes, so the button keeps its icon.
             const label = button.querySelector('[data-export-label]') || button;
             label.textContent = 'Exporting…';
             window.setTimeout(() => {

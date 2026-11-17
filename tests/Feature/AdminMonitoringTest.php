@@ -20,9 +20,11 @@ class AdminMonitoringTest extends TestCase
             ->assertOk()
             ->assertSee('PUR-MONITOR')
             ->assertSee('Premium Monitor')
-            ->assertSee('SLS-MONITOR')
-            ->assertSee('Monitor Customer')
+            ->assertDontSee('SLS-MONITOR')
             ->assertDontSee('Petron A');
+
+        $this->actingAs($records['admin'])->get(route('admin.inventory.stock-out'))
+            ->assertOk()->assertSee('SLS-MONITOR')->assertSee('Monitor Customer');
 
         $this->actingAs($records['admin'])
             ->get(route('admin.ledger'))

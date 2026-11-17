@@ -6,6 +6,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\HtmlString;
+use App\Support\ActivePayments;
 
 /**
  * Part 10: "Insights and A.I Reporting" on the dashboard. The AI gets the dashboard totals only (no customer
@@ -175,7 +176,7 @@ Do not invent numbers, transactions, customers, causes or events. Explain the in
             .($inventory['stock_out_rate'] !== null && $inventory['stock_out_rate'] > 100 ? ' Undelivered orders exceed the stock: record more purchases.' : '');
         $lines[] = 'Lifting: '.$inventory['lift_status']['unlifted'].' unlifted, '.$inventory['lift_status']['partial'].' partially lifted and '.$inventory['lift_status']['lifted'].' lifted purchase line(s); '
             .$percent($inventory['completed_percent']).' of purchased liters has left the depot.';
-        $lines[] = 'Revenue: last complete month '.$money((float) $revenue['last_complete_month']).'; next month forecast (3-month average) '.$money((float) $revenue['next_month_forecast'])
+        $lines[] = 'Revenue: last complete month '.$money((float) $revenue['last_complete_month']).'; next month forecast (average historical movement) '.$money((float) $revenue['next_month_forecast'])
             .', Increase Rate '.$percent($revenue['increase_rate_percent']).'.';
         $lines[] = 'Stock Out vs Receivables (delivered sales): stock out '.$money($margin['stock_out_value']).' vs collected '.$money($margin['receivables_collected'])
             .'; Missing '.$money($margin['missing']).' (Inventory Variance Rate '.$percent($margin['inventory_variance_rate_percent']).').'
@@ -201,7 +202,7 @@ Do not invent numbers, transactions, customers, causes or events. Explain the in
             ->whereExists(fn ($query) => $query->selectRaw('1')->from('purchases')->whereColumn('purchases.id', 'hauls.purchase_id')->whereNull('purchases.deleted_at'));
         $openSales = fn () => DB::table('sales')->whereNull('deleted_at')->whereNotIn('status', ['draft', 'cancelled']);
         $totals = DB::table('sale_items')->selectRaw('sale_id, SUM(line_total) as total')->groupBy('sale_id');
-        $paid = DB::table('payments')->selectRaw('sale_id, SUM(amount) as paid')->groupBy('sale_id');
+        $paid = ActivePayments::query()->selectRaw('sale_id, SUM(amount) as paid')->groupBy('sale_id');
 
         return [
             'lift_lines_scheduled' => $hauls()->where('status', 'scheduled')->count(),

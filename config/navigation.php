@@ -16,8 +16,8 @@ return [
     'admin' => [
         'label' => 'Admin navigation',
         'nav_class' => null,
-        // All seven Admin pages sit on the bar (no "More"); below 360px the bar scrolls sideways inside itself.
-        'max_slots' => 7,
+        // All eight Admin pages sit on the bar (no "More"); below 360px the bar scrolls sideways inside itself.
+        'max_slots' => 8,
         'items' => [
             ['route' => 'admin.dashboard', 'label' => 'Dashboard', 'short' => 'Home', 'icon' => 'dashboard', 'bar' => 1],
             ['route' => 'admin.inventory', 'module' => 'inventory', 'label' => 'Inventory', 'short' => 'Inventory', 'icon' => 'inventory', 'bar' => 2],
@@ -28,6 +28,7 @@ return [
             // Account Requests is a tab of User Management, so Users covers it: Users stays the current item on that tab,
             // and its dot (module user-management, which watches the users table) lights up for new pending sign-ups.
             ['route' => 'admin.user-management', 'module' => 'user-management', 'label' => 'User Management', 'short' => 'Users', 'icon' => 'users', 'bar' => 7],
+            ['route' => 'admin.imports', 'label' => 'Data Import', 'short' => 'Import', 'icon' => 'inventory', 'bar' => 8],
         ],
     ],
 

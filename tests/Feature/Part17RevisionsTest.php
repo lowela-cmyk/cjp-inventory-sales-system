@@ -84,11 +84,16 @@ class Part17RevisionsTest extends AuditTestCase
         $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 1000, 'unit_price' => 70])->assertSessionHasNoErrors();
         $saleId = $this->lastSaleId();
 
-        $html = $this->actingAs($a['sales'])->get(route('sales-officer.sales'))->assertOk()->getContent();
+        // Part 21 #1: Delivered is set by the assigned driver, so the confirmation is on the driver's Update Delivery.
+        DB::table('sales')->where('id', $saleId)->update(['delivery_driver_user_id' => $a['driver']->id]);
         $confirm = 'data-confirm-when="delivery_status=delivered" data-confirm-message="This sale will be deducted from stock (Stock Out). Continue?"';
-        // Update Delivery in the View, and Record Sales recorded straight as Delivered.
-        $this->assertStringContainsString('id="sale-delivery-'.$saleId.'" method="POST" action="'.route('sales-officer.sales.delivery-status.update', $saleId).'" '.$confirm, $html);
-        $this->assertStringContainsString('<form id="record-sale-form" method="POST" action="'.route('sales-officer.sales.store').'" '.$confirm, $html);
+        $driverPage = $this->actingAs($a['driver'])->get(route('driver.fuel-lifting.deliveries'))->assertOk()->getContent();
+        $this->assertStringContainsString('action="'.route('driver.fuel-lifting.deliveries.status', $saleId).'"', $driverPage);
+        $this->assertStringContainsString($confirm, $driverPage);
+
+        $html = $this->actingAs($a['sales'])->get(route('sales-officer.sales'))->assertOk()->getContent();
+        $this->assertStringNotContainsString('data-confirm-when="delivery_status=delivered"', $html);
+        $this->assertStringContainsString('<form id="record-sale-form" method="POST" action="'.route('sales-officer.sales.store').'">', $html);
         $this->assertStringNotContainsString('Selecting Delivered will create Stock-Out', $html);
 
         $js = File::get(resource_path('js/app.js'));
@@ -210,8 +215,10 @@ class Part17RevisionsTest extends AuditTestCase
         DB::table('trucks')->where('id', $a['truck'])->update(['name' => 'Isuzu Giga', 'truck_code' => 'ABC-1234']);
         $premium = $this->purchaseLine($a, 'PREM', 20000);
         $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 1000, 'unit_price' => 70], [
-            'delivery_truck_id' => $a['truck'], 'delivery_driver_user_id' => $a['driver']->id, 'delivery_status' => 'delivered',
+            'delivery_truck_id' => $a['truck'], 'delivery_driver_user_id' => $a['driver']->id,
         ])->assertSessionHasNoErrors();
+        // Part 21 #1: recorded Pending; the assigned driver marks it Delivered.
+        $this->driverDelivery($this->lastSaleId())->assertSessionHasNoErrors();
 
         $html = $this->actingAs($a['inventory'])->get(route('inventory-officer.inventory.stock-out'))->assertOk()->getContent();
         $table = substr($html, strpos($html, 'stock-out-table'), 20000);

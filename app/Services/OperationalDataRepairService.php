@@ -6,6 +6,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use App\Support\ActivePayments;
 
 class OperationalDataRepairService
 {
@@ -1001,7 +1002,7 @@ class OperationalDataRepairService
 
         $overpaidSales = DB::table('sales')
             ->joinSub(DB::table('sale_items')->selectRaw('sale_id, SUM(line_total) total')->groupBy('sale_id'), 'sale_totals', 'sale_totals.sale_id', '=', 'sales.id')
-            ->joinSub(DB::table('payments')->selectRaw('sale_id, SUM(amount) paid')->groupBy('sale_id'), 'payment_totals', 'payment_totals.sale_id', '=', 'sales.id')
+            ->joinSub(ActivePayments::query()->selectRaw('sale_id, SUM(amount) paid')->groupBy('sale_id'), 'payment_totals', 'payment_totals.sale_id', '=', 'sales.id')
             ->whereRaw('payment_totals.paid > sale_totals.total')
             ->count();
 

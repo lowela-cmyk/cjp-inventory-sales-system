@@ -25,7 +25,9 @@ class SaleDeleteTest extends AuditTestCase
     {
         $a = $this->actors();
         $premium = $this->purchaseLine($a, 'PREM', 20000);
-        $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 4000, 'unit_price' => 60], ['delivery_status' => 'delivered', 'sales_order_number' => 'SO-DEL'])->assertSessionHasNoErrors();
+        $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 4000, 'unit_price' => 60], ['sales_order_number' => 'SO-DEL'])->assertSessionHasNoErrors();
+        // Part 21 #1: recorded Pending; the assigned driver marks it Delivered.
+        $this->driverDelivery($this->lastSaleId())->assertSessionHasNoErrors();
         $sale = DB::table('sales')->where('sales_order_number', 'SO-DEL')->first();
         $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 1000, 'unit_price' => 60], ['sales_order_number' => 'SO-PENDING'])->assertSessionHasNoErrors();
         $pending = DB::table('sales')->where('sales_order_number', 'SO-PENDING')->first();

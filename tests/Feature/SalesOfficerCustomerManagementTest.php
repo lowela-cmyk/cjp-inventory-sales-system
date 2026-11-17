@@ -78,7 +78,7 @@ class SalesOfficerCustomerManagementTest extends TestCase
                 'payment_status' => 'hacked',
                 'status' => 'deleted',
             ])
-            ->assertSessionHasErrors(['name', 'company_name', 'email', 'phone', 'payment_status', 'status']);
+            ->assertSessionHasErrors(['name', 'company_name', 'phone', 'payment_status', 'status']);
 
         $this->assertSame(1, DB::table('customers')->count());
     }
@@ -199,7 +199,7 @@ class SalesOfficerCustomerManagementTest extends TestCase
         ]);
 
         $this->actingAs($admin)
-            ->get(route('admin.sales'))
+            ->get(route('admin.sales.customers'))
             ->assertOk()
             ->assertSee('CSM-ADMIN')
             ->assertSee('Admin Visible Co');

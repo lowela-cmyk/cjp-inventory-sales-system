@@ -88,9 +88,11 @@ class Part2ButtonRevisionsTest extends AuditTestCase
         $f1 = $this->purchaseLine($a, 'F1', 5000);
 
         $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 4000, 'unit_price' => 50, 'f1_percentage' => 10, 'f1_purchase_item_id' => $f1, 'f1_unit_price' => 40], [
-            'delivery_truck_id' => $a['truck'], 'delivery_driver_user_id' => $a['driver']->id, 'delivery_date' => '2026-10-16 10:30', 'delivery_status' => 'out_for_delivery',
+            'delivery_truck_id' => $a['truck'], 'delivery_driver_user_id' => $a['driver']->id, 'delivery_date' => '2026-10-16 10:30',
         ])->assertSessionHasNoErrors();
         $saleId = $this->lastSaleId();
+        // Part 21 #1: the assigned driver starts the delivery.
+        $this->driverDelivery($saleId, ['delivery_status' => 'out_for_delivery'])->assertSessionHasNoErrors();
         $this->assertDatabaseHas('sales', ['id' => $saleId, 'delivery_status' => 'out_for_delivery', 'delivery_truck_id' => $a['truck'], 'delivery_driver_user_id' => $a['driver']->id]);
 
         // Promised, not deducted.
@@ -107,13 +109,22 @@ class Part2ButtonRevisionsTest extends AuditTestCase
         $this->assertSame(2, DB::table('stock_outs')->where('sale_id', $saleId)->count());
     }
 
-    public function test_a_standard_order_recorded_as_delivered_is_deducted_on_save(): void
+    public function test_a_standard_order_cannot_be_recorded_as_delivered_and_is_deducted_when_its_driver_delivers(): void
     {
         $a = $this->actors();
         $diesel = $this->purchaseLine($a, 'DSL', 8000);
 
+        // Part 21 #1: Sales cannot record an order straight as Delivered any more.
         $this->recordOrder($a, ['purchase_item_id' => $diesel, 'quantity_liters' => 2000, 'unit_price' => 60], ['delivery_status' => 'delivered', 'delivery_truck_id' => $a['truck']])
+            ->assertSessionHasErrors(['delivery_status' => 'Only the assigned driver can update the delivery status.']);
+        $this->assertSame(0, DB::table('sales')->count());
+        $this->assertSame(8000.0, $this->remaining($diesel));
+
+        $this->recordOrder($a, ['purchase_item_id' => $diesel, 'quantity_liters' => 2000, 'unit_price' => 60], ['delivery_truck_id' => $a['truck'], 'delivery_driver_user_id' => $a['driver']->id])
             ->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('sales', ['id' => $this->lastSaleId(), 'delivery_status' => 'pending']);
+        $this->assertSame(8000.0, $this->remaining($diesel));
+        $this->driverDelivery($this->lastSaleId())->assertSessionHasNoErrors();
 
         $this->assertDatabaseHas('sales', ['id' => $this->lastSaleId(), 'delivery_status' => 'delivered']);
         $this->assertNotNull(DB::table('sales')->where('id', $this->lastSaleId())->value('delivery_date'), 'Delivered without a date is dated now.');
@@ -204,10 +215,10 @@ class Part2ButtonRevisionsTest extends AuditTestCase
 
         // The purchase's depot balance: 60,000 - 40,000 lifted (the order rode on the lift, not counted twice).
         $this->assertSame(20000.0, (float) app(PurchaseStockService::class)->line($premium)->remaining_in_depot);
-        // The Hauled tab: Delivered next to Lifted, no Allocated column.
+        // The Hauled tab: no Allocated column; Part 23 #7: Delivered Quantity is shown in View, not in the table.
         $html = $this->actingAs($a['dispatch'])->get(route('dispatch.fuel-lifting.hauled'))->assertOk()->getContent();
         $this->assertStringNotContainsString('Allocated Quantity', $html);
-        $this->assertMatchesRegularExpression('/40,000\.00 L<\/td>\s*<td>4,000\.00 L<\/td>/', $html);
+        $this->assertStringContainsString('<div class="detail-label">Delivered Quantity</div><div class="detail-value">4,000.00 L</div>', $html);
         $this->assertStringContainsString('<div class="detail-label">Remaining on Truck</div><div class="detail-value">0.00 L</div>', $html);
     }
 
@@ -264,7 +275,9 @@ class Part2ButtonRevisionsTest extends AuditTestCase
     {
         $a = $this->actors();
         $diesel = $this->purchaseLine($a, 'DSL', 8000);
-        $this->recordOrder($a, ['purchase_item_id' => $diesel, 'quantity_liters' => 2000, 'unit_price' => 60], ['delivery_status' => 'delivered'])->assertSessionHasNoErrors();
+        $this->recordOrder($a, ['purchase_item_id' => $diesel, 'quantity_liters' => 2000, 'unit_price' => 60])->assertSessionHasNoErrors();
+        // Part 21 #1: recorded Pending; the assigned driver marks it Delivered.
+        $this->driverDelivery($this->lastSaleId())->assertSessionHasNoErrors();
 
         $html = $this->actingAs($a['inventory'])->get(route('inventory-officer.inventory'))->assertOk()->getContent();
         $purchasesTable = substr($html, strpos($html, 'data-tab-panel="purchases"'), 5000);

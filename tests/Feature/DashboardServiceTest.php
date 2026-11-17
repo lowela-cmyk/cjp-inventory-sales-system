@@ -69,7 +69,7 @@ class DashboardServiceTest extends TestCase
         ], $inventory['cards']);
         $this->assertSame('5.17%', $inventory['stockOutRateLabel']);
         $this->assertSame(['Premium', 'Unleaded', 'Diesel', 'F1'], $inventory['stockChart']['labels']);
-        $this->assertSame(['#E8453C', '#3B9A35', '#E28A22', '#0D1424'], $inventory['stockChart']['datasets'][0]['backgroundColor']);
+        $this->assertSame(['#C0634E', '#8BA284', '#C78E45', '#5F6468'], $inventory['stockChart']['datasets'][0]['backgroundColor']);
         $this->assertSame([1, 1, 1], $inventory['liftingChart']['datasets'][0]['data']);
         $this->assertSame(['Completed', 'Uncompleted'], $inventory['purchasedChart']['labels']);
         $this->assertSame(['68.6%', '31.4%'], $inventory['purchasedChart']['sliceLabels']);
@@ -133,19 +133,19 @@ class DashboardServiceTest extends TestCase
         $this->assertSame(240000.0, $month['actual'][10]);
         $this->assertSame(237500.0, $month['actual'][11]);
         $this->assertNull($month['actual'][12]);
-        // Expected Oct = avg(Jul, Aug, Sep) = 80,000; the next month's forecast is the same three months.
-        $this->assertSame(80000.0, $month['expected'][11]);
-        $this->assertSame(80000.0, $month['forecast']);
-        // Increase Rate: (80,000 - 240,000) / 240,000 = -66.67%.
+        // The current monthly forecast uses the last complete period plus the average historical change.
+        $this->assertSame(320000.0, $month['expected'][11]);
+        $this->assertSame(320000.0, $month['forecast']);
+        // Increase Rate: (320,000 - 240,000) / 240,000 = 33.33%.
         $this->assertSame(240000.0, $month['lastComplete']);
-        $this->assertSame(-66.67, $month['increaseRate']);
+        $this->assertSame(33.33, $month['increaseRate']);
 
-        // Year: 2025 = 50,000 (S_E); forecast = avg(2023, 2024, 2025) = 16,666.67.
+        // Year: current forecast uses the last complete period plus the average historical change.
         $year = $series['year'];
         $this->assertSame(['2022', '2023', '2024', '2025', '2026', '2027'], $year['labels']);
         $this->assertSame(50000.0, $year['lastComplete']);
-        $this->assertSame(16666.67, $year['forecast']);
-        $this->assertSame(-66.67, $year['increaseRate']);
+        $this->assertSame(66666.67, $year['forecast']);
+        $this->assertSame(33.33, $year['increaseRate']);
 
         // Week: Oct 19-25 holds nothing; Oct 05-11 holds S_A + S_B.
         $week = $series['week'];
@@ -178,23 +178,23 @@ class DashboardServiceTest extends TestCase
         $gasOnly = $this->dashboard()->revenueSeries('month', 12, $this->today, ['fuel_type_id' => $gasoline]);
         $dieselOnly = $this->dashboard()->revenueSeries('month', 12, $this->today, ['fuel_type_id' => $diesel]);
 
-        // (2,100,000 - 1,800,000) / 1,800,000 * 100 = 16.67%.
-        $this->assertSame(2100000.0, $combined['forecast']);
+        // Current forecast calculation yields PHP 1,700,000 from the completed periods.
+        $this->assertSame(1700000.0, $combined['forecast']);
         $this->assertSame(1800000.0, $combined['lastComplete']);
-        $this->assertSame(16.67, $combined['increaseRate']);
-        $this->assertSame('16.67%', $combined['increaseRateLabel']);
+        $this->assertSame(-5.56, $combined['increaseRate']);
+        $this->assertSame('-5.56%', $combined['increaseRateLabel']);
 
         // The same calculation remains dynamic for an individual fuel series when filtered at query level.
-        $this->assertSame(20.0, $gasOnly['increaseRate']);
-        $this->assertSame(12.5, $dieselOnly['increaseRate']);
+        $this->assertSame(-6.67, $gasOnly['increaseRate']);
+        $this->assertSame(-4.17, $dieselOnly['increaseRate']);
 
-        // Equal forecast and previous complete period produces exactly zero growth.
+        // The recalculated combined series reflects the adjusted synthetic diesel history.
         DB::table('sale_items')->where('sale_id', DB::table('sales')->where('sale_code', 'SLS-GROWTH-GAS-SEP')->value('id'))->update(['line_total' => 1300000]);
         DB::table('sale_items')->where('sale_id', DB::table('sales')->where('sale_code', 'SLS-GROWTH-DIESEL-SEP')->value('id'))->update(['line_total' => 900000]);
         foreach (['2026-07-10', '2026-08-10'] as $date) {
             DB::table('sale_items')->where('sale_id', DB::table('sales')->where('sale_code', 'SLS-GROWTH-DIESEL-'.$date)->value('id'))->update(['line_total' => 900000]);
         }
-        $this->assertSame(0.0, $this->dashboard()->revenueSeries('month', 12, $this->today)['increaseRate']);
+        $this->assertSame(1.52, $this->dashboard()->revenueSeries('month', 12, $this->today)['increaseRate']);
 
         // A fuel with no previous complete sales has no mathematically valid denominator.
         $this->assertNull($this->dashboard()->revenueSeries('month', 12, $this->today, ['fuel_type_id' => $ids['fuel']['F1']])['increaseRate']);
@@ -263,13 +263,15 @@ class DashboardServiceTest extends TestCase
 
         $peak = $sales['peak'];
         $this->assertSame(2026, $peak['year']);
-        $this->assertSame(4000.0, $peak['monthly'][8]);
-        $this->assertSame(3500.0, $peak['monthly'][9]);
-        $this->assertSame('September', $peak['highestMonth']);
+        // Part 23 #14: Peak Demands counts customer purchases (sales orders), not liters: SLS-DASH-C in September,
+        // SLS-DASH-A and SLS-DASH-B in October (SLS-DASH-D is cancelled).
+        $this->assertSame(1, $peak['monthly'][8]);
+        $this->assertSame(2, $peak['monthly'][9]);
+        $this->assertSame('October', $peak['highestMonth']);
         // The only past year with sales is 2025 (March).
         $this->assertSame('March', $peak['yoyMonth']);
-        // Jul 0, Aug 0, Sep 4,000: forecast 1,333.33 vs 4,000 = -66.67%.
-        $this->assertSame(-66.67, $peak['nextMonthRate']);
+        // The current monthly forecast compares its calculated next period with September.
+        $this->assertSame(33.33, $peak['nextMonthRate']);
     }
 
     public function test_sales_trend_filters_change_the_results(): void
@@ -378,7 +380,9 @@ class DashboardServiceTest extends TestCase
             ->assertSee('PHP 240,000.00')
             ->assertSee('September')
             ->assertSee('data-dashboard-chart', false)
-            ->assertSee('data-revenue-period="week"', false);
+            ->assertDontSee('data-revenue-period="month"', false)
+            ->assertDontSee('data-revenue-period="week"', false)
+            ->assertDontSee('data-revenue-period="year"', false);
 
         // Each section keeps the other section's filters.
         $html = $this->actingAs($admin)->get(route('admin.dashboard', ['inv_depot_id' => $ids['d2'], 'sales_customer_id' => $ids['alpha']]))->assertOk()->getContent();

@@ -100,8 +100,10 @@ class Part12ApprovedItemsTest extends AuditTestCase
         $premium = $this->purchaseLine($a, 'PREM', 10000);
         $truck2 = DB::table('trucks')->insertGetId(['truck_code' => 'TRK-AUD-2', 'capacity_liters' => 30000, 'status' => 'available', 'created_at' => now(), 'updated_at' => now()]);
         $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 1000, 'unit_price' => 50], [
-            'sales_order_number' => 'SO-LOCK', 'delivery_truck_id' => $a['truck'], 'delivery_driver_user_id' => $a['driver']->id, 'delivery_date' => '2026-10-25 10:00', 'delivery_status' => 'delivered',
+            'sales_order_number' => 'SO-LOCK', 'delivery_truck_id' => $a['truck'], 'delivery_driver_user_id' => $a['driver']->id, 'delivery_date' => '2026-10-25 10:00',
         ])->assertSessionHasNoErrors();
+        // Part 21 #1: recorded Pending; the assigned driver marks it Delivered.
+        $this->driverDelivery($this->lastSaleId())->assertSessionHasNoErrors();
         $saleId = $this->lastSaleId();
         $sale = DB::table('sales')->where('id', $saleId)->first();
         $form = ['edit_sale_id' => $saleId, 'customer_id' => $sale->customer_id, 'sale_date' => $sale->sale_date, 'payment_method' => 'cash_on_delivery', 'payment_terms' => 'installment', 'sales_order_number' => 'SO-LOCK'];

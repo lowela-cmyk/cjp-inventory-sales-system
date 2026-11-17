@@ -1,0 +1,23 @@
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    DirectoryIndex index.php
+
+    # Never serve hidden files or folders (.env, .git, .hostinger, .vscode, ...), except ACME challenges.
+    RewriteRule (?:^|/)\.(?!well-known/) - [F,L]
+
+    # Never serve archives, dumps, logs or repository/tooling files from the document root.
+    RewriteRule ^[^/]+\.(?:zip|sql|gz|tar|log|md|neon|lock)$ - [F,L,NC]
+    RewriteRule ^(?:phpunit(?:\.[a-z]+)?\.xml|vite\.config\.js)$ - [F,L,NC]
+
+    # Repository-only folders that are not part of the public site.
+    RewriteRule ^(?:docs|graphify-out|outputs|node_modules|lang)(?:/|$) - [F,L,NC]
+
+    # Keep the Laravel application and configuration outside the public URL space.
+    RewriteRule ^(?:\.env|artisan|composer\.(?:json|lock)|package(?:-lock)?\.json|app|bootstrap|config|database|resources|routes|scripts|storage|tests|vendor)(?:/|$) - [F,L,NC]
+
+    # Laravel front controller; public assets are flattened into this document root.
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^ index.php [L]
+</IfModule>

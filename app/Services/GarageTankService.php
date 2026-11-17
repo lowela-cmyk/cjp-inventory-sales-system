@@ -11,10 +11,13 @@ class GarageTankService
     /** Part 9 (October 20): every garage tank holds at most 24,000 L (24KL). */
     public const TANK_CAPACITY_LITERS = 24000.0;
 
-    /** A tank's capacity; a tank without one recorded is a standard 24KL tank. */
+    /**
+     * A tank's capacity; a tank without one recorded is a standard 24KL tank. Part 23 #4: no tank holds more than
+     * 24,000 L, so a larger stored value (copied from a workbook) is read as 24,000 L for free space and the cards.
+     */
     public static function capacity(mixed $capacityLiters): float
     {
-        return $capacityLiters === null ? self::TANK_CAPACITY_LITERS : round((float) $capacityLiters, 2);
+        return $capacityLiters === null ? self::TANK_CAPACITY_LITERS : min(round((float) $capacityLiters, 2), self::TANK_CAPACITY_LITERS);
     }
 
     /**

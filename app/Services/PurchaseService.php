@@ -16,7 +16,33 @@ class PurchaseService
     /** Part 9: how a purchase was paid. A bank is chosen for Bank Transfer and Cheque only. */
     public const PAYMENT_MODES = ['bank_transfer' => 'Bank Transfer', 'cash' => 'Cash', 'cheque' => 'Cheque'];
 
-    public const BANKS = ['BPI', 'BDO', 'RCBC'];
+    public const BANKS = ['BPI', 'BDO', 'RCBC', 'METROBANK'];
+
+    /**
+     * Part 23: imported purchases stored the mode in bank_name as "Bank (BDO)" with payment_mode NULL, so the table read
+     * N/A. Map canonical keys and imported spellings to [mode key, bank]; nothing is rewritten in the database.
+     *
+     * @return array{0: ?string, 1: ?string}
+     */
+    public static function normalizePaymentMode(mixed $mode, mixed $bank): array
+    {
+        $mode = trim((string) $mode);
+        $bank = trim((string) $bank);
+        foreach ([$mode, $bank] as $text) {
+            if (preg_match('/^bank\s*(?:transfer)?\s*\((.+)\)$/i', $text, $m)) {
+                return ['bank_transfer', strtoupper(trim($m[1]))];
+            }
+        }
+        $key = match (str_replace([' ', '-'], '_', strtolower($mode))) {
+            'bank_transfer', 'bank', 'transfer', 'online_transfer' => 'bank_transfer',
+            'cash' => 'cash',
+            'cheque', 'check' => 'cheque',
+            default => null,
+        };
+        $bank = $bank === '' || $key === 'cash' ? null : strtoupper($bank);
+
+        return [$key, $bank];
+    }
 
     public function __construct(
         private readonly IdempotencyService $idempotencyService,
@@ -348,6 +374,8 @@ class PurchaseService
                 'withdrawal_totals.latest_withdrawal_at',
             ]);
 
+        \App\Support\TableSort::apply($query, ['date' => 'purchases.purchase_date', 'code' => 'purchases.purchase_code', 'fuel' => 'fuel_types.name', 'quantity' => 'purchase_items.quantity_ordered_liters', 'cost' => 'purchase_items.unit_cost'], 'date', 'purchase_items.id');
+        $perPage = \App\Support\TablePagination::size();
         $paginator = $query->paginate($perPage, ['*'], $pageName)->withQueryString();
         $rawRows = collect($paginator->items());
 
@@ -362,7 +390,8 @@ class PurchaseService
             $line = $stock->get((int) $row->id);
             $released = (float) ($line->released ?? 0);
             // A purchase with no payment mode reads N/A (a null key is deprecated as an array offset in PHP 8.5).
-            $paymentModeLabel = self::PAYMENT_MODES[$row->payment_mode ?? ''] ?? 'N/A';
+            [$paymentMode, $bankName] = self::normalizePaymentMode($row->payment_mode, $row->bank_name);
+            $paymentModeLabel = self::PAYMENT_MODES[$paymentMode ?? ''] ?? 'N/A';
             // Part 19: a cancelled purchase holds no stock (its stock-in is voided), whatever its lines still say.
             $cancelled = $row->purchase_status === 'cancelled' || $row->legacy_purchase_status === 'cancelled';
             $onHand = $cancelled ? 0.0 : (float) ($line->on_hand ?? $row->quantity_ordered_liters);
@@ -385,8 +414,8 @@ class PurchaseService
                 'receipt_url' => null,
                 'withdrawals' => $withdrawalsMap[(int) $row->id] ?? [],
                 'payment_status' => $row->payment_status,
-                'payment_mode' => $row->payment_mode,
-                'bank_name' => $row->bank_name,
+                'payment_mode' => $paymentMode,
+                'bank_name' => $bankName,
                 'purchase_status' => $row->purchase_status,
                 'has_dependencies' => $dependencyMap[(int) $row->id] ?? false,
                 // Part 15: Cancel Purchase only while Pending and unused; stock fields locked once lifted.

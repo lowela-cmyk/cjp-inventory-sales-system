@@ -34,15 +34,24 @@ class RecordCodeService
         $fuel = $this->fuelCode($fuelTypeId);
 
         return DB::transaction(function () use ($prefix, $fuel): string {
-            DB::table('code_sequences')->insertOrIgnore([
-                'prefix' => $prefix,
-                'fuel_code' => $fuel,
-                'last_number' => $this->highestUsed($prefix, $fuel),
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-            $sequence = DB::table('code_sequences')->where('prefix', $prefix)->where('fuel_code', $fuel)->lockForUpdate()->first();
-            $number = (int) $sequence->last_number + 1;
+            $lock = fn (): ?object => DB::table('code_sequences')->where('prefix', $prefix)->where('fuel_code', $fuel)->lockForUpdate()->first();
+            // Lock the existing row first. An INSERT IGNORE on an existing row takes a shared lock, and two saves holding
+            // it then both waiting for the exclusive lock deadlock (seen with 8 concurrent saves); only a missing row
+            // is created, once.
+            $sequence = $lock();
+            if ($sequence === null) {
+                DB::table('code_sequences')->insertOrIgnore([
+                    'prefix' => $prefix,
+                    'fuel_code' => $fuel,
+                    'last_number' => $this->highestUsed($prefix, $fuel),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+                $sequence = $lock();
+            }
+            // Imports and repairs write explicit codes without advancing the sequence. Read the highest used number
+            // under the row lock every time, so a stale sequence can never hand out a code that already exists.
+            $number = max((int) $sequence->last_number, $this->highestUsed($prefix, $fuel)) + 1;
             DB::table('code_sequences')->where('id', $sequence->id)->update(['last_number' => $number, 'updated_at' => now()]);
 
             return self::format($prefix, $fuel, $number);

@@ -60,6 +60,24 @@
     margin: 0;
 }
 
+.page-heading-row > .page-heading-actions {
+    align-items: center;
+    justify-content: flex-end;
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    gap: var(--rsp-gap);
+    min-width: 0;
+}
+
+.page-heading-actions > .dash-actions {
+    margin: 0;
+}
+
+.page-heading-actions > .btn,
+.page-heading-actions > form .btn {
+    min-height: 36px;
+}
+
 .page-heading-row > .page-heading-actions[hidden] {
     display: none;
 }
@@ -2368,6 +2386,37 @@ mark.confirm-new,
 
     .table-wrap > table.card-table td.card-actions.is-open > .sales-row-actions.row-actions-stack > .btn.btn {
         min-height: var(--rsp-tap);
+    }
+}
+
+/* Dashboard charts: keep every chart in its own row on tablet and mobile so an auto-fit grid cannot leave
+   a half-empty second column below a chart such as Purchased V.S Stock In. */
+@media (max-width: 1023px) {
+    .dash-charts-3,
+    .dash-charts-2,
+    .dash-revenue-row {
+        grid-template-columns: minmax(0, 1fr) !important;
+    }
+
+    .dash-charts > .dash-chart-block,
+    .dash-revenue-row > .dash-section {
+        min-height: 0;
+    }
+
+    .dash-chart-canvas,
+    .dash-chart-canvas-tall {
+        height: 260px;
+    }
+}
+
+@media (max-width: 639px) {
+    .dash-chart-canvas,
+    .dash-chart-canvas-tall {
+        height: 230px;
+    }
+
+    .dash-chart {
+        padding: 8px 10px 10px;
     }
 }
 

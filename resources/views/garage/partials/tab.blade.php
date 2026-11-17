@@ -1,7 +1,8 @@
 {{-- Part 13: Garage tab (Inventory and Fuel Lifting). Expects: $garage (GarageStockService::tab()), $garageFilters,
      $garageSearch, $garageRoute. Each fuel shows its Tank 1 and Tank 2 separately; the per-fuel total is extra.
      Part 16 #5: the table has one row per tank, and View opens the tank's stock by purchase and its lots, newest first.
-     Part 18 add-on: fuel in a tank is mixed and sold at the tank's average cost, shown on each card, row and View. --}}
+     Part 18 add-on: fuel in a tank is mixed and sold at the tank's average cost, shown in View.
+     Part 23 #4: the tank cards no longer show the average cost. --}}
 @php
     $garageAvg = fn (object $tank): string => $tank->avg_cost === null ? '—' : '₱'.number_format($tank->avg_cost, 2).'/L';
 @endphp
@@ -21,7 +22,6 @@
                             <span style="width: {{ min(100, $tank->percent) }}%"></span>
                         </div>
                         <div class="garage-tank-free">{{ number_format($tank->free, 2) }} L free of {{ number_format($tank->capacity, 2) }} L</div>
-                        <div class="garage-tank-avg">Avg cost {{ $garageAvg($tank) }}</div>
                     </div>
                 @endforeach
             </div>
@@ -41,20 +41,18 @@
 @endphp
 <div class="table-wrap">
     <table class="admin-table garage-table garage-tank-table" data-card-keys="0,2">
-        <thead><tr><th>Tank</th><th>Capacity</th><th>Stock Quantity</th><th>Avg Cost / L</th><th>Purchase IDs</th><th class="export-only" hidden>Lots (newest first)</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Tank</th><th>Capacity</th><th>Stock Quantity</th><th class="export-only" hidden>Lots (newest first)</th><th>Actions</th></tr></thead>
         <tbody>
             @forelse ($garage['tankRows'] as $tank)
                 <tr>
                     <td><strong>{{ $tank->name }}</strong></td>
                     <td class="inventory-number">{{ $garageLiters($tank->capacity) }}</td>
                     <td class="inventory-number">{{ $garageLiters($tank->contents) }}</td>
-                    <td class="inventory-number">{{ $garageAvg($tank) }}</td>
-                    <td>{{ $tank->purchases->pluck('purchase_code')->implode(', ') ?: '—' }}</td>
                     <td class="export-only" hidden>{{ $tank->lots->map(fn (object $lot): string => $lot->purchase_code.' '.$garageLiters($lot->liters).' unloaded '.\Carbon\CarbonImmutable::parse($lot->unloaded_at)->format('M d, Y h:i A').' ('.$garageLiters($lot->in_garage).' left)')->implode('; ') ?: '—' }}</td>
                     <td><button class="btn btn-secondary" type="button" data-modal-open="garage-tank-{{ $tank->id }}">View</button></td>
                 </tr>
             @empty
-                <tr><td class="empty-cell" colspan="7">No garage tank matches the filters.</td></tr>
+                <tr><td class="empty-cell" colspan="5">No garage tank matches the filters.</td></tr>
             @endforelse
         </tbody>
     </table>

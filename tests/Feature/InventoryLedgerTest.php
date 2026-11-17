@@ -13,6 +13,23 @@ class InventoryLedgerTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_both_ledger_pages_include_completed_purchases_and_partial_is_incomplete(): void
+    {
+        $records = $this->baseRecords();
+        $done = $this->purchase($records, 'PUR-DONE', 20000);
+        $partial = $this->purchase($records, 'PUR-PARTIAL', 30000);
+        $this->haul($records, $done, 'DONE-LIFT', 20000, 'completed');
+        $this->haul($records, $partial, 'PARTIAL-LIFT', 10000, 'completed');
+        foreach (['inventory-officer.ledger', 'inventory-officer.ledger.transactions'] as $route) {
+            $this->actingAs($records['inventoryOfficer'])->get(route($route))->assertOk()->assertSee('PUR-DONE')->assertSee('Completed')->assertSee('PUR-PARTIAL')->assertSee('Incomplete');
+            $this->get(route($route, ['status' => 'complete']))->assertOk()->assertSee('PUR-DONE')->assertDontSee('PUR-PARTIAL');
+            $this->get(route($route, ['status' => 'incomplete']))->assertOk()->assertSee('PUR-PARTIAL')->assertDontSee('PUR-DONE');
+        }
+        $rows = app(InventoryLedgerService::class)->rows();
+        $line = $rows['transactions']->firstWhere('purchase_code', 'PUR-PARTIAL');
+        $this->assertSame(['10,000.00', '20,000.00', 'Incomplete'], array_slice($line['cells'], 4));
+    }
+
     public function test_ledger_shows_active_purchase_progress_and_transactions_keep_zero_lift_purchases(): void
     {
         $records = $this->baseRecords();
@@ -53,15 +70,15 @@ class InventoryLedgerTest extends TestCase
         $rows = app(InventoryLedgerService::class)->rows();
         $active = $rows['ledger']->first(fn ($row): bool => $row[0] === 'PUR-100K-MULTI');
 
-        $this->assertSame(['PUR-100K-MULTI', 'Diesel', 'CJP Depot', '100,000.00', '80,000.00', '20,000.00', 'Partially Lifted'], $active);
+        $this->assertSame(['PUR-100K-MULTI', 'Diesel', 'CJP Depot', '100,000.00', '80,000.00', '20,000.00', 'Incomplete'], $active);
 
         $this->haul($records, $purchase, 'LFT-20K-FINAL', 20000, 'completed', '2026-09-03 08:00:00');
 
         $rows = app(InventoryLedgerService::class)->rows();
-        $this->assertFalse($rows['ledger']->contains(fn ($row): bool => $row[0] === 'PUR-100K-MULTI'));
+        $this->assertTrue($rows['ledger']->contains(fn ($row): bool => $row[0] === 'PUR-100K-MULTI'));
 
         $transaction = $rows['transactions']->firstWhere('purchase_item_id', $purchase['purchaseItemId']);
-        $this->assertSame('Complete', $transaction['status']);
+        $this->assertSame('Completed', $transaction['status']);
         $this->assertSame('0.00', $transaction['cells'][5]);
         $this->assertSame(['LFT-40K-A', 'LFT-40K-B', 'LFT-20K-FINAL'], $transaction['lifts']->pluck('code')->all());
 

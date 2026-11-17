@@ -27,7 +27,7 @@ class TruckManagementTest extends TestCase
             ->assertOk()->assertSee('+ Add Truck');
 
         $this->actingAs($admin)->post(route('admin.trucks.store'), [
-            'truck_code' => ' trk-101 ',
+            'truck_code' => ' truck-101 ',
             'plate_number' => ' abc-1234 ',
             'name' => 'Southern Tanker 1',
             'description' => 'Primary hauling truck',
@@ -38,16 +38,16 @@ class TruckManagementTest extends TestCase
 
         $truckId = (int) DB::table('trucks')->where('plate_number', 'ABC-1234')->value('id');
         $this->assertGreaterThan(0, $truckId);
-        // Part 8 #7: a typed truck code is ignored; the server assigns the next TRK number.
+        // Part 23 #8: the Truck ID is typed (TRUCK-###, normalized to upper case); Name / Description are no longer kept.
         $this->assertDatabaseHas('trucks', [
             'id' => $truckId,
-            'truck_code' => 'TRK-001',
-            'name' => 'Southern Tanker 1',
+            'truck_code' => 'TRUCK-101',
+            'name' => null,
             'capacity_liters' => '20000.00',
         ]);
 
         $this->actingAs($dispatch)->patch(route('dispatch.trucks.update', $truckId), [
-            'truck_code' => 'TRK-101',
+            'truck_code' => 'TRUCK-102',
             'plate_number' => 'ABC-1234',
             'name' => 'Southern Tanker One',
             'description' => 'Updated fleet record',
@@ -55,10 +55,10 @@ class TruckManagementTest extends TestCase
             'truck_type' => 'mixed',
             'status' => 'maintenance',
         ])->assertRedirect(route('dispatch.fuel-lifting.trucks'));
-        $this->assertDatabaseHas('trucks', ['id' => $truckId, 'name' => 'Southern Tanker One', 'status' => 'maintenance', 'truck_code' => 'TRK-001']);
+        $this->assertDatabaseHas('trucks', ['id' => $truckId, 'name' => null, 'status' => 'maintenance', 'truck_code' => 'TRUCK-102', 'capacity_liters' => '22000.00']);
 
         $this->actingAs($admin)->from(route('admin.fuel-lifting.trucks'))->post(route('admin.trucks.store'), [
-            'truck_code' => 'TRK-102',
+            'truck_code' => 'TRUCK-103',
             'plate_number' => 'abc-1234',
             'name' => 'Duplicate Plate Truck',
             'capacity_liters' => 10000,
@@ -78,7 +78,7 @@ class TruckManagementTest extends TestCase
 
         // A truck is added without a type (the column is now nullable).
         $this->actingAs($admin)->post(route('admin.trucks.store'), [
-            'plate_number' => 'NOT-0001', 'name' => 'Any Use Truck', 'capacity_liters' => 30000, 'status' => 'available',
+            'truck_code' => 'TRUCK-301', 'plate_number' => 'NOT-0001', 'capacity_liters' => 30000, 'status' => 'available',
         ])->assertSessionHasNoErrors()->assertRedirect(route('admin.fuel-lifting.trucks'));
         $added = DB::table('trucks')->where('plate_number', 'NOT-0001')->first();
         $this->assertNull($added->truck_type);
@@ -106,8 +106,10 @@ class TruckManagementTest extends TestCase
             'created_at' => now(), 'updated_at' => now(),
         ]);
 
-        $this->actingAs($dispatch)->patch(route('dispatch.trucks.status', $truckId))->assertRedirect(route('dispatch.fuel-lifting.trucks'));
-        $this->assertDatabaseHas('trucks', ['id' => $truckId, 'status' => 'inactive']);
+        // Part 23 #8: trucks are no longer deactivated (Maintenance covers it); a legacy inactive truck can be activated.
+        $this->actingAs($dispatch)->patch(route('dispatch.trucks.status', $truckId))->assertSessionHasErrors('status');
+        $this->assertDatabaseHas('trucks', ['id' => $truckId, 'status' => 'available']);
+        DB::table('trucks')->where('id', $truckId)->update(['status' => 'inactive']);
         $this->actingAs($admin)->patch(route('admin.trucks.status', $truckId))->assertRedirect(route('admin.fuel-lifting.trucks'));
         $this->assertDatabaseHas('trucks', ['id' => $truckId, 'status' => 'available']);
 

@@ -7,6 +7,7 @@ use App\Services\WorkflowSmokeTestService;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use App\Support\ActivePayments;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
@@ -173,7 +174,7 @@ Artisan::command('cjp:readiness-audit {--permissive : Run in permissive mode wit
 
         $overpaidSales = DB::table('sales')
             ->joinSub(DB::table('sale_items')->selectRaw('sale_id, SUM(line_total) total')->groupBy('sale_id'), 'sale_totals', 'sale_totals.sale_id', '=', 'sales.id')
-            ->joinSub(DB::table('payments')->selectRaw('sale_id, SUM(amount) paid')->groupBy('sale_id'), 'payment_totals', 'payment_totals.sale_id', '=', 'sales.id')
+            ->joinSub(ActivePayments::query()->selectRaw('sale_id, SUM(amount) paid')->groupBy('sale_id'), 'payment_totals', 'payment_totals.sale_id', '=', 'sales.id')
             ->whereRaw('payment_totals.paid > sale_totals.total')
             ->count();
         $check('No sales are overpaid', $overpaidSales === 0, 'overpaid: '.$overpaidSales);

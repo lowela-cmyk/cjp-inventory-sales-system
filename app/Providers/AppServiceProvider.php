@@ -25,17 +25,18 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        // Each limiter layers a per-account limit (any IP), a per-account+IP limit and a per-IP cap,
-        // so neither rotating IPs nor rotating accounts gives unlimited guesses (audit H01/C02).
-        RateLimiter::for('login', function (Request $request): array {
-            $username = Str::lower(trim((string) $request->input('username', '')));
-
-            return $this->tooManyAttempts([
-                Limit::perMinute(5)->by('login:'.$username.'|'.$request->ip()),
-                Limit::perMinutes(15, 10)->by('login-account:'.$username),
-                Limit::perMinute(30)->by('login-ip:'.$request->ip()),
-            ]);
-        });
+        \Illuminate\Pagination\Paginator::defaultView('components.table.pagination');
+        // The host serves the app from the document root (index.php calls usePublicPath), so there is no public/
+        // folder there. DomPDF otherwise falls back to base_path('public') and fails with "Cannot resolve public path".
+        if (! config('dompdf.public_path')) {
+            config(['dompdf.public_path' => $this->app->publicPath()]);
+        }
+        // Part 21 #3: failed logins are counted in AuthController::login (5 within 1 minute lock the username for
+        // 15 minutes, per IP and across IPs). This limiter only caps how many login requests one IP may send at all,
+        // so rotating usernames from one address is limited too (audit H01).
+        RateLimiter::for('login', fn (Request $request): array => $this->tooManyAttempts([
+            Limit::perMinute(30)->by('login-ip:'.$request->ip()),
+        ]));
 
         RateLimiter::for('registration', function (Request $request): Limit {
             $email = Str::lower((string) $request->input('email', ''));
@@ -43,6 +44,8 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(3)->by($email.'|'.$request->ip());
         });
 
+        // Layers a per-account limit (any IP), a per-account+IP limit and a per-IP cap, so neither rotating IPs nor
+        // rotating accounts gives unlimited guesses (audit C02).
         RateLimiter::for('password-reset', function (Request $request): array {
             $email = Str::lower(trim((string) $request->input('email', '')));
 

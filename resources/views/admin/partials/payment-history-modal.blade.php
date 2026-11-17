@@ -159,12 +159,39 @@
         @endif
         <div class="table-wrap" style="margin-top:18px;min-height:auto">
             <table class="admin-table" style="min-width:560px">
-                <thead><tr><th>Installment</th><th>Payment ID</th><th>Date Recorded</th><th>Amount</th><th>Method</th><th>Reference</th><th>Recorded By</th><th>Status</th></tr></thead>
+                @php($voidRoute = \App\Support\ActivePayments::voidSupported() && Route::has($salesRoutePrefix.'.sales.payments.void') ? $salesRoutePrefix.'.sales.payments.void' : null)
+                <thead><tr><th>Installment</th><th>Payment ID</th><th>Date Recorded</th><th>Amount</th><th>Method</th><th>Reference</th><th>Recorded By</th><th>Status</th>@if ($voidRoute)<th>Action</th>@endif</tr></thead>
                 <tbody>
                     @forelse ($row['payments'] as $payment)
-                        <tr><td>{{ $payment['sequence'] }}</td><td>{{ $payment['code'] }}</td><td>{{ $payment['date'] }}</td><td>{{ $payment['amount'] }}</td><td>{{ $payment['method'] }}</td><td>{{ $payment['reference'] }}</td><td>{{ $payment['recorded_by'] }}</td><td><x-admin.status-badge :status="$payment['status']" /></td></tr>
+                        {{-- A voided payment stays listed, struck through, with who voided it, when and why; it no longer counts toward Paid or the balance. --}}
+                        <tr @class(['payment-voided' => $payment['voided'] ?? false])>
+                            <td>{{ $payment['sequence'] }}</td><td>{{ $payment['code'] }}</td><td>{{ $payment['date'] }}</td>
+                            <td>@if ($payment['voided'] ?? false)<s>{{ $payment['amount'] }}</s>@else{{ $payment['amount'] }}@endif</td>
+                            <td>{{ $payment['method'] }}</td><td>{{ $payment['reference'] }}</td><td>{{ $payment['recorded_by'] }}</td>
+                            <td>
+                                <x-admin.status-badge :status="$payment['status']" />
+                                @if ($payment['void_note'] ?? null)
+                                    <small class="payment-void-note" style="display:block;margin-top:4px;max-width:240px;white-space:normal;line-height:1.3">{{ $payment['void_note'] }}</small>
+                                @endif
+                            </td>
+                            @if ($voidRoute)
+                                <td>
+                                    @unless ($payment['voided'] ?? false)
+                                        <details class="payment-void">
+                                            <summary class="btn btn-pill btn-secondary" style="list-style:none;cursor:pointer">Void…</summary>
+                                            <form method="POST" action="{{ route($voidRoute, [$saleId, $payment['id']]) }}" class="payment-void-form" style="display:grid;gap:6px;margin-top:6px;min-width:200px">
+                                                @csrf
+                                                @method('PATCH')
+                                                <input name="void_reason" type="text" minlength="5" maxlength="500" required placeholder="Reason for voiding" aria-label="Reason for voiding {{ $payment['code'] }}">
+                                                <button class="btn btn-pill btn-danger" type="submit">Void {{ $payment['code'] }}</button>
+                                            </form>
+                                        </details>
+                                    @endunless
+                                </td>
+                            @endif
+                        </tr>
                     @empty
-                        <tr><td class="empty-cell" colspan="8">No payment records found.</td></tr>
+                        <tr><td class="empty-cell" colspan="{{ $voidRoute ? 9 : 8 }}">No payment records found.</td></tr>
                     @endforelse
                 </tbody>
             </table>

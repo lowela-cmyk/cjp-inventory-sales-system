@@ -135,8 +135,12 @@ class ConfirmFlowTest extends TestCase
         DB::table('alerts')->insert(['alert_code' => 'ALT-1', 'type' => 'inventory', 'severity' => 'warning', 'title' => 'Low stock: Unleaded', 'message' => 'x', 'status' => 'open', 'created_at' => now(), 'updated_at' => now()]);
 
         $trucks = $this->actingAs($r['dispatch'])->get(route('dispatch.fuel-lifting.trucks'))->assertOk()->getContent();
-        $this->assertStringContainsString('data-confirm="status" data-confirm-title="Deactivate truck?"', $trucks);
-        $this->assertStringContainsString('data-confirm-item="TRK-001 · ABC 1234 (Isuzu Giga)"', $trucks);
+        // Part 23 #8: no Deactivate (Maintenance covers it); a legacy inactive truck still confirms its activation.
+        $this->assertStringNotContainsString('data-confirm-title="Deactivate truck?"', $trucks);
+        DB::table('trucks')->where('truck_code', 'TRK-001')->update(['status' => 'inactive']);
+        $trucks = $this->actingAs($r['dispatch'])->get(route('dispatch.fuel-lifting.trucks'))->assertOk()->getContent();
+        $this->assertStringContainsString('data-confirm="status" data-confirm-title="Activate truck?"', $trucks);
+        $this->assertStringContainsString('data-confirm-item="TRK-001 · ABC 1234"', $trucks);
 
         $alerts = $this->actingAs($r['admin'])->get(route('admin.alerts'))->assertOk()->getContent();
         $this->assertStringContainsString('data-confirm="status" data-confirm-title="Mark alert as read?" data-confirm-item="', $alerts);
@@ -149,6 +153,7 @@ class ConfirmFlowTest extends TestCase
         $r = $this->records();
         $html = $this->actingAs($r['admin'])->get(route('admin.dashboard'))->assertOk()->getContent();
 
+        // Part 23 #11: the dashboard Export is back and downloads without a confirmation.
         $this->assertStringContainsString('data-dashboard-export data-confirm="none"', $html);
         $this->assertStringContainsString('data-ai-generate-form data-confirm="none"', $html);
     }

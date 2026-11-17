@@ -21,7 +21,7 @@
 @endphp
 
 @component($liftLayout, ['title' => 'Fuel Lifting Operations', 'active' => 'fuel-lifting'])
-    <div data-tabs>
+    <div data-tabs data-server-tabs>
         <div class="page-heading-row">
             <h2 class="section-title" data-tab-heading>{{ $headings[$activeTab] }}</h2>
             <x-export-button />
@@ -95,6 +95,10 @@
                     </tbody>
                 </table>
             </div>
+            @if (isset($haulPages) && $activeTab === 'schedule')
+                {{-- Part 23: the pagination bar sits under the table, as on the Inventory tabs. --}}
+                <div class="pagination-wrap" style="margin-top: 16px;">{{ $haulPages->links() }}</div>
+            @endif
         </section>
 
         <section data-tab-panel="hauled" {{ $activeTab !== 'hauled' ? 'hidden' : '' }}>
@@ -122,8 +126,7 @@
                             <th>Truck-ID</th>
                             <th>Capacity</th>
                             <th>Lifted</th>
-                            <th>Delivered Quantity</th>
-                            <th>On Truck</th>
+                            {{-- Part 23 #7: Delivered Quantity and On Truck are shown in View only. --}}
                             <th>Status</th>
                             <th>Actions</th>
                         </tr>
@@ -134,19 +137,19 @@
                                 @foreach ($row['cells'] as $cell)
                                     <td>{{ $cell }}</td>
                                 @endforeach
-                                {{-- Liters delivered to Depot to Client orders from this lift. --}}
-                                <td>{{ $row['load']['delivered'] }}</td>
-                                {{-- Part 12: fuel still on the truck (it keeps the truck Loaded until delivered or returned). --}}
-                                <td @class(['is-due' => $row['truck_leftover'] > 0])>{{ $row['truck_leftover_label'] }}</td>
                                 <td><x-admin.status-badge :status="$row['status']" /></td>
                                 <td><button class="btn btn-secondary" type="button" data-modal-open="{{ $row['id'] }}">View</button></td>
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="14">No records found.</td></tr>
+                            <tr><td class="empty-cell" colspan="12">No records found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
             </div>
+            @if (isset($haulPages) && $activeTab === 'hauled')
+                {{-- Part 23: the pagination bar sits under the table, as on the Inventory tabs. --}}
+                <div class="pagination-wrap" style="margin-top: 16px;">{{ $haulPages->links() }}</div>
+            @endif
         </section>
 
         <section data-tab-panel="trucks" {{ $activeTab !== 'trucks' ? 'hidden' : '' }}>

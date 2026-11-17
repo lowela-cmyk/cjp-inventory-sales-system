@@ -845,7 +845,7 @@ class SalesOfficerCustomerController extends Controller
         try {
             DB::table('customers')->insert([
                 'customer_code' => $this->nextCustomerCode(),
-                'name' => $data['name'],
+                'name' => $data['name'] ?? '',
                 'company_name' => $data['company_name'],
                 'location' => $data['location'] ?? null,
                 'phone' => $data['phone'] ?? null,
@@ -875,7 +875,8 @@ class SalesOfficerCustomerController extends Controller
             DB::table('customers')
                 ->where('id', $customer)
                 ->update([
-                    'name' => $data['name'],
+                    // An explicitly blank name clears the contact; an omitted field preserves it.
+                    ...(array_key_exists('name', $data) ? ['name' => $data['name'] ?? ''] : []),
                     'company_name' => $data['company_name'],
                     'location' => $data['location'] ?? null,
                     'phone' => $data['phone'] ?? null,
@@ -920,7 +921,7 @@ class SalesOfficerCustomerController extends Controller
     private function validatedCustomerData(Request $request, ?int $customerId = null): array
     {
         return $request->validate([
-            'name' => ['required', 'string', 'max:255'],
+            'name' => ['nullable', 'string', 'max:255'],
             'company_name' => [
                 'required',
                 'string',
@@ -1060,7 +1061,7 @@ class SalesOfficerCustomerController extends Controller
                     'class' => $this->rowClass($derivedPaymentStatus),
                     'cells' => [
                         $row->customer_code,
-                        $row->name,
+                        trim((string) $row->name) === '' ? '—' : $row->name,
                         $row->company_name,
                         $row->location ?: 'N/A',
                         $row->phone ?: 'N/A',
@@ -1069,7 +1070,7 @@ class SalesOfficerCustomerController extends Controller
                         $this->label($row->status),
                     ],
                     'details' => [
-                        'Customer Name' => $row->name,
+                        'Customer Name' => trim((string) $row->name) === '' ? '—' : $row->name,
                         'Company Name' => $row->company_name,
                         'Location' => $row->location ?: 'N/A',
                         'Contact Number' => $row->phone ?: 'N/A',
@@ -1101,7 +1102,7 @@ class SalesOfficerCustomerController extends Controller
             ]))
             ->orderBy('company_name')
             ->orderBy('name')
-            ->get(['id', 'name', 'company_name']);
+            ->get(['id', 'customer_code', 'name', 'company_name']);
     }
 
     /**

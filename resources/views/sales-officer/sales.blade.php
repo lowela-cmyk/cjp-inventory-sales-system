@@ -65,7 +65,7 @@
                         <tr>
                             <th><span class="th-line" data-export-part>Order-ID</span><span class="th-line" data-export-part>Sales Order No.</span><span class="th-line" data-export-part>Transaction Date</span></th>
                             <th>Delivery Type</th>
-                            <th><span class="th-line" data-export-part>Customer Name</span><span class="th-line" data-export-part>Company Name</span></th>
+                            <th>Company Name</th>
                             <th><span class="th-line" data-export-part>Fuel</span><span class="th-line" data-export-part>QTY</span><span class="th-line" data-export-part>Price / Liter</span></th>
                             <th><span class="th-line" data-export-part>Total</span><span class="th-line" data-export-part>Total Paid</span><span class="th-line" data-export-part>Balance</span></th>
                             <th><span class="th-line" data-export-part>Due Date</span><span class="th-line" data-export-part>Latest Payment</span></th>
@@ -90,7 +90,7 @@
                                         <small class="sale-source-change-tag" title="{{ $row['source_change_note'] }}">Source changed</small>
                                     @endif
                                 </td>
-                                <td class="cell-wrap"><x-table.stack :lines="[['value' => $c[3]], ['value' => $c[4], 'class' => 'is-secondary']]" /></td>
+                                <td class="cell-wrap">{{ $c[4] }}</td>
                                 <td><x-table.stack :lines="[['value' => $c[5]], ['label' => 'Qty', 'value' => $c[6]], ['label' => '/L', 'value' => $c[7]]]" /></td>
                                 <td><x-table.stack :lines="[['label' => 'Total', 'value' => $c[8]], ['label' => 'Paid', 'value' => $c[9]], ['label' => 'Balance', 'value' => $c[10], 'class' => (float) str_replace(',', '', $c[10]) > 0 ? 'is-due' : null]]" /></td>
                                 <td><x-table.stack :lines="[['label' => 'Due', 'value' => $c[11]], ['label' => 'Last paid', 'value' => $c[12], 'class' => 'is-secondary']]" /></td>
@@ -202,7 +202,7 @@
                                 <select id="sale_customer_id" name="customer_id" required>
                                     <option value="">Select Customer</option>
                                     @foreach ($customerOptions as $customer)
-                                        <option value="{{ $customer->id }}" @selected((string) old('customer_id') === (string) $customer->id)>{{ $customer->name }} / {{ $customer->company_name }}</option>
+                                        <option value="{{ $customer->id }}" @selected((string) old('customer_id') === (string) $customer->id)>{{ trim((string) $customer->name) !== '' ? $customer->name : $customer->customer_code }} / {{ $customer->company_name }}</option>
                                     @endforeach
                                 </select>
                             </div>
@@ -374,7 +374,7 @@
                                 <label for="sale_customer_{{ $row['id'] }}">Customer Name</label>
                                 <select form="sale-update-{{ $row['id'] }}" id="sale_customer_{{ $row['id'] }}" name="customer_id" required>
                                     @foreach ($customerOptions as $customer)
-                                        <option value="{{ $customer->id }}" @selected((int) $editOld('customer_id', $row['customer_id']) === (int) $customer->id)>{{ $customer->name }} / {{ $customer->company_name }}</option>
+                                        <option value="{{ $customer->id }}" @selected((int) $editOld('customer_id', $row['customer_id']) === (int) $customer->id)>{{ trim((string) $customer->name) !== '' ? $customer->name : $customer->customer_code }} / {{ $customer->company_name }}</option>
                                     @endforeach
                                 </select>
                             </div>
@@ -549,7 +549,7 @@
             <input type="hidden" name="form_context" value="add-customer">
             <div class="modal-card">
                 <div class="form-grid">
-                    <div class="form-row"><label for="customer_name">Customer Name</label><input id="customer_name" name="name" type="text" placeholder="Enter Customer Name" value="{{ old('name') }}" required></div>
+                    <div class="form-row"><label for="customer_name">Customer Name</label><input id="customer_name" name="name" type="text" placeholder="Enter Customer Name" value="{{ old('name') }}"></div>
                     <div class="form-row"><label for="customer_company_name">Company Name</label><input id="customer_company_name" name="company_name" type="text" placeholder="Enter Company Name" value="{{ old('company_name') }}" required></div>
                     <div class="form-row"><label for="customer_location">Location</label><input id="customer_location" name="location" type="text" placeholder="Enter Location" value="{{ old('location') }}"></div>
                     <div class="form-row"><label for="customer_phone">Contact Number</label><input id="customer_phone" name="phone" type="tel" placeholder="Enter Contact Number" value="{{ old('phone') }}"></div>
@@ -589,7 +589,7 @@
                     @endforeach
                 </div>
                 <div class="form-grid" style="margin-top: 18px">
-                    <div class="form-row"><label for="customer_name_{{ $row['id'] }}">Customer Name</label><input form="customer-update-{{ $row['id'] }}" id="customer_name_{{ $row['id'] }}" name="name" type="text" value="{{ $customerOld('name', $row['name']) }}" required></div>
+                    <div class="form-row"><label for="customer_name_{{ $row['id'] }}">Customer Name</label><input form="customer-update-{{ $row['id'] }}" id="customer_name_{{ $row['id'] }}" name="name" type="text" value="{{ $customerOld('name', $row['name']) }}"></div>
                     <div class="form-row"><label for="customer_company_name_{{ $row['id'] }}">Company Name</label><input form="customer-update-{{ $row['id'] }}" id="customer_company_name_{{ $row['id'] }}" name="company_name" type="text" value="{{ $customerOld('company_name', $row['company_name']) }}" required></div>
                     <div class="form-row"><label for="customer_location_{{ $row['id'] }}">Location</label><input form="customer-update-{{ $row['id'] }}" id="customer_location_{{ $row['id'] }}" name="location" type="text" value="{{ $customerOld('location', $row['location']) }}"></div>
                     <div class="form-row"><label for="customer_phone_{{ $row['id'] }}">Contact Number</label><input form="customer-update-{{ $row['id'] }}" id="customer_phone_{{ $row['id'] }}" name="phone" type="tel" value="{{ $customerOld('phone', $row['phone']) }}"></div>

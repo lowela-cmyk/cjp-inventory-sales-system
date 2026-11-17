@@ -5528,7 +5528,7 @@ body.login-page {
 
     section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table {
         width: max-content;
-        min-width: 2180px;
+        min-width: 2000px;
         max-width: none;
         table-layout: auto;
         margin: 0;
@@ -5555,33 +5555,32 @@ body.login-page {
 
     /* Readable text columns. */
     section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table :is(th, td):nth-child(1) { min-width: 170px; text-align: left; }
-    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table :is(th, td):nth-child(2) { min-width: 180px; max-width: none; text-align: left; }
-    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table :is(th, td):nth-child(3) { min-width: 240px; max-width: none; text-align: left; }
-    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table :is(th, td):nth-child(4) { min-width: 150px; text-align: left; }
-    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table :is(th, td):nth-child(5) { min-width: 145px; text-align: left; }
-    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table :is(th, td):nth-child(6) { min-width: 170px; max-width: none; text-align: left; }
-    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table :is(th, td):nth-child(7) { min-width: 140px; max-width: none; text-align: left; }
-    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table :is(th, td):nth-child(8) { min-width: 190px; max-width: none; text-align: left; }
+    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table :is(th, td):nth-child(2) { min-width: 240px; max-width: none; text-align: left; }
+    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table :is(th, td):nth-child(3) { min-width: 150px; text-align: left; }
+    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table :is(th, td):nth-child(4) { min-width: 145px; text-align: left; }
+    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table :is(th, td):nth-child(5) { min-width: 170px; max-width: none; text-align: left; }
+    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table :is(th, td):nth-child(6) { min-width: 140px; max-width: none; text-align: left; }
+    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table :is(th, td):nth-child(7) { min-width: 190px; max-width: none; text-align: left; }
 
     /* Export-only columns stay hidden on screen; visible financial columns retain comfortable tracks. */
-    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table :is(th, td):is(:nth-child(13), :nth-child(14), :nth-child(15), :nth-child(16), :nth-child(17), :nth-child(18)) {
+    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table :is(th, td):is(:nth-child(12), :nth-child(13), :nth-child(14), :nth-child(15), :nth-child(16), :nth-child(17)) {
         min-width: 118px;
         text-align: right;
         font-variant-numeric: tabular-nums;
     }
 
-    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table :is(th, td):nth-child(19) {
+    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table :is(th, td):nth-child(18) {
         min-width: 120px;
         text-align: center;
     }
 
-    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table :is(th, td):is(:nth-child(20), :nth-child(21)) {
+    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table :is(th, td):is(:nth-child(19), :nth-child(20)) {
         min-width: 135px;
         text-align: right;
         font-variant-numeric: tabular-nums;
     }
 
-    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table :is(th, td):nth-child(22) {
+    section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table :is(th, td):nth-child(21) {
         min-width: 100px;
         text-align: center;
     }

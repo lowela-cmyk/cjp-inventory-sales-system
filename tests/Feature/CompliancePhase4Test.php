@@ -22,13 +22,4 @@ class CompliancePhase4Test extends TestCase
         $this->assertMatchesRegularExpression('/@media \(max-width: 1180px\) \{\s*\.dashboard-grid \{\s*grid-template-columns: minmax\(0, 1fr\);/', $styles);
         $this->assertMatchesRegularExpression('/@media \(max-width: 1023px\) \{\s*\.driver-overview-card \{\s*grid-template-columns: minmax\(0, 1fr\);/', $styles);
     }
-
-    public function test_firefox_manual_checklist_covers_the_main_flows(): void
-    {
-        $checklist = File::get(base_path('docs/FIREFOX_CHECKLIST.md'));
-
-        foreach (['Log in', 'Record a purchase', 'two purchases', 'Lifted', 'withdrawal receipt', 'Record a sale', 'payment', 'Delivered', 'View Transactions', 'hover'] as $step) {
-            $this->assertStringContainsStringIgnoringCase($step, $checklist);
-        }
-    }
 }

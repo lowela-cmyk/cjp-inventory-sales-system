@@ -88,7 +88,7 @@ class Part12RevisionsTest extends AuditTestCase
         $this->assertStringNotContainsString('min-width: 1465px', File::get(resource_path('css/app.css')));
 
         $stockOut = $this->actingAs($a['inventory'])->get(route('inventory-officer.inventory.stock-out'))->assertOk()->getContent();
-        $this->assertStringContainsString('<th>Customer Name</th>', $stockOut);
+        $this->assertStringNotContainsString('<th>Customer Name</th>', $stockOut);
         $this->assertStringContainsString('<th>Company Name</th>', $stockOut);
 
         $stockIn = $this->actingAs($a['inventory'])->get(route('inventory-officer.inventory.stock-in'))->assertOk()->getContent();

@@ -78,7 +78,8 @@ class SalesOfficerCustomerManagementTest extends TestCase
                 'payment_status' => 'hacked',
                 'status' => 'deleted',
             ])
-            ->assertSessionHasErrors(['name', 'company_name', 'phone', 'payment_status', 'status']);
+            ->assertSessionHasErrors(['company_name', 'phone', 'payment_status', 'status'])
+            ->assertSessionDoesntHaveErrors('name');
 
         $this->assertSame(1, DB::table('customers')->count());
     }

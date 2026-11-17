@@ -73,9 +73,9 @@ class CompliancePhase3Test extends TestCase
         // Part 8: Purchases drops Hauled/Received and un-stacks ID/Date and Cost/Total; Stock-Out is one value per column.
         $headers = [
             'admin.inventory' => ['Purchase-ID', 'Date', 'Fuel', 'Depot', 'Purchased (L)', 'Cost / Liter', 'Total Cost', 'Receipt', 'Purchase Status', 'Payment Status', 'Actions'],
-            'admin.sales' => ['Order-ID', 'Sales Order No.', 'Transaction Date', 'Customer Name', 'Company Name', 'Fuel', 'QTY', 'Price / Liter', 'Total', 'Total Paid', 'Balance', 'Due Date', 'Latest Payment', 'Delivery Status', 'Status', 'Actions'],
+            'admin.sales' => ['Order-ID', 'Sales Order No.', 'Transaction Date', 'Company Name', 'Fuel', 'QTY', 'Price / Liter', 'Total', 'Total Paid', 'Balance', 'Due Date', 'Latest Payment', 'Delivery Status', 'Status', 'Actions'],
             // Part 12: Source and the other delivery details are export-only columns (before QTY Released); Actions added.
-            'admin.inventory.stock-out' => ['Order-ID', 'Transaction Date', 'Customer Name', 'Company Name', 'Fuel', 'Purchase ID', 'Delivery Type', 'Source', 'QTY Released', 'Cost / Unit', 'Total Cost', 'Price / Unit', 'Total Price', 'Total Paid', 'Status', 'Margin', 'Realized Profit', 'Actions'],
+            'admin.inventory.stock-out' => ['Order-ID', 'Transaction Date', 'Company Name', 'Fuel', 'Purchase ID', 'Delivery Type', 'Source', 'QTY Released', 'Cost / Unit', 'Total Cost', 'Price / Unit', 'Total Price', 'Total Paid', 'Status', 'Margin', 'Realized Profit', 'Actions'],
         ];
 
         foreach ($headers as $route => $expected) {

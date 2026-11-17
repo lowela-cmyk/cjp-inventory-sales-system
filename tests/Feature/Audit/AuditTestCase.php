@@ -9,8 +9,7 @@ use Illuminate\Support\Str;
 use Tests\TestCase;
 
 /**
- * Shared fixtures for the audit regression tests. Each test in this folder reproduces a
- * CRITICAL or HIGH finding from AUDIT_REPORT.md and is expected to FAIL until that finding is fixed.
+ * Shared fixtures for the audit regression tests covering previously identified security and data-integrity issues.
  * Run them with: php artisan test --group=audit
  */
 abstract class AuditTestCase extends TestCase

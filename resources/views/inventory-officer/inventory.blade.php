@@ -162,11 +162,9 @@
             <div class="table-wrap inventory-table-wrap">
                 {{-- Part 4 #6 / Part 8 #4: the table fits its frame. Related values share a cell (one export column each);
                      every money value keeps its own column, as on the Part 4 example. --}}
-                <table class="admin-table inventory-table inventory-table-actions stock-out-table table-stacked" data-card-keys="0,1,16">
+                <table class="admin-table inventory-table inventory-table-actions stock-out-table table-stacked" data-card-keys="0,1,15">
                     <thead><tr>
                         <th><span class="th-line" data-export-part>Order-ID</span><span class="th-line" data-export-part>Transaction Date</span></th>
-                        {{-- Part 12: customer and company in their own columns. --}}
-                        <th>Customer Name</th>
                         <th>Company Name</th>
                         <th><span class="th-line" data-export-part>Fuel</span><span class="th-line" data-export-part>Purchase ID</span></th>
                         <th>Delivery Type</th>
@@ -193,7 +191,6 @@
                             @endphp
                             <tr class="{{ $row['class'] }}">
                                 <td><x-table.stack :lines="[['value' => $c[0], 'class' => 'cell-id'], ['value' => $c[1], 'class' => 'is-secondary']]" /></td>
-                                <td class="stock-out-name">{{ $c[2] }}</td>
                                 <td class="stock-out-name">{{ $c[3] }}</td>
                                 <td>
                                     <x-table.stack :lines="[['value' => $c[5]], ['value' => $c[6], 'class' => 'cell-id is-secondary']]" />
@@ -215,7 +212,7 @@
                                 <td><div class="inventory-row-actions"><button class="btn btn-secondary" type="button" data-modal-open="{{ $row['modal_id'] }}">View</button></div></td>
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="17">No records found.</td></tr>
+                            <tr><td class="empty-cell" colspan="21">No records found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>

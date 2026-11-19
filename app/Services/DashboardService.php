@@ -7,6 +7,7 @@ use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use App\Support\ActivePayments;
+use App\Support\HistoricalReconciliation;
 
 /**
  * Part 10 (October 22, 2026): the Admin "Dashboard and Analytics" page.
@@ -67,6 +68,8 @@ class DashboardService
             'salesTrend' => $this->salesTrend($salesFilters, $today),
             'purchaseReport' => $this->purchaseReport($inventoryFilters, $today),
             'filterOptions' => $this->filterOptions(),
+            // Historical import limitations (empty unless a historical import recorded some).
+            'historicalReconciliation' => HistoricalReconciliation::summary(),
         ];
     }
 
@@ -139,6 +142,8 @@ class DashboardService
             ->sortBy(fn (object $fuel): int => array_search($fuel->code, array_keys(self::STOCK_FUELS), true));
         $stockValues = $stockFuels->map(fn (object $fuel): float => round((float) ($stockByFuel[$fuel->id] ?? 0), 2));
         $stock = round((float) $stockValues->sum(), 2);
+        // Historical liters documented as consumed without a named sale: shown separately, never as stock.
+        $historicalUnverified = round((float) $stockIns->sum('historical_unverified'), 2);
 
         $pending = round((float) $lines->sum('reserved'), 2);
         // Share of the fuel on hand (not delivered yet) that open orders already took.
@@ -158,6 +163,7 @@ class DashboardService
             'filters' => $filters,
             'totals' => [
                 'stock_liters' => $stock,
+                'historical_unverified_liters' => $historicalUnverified,
                 'purchases' => (int) $totals->purchases,
                 'remaining_liters' => $inDepot,
                 'lifts' => $this->liftCount($filters),
@@ -325,6 +331,8 @@ class DashboardService
      * - Stock Out: value of the fuel released for those sales = released liters x the sale line's price.
      * - Receivables: the amount actually collected on those sales (payments received), not the billed total.
      * - Missing: Stock Out - Collected (delivered fuel not paid for yet).
+     * - Historical reconciliation variance: the documented rounding variance of imported historical stock-outs; it is
+     *   reported on its own and left out of Missing (it is not unpaid delivered fuel).
      * - Inventory Variance Rate: Missing / Stock Out x 100 (0.00% when nothing was stocked out).
      *
      * @return array<string, mixed>
@@ -340,7 +348,10 @@ class DashboardService
         $stockOut = round((float) $this->releasesQuery()->whereIn('stock_outs.sale_id', $delivered())
             ->sum(DB::raw('stock_outs.quantity_liters * '.$this->releasePriceSql())), 2);
         $collected = round((float) ActivePayments::query()->whereIn('sale_id', $delivered())->sum('amount'), 2);
-        $missing = round($stockOut - $collected, 2);
+        // Historical imports: the value of stock-out liters the source itself over- or under-splits (rounding in the
+        // source's stock-out lines) is a documented reconciliation variance, not delivered fuel left unpaid.
+        $historical = HistoricalReconciliation::roundingVariance($delivered());
+        $missing = round($stockOut - $collected - $historical['amount'], 2);
         $rate = $stockOut > 0 ? round($missing / $stockOut * 100, 2) : 0.0;
 
         return [
@@ -348,7 +359,9 @@ class DashboardService
             'receivables' => $collected,
             'missing' => $missing,
             'variance_rate' => $rate,
+            'historical_variance' => $historical,
             'missingLabel' => $this->money($missing),
+            'historicalVarianceLabel' => $historical['orders'] > 0 ? $this->money($historical['amount']).' ('.number_format($historical['orders']).' orders, '.number_format($historical['liters'], 0).' L)' : null,
             'varianceRateLabel' => $this->percent($rate),
             'chart' => $this->chart('bar', 'money', ['Stock Out', 'Receivables (Collected)'], [[
                 'label' => 'Delivered sales',

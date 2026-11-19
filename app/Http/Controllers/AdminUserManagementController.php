@@ -119,10 +119,20 @@ class AdminUserManagementController extends Controller
 
     public function storeStaff(Request $request): RedirectResponse
     {
+        // Add Staff also offers Driver: that creates the same driver account and profile as the Drivers tab.
         $data = $request->validate($this->accountRules(
-            roleRule: Rule::in(array_keys(self::OFFICE_ROLES)),
+            roleRule: Rule::in([...array_keys(self::OFFICE_ROLES), 'driver']),
             passwordRules: ['required', 'confirmed', Password::defaults()],
+            extraRules: [
+                'license_number' => ['nullable', 'string', 'max:100'],
+            ],
         ));
+
+        if ($data['role'] === 'driver') {
+            $this->createDriver($data);
+
+            return $this->backToTab('drivers', 'Driver account created successfully.');
+        }
 
         User::create([
             'name' => $data['name'],
@@ -147,6 +157,14 @@ class AdminUserManagementController extends Controller
             ],
         ));
 
+        $this->createDriver($data);
+
+        return $this->backToTab('drivers', 'Driver account created successfully.');
+    }
+
+    /** A driver login and its driver profile (code, license), created together. @param array<string, mixed> $data */
+    private function createDriver(array $data): void
+    {
         DB::transaction(function () use ($data): void {
             $driver = User::create([
                 'name' => $data['name'],
@@ -167,8 +185,6 @@ class AdminUserManagementController extends Controller
                 'updated_at' => now(),
             ]);
         });
-
-        return $this->backToTab('drivers', 'Driver account created successfully.');
     }
 
     public function updateStaff(Request $request, User $user): RedirectResponse

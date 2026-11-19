@@ -3,7 +3,6 @@
 use App\Http\Controllers\AdminDashboardController;
 use App\Http\Controllers\AdminDashboardExportController;
 use App\Http\Controllers\AdminDashboardInsightController;
-use App\Http\Controllers\AdminImportController;
 use App\Http\Controllers\AdminMonitoringController;
 use App\Http\Controllers\AdminUserManagementController;
 use App\Http\Controllers\AuthController;
@@ -43,13 +42,6 @@ Route::middleware(['auth'])->group(function () {
     Route::redirect('/admin', '/admin/dashboard')->middleware('role:admin')->name('admin.shortcut');
     Route::prefix('admin')->name('admin.')->middleware('role:admin')->group(function () {
         Route::get('/dashboard', AdminDashboardController::class)->name('dashboard');
-        Route::get('/imports', [AdminImportController::class, 'index'])->name('imports');
-        Route::get('/imports/template', [AdminImportController::class, 'template'])->name('imports.template');
-        Route::post('/imports', [AdminImportController::class, 'upload'])->name('imports.upload');
-        Route::get('/imports/{batch}/preview', [AdminImportController::class, 'preview'])->name('imports.preview');
-        Route::patch('/imports/{batch}/mapping', [AdminImportController::class, 'updateMapping'])->name('imports.mapping');
-        Route::post('/imports/{batch}/confirm', [AdminImportController::class, 'confirm'])->name('imports.confirm');
-        Route::post('/imports/{batch}/cancel', [AdminImportController::class, 'cancel'])->name('imports.cancel');
         // Part 10: "Insights and A.I Reporting" (the inventory variance explanation is part of it).
         Route::post('/dashboard/insight', AdminDashboardInsightController::class)->name('dashboard.insight');
         // Part 11: the dashboard's charts, KPI cards and AI insight as one PDF report.
@@ -111,6 +103,7 @@ Route::middleware(['auth'])->group(function () {
         // Part 12: Reports was removed (the Dashboard has Insights and A.I Reporting); old links open the Dashboard.
         Route::any('/reports/{rest?}', fn () => redirect()->route('admin.dashboard'))->where('rest', '.*')->name('reports.retired');
         Route::get('/alerts', [AdminMonitoringController::class, 'alerts'])->name('alerts');
+        Route::get('/historical/driver-records', [\App\Http\Controllers\AdminHistoricalRecordsController::class, 'driverRecords'])->name('historical.driver-records');
         Route::patch('/alerts/{alert}/read', [AdminMonitoringController::class, 'markAlertRead'])->name('alerts.read');
         Route::get('/alerts/{alert}/view', [AdminMonitoringController::class, 'viewAlert'])->name('alerts.view');
         Route::get('/account-requests', [AdminUserManagementController::class, 'accountRequests'])->name('account-requests');

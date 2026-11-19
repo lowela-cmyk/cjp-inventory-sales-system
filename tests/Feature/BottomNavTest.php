@@ -46,7 +46,7 @@ class BottomNavTest extends TestCase
     {
         $cases = [
             // Admin: all seven pages on the bar, no "More" (Account Requests is a tab under Users).
-            'admin' => [route('admin.dashboard'), ['Home', 'Inventory', 'Ledger', 'Lifting', 'Sales', 'Alerts', 'Users', 'Import']],
+            'admin' => [route('admin.dashboard'), ['Home', 'Inventory', 'Ledger', 'Lifting', 'Sales', 'Alerts', 'Users']],
             // Other roles are unchanged.
             'inventory_officer' => [route('inventory-officer.inventory'), ['Inventory', 'Ledger', 'Alerts']],
             'sales_officer' => [route('sales-officer.sales'), ['Sales', 'Alerts']],
@@ -79,7 +79,7 @@ class BottomNavTest extends TestCase
 
         $this->assertSame([
             route('admin.dashboard'), route('admin.inventory'), route('admin.ledger'), route('admin.fuel-lifting'),
-            route('admin.sales'), route('admin.alerts'), route('admin.user-management'), route('admin.imports'),
+            route('admin.sales'), route('admin.alerts'), route('admin.user-management'),
         ], $links[1]);
         $this->assertStringNotContainsString('Requests', $bar);
         $this->assertStringContainsString('data-alert-mirror', $this->between($bar, 'href="'.route('admin.alerts').'"', '</a>'));
@@ -109,7 +109,7 @@ class BottomNavTest extends TestCase
         $this->assertSame(['Home', 'Inventory', 'Ledger', 'Lifting', 'More'], $this->barLabels($html));
         $sheet = $this->between($html, 'data-more-sheet', '</section>');
         preg_match_all('/<a class="more-link[^"]*" href="([^"]+)"/', $sheet, $links);
-        $this->assertSame([route('admin.sales'), route('admin.alerts'), route('admin.user-management'), route('admin.imports')], $links[1]);
+        $this->assertSame([route('admin.sales'), route('admin.alerts'), route('admin.user-management')], $links[1]);
         $this->assertStringNotContainsString('Account Requests', $sheet);
         $this->assertStringContainsString('data-confirm="simple" data-confirm-title="Sign out?"', $sheet);
         $this->assertStringContainsString('data-alert-mirror', $this->between($html, 'data-more-toggle', '</button>'));
@@ -135,7 +135,7 @@ class BottomNavTest extends TestCase
 
         // Every page, in order, same as the bar; Account Requests is a User Management tab, not its own entry.
         $this->assertSame(array_map(fn (array $item): string => route($item['route']), config('navigation.admin.items')), $links[1]);
-        $this->assertCount(8, $links[1]);
+        $this->assertCount(7, $links[1]); // Data Import was removed
         $this->assertStringNotContainsString('Account Requests', $sidebar);
         $this->assertStringContainsString('viewport-fit=cover', $html);
     }

@@ -283,7 +283,7 @@ class SystemAnalysisRevisionsTest extends TestCase
         $shows($panel('admin.inventory.stock-in', ['depot_id' => $otherDepot], 'stock-in'), ['PUR-SA-NORTH'], ['PUR-SA-SOUTH']);
         $shows($panel('admin.inventory.stock-in', ['date' => '2026-09-10', 'search' => 'PUR-SA'], 'stock-in'), ['PUR-SA-SOUTH'], ['PUR-SA-NORTH']);
         $shows($panel('admin.inventory.stock-in', ['status' => 'available', 'search' => 'PUR-SA'], 'stock-in'), ['PUR-SA-SOUTH', 'PUR-SA-NORTH'], []);
-        $shows($panel('admin.inventory.stock-in', ['status' => 'depleted', 'search' => 'PUR-SA'], 'stock-in'), [], ['PUR-SA-SOUTH', 'PUR-SA-NORTH']);
+        $shows($panel('admin.inventory.stock-in', ['status' => 'sold_out', 'search' => 'PUR-SA'], 'stock-in'), [], ['PUR-SA-SOUTH', 'PUR-SA-NORTH']);
 
         $this->actingAs($admin)->get(route('admin.inventory.depots', ['status' => 'inactive']))
             ->assertOk()->assertViewHas('depotRows', fn ($rows): bool => $rows->count() === 0);

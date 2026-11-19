@@ -106,12 +106,13 @@
             <div class="modal-card">
                 <div class="form-grid">
                     <div class="form-row"><label for="staff_name">Staff Name</label><input id="staff_name" name="name" type="text" placeholder="Enter Staff Name" value="{{ old('name') }}" required></div>
-                    <div class="form-row"><label for="staff_role">Position</label><select id="staff_role" name="role" required><option value="" disabled @selected(! old('role'))>Select Position</option>@foreach ($officeRoles as $value => $label)<option value="{{ $value }}" @selected(old('role') === $value)>{{ $label }}</option>@endforeach</select></div>
-                    <div class="form-row"><label for="staff_email">Email</label><input id="staff_email" name="email" type="email" placeholder="Enter Email" value="{{ old('email') }}" required></div>
+                    <div class="form-row"><label for="staff_role">Position</label><select id="staff_role" name="role" required><option value="" disabled @selected(! old('role'))>Select Position</option>@foreach ($officeRoles as $value => $label)<option value="{{ $value }}" @selected(old('role') === $value)>{{ $label }}</option>@endforeach<option value="driver" @selected(old('role') === 'driver')>Driver</option></select></div>
+                    <div class="form-row" data-staff-driver-only @if (old('role') !== 'driver') hidden @endif><label for="staff_license_number">License Number</label><input id="staff_license_number" name="license_number" type="text" placeholder="Enter License Number (optional)" value="{{ old('role') === 'driver' ? old('license_number') : '' }}" @disabled(old('role') !== 'driver')></div>
+                    <div class="form-row"><label for="staff_email">Email</label><input id="staff_email" name="email" type="email" autocomplete="off" placeholder="Enter Email" value="{{ old('email') }}" required></div>
                     <div class="form-row"><label for="staff_phone">Contact Number</label><input id="staff_phone" name="phone" type="tel" placeholder="Enter Contact Number" value="{{ old('phone') }}"></div>
                     <div class="form-row"><label for="staff_status">Status</label><select id="staff_status" name="status" required data-default="active">@foreach ($statuses as $status)<option value="{{ $status }}" @selected(old('status', 'active') === $status)>{{ ucfirst($status) }}</option>@endforeach</select></div>
-                    <div class="form-row"><label for="staff_password">Password</label><input id="staff_password" name="password" type="password" placeholder="Enter Password" required></div>
-                    <div class="form-row"><label for="staff_password_confirmation">Confirm Password</label><input id="staff_password_confirmation" name="password_confirmation" type="password" placeholder="Confirm Password" required></div>
+                    <div class="form-row"><label for="staff_password">Password</label><x-password-input id="staff_password" name="password" placeholder="Enter Password" :required="true" /></div>
+                    <div class="form-row"><label for="staff_password_confirmation">Confirm Password</label><x-password-input id="staff_password_confirmation" name="password_confirmation" placeholder="Confirm Password" :required="true" /></div>
                 </div>
             </div>
             <div class="modal-actions">
@@ -121,6 +122,19 @@
         </form>
     </x-admin.modal>
 
+    <script>
+        // Add Staff: the License Number row shows (and is submitted) only when the Position is Driver. Listened for on the
+        // document because closing the modal swaps in a fresh copy of the form (reset-on-close).
+        document.addEventListener('change', (event) => {
+            if (event.target.id !== 'staff_role') return;
+            const row = event.target.form?.querySelector('[data-staff-driver-only]');
+            if (!row) return;
+            const isDriver = event.target.value === 'driver';
+            row.hidden = !isDriver;
+            row.querySelector('input').disabled = !isDriver;
+        });
+    </script>
+
     <x-admin.modal id="driver-add" reset-on-close title="Add Driver" wide>
         <form method="POST" action="{{ route('admin.user-management.drivers.store') }}">
             @csrf
@@ -129,11 +143,11 @@
                 <div class="form-grid">
                     <div class="form-row"><label for="driver_name">Driver Name</label><input id="driver_name" name="name" type="text" placeholder="Enter Driver Name" value="{{ old('name') }}" required></div>
                     <div class="form-row"><label for="license_number">License Number</label><input id="license_number" name="license_number" type="text" placeholder="Enter License Number" value="{{ old('license_number') }}"></div>
-                    <div class="form-row"><label for="driver_email">Email</label><input id="driver_email" name="email" type="email" placeholder="Enter Email" value="{{ old('email') }}" required></div>
+                    <div class="form-row"><label for="driver_email">Email</label><input id="driver_email" name="email" type="email" autocomplete="off" placeholder="Enter Email" value="{{ old('email') }}" required></div>
                     <div class="form-row"><label for="driver_phone">Contact Number</label><input id="driver_phone" name="phone" type="tel" placeholder="Enter Contact Number" value="{{ old('phone') }}"></div>
                     <div class="form-row"><label for="driver_status">Status</label><select id="driver_status" name="status" required data-default="active">@foreach ($statuses as $status)<option value="{{ $status }}" @selected(old('status', 'active') === $status)>{{ ucfirst($status) }}</option>@endforeach</select></div>
-                    <div class="form-row"><label for="driver_password">Password</label><input id="driver_password" name="password" type="password" placeholder="Enter Password" required></div>
-                    <div class="form-row"><label for="driver_password_confirmation">Confirm Password</label><input id="driver_password_confirmation" name="password_confirmation" type="password" placeholder="Confirm Password" required></div>
+                    <div class="form-row"><label for="driver_password">Password</label><x-password-input id="driver_password" name="password" placeholder="Enter Password" :required="true" /></div>
+                    <div class="form-row"><label for="driver_password_confirmation">Confirm Password</label><x-password-input id="driver_password_confirmation" name="password_confirmation" placeholder="Confirm Password" :required="true" /></div>
                 </div>
             </div>
             <div class="modal-actions">
@@ -158,8 +172,8 @@
                     <div class="form-row"><label for="staff_phone_{{ $row->id }}">Contact Number</label><input form="staff-update-{{ $row->id }}" id="staff_phone_{{ $row->id }}" name="phone" type="tel" value="{{ old('phone', $row->phone) }}"></div>
                     <div class="form-row"><label for="staff_status_{{ $row->id }}">Status</label><select form="staff-update-{{ $row->id }}" id="staff_status_{{ $row->id }}" name="status" required>@foreach ($statuses as $status)<option value="{{ $status }}" @selected(old('status', $row->status) === $status)>{{ ucfirst($status) }}</option>@endforeach</select></div>
                     <div class="form-row"><label>Approval Status</label><div class="form-status-value"><x-admin.status-badge :status="ucfirst($row->approval_status)" /></div></div>
-                    <div class="form-row"><label for="staff_password_{{ $row->id }}">Password</label><input form="staff-update-{{ $row->id }}" id="staff_password_{{ $row->id }}" name="password" type="password" placeholder="Leave blank to keep current password"></div>
-                    <div class="form-row"><label for="staff_password_confirmation_{{ $row->id }}">Confirm Password</label><input form="staff-update-{{ $row->id }}" id="staff_password_confirmation_{{ $row->id }}" name="password_confirmation" type="password" placeholder="Confirm New Password"></div>
+                    <div class="form-row"><label for="staff_password_{{ $row->id }}">Password</label><x-password-input id="staff_password_{{ $row->id }}" name="password" placeholder="Leave blank to keep current password" form="staff-update-{{ $row->id }}" /></div>
+                    <div class="form-row"><label for="staff_password_confirmation_{{ $row->id }}">Confirm Password</label><x-password-input id="staff_password_confirmation_{{ $row->id }}" name="password_confirmation" placeholder="Confirm New Password" form="staff-update-{{ $row->id }}" /></div>
                 </div>
             </div>
             <div class="modal-actions">
@@ -194,8 +208,8 @@
                     <div class="form-row"><label for="driver_phone_{{ $row->id }}">Contact Number</label><input form="driver-update-{{ $row->id }}" id="driver_phone_{{ $row->id }}" name="phone" type="tel" value="{{ old('phone', $row->phone) }}"></div>
                     <div class="form-row"><label for="driver_status_{{ $row->id }}">Status</label><select form="driver-update-{{ $row->id }}" id="driver_status_{{ $row->id }}" name="status" required>@foreach ($statuses as $status)<option value="{{ $status }}" @selected(old('status', $row->status) === $status)>{{ ucfirst($status) }}</option>@endforeach</select></div>
                     <div class="form-row"><label>Approval Status</label><div class="form-status-value"><x-admin.status-badge :status="ucfirst($row->approval_status)" /></div></div>
-                    <div class="form-row"><label for="driver_password_{{ $row->id }}">Password</label><input form="driver-update-{{ $row->id }}" id="driver_password_{{ $row->id }}" name="password" type="password" placeholder="Leave blank to keep current password"></div>
-                    <div class="form-row"><label for="driver_password_confirmation_{{ $row->id }}">Confirm Password</label><input form="driver-update-{{ $row->id }}" id="driver_password_confirmation_{{ $row->id }}" name="password_confirmation" type="password" placeholder="Confirm New Password"></div>
+                    <div class="form-row"><label for="driver_password_{{ $row->id }}">Password</label><x-password-input id="driver_password_{{ $row->id }}" name="password" placeholder="Leave blank to keep current password" form="driver-update-{{ $row->id }}" /></div>
+                    <div class="form-row"><label for="driver_password_confirmation_{{ $row->id }}">Confirm Password</label><x-password-input id="driver_password_confirmation_{{ $row->id }}" name="password_confirmation" placeholder="Confirm New Password" form="driver-update-{{ $row->id }}" /></div>
                 </div>
             </div>
             <div class="modal-actions">

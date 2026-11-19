@@ -44,7 +44,7 @@ class StockInRevisionsTest extends AuditTestCase
         // 3. A sale deducts when it is saved (Standard, not delivered yet)...
         $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 10000, 'unit_price' => 65], ['sales_order_number' => 'SO-STD'])->assertSessionHasNoErrors();
         $row = $this->stockInRow($a['inventory'], $code);
-        $this->assertSame(['10,000.00', '50,000.00', 'Partially Used'], [$row['stock_out'], $row['remaining'], $row['status']]);
+        $this->assertSame(['10,000.00', '50,000.00', 'Available'], [$row['stock_out'], $row['remaining'], $row['status']]);
         $this->assertSame('Not delivered yet', $row['deductions'][0]['stock_out']);
         $this->assertSame('Standard', $row['deductions'][0]['delivery_type']);
 
@@ -89,7 +89,7 @@ class StockInRevisionsTest extends AuditTestCase
         $this->actingAs($a['sales'])->from(route('sales-officer.sales'))
             ->patch(route('sales-officer.sales.cancel', $depotSale), ['cancel_reason' => 'duplicate_entry'])->assertSessionHasNoErrors();
         $row = $this->stockInRow($a['inventory'], $code);
-        $this->assertSame(['10,000.00', '30,000.00', 'Partially Used'], [$row['stock_out'], $row['remaining'], $row['status']]);
+        $this->assertSame(['10,000.00', '30,000.00', 'Available'], [$row['stock_out'], $row['remaining'], $row['status']]);
         $this->assertCount(1, $row['deductions']);
     }
 
@@ -107,7 +107,7 @@ class StockInRevisionsTest extends AuditTestCase
 
         $rows = collect($this->viewData($a['inventory'], 'inventory-officer.inventory.stock-in', 'stockIn')->items())->keyBy('fuel');
         $this->assertSame(['Cancelled', '0.00'], [$rows['Diesel']['status'], $rows['Diesel']['remaining']]);
-        $this->assertSame(['Depleted', '3,000.00', '0.00'], [$rows['Unleaded']['status'], $rows['Unleaded']['stock_out'], $rows['Unleaded']['remaining']]);
+        $this->assertSame(['Sold Out', '3,000.00', '0.00'], [$rows['Unleaded']['status'], $rows['Unleaded']['stock_out'], $rows['Unleaded']['remaining']]);
 
         // A cancelled purchase leaves the sales dropdown and the totals.
         $this->actingAs($a['sales'])->get(route('sales-officer.sales'))->assertOk()->assertDontSee('– DIESEL –');
@@ -137,8 +137,11 @@ class StockInRevisionsTest extends AuditTestCase
         $this->assertSame(['7,000 L', '0 L', '0 L'], [$cards['Total Inventory'], $cards['Stock-In Today'], $cards['Stock-Out Today']]);
         $cards = $this->cards($a['inventory'], 'inventory-officer.inventory.stock-in', ['date' => '2026-10-10']);
         $this->assertSame(['7,000 L', '7,000 L'], [$cards['Total Inventory'], $cards['Stock-In on 10/10/2026']]);
-        $cards = $this->cards($a['inventory'], 'inventory-officer.inventory.stock-in', ['status' => 'partially_used']);
-        $this->assertSame(['16,000 L', '4,000 L'], [$cards['Total Inventory'], $cards['Stock-Out Today']]);
+        // Available = every stock-in with liters left (the partly sold Premium and the untouched Diesel).
+        $cards = $this->cards($a['inventory'], 'inventory-officer.inventory.stock-in', ['status' => 'available']);
+        $this->assertSame(['23,000 L', '4,000 L'], [$cards['Total Inventory'], $cards['Stock-Out Today']]);
+        $cards = $this->cards($a['inventory'], 'inventory-officer.inventory.stock-in', ['status' => 'sold_out']);
+        $this->assertSame('0 L', $cards['Total Inventory']);
 
         $html = $this->actingAs($a['inventory'])->get(route('inventory-officer.inventory.stock-in', ['fuel_type_id' => $this->fuel('DSL')]))->assertOk()->getContent();
         $this->assertMatchesRegularExpression('/<section data-tab-panel="stock-in"\s*>/', $html);

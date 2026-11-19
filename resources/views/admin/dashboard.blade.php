@@ -66,7 +66,6 @@
                 <h2 class="dash-section-title" id="dash-inventory-title">Current Inventory</h2>
                 {{-- Part 23 #11: Export the charts (as PNG images), KPI cards and AI insight as one PDF (see dashboard.js). --}}
                 <div class="dash-actions">
-                    <a class="btn btn-secondary" href="{{ route('admin.imports') }}">Data Import</a>
                     <form method="POST" action="{{ route('admin.dashboard.export') }}" data-dashboard-export data-confirm="none">
                         @csrf
                         @foreach ($filterQuery as $name => $value)
@@ -175,6 +174,9 @@
                     <div class="dash-notes-stack">
                         <p class="dash-note">Inventory Variance Rate: <strong class="dash-red">{{ $margin['varianceRateLabel'] }}</strong></p>
                         <p class="dash-note">Missing: <strong>{{ $margin['missingLabel'] }}</strong></p>
+                        @if ($margin['historicalVarianceLabel'] ?? null)
+                            <p class="dash-note" data-historical-variance>Historical reconciliation variance: <strong>{{ $margin['historicalVarianceLabel'] }}</strong> <span style="opacity:.75">(documented rounding in imported source stock-outs; not counted as Missing)</span></p>
+                        @endif
                     </div>
                 </div>
             </section>

@@ -82,6 +82,8 @@ class StockOutFinancialService
                 'stock_outs.quantity_liters',
                 'stock_outs.status',
                 'stock_outs.source_type',
+                // Historical garage releases with no recorded tank; databases without the column have none.
+                \Illuminate\Support\Facades\Schema::hasColumn('stock_outs', 'historical_tank_unknown') ? 'stock_outs.historical_tank_unknown' : DB::raw('0 as historical_tank_unknown'),
                 'source_garage.name as garage_name',
                 'garage_stocks.lot_code as garage_lot_code',
                 DB::raw('COALESCE(garage_lift.schedule_code, garage_haul.haul_code) as garage_lift_code'),

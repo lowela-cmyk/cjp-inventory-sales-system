@@ -229,7 +229,7 @@ class Part23SystemAnalysisTest extends AuditTestCase
         $html = $page->getContent();
         $this->assertStringContainsString('Number of purchases per month of 2026', $html);
         $this->assertStringContainsString('data-dashboard-export', $html);
-        $this->assertStringContainsString(route('admin.imports'), $html);
+        $this->assertStringNotContainsString('/admin/imports', $html); // Data Import was removed
         preg_match("/data-chart='([^']+)' role=\"img\" aria-label=\"Number of purchases per month of 2026\"/", $html, $m);
         $chart = json_decode(html_entity_decode($m[1]), true);
         $this->assertSame('count', $chart['format']);

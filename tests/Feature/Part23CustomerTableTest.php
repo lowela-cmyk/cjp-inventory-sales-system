@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Services\SpreadsheetImportService;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -108,16 +107,6 @@ class Part23CustomerTableTest extends AuditTestCase
         }
     }
 
-    public function test_customer_import_accepts_company_only_without_inventing_a_contact_name(): void
-    {
-        Storage::fake('local');
-        $a = $this->actors();
-        $service = app(SpreadsheetImportService::class);
-        $batch = $service->store(UploadedFile::fake()->createWithContent('customers.csv', "Customer ID,Name,Company Name,Status\nBLANK-IMPORT,,Import Company,active\n"), $a['admin']->id);
-        $this->assertSame(1, $batch->validation_summary['total_valid']);
-        $service->import($batch, $a['admin']->id);
-        $this->assertDatabaseHas('customers', ['customer_code' => 'BLANK-IMPORT', 'name' => '', 'company_name' => 'Import Company']);
-    }
 
     private function assertTableAlignment(string $html): void
     {

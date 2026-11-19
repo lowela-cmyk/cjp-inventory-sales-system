@@ -2845,6 +2845,8 @@ class SalesOfficerCustomerController extends Controller
             'bank_transfer' => 'Banking',
             'advance_payment' => 'Advance Payment',
             'cheque' => 'Cheque',
+            // Imported historical payment whose source states the amount and date but not the method.
+            'not_recorded' => 'Not recorded (historical)',
             default => $value ? $this->label($value) : 'N/A',
         };
     }

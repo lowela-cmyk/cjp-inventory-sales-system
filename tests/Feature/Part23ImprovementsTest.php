@@ -6,7 +6,6 @@ use App\Models\ImportBatch;
 use App\Models\User;
 use App\Services\DashboardService;
 use App\Services\ImportedTransactionAuditService;
-use App\Services\SpreadsheetImportService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -85,41 +84,7 @@ class Part23ImprovementsTest extends TestCase
         $this->actingAs($admin)->get(route('admin.dashboard'))->assertOk()->assertSee('Purchase Reports')->assertSee('data-dashboard-export', false)->assertDontSee('data-revenue-period')->assertDontSee('page-heading-actions');
     }
 
-    public function test_invalid_import_rows_are_not_written_and_valid_rows_have_exact_audit_provenance(): void
-    {
-        Storage::fake('local');
-        $admin = $this->actor();
-        DB::table('depots')->insert(['depot_code' => 'D23', 'name' => 'Depot', 'status' => 'active']);
-        $service = app(SpreadsheetImportService::class);
-        $file = UploadedFile::fake()->createWithContent('purchases.csv', "Purchase ID,Date,Fuel,Depot Code,Purchased (L),Cost / Liter,Status\nP23-OK,2026-09-01,Diesel,D23,100,50,ordered\nP23-BAD,2026-09-01,Diesel,D23,100,garbage,ordered\nP23-DATE,2026-02-30,Diesel,D23,100,50,ordered\nP23-STATUS,2026-09-01,Diesel,D23,100,50,completed\n");
-        $batch = $service->store($file, $admin->id);
-        $this->assertSame(3, $batch->validation_summary['total_invalid']);
-        $result = $service->import($batch, $admin->id);
-        $this->assertSame(1, $result['created']['purchases']);
-        $this->assertSame(3, $result['skipped']['purchases']);
-        $this->assertDatabaseCount('purchases', 1);
-        $this->assertSame('purchases', $result['records'][0]['table']);
-        $again = $service->store($file, $admin->id);
-        $this->assertSame(1, $again->validation_summary['total_duplicates']);
-        $service->import($again, $admin->id);
-        $this->assertDatabaseCount('purchases', 1);
-    }
 
-    public function test_import_rejects_unproven_paid_and_delivered_sales_and_is_admin_only(): void
-    {
-        Storage::fake('local');
-        $admin = $this->actor();
-        $this->customer(1);
-        $service = app(SpreadsheetImportService::class);
-        $file = UploadedFile::fake()->createWithContent('sales.csv', "Order-ID,Transaction Date,Company Name,Fuel,QTY,Price / Liter,Total Paid,Delivery Status\nS23-A,2026-09-01,Company 1,Diesel,10,50,100,pending\nS23-B,2026-09-01,Company 1,Diesel,10,50,0,delivered\n");
-        $batch = $service->store($file, $admin->id);
-        $this->assertSame(2, $batch->validation_summary['total_invalid']);
-        $result = $service->import($batch, $admin->id);
-        $this->assertSame(0, $result['created']['sales']);
-        $this->assertDatabaseCount('sales', 0);
-        $this->assertDatabaseCount('payments', 0);
-        foreach (['sales_officer', 'inventory_officer', 'dispatch_officer', 'driver'] as $role) $this->actingAs($this->actor($role))->get(route('admin.imports'))->assertForbidden();
-    }
 
     public function test_page_sizes_across_modules_and_authorized_roles(): void
     {
@@ -140,91 +105,9 @@ class Part23ImprovementsTest extends TestCase
         }
     }
 
-    public function test_generated_transaction_ids_do_not_duplicate_on_repeat_upload(): void
-    {
-        Storage::fake('local');
-        $admin = $this->actor();
-        DB::table('depots')->insert(['depot_code' => 'D23', 'name' => 'Depot', 'status' => 'active']);
-        $service = app(SpreadsheetImportService::class);
-        $csv = "Date,Fuel,Depot Code,Purchased (L),Cost / Liter\n2026-09-01,Diesel,D23,100,50\n2026-09-02,Diesel,D23,200,50\n";
-        $batch = $service->store(UploadedFile::fake()->createWithContent('purchase.csv', $csv), $admin->id);
-        $result = $service->import($batch, $admin->id);
-        $this->assertSame(2, $result['created']['purchases']);
-        $batch = $service->store(UploadedFile::fake()->createWithContent('purchase.csv', $csv), $admin->id);
-        $this->assertSame(2, $batch->validation_summary['total_duplicates']);
-        $service->import($batch, $admin->id);
-        $this->assertDatabaseCount('purchases', 2);
-    }
 
-    public function test_xlsx_import_and_explicit_partial_payment_keep_financial_balances(): void
-    {
-        Storage::fake('local');
-        $admin = $this->actor();
-        $this->customer(1);
-        $book = new \PhpOffice\PhpSpreadsheet\Spreadsheet;
-        $book->getActiveSheet()->setTitle('Sales Receivables');
-        $book->getActiveSheet()->fromArray([
-            ['Order-ID', 'Transaction Date', 'Company Name', 'Fuel', 'QTY', 'Price / Liter', 'Total Paid', 'Payment Date', 'Payment Method', 'Payment Reference', 'Payment Status'],
-            ['S23-XLSX', '2026-09-01', 'Company 1', 'Diesel', 10, 50, 100, '2026-09-01', 'bank_transfer', 'SOURCE-PARTIAL-001', 'partial'],
-        ]);
-        $path = tempnam(sys_get_temp_dir(), 'part23-xlsx');
-        try {
-            (new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($book))->save($path);
-            $file = UploadedFile::fake()->createWithContent('sales.xlsx', file_get_contents($path));
-            $service = app(SpreadsheetImportService::class);
-            $batch = $service->store($file, $admin->id);
-            $this->assertSame(1, $batch->validation_summary['total_valid']);
-            $service->import($batch, $admin->id);
-            $sale = DB::table('sales')->where('sale_code', 'S23-XLSX')->first();
-            $this->assertSame('partially_paid', $sale->status);
-            $this->assertSame('pending', $sale->delivery_status);
-            $this->assertDatabaseHas('payments', ['sale_id' => $sale->id, 'amount' => 100, 'reference_number' => 'SOURCE-PARTIAL-001']);
-            $this->assertDatabaseHas('receivables', ['sale_id' => $sale->id, 'status' => 'partial']);
-            $this->assertDatabaseCount('stock_outs', 0);
-        } finally { unlink($path); $book->disconnectWorksheets(); }
-    }
 
-    public function test_import_transaction_rolls_back_records_and_fingerprints_on_write_failure(): void
-    {
-        Storage::fake('local');
-        $admin = $this->actor();
-        DB::table('depots')->insert(['depot_code' => 'D23', 'name' => 'Depot', 'status' => 'active']);
-        $service = app(SpreadsheetImportService::class);
-        $batch = $service->store(UploadedFile::fake()->createWithContent('purchase.csv', "Purchase ID,Date,Fuel,Depot Code,Purchased (L),Cost / Liter\nP23-ROLLBACK,2026-09-01,Diesel,D23,100,50\n"), $admin->id);
-        $failOnce = true;
-        DB::listen(function ($query) use (&$failOnce): void {
-            if ($failOnce && str_contains(strtolower($query->sql), 'insert into') && str_contains($query->sql, 'purchase_items')) {
-                $failOnce = false;
-                throw new \RuntimeException('Simulated storage failure');
-            }
-        });
-        try { $service->import($batch, $admin->id); $this->fail('Expected a rolled back import'); }
-        catch (\RuntimeException $e) { $this->assertSame('Simulated storage failure', $e->getMessage()); }
-        $this->assertDatabaseCount('purchases', 0);
-        $this->assertDatabaseCount('purchase_items', 0);
-        $this->assertDatabaseCount('import_row_fingerprints', 0);
-        $this->assertSame('failed', $batch->fresh()->status);
-    }
 
-    public function test_lifting_import_respects_purchase_availability_and_truck_capacity(): void
-    {
-        Storage::fake('local');
-        $admin = $this->actor();
-        DB::table('depots')->insert(['depot_code' => 'D23', 'name' => 'Depot', 'status' => 'active']);
-        DB::table('trucks')->insert(['truck_code' => 'T23', 'name' => 'Truck', 'capacity_liters' => 600, 'status' => 'available']);
-        $service = app(SpreadsheetImportService::class);
-        $batch = $service->store(UploadedFile::fake()->createWithContent('purchase.csv', "Purchase ID,Date,Fuel,Depot Code,Purchased (L),Cost / Liter\nP23-LIFT,2026-09-01,Diesel,D23,1000,50\n"), $admin->id);
-        $service->import($batch, $admin->id);
-        $header = "Lift-ID,Purchase-ID,Lift Date,Pickup Depot,Driver,Truck-ID,Lifted,Status\n";
-        $batch = $service->store(UploadedFile::fake()->createWithContent('hauling.csv', $header."L23-OK,P23-LIFT,2026-09-01,Depot,Historical Driver,T23,500,scheduled\nL23-OVER,P23-LIFT,2026-09-02,Depot,Historical Driver,T23,700,scheduled\n"), $admin->id);
-        $this->assertSame(1, $batch->validation_summary['total_valid']);
-        $this->assertSame(1, $batch->validation_summary['total_invalid']);
-        $result = $service->import($batch, $admin->id);
-        $this->assertSame(1, $result['created']['hauling']);
-        $this->assertDatabaseHas('hauls', ['haul_code' => 'L23-OK', 'quantity_liters' => 500, 'status' => 'scheduled']);
-        $this->assertDatabaseMissing('hauls', ['haul_code' => 'L23-OVER']);
-        $this->assertDatabaseCount('stock_outs', 0);
-    }
 
     public function test_read_only_audit_never_promotes_partial_payments_or_guesses_legacy_provenance(): void
     {

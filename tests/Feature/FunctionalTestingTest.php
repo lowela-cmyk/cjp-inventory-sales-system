@@ -117,7 +117,7 @@ class FunctionalTestingTest extends TestCase
             ->post(route('admin.user-management.staff.store'), [
                 'name' => '',
                 'email' => 'functional-inventory@example.com',
-                'role' => 'driver',
+                'role' => 'superuser', // not a position (Driver is allowed on Add Staff)
                 'status' => 'blocked',
                 'password' => 'short',
                 'password_confirmation' => 'different',

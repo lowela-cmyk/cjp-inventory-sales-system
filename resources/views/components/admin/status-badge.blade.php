@@ -9,7 +9,7 @@
         'assigned', 'in_progress', 'in_transit', 'in_use', 'lifted', 'hauled', 'out_for_delivery' => 'progress',
         'partial', 'maintenance', 'warning', 'loaded', 'partially_lifted', 'partially_hauled', 'partially_received', 'partially_paid', 'partially_used', 'low_stock' => 'partial',
         'received', 'garage_received', 'garage_received_with_direct', 'uploaded', 'completed', 'complete', 'paid', 'active', 'approved', 'clear', 'settled', 'stock_posted', 'read', 'delivered', 'released', 'recorded' => 'success',
-        'cancelled', 'rejected', 'failed', 'overdue', 'critical', 'depleted', 'unpaid' => 'danger',
+        'cancelled', 'rejected', 'failed', 'overdue', 'critical', 'depleted', 'sold_out', 'unpaid' => 'danger',
         'available', 'direct_to_client' => 'available',
         'inactive', 'dismissed', 'resolved', 'voided' => 'inactive',
         default => 'neutral',

@@ -430,6 +430,8 @@ class InventoryOfficerPurchaseController extends Controller
                 'Current QTY' => $this->formatLiters($row->remaining),
                 'Sold QTY' => $this->formatLiters($row->stock_out),
                 'Sold and Delivered' => $this->formatLiters($row->delivered),
+            ] + (($row->historical_blended_f1 ?? 0) > 0 ? ['Blended F1 in these releases (historical, not this purchase)' => $this->formatLiters($row->historical_blended_f1)] : [])
+              + (($row->historical_unverified ?? 0) > 0 ? ['Consumed in blending (historical, sale not recorded in the source)' => $this->formatLiters($row->historical_unverified)] : []) + [
                 'Sold, Awaiting Delivery' => $this->formatLiters($row->reserved),
                 'Payment Status' => $this->label($row->payment_status),
                 'Recorded By' => $row->created_by_name ?: 'N/A',
@@ -600,6 +602,11 @@ class InventoryOfficerPurchaseController extends Controller
         if ($row->source_type === 'depot') {
             // Part 2 revisions: deducted from a purchase at its depot.
             return 'Depot'.($row->depot_name ? ' — '.$row->depot_name : '');
+        }
+
+        // Historical import: the source names the purchase but not the tank; no tank is assumed.
+        if ($row->historical_tank_unknown ?? false) {
+            return 'Garage — tank not recorded (historical)';
         }
 
         // Part 18 add-on: "Garage — Premium Tank 1 (avg ₱55.20/L)": the tank and its average cost when released.

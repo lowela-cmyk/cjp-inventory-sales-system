@@ -19,6 +19,7 @@
         'cheque' => 'Cheque',
         'advance_payment' => 'Advance Payment',
         'bank_transfer' => 'Banking',
+        'not_recorded' => 'Not recorded (historical)',
     ];
     $sortOptions = $activeTab === 'customers'
         ? ['date' => 'Date Added', 'code' => 'Customer ID', 'name' => 'Name', 'company' => 'Company', 'location' => 'Location']

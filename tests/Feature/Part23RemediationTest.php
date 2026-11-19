@@ -4,7 +4,6 @@ namespace Tests\Feature;
 
 use App\Services\PurchaseStockService;
 use App\Services\SaleConfirmationService;
-use App\Services\SpreadsheetImportService;
 use App\Services\StockInService;
 use App\Services\StockOutReleaseService;
 use Illuminate\Support\Facades\DB;
@@ -47,12 +46,13 @@ class Part23RemediationTest extends AuditTestCase
         $second = $this->purchaseLine($a, 'DSL', 2000);
         $this->recordOrder($a, ['fuel_type_id' => $a['fuel'], 'purchase_item_id' => $first, 'quantity_liters' => 400, 'unit_price' => 60])->assertSessionHasNoErrors();
         $service = app(StockInService::class);
-        $partial = $service->query(['status' => 'partially_used'])->get();
-        $this->assertCount(1, $partial);
-        $this->assertSame($first, (int) $partial->first()->purchase_item_id);
-        $this->assertEquals(600, $partial->first()->remaining);
+        // Both still have liters left, so both are Available (statuses are Available / Sold Out).
+        $available = $service->query(['status' => 'available'])->get()->keyBy('purchase_item_id');
+        $this->assertEqualsCanonicalizing([$first, $second], $available->keys()->map(fn ($id) => (int) $id)->all());
+        $this->assertEquals(600, $available[$first]->remaining);
+        $this->assertEquals(2000, $available[$second]->remaining);
         $this->assertEquals(2600, $service->totals()['total_inventory']);
-        $this->assertSame([$second], $service->query(['status' => 'available'])->pluck('purchase_item_id')->map(fn ($id) => (int) $id)->all());
+        $this->assertSame([], $service->query(['status' => 'sold_out'])->pluck('purchase_item_id')->all());
     }
 
     public function test_customers_are_lazy_and_user_selected_sorting_is_real(): void
@@ -170,12 +170,4 @@ class Part23RemediationTest extends AuditTestCase
         $this->assertLessThanOrEqual($small + 10, $large, 'Visible orders should share source pools and metadata reads.');
     }
 
-    public function test_missing_import_dependency_gives_actionable_readiness_error_before_staging(): void
-    {
-        Schema::shouldReceive('hasTable')->with('import_batches')->andReturn(true);
-        Schema::shouldReceive('hasTable')->with('import_row_fingerprints')->andReturn(false);
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('required database update');
-        app(SpreadsheetImportService::class)->analyze('/does-not-need-to-exist.csv');
-    }
 }

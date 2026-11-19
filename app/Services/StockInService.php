@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Support\FilterDates;
+use App\Support\HistoricalReconciliation;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -16,12 +17,13 @@ use Illuminate\Support\Facades\DB;
  * - Stock Out (L): liters sales took from the purchase = delivered (released stock-outs) + promised to open orders
  *   not delivered yet. A sale deducts the moment it is saved; cancelling it gives the liters back.
  * - Remaining (L): purchased - stock out. This is the Total Inventory and the dashboard stock.
- * - Status: Available (nothing taken), Partially Used, Depleted (nothing left), Cancelled (purchase voided).
+ * - Status: Available (liters left) or Sold Out (nothing left); a voided purchase's stock-in reads Cancelled.
  * - Stock-Out Today: liters released that day, as listed on the Stock Out tab.
  */
 class StockInService
 {
-    public const STATUSES = ['available', 'partially_used', 'depleted', 'cancelled'];
+    /** Stock-In filter statuses: Available (liters left) and Sold Out (nothing left). */
+    public const STATUSES = ['available', 'sold_out'];
 
     private bool $repaired = false;
 
@@ -163,14 +165,26 @@ class StockInService
             ->groupBy('purchase_item_id')->selectRaw('purchase_item_id, SUM(liters) as liters');
         $reserved = $this->purchaseStock->reservationTotalsQuery();
         $used = '(COALESCE(released.liters, 0) + COALESCE(reserved.liters, 0))';
-        $remaining = "CASE WHEN stock_ins.status = 'voided' THEN 0 WHEN stock_ins.quantity_liters > $used THEN stock_ins.quantity_liters - $used ELSE 0 END";
+        // Historical imports: liters the source documents as consumed (e.g. F1 blended into gasoline sales) without
+        // naming the sale are not verified stock. They are excluded from Remaining and reported separately; no stock
+        // movement is invented. Lines without a register entry are unaffected.
+        // Historical imports also document blended F1 carried by gasoline releases (excess): it is not this purchase's own
+        // fuel, so it is taken out of Sold. Together these give the source's own Current QTY and Sold QTY.
+        $unverified = 'COALESCE(historical.unverified, 0)';
+        $excess = 'COALESCE(historical.excess, 0)';
+        $consumed = "($used - $excess + $unverified)";
+        $remaining = "CASE WHEN stock_ins.status = 'voided' THEN 0 WHEN stock_ins.quantity_liters > $consumed THEN stock_ins.quantity_liters - $consumed ELSE 0 END";
+        $historical = HistoricalReconciliation::stockInAdjustmentsByPurchaseItem();
         $query = $this->baseQuery($filters, $search)
             ->leftJoin('users', 'users.id', '=', 'stock_ins.created_by')
             ->leftJoinSub($released, 'released', 'released.purchase_item_id', '=', 'stock_ins.purchase_item_id')
             ->leftJoinSub($reserved, 'reserved', 'reserved.purchase_item_id', '=', 'stock_ins.purchase_item_id')
+            ->leftJoinSub($historical, 'historical', 'historical.purchase_item_id', '=', 'stock_ins.purchase_item_id')
             ->select('stock_ins.*', 'purchases.purchase_code', 'purchases.payment_status', 'purchases.created_at as recorded_at', 'fuel_types.name as fuel_name', 'fuel_types.code as fuel_code', 'depots.name as depot_name', 'users.name as created_by_name')
-            ->selectRaw("ROUND(COALESCE(released.liters, 0), 2) as delivered, ROUND(COALESCE(reserved.liters, 0), 2) as reserved, ROUND($used, 2) as stock_out, ROUND($remaining, 2) as remaining")
-            ->selectRaw("CASE WHEN stock_ins.status = 'voided' THEN 'cancelled' WHEN ROUND($remaining, 2) <= 0 THEN 'depleted' WHEN $used > 0 THEN 'partially_used' ELSE 'available' END as stock_status");
+            ->selectRaw("ROUND(COALESCE(released.liters, 0) - $excess + $unverified, 2) as delivered, ROUND(COALESCE(reserved.liters, 0), 2) as reserved, ROUND($consumed, 2) as stock_out, ROUND($remaining, 2) as remaining")
+            ->selectRaw("ROUND(CASE WHEN stock_ins.status = 'voided' THEN 0 ELSE $unverified END, 2) as historical_unverified, ROUND($excess, 2) as historical_blended_f1")
+            // Available while liters are left, Sold Out when nothing is left (a voided purchase's stock-in: Cancelled).
+            ->selectRaw("CASE WHEN stock_ins.status = 'voided' THEN 'cancelled' WHEN ROUND($remaining, 2) <= 0 THEN 'sold_out' ELSE 'available' END as stock_status");
 
         return DB::query()->fromSub($query, 'stock_rows')
             ->when($filters['status'] ?? null, fn (Builder $q, string $status) => $q->where('stock_status', $status));
@@ -204,7 +218,7 @@ class StockInService
 
     private function normalizeQuantities(object $row): object
     {
-        foreach (['delivered', 'reserved', 'stock_out', 'remaining'] as $field) $row->$field = (float) $row->$field;
+        foreach (['delivered', 'reserved', 'stock_out', 'remaining', 'historical_unverified', 'historical_blended_f1'] as $field) $row->$field = (float) ($row->$field ?? 0);
 
         return $row;
     }

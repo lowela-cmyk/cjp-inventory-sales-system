@@ -114,7 +114,8 @@ class Part18RevisionsTest extends AuditTestCase
         // Then they are editable like any Garage to Client order, and still required, until it is Delivered.
         $edit = $this->editSection($this->saleModal($a, $saleId));
         $this->assertMatchesRegularExpression('/id="sale_'.$saleId.'_delivery_truck_id" name="delivery_truck_id" required/', $edit);
-        $this->assertMatchesRegularExpression('/<option value="'.$a['truck'].'" selected>/', $edit);
+        // Part 24 #1: the truck option goes on with its capacity data attributes.
+        $this->assertMatchesRegularExpression('/<option value="'.$a['truck'].'" selected[ >][^>]*>[^<]*TRK-AUD/', $edit);
         $update = fn (array $extra) => $this->actingAs($a['sales'])->from(route('sales-officer.sales'))->patch(route('sales-officer.sales.update', $saleId), $extra + [
             'edit_sale_id' => $saleId, 'customer_id' => $a['customer'], 'sale_date' => '2026-10-15', 'payment_method' => 'cash_on_delivery', 'payment_terms' => 'installment',
             'items' => [['purchase_item_id' => 'tank:'.$tank, 'quantity_liters' => 1000, 'unit_price' => 70]],
@@ -160,11 +161,13 @@ class Part18RevisionsTest extends AuditTestCase
         $this->assertSame(0, DB::table('sales')->count());
         $this->recordOrder($a, $line, ['delivery_type' => 'garage_to_client'] + $this->garageDelivery($a))->assertSessionHasNoErrors();
 
-        // Record Sales: the section is shown for Garage to Client only, with required fields.
+        // Record Sales: Delivery Details (Driver, Delivery Date) are shown for Garage to Client only,
+        // while Truck Selection is visible in Order Details and becomes required for Garage to Client.
         $html = $this->actingAs($a['sales'])->get(route('sales-officer.sales'))->assertOk()->getContent();
         $record = substr($html, strpos($html, 'id="so-sales-add"'), strpos($html, 'id="so-sales-edit-') - strpos($html, 'id="so-sales-add"'));
         $this->assertMatchesRegularExpression('/<div data-delivery-details\s+hidden\s*>/', $record);
-        $this->assertMatchesRegularExpression('/id="sale_delivery_truck_id" name="delivery_truck_id" required\s+disabled/', $record);
+        $this->assertMatchesRegularExpression('/id="sale_delivery_truck_id" name="delivery_truck_id"/', $record);
+        $this->assertMatchesRegularExpression('/id="sale_delivery_driver" name="delivery_driver_user_id" required\s+disabled/', $record);
         $this->assertStringContainsString("const showDeliveryDetails = select.value === 'garage_to_client';", File::get(resource_path('js/app.js')));
     }
 

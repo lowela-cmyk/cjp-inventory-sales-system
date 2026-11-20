@@ -57,7 +57,7 @@ class SalesOfficerSalesManagementTest extends TestCase
         ]);
         $this->assertDatabaseHas('receivables', [
             'sale_id' => $sale->id,
-            'status' => 'pending',
+            'status' => 'unpaid',
         ]);
         $this->assertSame($beforeInventory, DB::table('inventory_movements')->count());
         $this->assertSame(0, DB::table('stock_outs')->where('sale_id', $sale->id)->count());
@@ -200,7 +200,7 @@ class SalesOfficerSalesManagementTest extends TestCase
         $this->assertSame(0, DB::table('payments')->where('sale_id', $sale->id)->count());
         $this->assertDatabaseHas('receivables', [
             'sale_id' => $sale->id,
-            'status' => 'pending',
+            'status' => 'unpaid',
         ]);
     }
 
@@ -377,7 +377,7 @@ class SalesOfficerSalesManagementTest extends TestCase
             'cancelled_by' => $records['salesOfficer']->id,
         ]);
         $this->assertDatabaseHas('payments', ['sale_id' => $saleId, 'payment_code' => 'PAY-LOCKED']);
-        $this->assertDatabaseHas('receivables', ['sale_id' => $saleId, 'status' => 'clear']);
+        $this->assertDatabaseHas('receivables', ['sale_id' => $saleId, 'status' => 'unpaid']);
         $this->assertDatabaseMissing('sale_items', ['sale_id' => $saleId, 'quantity_liters' => '9999.00']);
     }
 
@@ -509,7 +509,7 @@ class SalesOfficerSalesManagementTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
-        DB::table('receivables')->where('sale_id', $saleId)->update(['status' => 'clear']);
+        DB::table('receivables')->where('sale_id', $saleId)->update(['status' => 'paid']);
 
         $this->actingAs($records['salesOfficer'])
             ->patch(route('sales-officer.sales.update', $saleId), $this->salePayload($records, [
@@ -650,7 +650,7 @@ class SalesOfficerSalesManagementTest extends TestCase
 
         DB::table('receivables')->insert([
             'sale_id' => $saleId,
-            'status' => 'pending',
+            'status' => 'unpaid',
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -670,7 +670,7 @@ class SalesOfficerSalesManagementTest extends TestCase
             'location' => 'Nasugbu, Batangas',
             'email' => Str::random(8).'@example.com',
             'phone' => '09171234567',
-            'payment_status' => 'clear',
+            'payment_status' => 'paid',
             'status' => 'active',
             'created_at' => now(),
             'updated_at' => now(),

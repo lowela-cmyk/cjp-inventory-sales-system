@@ -36,7 +36,7 @@ class SaleCorrectionService
         if ($draftIds->isNotEmpty()) {
             foreach (['payments', 'payment_schedules', 'stock_outs', 'haul_allocations'] as $table) $dependent = $dependent->merge(DB::table($table)->whereIn('sale_id', $draftIds)->pluck('sale_id'));
             $dependent = $dependent->merge(DB::table('sale_items')->whereIn('sale_id', $draftIds)->where('fulfilled_quantity_liters', '>', 0)->pluck('sale_id'))
-                ->merge(DB::table('receivables')->whereIn('sale_id', $draftIds)->where(fn ($q) => $q->where('status', '!=', 'pending')->orWhereNotNull('last_follow_up_at')->orWhereNotNull('notes'))->pluck('sale_id'));
+                ->merge(DB::table('receivables')->whereIn('sale_id', $draftIds)->where(fn ($q) => $q->where('status', '!=', 'unpaid')->orWhereNotNull('last_follow_up_at')->orWhereNotNull('notes'))->pluck('sale_id'));
         }
         $set = array_fill_keys($dependent->all(), true);
         return $sales->mapWithKeys(fn ($s) => [$s->id => $s->status === 'cancelled' || $s->delivery_status === 'delivered' ? null : ($s->status === 'draft' && ! isset($set[$s->id]) ? 'delete' : 'cancel')])->all();
@@ -131,14 +131,14 @@ class SaleCorrectionService
                 DB::table('receivables')
                     ->where('id', $receivable->id)
                     ->update([
-                        'status' => 'clear',
+                        'status' => 'unpaid',
                         'notes' => $notes,
                         'updated_at' => now(),
                     ]);
             } else {
                 DB::table('receivables')->insert([
                     'sale_id' => $saleId,
-                    'status' => 'clear',
+                    'status' => 'unpaid',
                     'notes' => $auditNote,
                     'created_at' => now(),
                     'updated_at' => now(),
@@ -176,7 +176,7 @@ class SaleCorrectionService
         $receivableActivity = DB::table('receivables')
             ->where('sale_id', $saleId)
             ->where(function ($query): void {
-                $query->where('status', '!=', 'pending')
+                $query->where('status', '!=', 'unpaid')
                     ->orWhereNotNull('last_follow_up_at')
                     ->orWhereNotNull('notes');
             });

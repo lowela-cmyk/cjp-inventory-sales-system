@@ -115,7 +115,7 @@ class Part7RevisionsTest extends AuditTestCase
             'sale_id' => $saleId, 'fuel_type_id' => $a['fuel'], 'quantity_liters' => $liters, 'unit_price' => 60, 'line_total' => $liters * 60,
             'fulfilled_quantity_liters' => 0, 'created_at' => now(), 'updated_at' => now(),
         ]);
-        DB::table('receivables')->insert(['sale_id' => $saleId, 'status' => 'pending', 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('receivables')->insert(['sale_id' => $saleId, 'status' => 'unpaid', 'created_at' => now(), 'updated_at' => now()]);
 
         return [$saleId, $itemId];
     }

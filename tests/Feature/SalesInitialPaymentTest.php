@@ -17,9 +17,9 @@ class SalesInitialPaymentTest extends TestCase
         $records = $this->baseRecords();
 
         $cases = [
-            ['number' => 'SO-INITIAL-UNPAID', 'amount' => '0.00', 'sale_status' => 'confirmed', 'receivable_status' => 'pending'],
-            ['number' => 'SO-INITIAL-PARTIAL', 'amount' => '2500.00', 'sale_status' => 'partially_paid', 'receivable_status' => 'partial'],
-            ['number' => 'SO-INITIAL-FULL', 'amount' => '10250.00', 'sale_status' => 'paid', 'receivable_status' => 'clear'],
+            ['number' => 'SO-INITIAL-UNPAID', 'amount' => '0.00', 'sale_status' => 'confirmed', 'receivable_status' => 'unpaid'],
+            ['number' => 'SO-INITIAL-PARTIAL', 'amount' => '2500.00', 'sale_status' => 'partially_paid', 'receivable_status' => 'partially_paid'],
+            ['number' => 'SO-INITIAL-FULL', 'amount' => '10250.00', 'sale_status' => 'paid', 'receivable_status' => 'paid'],
         ];
 
         foreach ($cases as $case) {
@@ -139,7 +139,7 @@ class SalesInitialPaymentTest extends TestCase
             'customer_code' => 'CUS-INITIAL-PAY',
             'name' => 'Initial Payment Customer',
             'company_name' => 'Initial Payment Company',
-            'payment_status' => 'clear',
+            'payment_status' => 'paid',
             'status' => 'active',
             'created_at' => now(),
             'updated_at' => now(),

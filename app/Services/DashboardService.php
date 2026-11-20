@@ -133,21 +133,28 @@ class DashboardService
         $matchingIds = $this->matchingPurchaseLines($filters)->pluck('purchase_items.id')->map(fn (mixed $id): int => (int) $id)->all();
         $lines = $this->purchaseStock->lines($matchingIds);
         // Stock-In revisions: the stock chart and Total Inventory read the stock-in records (as the Stock-In tab).
-        $stockIns = $this->stockIns->records(['depot_id' => $filters['depot_id'], 'fuel_type_id' => $filters['fuel_type_id']])
+        $stockFilters = ['depot_id' => $filters['depot_id'], 'fuel_type_id' => $filters['fuel_type_id']];
+        $stockIns = $this->stockIns->records($stockFilters)
             ->where('status', 'active')
             ->whereIn('purchase_item_id', $matchingIds);
-        $stockByFuel = $stockIns->groupBy('fuel_type_id')->map(fn (Collection $group): float => round((float) $group->sum('remaining'), 2))->all();
+        // Part 24 #6: one reconciliation over the same stock-in rows as the Stock-In tab: purchased = delivered (sold)
+        // + on hand, on hand = reserved (promised, not delivered) + available. Every card and chart below reads it.
+        $reconciliation = $this->stockIns->reconciliation($stockFilters, $matchingIds);
         $stockFuels = $this->fuels()->only(array_keys(self::STOCK_FUELS))
             ->when($filters['fuel_type_id'], fn (Collection $fuels, int $id): Collection => $fuels->where('id', $id))
             ->sortBy(fn (object $fuel): int => array_search($fuel->code, array_keys(self::STOCK_FUELS), true));
-        $stockValues = $stockFuels->map(fn (object $fuel): float => round((float) ($stockByFuel[$fuel->id] ?? 0), 2));
+        $fuelFigure = fn (object $fuel, string $field): float => round((float) ($reconciliation['by_fuel'][$fuel->id][$field] ?? 0), 2);
+        $stockValues = $stockFuels->map(fn (object $fuel): float => $fuelFigure($fuel, 'remaining'));
         $stock = round((float) $stockValues->sum(), 2);
         // Historical liters documented as consumed without a named sale: shown separately, never as stock.
         $historicalUnverified = round((float) $stockIns->sum('historical_unverified'), 2);
 
-        $pending = round((float) $lines->sum('reserved'), 2);
+        $pending = round((float) $stockFuels->sum(fn (object $fuel): float => $fuelFigure($fuel, 'reserved')), 2);
+        $available = round((float) $stockFuels->sum(fn (object $fuel): float => $fuelFigure($fuel, 'available')), 2);
+        $delivered = round((float) $stockFuels->sum(fn (object $fuel): float => $fuelFigure($fuel, 'delivered')), 2);
+        $overDelivered = round((float) $stockFuels->sum(fn (object $fuel): float => $fuelFigure($fuel, 'over_delivered')), 2);
         // Share of the fuel on hand (not delivered yet) that open orders already took.
-        $onHand = round((float) $lines->sum('on_hand'), 2);
+        $onHand = $stock;
         $stockOutRate = $onHand > 0 ? round($pending / $onHand * 100, 2) : ($pending > 0 ? null : 0.0);
         $inDepot = round((float) $lines->sum('not_lifted'), 2);
 
@@ -168,6 +175,10 @@ class DashboardService
                 'remaining_liters' => $inDepot,
                 'lifts' => $this->liftCount($filters),
                 'pending_order_liters' => $pending,
+                'reserved_liters' => $pending,
+                'available_liters' => $available,
+                'delivered_liters' => $delivered,
+                'over_delivered_liters' => $overDelivered,
                 'stock_out_rate' => $stockOutRate,
                 'purchased_liters' => $purchased,
                 'completed_liters' => $completed,
@@ -183,6 +194,22 @@ class DashboardService
                 ['Depot', $depotName ?? 'ALL'],
                 ['Remaining Balance in Depots', $this->kl($inDepot)],
                 ['Total Lifts', number_format($this->liftCount($filters))],
+                ['Reserved (Pending Delivery)', $this->kl($pending)],
+                ['Available to Sell', $this->kl($available)],
+            ],
+            // Part 24 #6: Purchased = Delivered + Reserved + Available per fuel (historical over-deliveries apart).
+            'reconciliationChart' => $this->chart('bar', 'liters', $stockFuels->pluck('name')->values()->all(), [
+                ['label' => 'Delivered (Sold)', 'data' => $stockFuels->map(fn (object $fuel): float => $fuelFigure($fuel, 'delivered'))->values()->all(), 'backgroundColor' => self::GREEN, 'stack' => 'stock'],
+                ['label' => 'Reserved (Pending Delivery)', 'data' => $stockFuels->map(fn (object $fuel): float => $fuelFigure($fuel, 'reserved'))->values()->all(), 'backgroundColor' => self::ORANGE, 'stack' => 'stock'],
+                ['label' => 'Available', 'data' => $stockFuels->map(fn (object $fuel): float => $fuelFigure($fuel, 'available'))->values()->all(), 'backgroundColor' => self::NAVY, 'stack' => 'stock'],
+            ], extra: ['stacked' => true, 'legend' => true]),
+            'reconciliation' => [
+                'purchased' => round((float) $stockFuels->sum(fn (object $fuel): float => $fuelFigure($fuel, 'purchased')), 2),
+                'delivered' => $delivered,
+                'reserved' => $pending,
+                'available' => $available,
+                'on_hand' => $stock,
+                'over_delivered' => $overDelivered,
             ],
             // Part 13: garage stock per tank (Tank 1 and Tank 2 of each fuel); it is part of Total Inventory in Stock and
             // not of the Remaining Balance in Depots.

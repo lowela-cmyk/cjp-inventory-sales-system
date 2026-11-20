@@ -48,7 +48,7 @@ class Part8RevisionsTest extends AuditTestCase
         // An existing sale with both retired options, and a payment made with Advance Payment.
         $saleId = DB::table('sales')->insertGetId(['sale_code' => 'SLS-LEGACY', 'customer_id' => $a['customer'], 'sale_date' => '2026-10-01', 'payment_method' => 'advance_payment', 'payment_terms' => 'cod', 'status' => 'confirmed', 'delivery_status' => 'pending', 'created_by' => $a['sales']->id, 'created_at' => now(), 'updated_at' => now()]);
         DB::table('sale_items')->insert(['sale_id' => $saleId, 'fuel_type_id' => $a['fuel'], 'quantity_liters' => 100, 'unit_price' => 65, 'line_total' => 6500, 'fulfilled_quantity_liters' => 0, 'created_at' => now(), 'updated_at' => now()]);
-        DB::table('receivables')->insert(['sale_id' => $saleId, 'status' => 'pending', 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('receivables')->insert(['sale_id' => $saleId, 'status' => 'unpaid', 'created_at' => now(), 'updated_at' => now()]);
         DB::table('payments')->insert(['payment_code' => 'PAY-LEGACY', 'sale_id' => $saleId, 'payment_date' => '2026-10-02', 'amount' => 1000, 'method' => 'advance_payment', 'received_by' => $a['sales']->id, 'created_at' => now(), 'updated_at' => now()]);
 
         $html = $this->actingAs($a['sales'])->get(route('sales-officer.sales'))->assertOk()->getContent();
@@ -141,7 +141,7 @@ class Part8RevisionsTest extends AuditTestCase
     {
         $saleId = DB::table('sales')->insertGetId(['sale_code' => 'SLS-PRE-LOT-'.substr($this->uuid(), 0, 6), 'customer_id' => $a['customer'], 'sale_date' => '2026-10-01', 'payment_method' => 'cash_on_delivery', 'payment_terms' => 'installment', 'status' => 'confirmed', 'delivery_status' => 'pending', 'created_by' => $a['sales']->id, 'created_at' => now(), 'updated_at' => now()]);
         DB::table('sale_items')->insert(['sale_id' => $saleId, 'fuel_type_id' => $a['fuel'], 'quantity_liters' => $liters, 'unit_price' => 65, 'line_total' => $liters * 65, 'fulfilled_quantity_liters' => 0, 'created_at' => now(), 'updated_at' => now()]);
-        DB::table('receivables')->insert(['sale_id' => $saleId, 'status' => 'pending', 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('receivables')->insert(['sale_id' => $saleId, 'status' => 'unpaid', 'created_at' => now(), 'updated_at' => now()]);
 
         return (int) $saleId;
     }

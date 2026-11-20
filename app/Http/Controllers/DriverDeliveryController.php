@@ -103,7 +103,22 @@ class DriverDeliveryController extends Controller
 
         $file = $request->file('withdrawal_receipt');
         $extension = $file->guessExtension() ?: $file->extension();
+        // Part 24 #4: the local disk does not throw (filesystems.php 'throw' => false), so a failed write (missing or
+        // read-only storage/app/private on the host) used to return false. That false was saved as the receipt path,
+        // read back as "no receipt", and the upload still reported success. The file must exist before the lift is
+        // linked to it; otherwise nothing is saved and the user is told.
         $path = $file->storeAs('withdrawal-receipts', (string) Str::uuid().'.'.$extension, 'local');
+        if (! is_string($path) || $path === '' || ! Storage::disk('local')->exists($path)) {
+            if (is_string($path) && $path !== '') {
+                Storage::disk('local')->delete($path);
+            }
+            \Illuminate\Support\Facades\Log::error('Withdrawal receipt could not be written to storage.', ['haul_id' => $row->id, 'disk_root' => config('filesystems.disks.local.root')]);
+            $message = 'The receipt could not be saved on the server, so it was not linked to '.$row->haul_code.'. Try again; if it keeps failing, ask the administrator to check that the storage folder is writable.';
+
+            return $request->expectsJson()
+                ? response()->json(['message' => $message, 'errors' => ['withdrawal_receipt' => [$message]]], 500)
+                : back()->withErrors(['withdrawal_receipt' => $message])->withInput();
+        }
         $uploadedAt = now();
 
         try {

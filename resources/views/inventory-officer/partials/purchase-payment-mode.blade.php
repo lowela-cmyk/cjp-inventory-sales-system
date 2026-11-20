@@ -19,6 +19,9 @@
         @foreach ($banks as $bankOption)
             <option value="{{ $bankOption }}" @selected($bankEnabled && $bank === $bankOption)>{{ $bankOption }}</option>
         @endforeach
+        @if ($bankEnabled && $bank && ! in_array($bank, $banks, true))
+            <option value="{{ $bank }}" selected>{{ $bank }}</option>
+        @endif
     </select>
     @error('bank_name')<p class="field-error form-row-message">{{ $message }}</p>@enderror
 </div>

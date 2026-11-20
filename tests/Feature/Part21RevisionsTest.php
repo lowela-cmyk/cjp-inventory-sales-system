@@ -46,14 +46,16 @@ class Part21RevisionsTest extends AuditTestCase
 
         foreach ([[$a['sales'], 'sales-officer'], [$a['admin'], 'admin']] as [$user, $prefix]) {
             $html = $this->actingAs($user)->get(route($prefix.'.sales'))->assertOk()->getContent();
-            // Receivables row and both "Record Sales Receivables" modals: no button, no status field, no form for it.
-            $this->assertStringNotContainsString('Update Delivery', $html);
+            // Receivables row and both "Record Sales Receivables" modals: no driver Update Delivery button or form.
             $this->assertStringNotContainsString('btn-delivery-update', $html);
             $this->assertStringNotContainsString('delivery-status', $html);
             $this->assertSame(1, substr_count($html, 'name="delivery_status"'), 'Only the Receivables filter names delivery_status.');
+            // Part 24 #2: a Garage to Client order has its own Delivery Status dropdown in Sales (the only one).
+            $this->assertSame(1, substr_count($html, 'name="garage_delivery_status"'));
+            $this->assertStringContainsString(route($prefix.'.sales.garage-delivery.update', $saleId), $html);
             // Still visible: the column, the badge and the note in the order's modal.
             $this->assertStringContainsString('<th>Delivery Status</th>', $html);
-            $this->assertStringContainsString('Delivery status is updated by the assigned driver.', $html);
+            $this->assertStringContainsString('Delivery status is updated with the Delivery Status dropdown above or by the assigned driver.', $html);
 
             // The old endpoint is gone, and the driver endpoint refuses them.
             $this->actingAs($user)->patch('/'.$prefix.'/sales/'.$saleId.'/delivery-status', ['delivery_status' => 'delivered'])->assertNotFound();

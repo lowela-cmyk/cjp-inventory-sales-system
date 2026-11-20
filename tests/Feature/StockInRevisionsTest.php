@@ -41,10 +41,10 @@ class StockInRevisionsTest extends AuditTestCase
         // 2. Record Sales lists it as "PUR-… – PREMIUM – 60,000 L in depot – ₱55.00/L".
         $this->actingAs($a['sales'])->get(route('sales-officer.sales'))->assertOk()->assertSee($code.' – PREMIUM – 60,000 L in depot – ₱55.00/L');
 
-        // 3. A sale deducts when it is saved (Standard, not delivered yet)...
+        // 3. Part 24 #5: a saved sale (Standard, not delivered yet) is Reserved, not Sold...
         $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 10000, 'unit_price' => 65], ['sales_order_number' => 'SO-STD'])->assertSessionHasNoErrors();
         $row = $this->stockInRow($a['inventory'], $code);
-        $this->assertSame(['10,000.00', '50,000.00', 'Available'], [$row['stock_out'], $row['remaining'], $row['status']]);
+        $this->assertSame(['0.00', '10,000.00', '60,000.00', '50,000.00', 'Available'], [$row['stock_out'], $row['reserved'], $row['remaining'], $row['available'], $row['status']]);
         $this->assertSame('Not delivered yet', $row['deductions'][0]['stock_out']);
         $this->assertSame('Standard', $row['deductions'][0]['delivery_type']);
 
@@ -53,16 +53,17 @@ class StockInRevisionsTest extends AuditTestCase
         $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 5000, 'unit_price' => 65], ['delivery_type' => 'depot_to_client', 'sales_order_number' => 'SO-DTC'])->assertSessionHasNoErrors();
         $depotSale = $this->lastSaleId();
         $row = $this->stockInRow($a['inventory'], $code);
-        $this->assertSame(['15,000.00', '45,000.00'], [$row['stock_out'], $row['remaining']]);
+        $this->assertSame(['0.00', '15,000.00', '60,000.00', '45,000.00'], [$row['stock_out'], $row['reserved'], $row['remaining'], $row['available']]);
         $this->assertSame(['Depot to Client', 'Standard'], array_column($row['deductions'], 'delivery_type'));
 
-        // 4. Delivered: it appears in Stock Out with its purchase ID, at the purchase's cost/liter. Remaining is unchanged.
+        // 4. Delivered: it appears in Stock Out with its purchase ID, at the purchase's cost/liter. Its liters move from
+        //    Reserved to Sold (once); Available is unchanged.
         $standardSale = (int) DB::table('sales')->where('sales_order_number', 'SO-STD')->value('id');
         $this->deliverOrder($a, $standardSale)->assertSessionHasNoErrors();
         $stockOut = collect($this->viewData($a['inventory'], 'inventory-officer.inventory.stock-out', 'stockOut')->items())->first();
         $this->assertSame(['Standard', $code, '10,000.00', '55.00', '550,000.00'], [$stockOut['cells'][4], $stockOut['cells'][6], $stockOut['cells'][7], $stockOut['cells'][8], $stockOut['cells'][9]]);
         $row = $this->stockInRow($a['inventory'], $code);
-        $this->assertSame(['15,000.00', '45,000.00'], [$row['stock_out'], $row['remaining']]);
+        $this->assertSame(['10,000.00', '5,000.00', '50,000.00', '45,000.00'], [$row['stock_out'], $row['reserved'], $row['remaining'], $row['available']]);
         $this->assertStringStartsWith('STO-', $row['deductions'][1]['stock_out']);
 
         // 5. Editing the purchase: not below what sales took; a later cost change leaves past Stock Out rows as released.
@@ -75,7 +76,7 @@ class StockInRevisionsTest extends AuditTestCase
         $edit(['fuel_type_id' => $this->fuel('DSL')])->assertSessionHasErrors('fuel_type_id');
         $edit(['quantity_ordered_liters' => 40000, 'unit_cost' => 56])->assertSessionHasNoErrors();
         $row = $this->stockInRow($a['inventory'], $code);
-        $this->assertSame(['40,000.00', '56.00', '2,240,000.00', '15,000.00', '25,000.00'], [$row['purchased'], $row['unit_cost'], $row['total_cost'], $row['stock_out'], $row['remaining']]);
+        $this->assertSame(['40,000.00', '56.00', '2,240,000.00', '10,000.00', '5,000.00', '30,000.00', '25,000.00'], [$row['purchased'], $row['unit_cost'], $row['total_cost'], $row['stock_out'], $row['reserved'], $row['remaining'], $row['available']]);
         $stockOut = collect($this->viewData($a['inventory'], 'inventory-officer.inventory.stock-out', 'stockOut')->items())->first();
         $this->assertSame(['55.00', '550,000.00'], [$stockOut['cells'][8], $stockOut['cells'][9]]);
         $this->assertSame(55.0, (float) DB::table('stock_outs')->where('sale_id', $standardSale)->value('unit_cost'));
@@ -85,11 +86,11 @@ class StockInRevisionsTest extends AuditTestCase
             ->patch(route('inventory-officer.inventory.purchases.cancel', $premium))
             ->assertSessionHasErrors(['purchase' => 'This purchase cannot be cancelled: 2 sale(s) already deducted fuel from it ('.implode(', ', DB::table('sales')->orderBy('sale_code')->pluck('sale_code')->all()).'). Cancel those sales first.']);
 
-        // 7. Cancelling a sale gives its liters back.
+        // 7. Cancelling a sale gives its reserved liters back.
         $this->actingAs($a['sales'])->from(route('sales-officer.sales'))
             ->patch(route('sales-officer.sales.cancel', $depotSale), ['cancel_reason' => 'duplicate_entry'])->assertSessionHasNoErrors();
         $row = $this->stockInRow($a['inventory'], $code);
-        $this->assertSame(['10,000.00', '30,000.00', 'Available'], [$row['stock_out'], $row['remaining'], $row['status']]);
+        $this->assertSame(['10,000.00', '0.00', '30,000.00', '30,000.00', 'Available'], [$row['stock_out'], $row['reserved'], $row['remaining'], $row['available'], $row['status']]);
         $this->assertCount(1, $row['deductions']);
     }
 
@@ -107,10 +108,17 @@ class StockInRevisionsTest extends AuditTestCase
 
         $rows = collect($this->viewData($a['inventory'], 'inventory-officer.inventory.stock-in', 'stockIn')->items())->keyBy('fuel');
         $this->assertSame(['Cancelled', '0.00'], [$rows['Diesel']['status'], $rows['Diesel']['remaining']]);
-        $this->assertSame(['Sold Out', '3,000.00', '0.00'], [$rows['Unleaded']['status'], $rows['Unleaded']['stock_out'], $rows['Unleaded']['remaining']]);
+        // Part 24 #5: every liter is promised but none delivered yet: Fully Reserved, nothing Sold, nothing Available.
+        $this->assertSame(['Fully Reserved', '0.00', '3,000.00', '3,000.00', '0.00'], [$rows['Unleaded']['status'], $rows['Unleaded']['stock_out'], $rows['Unleaded']['reserved'], $rows['Unleaded']['remaining'], $rows['Unleaded']['available']]);
 
-        // A cancelled purchase leaves the sales dropdown and the totals.
+        // A cancelled purchase leaves the sales dropdown and the totals (the Unleaded liters are still on hand).
         $this->actingAs($a['sales'])->get(route('sales-officer.sales'))->assertOk()->assertDontSee('– DIESEL –');
+        $this->assertSame('3,000 L', $this->cards($a['inventory'])['Total Inventory']);
+
+        // Once delivered, the order is Sold and the purchase Sold Out.
+        $this->deliverOrder($a, $this->lastSaleId())->assertSessionHasNoErrors();
+        $rows = collect($this->viewData($a['inventory'], 'inventory-officer.inventory.stock-in', 'stockIn')->items())->keyBy('fuel');
+        $this->assertSame(['Sold Out', '3,000.00', '0.00', '0.00'], [$rows['Unleaded']['status'], $rows['Unleaded']['stock_out'], $rows['Unleaded']['reserved'], $rows['Unleaded']['remaining']]);
         $this->assertSame('0 L', $this->cards($a['inventory'])['Total Inventory']);
     }
 
@@ -157,7 +165,7 @@ class StockInRevisionsTest extends AuditTestCase
         $this->assertStringContainsString('<input type="date" name="date_to"', $panel);
 
         // The table: the agreed columns, no tank or garage fields, no manual Stock-In.
-        foreach (['Purchase-ID', 'Order Date', 'Fuel', 'Depot', 'QTY Ordered (L)', 'Cost / Liter', 'Total Cost', 'Current QTY', 'Sold QTY', 'Status', 'Actions'] as $column) {
+        foreach (['Purchase-ID', 'Order Date', 'Fuel', 'Depot', 'QTY Ordered (L)', 'Cost / Liter', 'Total Cost', 'Current QTY', 'Sold QTY', 'Reserved', 'Available', 'Status', 'Actions'] as $column) {
             $this->assertStringContainsString('<th>'.$column.'</th>', str_replace(' class="inventory-status-column"', '', $panel));
         }
         foreach (['Garage', 'Tank', 'Record Stock-In', 'Add Stock In', 'Pipeline'] as $retired) {
@@ -173,10 +181,12 @@ class StockInRevisionsTest extends AuditTestCase
         $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 5000, 'unit_price' => 60])->assertSessionHasNoErrors();
 
         $inventory = app(DashboardService::class)->inventory();
-        $this->assertSame(20000.0, $inventory['totals']['stock_liters']);
-        $this->assertSame(['Premium' => 15000.0, 'Unleaded' => 0.0, 'Diesel' => 5000.0, 'F1' => 0.0], $inventory['totals']['stock_by_fuel']);
+        // Part 24 #6: the undelivered order is Reserved; the stock on hand is still all 25,000 L.
+        $this->assertSame(25000.0, $inventory['totals']['stock_liters']);
+        $this->assertSame(['Premium' => 20000.0, 'Unleaded' => 0.0, 'Diesel' => 5000.0, 'F1' => 0.0], $inventory['totals']['stock_by_fuel']);
+        $this->assertSame([5000.0, 20000.0, 0.0], [$inventory['totals']['reserved_liters'], $inventory['totals']['available_liters'], $inventory['totals']['delivered_liters']]);
         $this->assertSame(['Completed', 'Uncompleted'], $inventory['purchasedChart']['labels']);
-        $this->assertSame('20,000 L', $this->cards($a['inventory'])['Total Inventory']);
+        $this->assertSame('25,000 L', $this->cards($a['inventory'])['Total Inventory']);
     }
 
     public function test_unlifted_fuel_card_and_dashboard_depot_balance_agree(): void
@@ -226,7 +236,7 @@ class StockInRevisionsTest extends AuditTestCase
         $edit(['quantity_ordered_liters' => 25000, 'unit_cost' => 54, 'purchase_date' => '2026-10-13'])
             ->assertSessionHasNoErrors()->assertRedirect(route('inventory-officer.inventory.stock-in'));
         $row = $this->stockInRow($a['inventory'], (string) DB::table('purchases')->where('id', $purchaseId)->value('purchase_code'));
-        $this->assertSame(['10/13/2026', '25,000.00', '54.00', '1,350,000.00', '19,000.00', '6,000.00'], [$row['date'], $row['purchased'], $row['unit_cost'], $row['total_cost'], $row['remaining'], $row['stock_out']]);
+        $this->assertSame(['10/13/2026', '25,000.00', '54.00', '1,350,000.00', '25,000.00', '0.00', '6,000.00', '19,000.00'], [$row['date'], $row['purchased'], $row['unit_cost'], $row['total_cost'], $row['remaining'], $row['stock_out'], $row['reserved'], $row['available']]);
         // The purchase changed with it; its payment details stayed as they were.
         $purchase = DB::table('purchases')->where('id', $purchaseId)->first();
         $this->assertSame([null, 'paid', '2026-10-13'], [$purchase->payment_mode, $purchase->payment_status, substr((string) $purchase->purchase_date, 0, 10)]);

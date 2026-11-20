@@ -18,7 +18,7 @@ class CompliancePhase2Test extends TestCase
     {
         // Part 8 #12 replaced the Phase 2 customer forms in User Management: customers aren't system users.
         $admin = User::factory()->create(['role' => 'admin', 'status' => 'active', 'approval_status' => 'approved']);
-        DB::table('customers')->insert(['id' => 157, 'customer_code' => 'CSM-000001', 'name' => 'Juan Dela Cruz', 'company_name' => 'Dela Cruz Hauling', 'payment_status' => 'clear', 'status' => 'active', 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('customers')->insert(['id' => 157, 'customer_code' => 'CSM-000001', 'name' => 'Juan Dela Cruz', 'company_name' => 'Dela Cruz Hauling', 'payment_status' => 'paid', 'status' => 'active', 'created_at' => now(), 'updated_at' => now()]);
 
         $this->actingAs($admin)->get(route('admin.user-management', ['tab' => 'customers']))->assertOk()
             ->assertDontSee('data-tab-target="customers"', false)
@@ -28,12 +28,12 @@ class CompliancePhase2Test extends TestCase
         // Sales > Customers: Admin sees the stored code, adds and edits customers.
         $this->get(route('admin.sales.customers'))->assertOk()->assertSee('CSM-000001')->assertDontSee('CSM-000157');
         $this->post(route('admin.sales.customers.store'), [
-            'name' => 'Maria Santos', 'company_name' => 'Santos Fuel Trading', 'bank_name' => 'BDO', 'payment_status' => 'clear', 'status' => 'active',
+            'name' => 'Maria Santos', 'company_name' => 'Santos Fuel Trading', 'bank_name' => 'BDO', 'payment_status' => 'paid', 'status' => 'active',
         ])->assertRedirect(route('admin.sales.customers'))->assertSessionHasNoErrors();
         $this->assertStringStartsWith('CSM-', (string) DB::table('customers')->where('company_name', 'Santos Fuel Trading')->value('customer_code'));
 
         $this->patch(route('admin.sales.customers.update', 157), [
-            'edit_customer_id' => 157, 'name' => 'Juan Dela Cruz', 'company_name' => 'Dela Cruz Hauling Inc.', 'bank_name' => 'BPI', 'payment_status' => 'clear', 'status' => 'active',
+            'edit_customer_id' => 157, 'name' => 'Juan Dela Cruz', 'company_name' => 'Dela Cruz Hauling Inc.', 'bank_name' => 'BPI', 'payment_status' => 'paid', 'status' => 'active',
         ])->assertRedirect(route('admin.sales.customers'))->assertSessionHasNoErrors();
         $this->assertDatabaseHas('customers', ['id' => 157, 'company_name' => 'Dela Cruz Hauling Inc.', 'bank_name' => 'BPI', 'customer_code' => 'CSM-000001']);
 

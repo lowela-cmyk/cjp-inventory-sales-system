@@ -49,7 +49,7 @@ class HistoricalPaymentMethodTest extends AuditTestCase
             'payment_terms' => 'cod', 'status' => 'confirmed', 'delivery_status' => 'pending', 'created_by' => $a['sales']->id, 'created_at' => now(), 'updated_at' => now()]);
         DB::table('sale_items')->insert(['sale_id' => $saleId, 'fuel_type_id' => $a['fuel'], 'quantity_liters' => 1000, 'unit_price' => 10, 'line_total' => 10000,
             'fulfilled_quantity_liters' => 0, 'created_at' => now(), 'updated_at' => now()]);
-        DB::table('receivables')->insert(['sale_id' => $saleId, 'status' => 'pending', 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('receivables')->insert(['sale_id' => $saleId, 'status' => 'unpaid', 'created_at' => now(), 'updated_at' => now()]);
 
         return $saleId;
     }

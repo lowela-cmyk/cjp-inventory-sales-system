@@ -187,7 +187,7 @@ class AIDataPreparationServiceTest extends TestCase
             'name' => 'Sensitive AI Customer',
             'company_name' => 'Sensitive AI Customer Co.',
             'email' => 'sensitive@example.com',
-            'payment_status' => 'partial',
+            'payment_status' => 'partially_paid',
             'status' => 'active',
             'created_at' => now(),
             'updated_at' => now(),
@@ -204,17 +204,17 @@ class AIDataPreparationServiceTest extends TestCase
         $saleOneId = $this->sale($records, 'SLS-AI-ONE', '2026-09-02', 'confirmed');
         $saleOneDieselItemId = $this->saleItem($saleOneId, $records['dieselId'], 1000, 60);
         $this->saleItem($saleOneId, $records['e10Id'], 500, 70);
-        $this->receivable($saleOneId, 'pending');
+        $this->receivable($saleOneId, 'unpaid');
         $this->payment($records, $saleOneId, 'PAY-AI-ONE', 50000);
 
         $saleTwoId = $this->sale($records, 'SLS-AI-TWO', '2026-09-01', 'partially_paid', 'installment');
         $this->saleItem($saleTwoId, $records['dieselId'], 2000, 50);
-        $this->receivable($saleTwoId, 'partial');
+        $this->receivable($saleTwoId, 'partially_paid');
         $scheduleId = DB::table('payment_schedules')->insertGetId([
             'sale_id' => $saleTwoId,
             'due_date' => '2026-09-30',
             'amount_due' => 100000,
-            'status' => 'partial',
+            'status' => 'partially_paid',
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -222,7 +222,7 @@ class AIDataPreparationServiceTest extends TestCase
 
         $oldSaleId = $this->sale($records, 'SLS-AI-OLD', '2025-12-31', 'confirmed');
         $this->saleItem($oldSaleId, $records['dieselId'], 999, 1);
-        $this->receivable($oldSaleId, 'pending');
+        $this->receivable($oldSaleId, 'unpaid');
 
         $stockOutId = DB::table('stock_outs')->insertGetId([
             'stock_out_code' => 'STO-AI-ONE',

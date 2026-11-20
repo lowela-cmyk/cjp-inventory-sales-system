@@ -126,7 +126,7 @@ class HistoricalReconciliationTest extends AuditTestCase
             'payment_terms' => 'cod', 'status' => 'confirmed', 'delivery_status' => $delivery, 'created_by' => $a['sales']->id, 'created_at' => now(), 'updated_at' => now()]);
         $itemId = DB::table('sale_items')->insertGetId(['sale_id' => $saleId, 'fuel_type_id' => $a['fuel'], 'quantity_liters' => $liters, 'unit_price' => $price,
             'line_total' => $liters * $price, 'main_quantity_liters' => $liters, 'fulfilled_quantity_liters' => $delivery === 'delivered' ? $liters : 0, 'created_at' => now(), 'updated_at' => now()]);
-        DB::table('receivables')->insert(['sale_id' => $saleId, 'status' => 'pending', 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('receivables')->insert(['sale_id' => $saleId, 'status' => 'unpaid', 'created_at' => now(), 'updated_at' => now()]);
 
         return [$saleId, $itemId];
     }

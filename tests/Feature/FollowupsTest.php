@@ -100,7 +100,7 @@ class FollowupsTest extends AuditTestCase
 
         $this->assertSame(10000.0, $this->paid($saleId));
         $this->assertDatabaseHas('sales', ['id' => $saleId, 'status' => 'paid']);
-        $this->assertDatabaseHas('receivables', ['sale_id' => $saleId, 'status' => 'clear']);
+        $this->assertDatabaseHas('receivables', ['sale_id' => $saleId, 'status' => 'paid']);
         $this->actingAs($a['sales'])->post(route('sales-officer.sales.payments.store', $saleId), $this->payment(0.01))
             ->assertSessionHasErrors(['payment' => 'The selected sale is already fully paid.']);
         $this->actingAs($a['sales'])->post(route('sales-officer.sales.payments.store', $saleId), $this->payment(0))->assertSessionHasErrors('amount');
@@ -243,7 +243,7 @@ class FollowupsTest extends AuditTestCase
     {
         $saleId = DB::table('sales')->insertGetId(['sale_code' => 'SLS-FU-'.substr($this->uuid(), 0, 8), 'customer_id' => $a['customer'], 'sale_date' => '2026-10-15', 'payment_method' => 'cash_on_delivery', 'payment_terms' => 'cod', 'status' => 'confirmed', 'delivery_status' => 'pending', 'created_by' => $a['sales']->id, 'created_at' => now(), 'updated_at' => now()]);
         DB::table('sale_items')->insert(['sale_id' => $saleId, 'fuel_type_id' => $a['fuel'], 'quantity_liters' => $liters, 'unit_price' => 10, 'line_total' => $liters * 10, 'fulfilled_quantity_liters' => 0, 'created_at' => now(), 'updated_at' => now()]);
-        DB::table('receivables')->insert(['sale_id' => $saleId, 'status' => 'pending', 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('receivables')->insert(['sale_id' => $saleId, 'status' => 'unpaid', 'created_at' => now(), 'updated_at' => now()]);
 
         return $saleId;
     }

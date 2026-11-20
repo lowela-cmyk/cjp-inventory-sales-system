@@ -249,7 +249,7 @@ class RoleAccessTestingTest extends TestCase
                 'payload' => [
                     'name' => 'RBAC Customer',
                     'company_name' => 'RBAC Customer Co.',
-                    'payment_status' => 'clear',
+                    'payment_status' => 'paid',
                     'status' => 'active',
                 ],
                 'allowed_roles' => ['sales_officer'],
@@ -334,7 +334,7 @@ class RoleAccessTestingTest extends TestCase
             'customer_code' => 'CUS-RBAC',
             'name' => 'Sensitive Customer',
             'company_name' => 'Sensitive Customer Co.',
-            'payment_status' => 'clear',
+            'payment_status' => 'paid',
             'status' => 'active',
             'created_at' => now(),
             'updated_at' => now(),
@@ -435,7 +435,7 @@ class RoleAccessTestingTest extends TestCase
         DB::table('receivables')->insert([
             'sale_id' => $saleId,
             'due_date' => '2026-09-30',
-            'status' => 'pending',
+            'status' => 'unpaid',
             'created_at' => now(),
             'updated_at' => now(),
         ]);

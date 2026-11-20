@@ -39,10 +39,16 @@ class DashboardServiceTest extends TestCase
         $inventory = $this->dashboard()->inventory();
         $totals = $inventory['totals'];
 
-        // Stock = stock-in remaining: P1 20,000 - 2,000 (S_A) + P3 5,000 = 23,000 Premium; P2 10,000 - 4,000 (S_C) - 1,500
-        // promised to the undelivered S_B (a sale deducts when it is saved) = 4,500 Diesel.
-        $this->assertSame(27500.0, $totals['stock_liters']);
-        $this->assertSame(['Premium' => 23000.0, 'Unleaded' => 0.0, 'Diesel' => 4500.0, 'F1' => 0.0], $totals['stock_by_fuel']);
+        // Stock = stock-in remaining (on hand): P1 20,000 - 2,000 (S_A) + P3 5,000 = 23,000 Premium; P2 10,000 - 4,000
+        // (S_C) = 6,000 Diesel. Part 24 #6: the undelivered S_B (1,500 L) is Reserved, not deducted, so Available is
+        // 29,000 - 1,500 = 27,500 L and Purchased 35,000 = Delivered 6,000 + Reserved 1,500 + Available 27,500.
+        $this->assertSame(29000.0, $totals['stock_liters']);
+        $this->assertSame(['Premium' => 23000.0, 'Unleaded' => 0.0, 'Diesel' => 6000.0, 'F1' => 0.0], $totals['stock_by_fuel']);
+        $this->assertSame([1500.0, 27500.0, 6000.0, 0.0], [$totals['reserved_liters'], $totals['available_liters'], $totals['delivered_liters'], $totals['over_delivered_liters']]);
+        $this->assertSame(['purchased' => 35000.0, 'delivered' => 6000.0, 'reserved' => 1500.0, 'available' => 27500.0, 'on_hand' => 29000.0, 'over_delivered' => 0.0], $inventory['reconciliation']);
+        $this->assertSame(35000.0, $inventory['reconciliation']['delivered'] + $inventory['reconciliation']['reserved'] + $inventory['reconciliation']['available']);
+        $this->assertSame([['Delivered (Sold)', [2000.0, 0.0, 4000.0, 0.0]], ['Reserved (Pending Delivery)', [0.0, 0.0, 1500.0, 0.0]], ['Available', [23000.0, 0.0, 4500.0, 0.0]]],
+            array_map(fn (array $set): array => [$set['label'], $set['data']], $inventory['reconciliationChart']['datasets']));
         // P1, P2, P3 (P4 is cancelled).
         $this->assertSame(3, $totals['purchases']);
         // Still at the depots: P1 20,000 - 12,000 lifted (its scheduled 3,000 is not lifted yet) - 2,000 delivered straight
@@ -60,12 +66,14 @@ class DashboardServiceTest extends TestCase
         $this->assertSame(68.57, $totals['completed_percent']);
 
         $this->assertSame([
-            ['Total Inventory in Stock', '27.50 KL'],
+            ['Total Inventory in Stock', '29.00 KL'],
             ['Total Purchases', '3'],
             ['Fuel Type', 'ALL'],
             ['Depot', 'ALL'],
             ['Remaining Balance in Depots', '11.00 KL'],
             ['Total Lifts', '3'],
+            ['Reserved (Pending Delivery)', '1.50 KL'],
+            ['Available to Sell', '27.50 KL'],
         ], $inventory['cards']);
         $this->assertSame('5.17%', $inventory['stockOutRateLabel']);
         $this->assertSame(['Premium', 'Unleaded', 'Diesel', 'F1'], $inventory['stockChart']['labels']);
@@ -95,21 +103,22 @@ class DashboardServiceTest extends TestCase
         $d1 = $this->dashboard()->inventory(['depot_id' => $ids['d1']]);
         $this->assertSame(2, $d1['totals']['purchases']);
         $this->assertSame(6000.0, $d1['totals']['remaining_liters']);
-        $this->assertSame(22500.0, $d1['totals']['stock_liters']);
+        $this->assertSame(24000.0, $d1['totals']['stock_liters']);
         $this->assertSame(1500.0, $d1['totals']['pending_order_liters']);
-        $this->assertSame(['Total Inventory in Stock', '22.50 KL'], $d1['cards'][0]);
+        $this->assertSame(22500.0, $d1['totals']['available_liters']);
+        $this->assertSame(['Total Inventory in Stock', '24.00 KL'], $d1['cards'][0]);
 
         // Fuel Diesel: P2 only, fully lifted; 1,500 / 6,000 = 25%.
         $diesel = $this->dashboard()->inventory(['fuel_type_id' => $ids['fuel']['DSL']]);
         $this->assertSame(1, $diesel['totals']['purchases']);
         $this->assertSame(0.0, $diesel['totals']['remaining_liters']);
         $this->assertSame(1, $diesel['totals']['lifts']);
-        $this->assertSame(4500.0, $diesel['totals']['stock_liters']);
+        $this->assertSame(6000.0, $diesel['totals']['stock_liters']);
         $this->assertSame(25.0, $diesel['totals']['stock_out_rate']);
         $this->assertSame(100.0, $diesel['totals']['completed_percent']);
         $this->assertSame(['Diesel'], $diesel['stockChart']['labels']);
         $this->assertSame('Diesel', $diesel['cards'][2][1]);
-        $this->assertSame([['Total Inventory in Stock', '4.50 KL'], ['Total Purchases', '1']], array_slice($diesel['cards'], 0, 2));
+        $this->assertSame([['Total Inventory in Stock', '6.00 KL'], ['Total Purchases', '1']], array_slice($diesel['cards'], 0, 2));
 
         // Purchase ID search.
         $p3 = $this->dashboard()->inventory(['search' => 'DASH-003']);
@@ -372,7 +381,7 @@ class DashboardServiceTest extends TestCase
         $admin = $this->admin();
 
         $this->actingAs($admin)->get(route('admin.dashboard'))->assertOk()
-            ->assertSeeInOrder(['Total Inventory in Stock', '27,500 L', 'Total Purchases', '3', 'Remaining Balance in Depots', '11,000 L'])
+            ->assertSeeInOrder(['Total Inventory in Stock', '29,000 L', 'Total Purchases', '3', 'Remaining Balance in Depots', '11,000 L'])
             ->assertSee('Expected Stock Out Rate:')
             ->assertSee('5.17%')
             ->assertSee('PHP 190,000.00')
@@ -417,7 +426,7 @@ class DashboardServiceTest extends TestCase
         Log::shouldHaveReceived('warning')->withArgs(fn (string $message): bool => str_contains($message, 'AI is not configured'))->once();
 
         $text = session('dashboardInsight.text');
-        $this->assertStringContainsString('Inventory: 27.50 KL in stock (Premium 23.00 KL, Unleaded 0.00 KL, Diesel 4.50 KL, F1 0.00 KL).', $text);
+        $this->assertStringContainsString('Inventory: 29.00 KL in stock (Premium 23.00 KL, Unleaded 0.00 KL, Diesel 6.00 KL, F1 0.00 KL).', $text);
         $this->assertStringContainsString('stock out PHP 380,000.00 vs collected PHP 190,000.00; Missing PHP 190,000.00 (Inventory Variance Rate 50.00%). Follow up the unpaid balances of delivered sales.', $text);
         $this->assertStringContainsString('Gross margin PHP 100,000.00 on 6.00 KL delivered.', $text);
 
@@ -448,7 +457,7 @@ class DashboardServiceTest extends TestCase
             $payload = json_decode(substr($prompt, strpos($prompt, '{')), true);
             $this->assertSame('applied', $payload['filters']['sales']['customer_filter']);
             $this->assertEquals(190000, $payload['stock_out_vs_receivables_delivered_sales']['missing']);
-            $this->assertEquals(27500, $payload['current_inventory']['stock_liters']);
+            $this->assertEquals(29000, $payload['current_inventory']['stock_liters']);
 
             return true;
         });
@@ -469,7 +478,7 @@ class DashboardServiceTest extends TestCase
         // Part 12: the provider error is logged, not shown.
         $this->assertNull(session('dashboardInsight.note'));
         Log::shouldHaveReceived('warning')->withArgs(fn (string $message): bool => str_contains($message, 'AI provider could not be used'))->once();
-        $this->assertStringContainsString('Inventory: 27.50 KL in stock', session('dashboardInsight.text'));
+        $this->assertStringContainsString('Inventory: 29.00 KL in stock', session('dashboardInsight.text'));
     }
 
     public function test_no_data_skips_the_ai_call_and_other_roles_cannot_generate_insights(): void
@@ -509,8 +518,8 @@ class DashboardServiceTest extends TestCase
         $now = now();
         $d1 = DB::table('depots')->insertGetId(['depot_code' => 'DEP-N', 'name' => 'North Depot', 'status' => 'active', 'created_at' => $now, 'updated_at' => $now]);
         $d2 = DB::table('depots')->insertGetId(['depot_code' => 'DEP-S', 'name' => 'South Depot', 'status' => 'active', 'created_at' => $now, 'updated_at' => $now]);
-        $alpha = DB::table('customers')->insertGetId(['customer_code' => 'CUS-A', 'name' => 'Ana Alpha', 'company_name' => 'Alpha Trading', 'payment_status' => 'clear', 'status' => 'active', 'created_at' => $now, 'updated_at' => $now]);
-        $bravo = DB::table('customers')->insertGetId(['customer_code' => 'CUS-B', 'name' => 'Ben Bravo', 'company_name' => 'Bravo Builders', 'payment_status' => 'clear', 'status' => 'active', 'created_at' => $now, 'updated_at' => $now]);
+        $alpha = DB::table('customers')->insertGetId(['customer_code' => 'CUS-A', 'name' => 'Ana Alpha', 'company_name' => 'Alpha Trading', 'payment_status' => 'paid', 'status' => 'active', 'created_at' => $now, 'updated_at' => $now]);
+        $bravo = DB::table('customers')->insertGetId(['customer_code' => 'CUS-B', 'name' => 'Ben Bravo', 'company_name' => 'Bravo Builders', 'payment_status' => 'paid', 'status' => 'active', 'created_at' => $now, 'updated_at' => $now]);
         $driver = User::factory()->create(['role' => 'driver', 'status' => 'active']);
         $truck = DB::table('trucks')->insertGetId(['truck_code' => 'TRK-D', 'capacity_liters' => 40000, 'truck_type' => 'hauling', 'status' => 'available', 'created_at' => $now, 'updated_at' => $now]);
 

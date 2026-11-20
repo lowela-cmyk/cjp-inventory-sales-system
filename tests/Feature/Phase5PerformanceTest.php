@@ -188,7 +188,7 @@ class Phase5PerformanceTest extends TestCase
                 'name' => sprintf('Customer Page %03d', $i),
                 'company_name' => sprintf('Company %03d', $i),
                 'status' => 'active',
-                'payment_status' => 'clear',
+                'payment_status' => 'paid',
                 'created_at' => now()->subDays(30 - $i),
                 'updated_at' => now()->subDays(30 - $i),
             ]);
@@ -219,7 +219,7 @@ class Phase5PerformanceTest extends TestCase
             DB::table('receivables')->insert([
                 'sale_id' => $saleId,
                 'due_date' => now()->addDays(15)->toDateString(),
-                'status' => 'pending',
+                'status' => 'unpaid',
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
@@ -350,7 +350,7 @@ class Phase5PerformanceTest extends TestCase
             'fuel_type_id' => $fuelTypeId,
             'quantity_ordered_liters' => '12000',
             'unit_cost' => '50.00',
-            'payment_status' => 'partial',
+            'payment_status' => 'partially_paid',
             'status' => 'ordered',
         ]);
 

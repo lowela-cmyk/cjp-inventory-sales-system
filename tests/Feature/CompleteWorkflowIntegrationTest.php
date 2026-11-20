@@ -96,7 +96,7 @@ class CompleteWorkflowIntegrationTest extends TestCase
             'customer_code' => 'CUS-WORKFLOW',
             'name' => 'Workflow Customer',
             'company_name' => 'Workflow Customer Co.',
-            'payment_status' => 'clear',
+            'payment_status' => 'paid',
             'status' => 'active',
             'created_at' => now(),
             'updated_at' => now(),

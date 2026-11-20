@@ -44,7 +44,7 @@ class Phase2GuardrailsAndIdempotencyTest extends TestCase
             'customer_code' => 'CUS-GUARD',
             'name' => 'Guardrail Customer',
             'company_name' => 'Guardrail Customer Co.',
-            'payment_status' => 'clear',
+            'payment_status' => 'paid',
             'status' => 'active',
             'created_at' => now(),
             'updated_at' => now(),
@@ -148,7 +148,7 @@ class Phase2GuardrailsAndIdempotencyTest extends TestCase
         DB::table('receivables')->insert([
             'sale_id' => $saleId,
             'due_date' => '2026-09-30',
-            'status' => 'pending',
+            'status' => 'unpaid',
             'created_at' => now(),
             'updated_at' => now(),
         ]);

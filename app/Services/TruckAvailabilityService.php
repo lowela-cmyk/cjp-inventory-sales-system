@@ -165,6 +165,69 @@ class TruckAvailabilityService
         return $this->leftoverOnTruck($truckId) > self::EMPTY_LITERS ? 'loaded' : 'available';
     }
 
+    /**
+     * Part 24 #1: what a truck can still carry for a sales order's delivery (Delivery Details: Garage to Client, or a
+     * Standard order with a truck). Load = liters still to deliver on open orders assigned to the truck (not
+     * delivered, not cancelled, not deleted; Depot to Client orders ride on their lift instead) + fuel left on the
+     * truck from its lifts (leftoverByTruck). Available = max capacity - load. $exceptSaleId leaves out the order
+     * being edited, so its own liters are not counted twice.
+     *
+     * @param  array<int, int>|null  $truckIds  null = every truck that is not inactive
+     * @return Collection<int, \stdClass> keyed by truck id: id, truck_code, name, capacity_liters, loaded_liters, available_liters
+     */
+    public function deliveryCapacities(?array $truckIds = null, ?int $exceptSaleId = null, bool $lock = false): Collection
+    {
+        $trucks = DB::table('trucks')
+            ->when($truckIds !== null, fn (Builder $query): Builder => $query->whereIn('id', $truckIds ?: [0]), fn (Builder $query): Builder => $query->where('status', '!=', 'inactive'))
+            ->when($lock, fn (Builder $query): Builder => $query->lockForUpdate())
+            ->orderByRaw(TruckLabel::orderSql())
+            ->get(['id', 'truck_code', 'plate_number', 'name', 'capacity_liters', 'status']);
+        $ids = $trucks->pluck('id')->map(fn (mixed $id): int => (int) $id)->all();
+        $orders = DB::table('sale_items')
+            ->join('sales', 'sales.id', '=', 'sale_items.sale_id')
+            ->whereNull('sales.deleted_at')
+            ->where('sales.status', '!=', 'cancelled')
+            ->whereNotIn('sales.delivery_status', ['delivered', 'cancelled'])
+            ->where('sales.delivery_type', '!=', 'depot_to_client')
+            ->whereIn('sales.delivery_truck_id', $ids ?: [0])
+            ->when($exceptSaleId, fn (Builder $query, int $id): Builder => $query->where('sales.id', '!=', $id))
+            ->groupBy('sales.delivery_truck_id')
+            ->selectRaw('sales.delivery_truck_id as truck_id, COALESCE(SUM(CASE WHEN sale_items.quantity_liters > sale_items.fulfilled_quantity_liters THEN sale_items.quantity_liters - sale_items.fulfilled_quantity_liters ELSE 0 END), 0) as liters')
+            ->pluck('liters', 'truck_id');
+        $onTruck = DB::query()->fromSub($this->leftoverByTruck()->whereIn('hauls.truck_id', $ids ?: [0]), 'truck_leftovers')->pluck('leftover_liters', 'truck_id');
+
+        return $trucks->mapWithKeys(function (object $truck) use ($orders, $onTruck): array {
+            $truck->capacity_liters = round((float) $truck->capacity_liters, 2);
+            $truck->loaded_liters = round((float) ($orders[$truck->id] ?? 0) + (float) ($onTruck[$truck->id] ?? 0), 2);
+            $truck->available_liters = round(max(0, $truck->capacity_liters - $truck->loaded_liters), 2);
+
+            return [(int) $truck->id => $truck];
+        });
+    }
+
+    /**
+     * Part 24 #1: refuses a delivery that would overload its truck (the truck row is locked, so two orders saved at
+     * once cannot both take the last liters).
+     *
+     * @throws \Illuminate\Validation\ValidationException
+     */
+    public function assertDeliveryFits(int $truckId, float $liters, ?int $exceptSaleId = null, string $field = 'delivery_truck_id'): void
+    {
+        $truck = $this->deliveryCapacities([$truckId], $exceptSaleId, true)->get($truckId);
+        if (! $truck || round($liters, 2) <= $truck->available_liters + self::EMPTY_LITERS) {
+            return;
+        }
+
+        throw \Illuminate\Validation\ValidationException::withMessages([$field => sprintf(
+            '%s can carry at most %s L and already has %s L loaded or assigned to open deliveries, so only %s L is available. This order needs %s L.',
+            TruckLabel::make($truck->name, $truck->truck_code),
+            number_format($truck->capacity_liters, 2),
+            number_format($truck->loaded_liters, 2),
+            number_format($truck->available_liters, 2),
+            number_format($liters, 2),
+        )]);
+    }
+
     /** Liters still on the truck from its lifted / completed lifts (not delivered to a customer, not returned). */
     public function leftoverOnTruck(int $truckId): float
     {

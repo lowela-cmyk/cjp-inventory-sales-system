@@ -88,7 +88,7 @@ class WorkflowSmokeTestService
             $this->assertSame(8000.0, (float) $checks['purchase_remaining_liters'], 'purchase remaining liters');
             $this->assertSame(75000.0, (float) $checks['sale_total'], 'sale total');
             $this->assertSame(75000.0, (float) $checks['paid_total'], 'paid total');
-            $this->assertSame('clear', (string) $checks['receivable_status'], 'receivable status');
+            $this->assertSame('paid', (string) $checks['receivable_status'], 'receivable status');
             $this->assertSame(0, (int) $checks['duplicate_inventory_effects'], 'duplicate inventory effects');
             $this->assertSame(0, (int) $checks['overpaid_sales'], 'overpaid sales');
 
@@ -168,7 +168,7 @@ class WorkflowSmokeTestService
             'customer_code' => $prefix.'-CUS',
             'name' => $prefix.' Customer',
             'company_name' => $prefix.' Customer Co.',
-            'payment_status' => 'clear',
+            'payment_status' => 'paid',
             'status' => 'active',
             'created_at' => $now,
             'updated_at' => $now,
@@ -345,7 +345,7 @@ class WorkflowSmokeTestService
         DB::table('receivables')->insert([
             'sale_id' => $saleId,
             'due_date' => now()->addDays(15)->toDateString(),
-            'status' => 'pending',
+            'status' => 'unpaid',
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -385,7 +385,7 @@ class WorkflowSmokeTestService
         ]);
 
         DB::table('receivables')->where('sale_id', $sale['id'])->update([
-            'status' => 'clear',
+            'status' => 'paid',
             'updated_at' => now(),
         ]);
     }

@@ -146,7 +146,7 @@ class InventoryOfficerPurchaseManagementTest extends TestCase
                 'fuel_type_id' => $records['fuelTypeId'],
                 'quantity_ordered_liters' => 50000,
                 'unit_cost' => 75,
-                'payment_status' => 'partial',
+                'payment_status' => 'partially_paid',
             ]);
 
         // Stock-In revisions: the quantity can't drop below the 10,000 L already on the lift...
@@ -259,7 +259,7 @@ class InventoryOfficerPurchaseManagementTest extends TestCase
             'depot_id' => $records['depotId'],
             'purchase_date' => '2026-08-20',
             'receipt_reference' => 'DR-EXISTING',
-            'payment_status' => 'partial',
+            'payment_status' => 'partially_paid',
             'status' => 'ordered',
             'created_by' => $records['inventoryOfficer']->id,
             'created_at' => now(),

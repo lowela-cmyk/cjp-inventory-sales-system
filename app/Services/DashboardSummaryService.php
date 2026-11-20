@@ -831,22 +831,23 @@ class DashboardSummaryService
 
     private function receivableStatusForSale(float $saleTotal, float $totalPaid, mixed $dueDate = null): string
     {
+        if ($totalPaid <= 0) {
+            return 'unpaid';
+        }
+
         if (round($totalPaid, 2) >= round($saleTotal, 2)) {
-            return 'clear';
+            return 'paid';
         }
 
-        if ($dueDate && CarbonImmutable::parse($dueDate)->lt(CarbonImmutable::now()->startOfDay())) {
-            return 'overdue';
-        }
-
-        return $totalPaid > 0 ? 'partial' : 'unpaid';
+        return 'partially_paid';
     }
 
     private function receivableStatusLabel(string $status): string
     {
         return match ($status) {
-            'clear' => 'Settled',
-            'partial' => 'Partially Paid',
+            'paid', 'clear', 'settled' => 'Paid',
+            'partially_paid', 'partial' => 'Partially Paid',
+            'unpaid', 'pending', 'overdue' => 'Unpaid',
             default => ucwords(str_replace('_', ' ', $status)),
         };
     }

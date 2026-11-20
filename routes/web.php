@@ -97,6 +97,8 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/sales/{sale}/refunds', [SalesOfficerCustomerController::class, 'storeRefund'])->name('sales.refunds.store');
         Route::patch('/sales/{sale}/refunds/{refund}', [SalesOfficerCustomerController::class, 'updateRefund'])->name('sales.refunds.update');
         Route::post('/sales/{sale}/assign-source', [SalesOfficerCustomerController::class, 'assignSource'])->name('sales.assign-source');
+        // Part 24 #2: Garage to Client orders get a Delivery Status dropdown in Sales (drivers keep theirs).
+        Route::patch('/sales/{sale}/garage-delivery', [SalesOfficerCustomerController::class, 'updateGarageDeliveryStatus'])->whereNumber('sale')->name('sales.garage-delivery.update');
         Route::patch('/sales/{sale}', [SalesOfficerCustomerController::class, 'updateSale'])->name('sales.update');
         Route::patch('/sales/{sale}/cancel', [SalesOfficerCustomerController::class, 'cancelSale'])->name('sales.cancel');
         Route::delete('/sales/{sale}', [SalesOfficerCustomerController::class, 'destroySale'])->name('sales.destroy');
@@ -175,6 +177,8 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/sales/{sale}/refunds', [SalesOfficerCustomerController::class, 'storeRefund'])->name('sales.refunds.store');
         Route::patch('/sales/{sale}/refunds/{refund}', [SalesOfficerCustomerController::class, 'updateRefund'])->name('sales.refunds.update');
         Route::post('/sales/{sale}/assign-source', [SalesOfficerCustomerController::class, 'assignSource'])->name('sales.assign-source');
+        // Part 24 #2: Garage to Client orders get a Delivery Status dropdown in Sales (drivers keep theirs).
+        Route::patch('/sales/{sale}/garage-delivery', [SalesOfficerCustomerController::class, 'updateGarageDeliveryStatus'])->whereNumber('sale')->name('sales.garage-delivery.update');
         Route::patch('/sales/{sale}', [SalesOfficerCustomerController::class, 'updateSale'])->name('sales.update');
         Route::patch('/sales/{sale}/cancel', [SalesOfficerCustomerController::class, 'cancelSale'])->name('sales.cancel');
         Route::delete('/sales/{sale}', [SalesOfficerCustomerController::class, 'destroySale'])->name('sales.destroy');

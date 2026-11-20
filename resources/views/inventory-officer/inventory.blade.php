@@ -109,15 +109,16 @@
                 <x-filter.search label="Search stock-in" :value="$search" />
                 @include('inventory-officer.partials.filter-controls', ['tab' => 'stock-in'])
             </x-filter.bar>
-            <p class="table-help">Every purchase is stocked in automatically. Sales deduct from the purchase they select as soon as they are saved; cancelling a sale gives the liters back.</p>
+            <p class="table-help">Every purchase is stocked in automatically. A sale reserves liters from the purchase it selects when it is saved and counts as Sold only once it is Delivered; cancelling a sale gives the reserved liters back.</p>
             <div class="table-wrap inventory-table-wrap">
                 <table class="admin-table inventory-table inventory-table-actions table-stacked stock-in-table" data-card-keys="0,2,7">
                     <thead><tr>
                         {{-- The original Stock-In columns (August 2026 design), now filled from each purchase's stock-in:
-                             Current QTY = liters left, Sold QTY = liters sales took (delivered + promised). --}}
+                             Current QTY = liters left (purchased - sold), Sold QTY = liters delivered (Part 24 #5),
+                             Reserved = promised to orders not delivered yet, Available = Current QTY - Reserved. --}}
                         <th>Purchase-ID</th><th>Order Date</th><th>Fuel</th><th>Depot</th>
                         <th>QTY Ordered (L)</th><th>Cost / Liter</th><th>Total Cost</th>
-                        <th>Current QTY</th><th>Sold QTY</th>
+                        <th>Current QTY</th><th>Sold QTY</th><th>Reserved</th><th>Available</th>
                         <th class="inventory-status-column">Status</th><th>Actions</th>
                     </tr></thead>
                     <tbody>
@@ -132,6 +133,8 @@
                                 <td class="inventory-number">{{ $row['total_cost'] }}</td>
                                 <td class="inventory-number">{{ $row['remaining'] }}</td>
                                 <td class="inventory-number">{{ $row['stock_out'] }}</td>
+                                <td class="inventory-number">{{ $row['reserved'] }}</td>
+                                <td class="inventory-number">{{ $row['available'] }}</td>
                                 <td><x-admin.status-badge :status="$row['status']" /></td>
                                 <td>
                                     <div class="inventory-row-actions">
@@ -140,7 +143,7 @@
                                 </td>
                             </tr>
                         @empty
-                            <tr><td class="empty-cell" colspan="11">No stock-in records found.</td></tr>
+                            <tr><td class="empty-cell" colspan="13">No stock-in records found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -274,7 +277,7 @@
                     @endphp
                     <div class="form-row"><label for="quantity_ordered_liters">Quantity (Liters)</label><input id="quantity_ordered_liters" name="quantity_ordered_liters" type="number" min="{{ $minDepotOrder > 0 ? $minDepotOrder : '0.01' }}" step="0.01" placeholder="Enter Quantity (Liters)" value="{{ old('quantity_ordered_liters') }}" required aria-describedby="quantity_ordered_liters_hint">@if ($minDepotOrder > 0)<p class="form-hint" id="quantity_ordered_liters_hint">Minimum order to the depot: {{ number_format($minDepotOrder) }} L.</p>@endif</div>
                     <div class="form-row"><label for="unit_cost">Cost / Liter</label><input id="unit_cost" name="unit_cost" type="number" min="0" step="0.01" placeholder="Enter Cost / Liter" value="{{ old('unit_cost') }}" required></div>
-                    <div class="form-row"><label for="payment_status">Payment Status</label><select id="payment_status" name="payment_status" required data-default="unpaid">@foreach ($paymentStatuses as $status)<option value="{{ $status }}" @selected(old('payment_status', 'unpaid') === $status)>{{ ucwords($status) }}</option>@endforeach</select></div>
+                    <div class="form-row"><label for="payment_status">Payment Status</label><select id="payment_status" name="payment_status" required data-default="unpaid">@foreach ($paymentStatuses as $status)<option value="{{ $status }}" @selected(old('payment_status', 'unpaid') === $status)>{{ ucwords(str_replace('_', ' ', $status)) }}</option>@endforeach</select></div>
                     @include('inventory-officer.partials.purchase-payment-mode', ['idSuffix' => '', 'formId' => null, 'mode' => old('payment_mode'), 'bank' => old('bank_name')])
                     <div class="form-row"><label>Purchase Status</label><x-admin.status-badge status="Pending" /></div>
                 </div>
@@ -323,7 +326,7 @@
                         <div class="form-row"><label for="quantity_ordered_liters_{{ $row['id'] }}">Quantity (Liters)</label><input form="purchase-update-{{ $row['id'] }}" id="quantity_ordered_liters_{{ $row['id'] }}" name="quantity_ordered_liters" type="number" min="{{ ($minEdit = min((float) config('fuels.min_depot_order_liters', 40000), (float) $row['quantity_ordered_liters'])) > 0 ? $minEdit : '0.01' }}" step="0.01" value="{{ old('quantity_ordered_liters', $row['quantity_ordered_liters']) }}" required></div>
                         <div class="form-row"><label for="unit_cost_{{ $row['id'] }}">Cost / Liter</label><input form="purchase-update-{{ $row['id'] }}" id="unit_cost_{{ $row['id'] }}" name="unit_cost" type="number" min="0" step="0.01" value="{{ old('unit_cost', $row['unit_cost']) }}" required></div>
                     @endif
-                    <div class="form-row"><label for="payment_status_{{ $row['id'] }}">Payment Status</label><select form="purchase-update-{{ $row['id'] }}" id="payment_status_{{ $row['id'] }}" name="payment_status" required>@foreach ($paymentStatuses as $status)<option value="{{ $status }}" @selected(old('payment_status', $row['payment_status']) === $status)>{{ ucwords($status) }}</option>@endforeach</select></div>
+                    <div class="form-row"><label for="payment_status_{{ $row['id'] }}">Payment Status</label><select form="purchase-update-{{ $row['id'] }}" id="payment_status_{{ $row['id'] }}" name="payment_status" required>@foreach ($paymentStatuses as $status)<option value="{{ $status }}" @selected(old('payment_status', $row['payment_status']) === $status)>{{ ucwords(str_replace('_', ' ', $status)) }}</option>@endforeach</select></div>
                     @include('inventory-officer.partials.purchase-payment-mode', ['idSuffix' => '_'.$row['id'], 'formId' => 'purchase-update-'.$row['id'], 'mode' => old('payment_mode', $row['payment_mode']), 'bank' => old('bank_name', $row['bank_name'])])
                 </div>
             </div>
@@ -361,7 +364,7 @@
                         </div>
                     @endforeach
                 </div>
-                <h3 class="stock-in-deductions-title">Sold QTY: sales deducted from this purchase</h3>
+                <h3 class="stock-in-deductions-title">Sales of this purchase (Sold once Delivered, Reserved until then)</h3>
                 @if ($row['deductions'] === [])
                     <p class="table-help">No sales have deducted from this purchase yet.</p>
                 @else

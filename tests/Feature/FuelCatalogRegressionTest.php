@@ -97,7 +97,7 @@ class FuelCatalogRegressionTest extends TestCase
         $salesOfficer = User::factory()->create(['role' => 'sales_officer', 'status' => 'active']);
         // A real customer, so the only thing wrong with each payload below is its fuel line.
         $customerId = DB::table('customers')->where('status', 'active')->value('id')
-            ?: DB::table('customers')->insertGetId(['customer_code' => 'CUS-FUEL', 'name' => 'Fuel Customer', 'company_name' => 'Fuel Co.', 'payment_status' => 'clear', 'status' => 'active', 'created_at' => now(), 'updated_at' => now()]);
+            ?: DB::table('customers')->insertGetId(['customer_code' => 'CUS-FUEL', 'name' => 'Fuel Customer', 'company_name' => 'Fuel Co.', 'payment_status' => 'paid', 'status' => 'active', 'created_at' => now(), 'updated_at' => now()]);
 
         $inactiveFuelId = DB::table('fuel_types')->insertGetId([
             'code' => 'OLD_DIESEL',

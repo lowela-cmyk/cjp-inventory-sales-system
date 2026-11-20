@@ -36,7 +36,7 @@ class InventoryOfficerPurchaseController extends Controller
 
     private const PURCHASE_STATUSES = ['draft', 'ordered', 'partially_hauled', 'hauled', 'cancelled'];
 
-    private const PAYMENT_STATUSES = ['paid', 'partial', 'unpaid'];
+    private const PAYMENT_STATUSES = ['paid', 'unpaid', 'partially_paid'];
 
     private const TABS = ['purchases', 'stock-in', 'stock-out', 'depots', 'garage'];
 
@@ -247,7 +247,8 @@ class InventoryOfficerPurchaseController extends Controller
                 'webp' => 'image/webp',
                 default => 'image/png',
             },
-            'Content-Disposition' => 'inline; filename="'.Str::slug($row->haul_code).'-withdrawal.'.$extension.'"',
+            // Part 24 #4: ?download=1 saves the file (Download receipt); otherwise it opens in the browser.
+            'Content-Disposition' => ($request->boolean('download') ? 'attachment' : 'inline').'; filename="'.Str::slug($row->haul_code).'-withdrawal.'.$extension.'"',
             'Cache-Control' => 'private, no-store, max-age=0',
             'X-Content-Type-Options' => 'nosniff',
         ]);
@@ -417,8 +418,10 @@ class InventoryOfficerPurchaseController extends Controller
             'unit_cost' => $this->formatNumber($row->unit_cost),
             'total_cost' => $this->formatNumber($row->total_cost),
             'stock_out' => $this->formatNumber($row->stock_out),
+            'reserved' => $this->formatNumber($row->reserved),
+            'available' => $this->formatNumber($row->available),
             'remaining' => $this->formatNumber($row->remaining),
-            'status' => $this->label($row->stock_status),
+            'status' => $row->stock_status === 'reserved' ? 'Fully Reserved' : $this->label($row->stock_status),
             'details' => [
                 'Purchase-ID' => $row->purchase_code,
                 'Order Date' => $this->formatDate($row->stock_in_date),
@@ -428,11 +431,12 @@ class InventoryOfficerPurchaseController extends Controller
                 'Cost / Liter' => $this->formatNumber($row->unit_cost),
                 'Total Cost' => $this->formatNumber($row->total_cost),
                 'Current QTY' => $this->formatLiters($row->remaining),
-                'Sold QTY' => $this->formatLiters($row->stock_out),
-                'Sold and Delivered' => $this->formatLiters($row->delivered),
+                // Part 24 #5: Sold QTY counts delivered sales only; orders not delivered yet are Reserved.
+                'Sold QTY (Delivered)' => $this->formatLiters($row->stock_out),
+                'Reserved (Pending Delivery)' => $this->formatLiters($row->reserved),
+                'Available to Sell' => $this->formatLiters($row->available),
             ] + (($row->historical_blended_f1 ?? 0) > 0 ? ['Blended F1 in these releases (historical, not this purchase)' => $this->formatLiters($row->historical_blended_f1)] : [])
               + (($row->historical_unverified ?? 0) > 0 ? ['Consumed in blending (historical, sale not recorded in the source)' => $this->formatLiters($row->historical_unverified)] : []) + [
-                'Sold, Awaiting Delivery' => $this->formatLiters($row->reserved),
                 'Payment Status' => $this->label($row->payment_status),
                 'Recorded By' => $row->created_by_name ?: 'N/A',
                 'Recorded At' => $this->formatDateTime($row->recorded_at ?? $row->created_at),

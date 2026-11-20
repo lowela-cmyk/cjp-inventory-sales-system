@@ -24,7 +24,7 @@ class Part9RevisionsTest extends AuditTestCase
 
         $html = $this->actingAs($a['sales'])->get(route('sales-officer.sales'))->assertOk()->getContent();
         // Part 18 #4: Payment Status is shown in the Payment Details card only, not as a read-only row of the edit section.
-        foreach (array_combine($ids, ['Unpaid', 'Partially Paid', 'Fully Paid']) as $saleId => $label) {
+        foreach (array_combine($ids, ['Unpaid', 'Partially Paid', 'Paid']) as $saleId => $label) {
             $modal = $this->between($html, 'id="so-sales-edit-'.$saleId.'"', 'id="so-payment-history-'.$saleId.'"');
             $this->assertStringContainsString('<div class="detail-label">Payment Status</div><div class="detail-value">'.$label.'</div>', $modal);
             $this->assertStringNotContainsString('data-payment-status', $modal);
@@ -49,9 +49,11 @@ class Part9RevisionsTest extends AuditTestCase
         $post(['payment_mode' => 'cheque', 'bank_name' => 'UCPB'])->assertSessionHasErrors('bank_name');
         $this->assertSame(0, DB::table('purchases')->count());
 
-        $post(['payment_mode' => 'bank_transfer', 'bank_name' => 'BPI'])->assertSessionHasNoErrors();
+        $post(['payment_mode' => 'bank_transfer', 'bank_name' => 'METROBANK'])->assertSessionHasNoErrors();
         $post(['payment_mode' => 'cash', 'bank_name' => 'BDO'])->assertSessionHasNoErrors();
-        $this->assertDatabaseHas('purchases', ['payment_mode' => 'bank_transfer', 'bank_name' => 'BPI']);
+        $post(['payment_mode' => 'bank_transfer', 'bank_name' => 'BPI'])->assertSessionHasErrors('bank_name');
+        $post(['payment_mode' => 'bank_transfer', 'bank_name' => 'RCBC'])->assertSessionHasErrors('bank_name');
+        $this->assertDatabaseHas('purchases', ['payment_mode' => 'bank_transfer', 'bank_name' => 'METROBANK']);
         // Cash clears the bank.
         $this->assertDatabaseHas('purchases', ['payment_mode' => 'cash', 'bank_name' => null]);
 
@@ -59,16 +61,18 @@ class Part9RevisionsTest extends AuditTestCase
         $itemId = (int) DB::table('purchase_items')->orderBy('id')->value('id');
         $this->actingAs($a['inventory'])->patch(route('inventory-officer.inventory.purchases.update', $itemId), [
             'purchase_date' => '2026-10-14', 'depot_id' => $a['depot'], 'fuel_type_id' => $a['fuel'], 'quantity_ordered_liters' => 1000,
-            'unit_cost' => 50, 'payment_status' => 'paid', 'payment_mode' => 'cash', 'bank_name' => 'BPI',
+            'unit_cost' => 50, 'payment_status' => 'paid', 'payment_mode' => 'cash', 'bank_name' => 'METROBANK',
         ])->assertSessionHasNoErrors();
         $this->assertSame(0, DB::table('purchases')->whereNotNull('bank_name')->count());
 
         $html = $this->actingAs($a['inventory'])->get(route('inventory-officer.inventory'))->assertOk()->getContent();
         $this->assertStringContainsString('<span class="th-line" data-export-part>Payment Mode</span><span class="visually-hidden" data-export-part>Bank</span>', $html);
         $this->assertStringContainsString('data-payment-mode="bank_name"', $html);
-        foreach (['Bank Transfer', 'Cash', 'Cheque', '>BPI<', '>BDO<', '>RCBC<', 'Bank Selection'] as $text) {
+        foreach (['Bank Transfer', 'Cash', 'Cheque', '>METROBANK<', '>BDO<', 'Bank Selection'] as $text) {
             $this->assertStringContainsString($text, $html);
         }
+        $this->assertStringNotContainsString('>BPI<', $html);
+        $this->assertStringNotContainsString('>RCBC<', $html);
     }
 
     public function test_existing_purchases_without_a_payment_mode_still_load(): void

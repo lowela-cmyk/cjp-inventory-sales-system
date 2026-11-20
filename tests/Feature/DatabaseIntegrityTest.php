@@ -130,7 +130,7 @@ class DatabaseIntegrityTest extends TestCase
             'received_by' => $records['salesOfficer']->id,
         ]);
         $this->assertDatabaseHas('sales', ['id' => $sale['saleId'], 'status' => 'paid']);
-        $this->assertDatabaseHas('receivables', ['sale_id' => $sale['saleId'], 'status' => 'clear']);
+        $this->assertDatabaseHas('receivables', ['sale_id' => $sale['saleId'], 'status' => 'paid']);
         $this->assertSame(10000.0, (float) app(\App\Services\PurchaseStockService::class)->line($purchaseItemId)->on_hand);
         $this->assertNoBrokenOperationalLinks();
     }
@@ -268,7 +268,7 @@ class DatabaseIntegrityTest extends TestCase
             ->assertSessionHasErrors('payment');
 
         $this->assertSame(0, DB::table('payments')->where('sale_id', $sale['saleId'])->count());
-        $this->assertDatabaseHas('receivables', ['sale_id' => $sale['saleId'], 'status' => 'pending']);
+        $this->assertDatabaseHas('receivables', ['sale_id' => $sale['saleId'], 'status' => 'unpaid']);
         $this->assertNoBrokenOperationalLinks();
     }
 
@@ -325,7 +325,7 @@ class DatabaseIntegrityTest extends TestCase
             'customer_code' => 'CUS-DB',
             'name' => 'Database Customer',
             'company_name' => 'Database Customer Co.',
-            'payment_status' => 'clear',
+            'payment_status' => 'paid',
             'status' => 'active',
             'created_at' => now(),
             'updated_at' => now(),

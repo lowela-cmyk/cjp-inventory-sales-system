@@ -150,6 +150,8 @@
                                             <img src="{{ $lift['receipt']['url'] }}" alt="Withdrawal receipt for {{ $lift['code'] }}" loading="lazy">
                                             <span>View receipt</span>
                                         </a>
+                                        {{-- Part 24 #4: the same role-gated file, saved instead of opened. --}}
+                                        <a class="btn btn-small btn-secondary ledger-receipt-download" href="{{ $lift['receipt']['download_url'] }}" data-receipt-download>Download receipt</a>
                                     @endif
                                     <strong>Uploaded {{ $lift['receipt']['uploaded_at'] }}@if ($lift['receipt']['uploaded_by']) by {{ $lift['receipt']['uploaded_by'] }}@endif</strong>
                                     @if ($lift['receipt']['notes'])<small>Notes: {{ $lift['receipt']['notes'] }}</small>@endif

@@ -77,7 +77,7 @@ class PaymentVoidService
         }
         $paid = round((float) ActivePayments::query()->where('payment_schedule_id', $scheduleId)->sum('amount'), 2);
         $status = $paid >= round((float) $schedule->amount_due, 2) ? 'paid'
-            : ($paid > 0 ? 'partial' : (strtotime((string) $schedule->due_date) < strtotime(now()->toDateString()) ? 'overdue' : 'pending'));
+            : ($paid > 0 ? 'partially_paid' : 'unpaid');
         DB::table('payment_schedules')->where('id', $scheduleId)->update(['status' => $status, 'updated_at' => now()]);
     }
 }

@@ -335,7 +335,7 @@ class OperationalDataRepairService
                 'location' => 'San Fernando, Pampanga',
                 'email' => 'reynon@example.com',
                 'phone' => '+639171112233',
-                'payment_status' => 'clear',
+                'payment_status' => 'paid',
                 'status' => 'active',
                 'updated_at' => now(),
             ]
@@ -349,7 +349,7 @@ class OperationalDataRepairService
                 'location' => 'Tarlac City, Tarlac',
                 'email' => 'fleet@nltransport.com',
                 'phone' => '+639182223344',
-                'payment_status' => 'clear',
+                'payment_status' => 'paid',
                 'status' => 'active',
                 'updated_at' => now(),
             ]
@@ -363,7 +363,7 @@ class OperationalDataRepairService
                 'location' => 'Angeles City, Pampanga',
                 'email' => 'operations@apexheavy.com',
                 'phone' => '+639193334455',
-                'payment_status' => 'clear',
+                'payment_status' => 'paid',
                 'status' => 'active',
                 'updated_at' => now(),
             ]

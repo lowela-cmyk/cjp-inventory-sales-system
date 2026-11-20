@@ -161,12 +161,12 @@ class Part6RevisionsTest extends TestCase
     public function test_sales_and_alert_dropdown_filters_apply(): void
     {
         $records = $this->records();
-        $customer = DB::table('customers')->insertGetId(['customer_code' => 'CUS-P6', 'name' => 'P6 Customer', 'company_name' => 'P6 Co', 'location' => 'Subic', 'payment_status' => 'clear', 'status' => 'active', 'created_at' => now(), 'updated_at' => now()]);
-        DB::table('customers')->insert(['customer_code' => 'CUS-P6-OFF', 'name' => 'Dormant Buyer', 'company_name' => 'Dormant Co', 'location' => 'Olongapo', 'payment_status' => 'clear', 'status' => 'inactive', 'created_at' => now(), 'updated_at' => now()]);
+        $customer = DB::table('customers')->insertGetId(['customer_code' => 'CUS-P6', 'name' => 'P6 Customer', 'company_name' => 'P6 Co', 'location' => 'Subic', 'payment_status' => 'paid', 'status' => 'active', 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('customers')->insert(['customer_code' => 'CUS-P6-OFF', 'name' => 'Dormant Buyer', 'company_name' => 'Dormant Co', 'location' => 'Olongapo', 'payment_status' => 'paid', 'status' => 'inactive', 'created_at' => now(), 'updated_at' => now()]);
         $paid = $this->sale($records, $customer, 'SLS-P6-PAID', 1000);
         $this->sale($records, $customer, 'SLS-P6-OPEN', 0);
 
-        $this->actingAs($records['sales'])->get(route('sales-officer.sales', ['status' => 'clear']))
+        $this->actingAs($records['sales'])->get(route('sales-officer.sales', ['status' => 'paid']))
             ->assertOk()->assertSee('SLS-P6-PAID')->assertDontSee('SLS-P6-OPEN');
         $this->actingAs($records['admin'])->get(route('admin.sales', ['status' => 'unpaid']))
             ->assertOk()->assertSee('SLS-P6-OPEN')->assertDontSee('SLS-P6-PAID');

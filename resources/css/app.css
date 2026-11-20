@@ -6627,3 +6627,106 @@ body.login-page {
 .cjp-page-links [aria-current] { background: #14532d; color: white; }
 .cjp-page-links [aria-disabled] { opacity: .55; }
 @media (max-width: 640px) { .cjp-pagination > * { max-width: 100%; } .cjp-page-links { width: 100%; } }
+
+/* Part 24 #1: the Delivery Details truck's max capacity and available liters. */
+.truck-capacity-hint {
+    margin: 4px 0 0;
+    font-size: 12px;
+    color: #4b5563;
+}
+
+.truck-capacity-hint.is-error {
+    color: #a31318;
+    font-weight: 600;
+}
+
+.truck-capacity-summary {
+    margin-top: 8px;
+    padding: 10px 12px;
+    border: 1px solid #d7e2db;
+    border-radius: 10px;
+    background: #f8fbf9;
+}
+
+.truck-capacity-summary.is-error {
+    border-color: #e29598;
+    background: #fff5f5;
+}
+
+.truck-capacity-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px 14px;
+}
+
+.truck-capacity-grid .f1-breakdown-cell span {
+    display: block;
+    font-size: 11px;
+    color: #4b5563;
+    margin-bottom: 2px;
+}
+
+.truck-capacity-grid .f1-breakdown-cell output {
+    font-weight: 700;
+    font-size: 13.5px;
+    color: #111827;
+}
+
+.truck-capacity-summary.is-error [data-truck-cap-remaining] {
+    color: #a31318;
+}
+
+.truck-capacity-error {
+    margin: 8px 0 0;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #a31318;
+}
+
+@media (max-width: 767px) {
+    .truck-capacity-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+/* Part 24 #3: extra purchase lines of a Depot to Client order. Each line is a copy of the original order-line grid
+   (Qty Ordered | Fuel Type | Fuel Price, then the amounts and totals); its small header spans the whole row, so the
+   fields keep the original arrangement. */
+.sale-extra-line {
+    border-top: 1px solid #e5e7eb;
+    margin-top: 20px;
+    padding-top: 20px;
+}
+
+.sale-order-line > .sale-extra-line-header {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 14px;
+}
+
+/* The add control sits under the line totals, right-aligned, without extra text, so the original layout is kept. */
+.sale-add-line-row {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 12px;
+}
+
+.sale-add-line-row[hidden] {
+    display: none;
+}
+
+/* Part 24 #6: dashboard inventory reconciliation. */
+.dash-reconciliation {
+    margin-top: 16px;
+}
+
+.ledger-receipt-download {
+    margin-top: 6px;
+}
+
+.form-row .truck-capacity-hint {
+    grid-column: -2 / -1;
+}

@@ -228,7 +228,7 @@ class DashboardSummaryCardsTest extends TestCase
             'customer_code' => 'CUS-REC-SECOND',
             'name' => 'Second Receivable Customer',
             'company_name' => 'Second Receivable Co.',
-            'payment_status' => 'partial',
+            'payment_status' => 'partially_paid',
             'status' => 'active',
             'created_at' => now(),
             'updated_at' => now(),
@@ -267,7 +267,7 @@ class DashboardSummaryCardsTest extends TestCase
         $this->assertSame(40000.0, $rowsByCode['SLS-REC-UNPAID']['balance']);
         $this->assertSame(40000.0, $rowsByCode['SLS-REC-PARTIAL']['paid']);
         $this->assertSame('Partially Paid', $rowsByCode['SLS-REC-PARTIAL']['status_label']);
-        $this->assertSame('Overdue', $rowsByCode['SLS-REC-UNPAID']['status_label']);
+        $this->assertSame('Unpaid', $rowsByCode['SLS-REC-UNPAID']['status_label']);
         $this->assertFalse($rowsByCode->has('SLS-REC-PAID'));
         $this->assertFalse($rowsByCode->has('SLS-REC-CANCELLED'));
         $this->assertSame(60000.0, $customersByName['Second Receivable Customer']['balance']);
@@ -324,7 +324,7 @@ class DashboardSummaryCardsTest extends TestCase
             'sale_id' => $installmentSaleId,
             'due_date' => '2026-01-31',
             'amount_due' => 50000,
-            'status' => 'partial',
+            'status' => 'partially_paid',
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -332,7 +332,7 @@ class DashboardSummaryCardsTest extends TestCase
             'sale_id' => $installmentSaleId,
             'due_date' => '2026-02-28',
             'amount_due' => 50000,
-            'status' => 'pending',
+            'status' => 'unpaid',
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -449,7 +449,7 @@ class DashboardSummaryCardsTest extends TestCase
             'customer_code' => 'CUS-DASH',
             'name' => 'Dashboard Customer',
             'company_name' => 'Dashboard Customer Co.',
-            'payment_status' => 'partial',
+            'payment_status' => 'partially_paid',
             'status' => 'active',
             'created_at' => now(),
             'updated_at' => now(),
@@ -458,7 +458,7 @@ class DashboardSummaryCardsTest extends TestCase
             'customer_code' => 'CUS-DASH-INACTIVE',
             'name' => 'Inactive Dashboard Customer',
             'company_name' => 'Inactive Dashboard Co.',
-            'payment_status' => 'clear',
+            'payment_status' => 'paid',
             'status' => 'inactive',
             'created_at' => now(),
             'updated_at' => now(),
@@ -487,7 +487,7 @@ class DashboardSummaryCardsTest extends TestCase
             'purchase_code' => 'PUR-DASH-OPEN',
             'depot_id' => $records['depotId'],
             'purchase_date' => '2026-08-30',
-            'payment_status' => 'partial',
+            'payment_status' => 'partially_paid',
             'status' => 'partially_hauled',
             'created_by' => $records['inventoryOfficer']->id,
             'created_at' => now(),
@@ -576,7 +576,7 @@ class DashboardSummaryCardsTest extends TestCase
         DB::table('receivables')->insert([
             'sale_id' => $saleId,
             'due_date' => '2026-09-30',
-            'status' => $status === 'paid' ? 'clear' : 'partial',
+            'status' => $status === 'paid' ? 'paid' : 'partially_paid',
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -760,7 +760,7 @@ class DashboardSummaryCardsTest extends TestCase
             'customer_code' => 'CUS-VAR-SECOND',
             'name' => 'Variance Second Customer',
             'company_name' => 'Variance Second Co.',
-            'payment_status' => 'partial',
+            'payment_status' => 'partially_paid',
             'status' => 'active',
             'created_at' => now(),
             'updated_at' => now(),
@@ -783,7 +783,7 @@ class DashboardSummaryCardsTest extends TestCase
             'sale_id' => $partialSaleId,
             'due_date' => '2026-09-30',
             'amount_due' => 300000,
-            'status' => 'partial',
+            'status' => 'partially_paid',
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -973,7 +973,7 @@ class DashboardSummaryCardsTest extends TestCase
         DB::table('receivables')->insert([
             'sale_id' => $saleId,
             'due_date' => '2026-09-30',
-            'status' => $status === 'paid' ? 'clear' : ($status === 'partially_paid' ? 'partial' : 'unpaid'),
+            'status' => $status === 'paid' ? 'paid' : ($status === 'partially_paid' ? 'partially_paid' : 'unpaid'),
             'created_at' => now(),
             'updated_at' => now(),
         ]);

@@ -11,6 +11,7 @@ use App\Services\RecordCodeService;
 use App\Services\SaleConfirmationService;
 use App\Services\SaleCorrectionService;
 use App\Services\StandardSourceAssignmentService;
+use App\Services\TruckAvailabilityService;
 use App\Support\F1Split;
 use App\Support\FilterDates;
 use App\Support\TruckLabel;
@@ -40,7 +41,7 @@ class SalesOfficerCustomerController extends Controller
 
     private array $visibleSaleIds = [];
 
-    public const PAYMENT_STATUSES = ['clear', 'pending', 'partial', 'unpaid'];
+    public const PAYMENT_STATUSES = ['paid', 'unpaid', 'partially_paid'];
 
     public const ACCOUNT_STATUSES = ['active', 'inactive'];
 
@@ -92,9 +93,9 @@ class SalesOfficerCustomerController extends Controller
     private const NOT_ON_A_LIFT = 'Not on a lift yet';
 
     /** Payment Status shown read-only in the sale modals, worked out from recorded payments. */
-    private const PAYMENT_STATUS_LABELS = ['unpaid' => 'Unpaid', 'partially_paid' => 'Partially Paid', 'paid' => 'Fully Paid'];
+    private const PAYMENT_STATUS_LABELS = ['unpaid' => 'Unpaid', 'partially_paid' => 'Partially Paid', 'paid' => 'Paid'];
 
-    private const RECEIVABLE_FILTER_STATUSES = ['unpaid' => 'Unpaid', 'partial' => 'Partially Paid', 'overdue' => 'Overdue', 'clear' => 'Settled', 'cancelled' => 'Cancelled'];
+    private const RECEIVABLE_FILTER_STATUSES = ['paid' => 'Paid', 'unpaid' => 'Unpaid', 'partially_paid' => 'Partially Paid', 'cancelled' => 'Cancelled'];
 
     public function index(Request $request, DashboardSummaryService $dashboardSummary, string $state = 'receivables'): View
     {
@@ -106,7 +107,7 @@ class SalesOfficerCustomerController extends Controller
             'delivery_type' => ['nullable', Rule::in(array_keys(self::DELIVERY_TYPES))],
             'fuel_type_id' => ['nullable', 'integer', Rule::exists('fuel_types', 'id')],
             'location' => ['nullable', 'string', 'max:255'],
-            'payment_status' => ['nullable', Rule::in(['clear', 'pending'])],
+            'payment_status' => ['nullable', Rule::in(self::PAYMENT_STATUSES)],
         ] + FilterDates::rules());
         $dates = FilterDates::range($data);
 
@@ -132,7 +133,7 @@ class SalesOfficerCustomerController extends Controller
                 'receivableStatuses' => self::RECEIVABLE_FILTER_STATUSES,
                 'deliveryStatuses' => collect(self::DELIVERY_STATUSES)->mapWithKeys(fn (string $status): array => [$status => $this->label($status)])->all(),
                 'deliveryTypes' => self::DELIVERY_TYPES,
-                'customerPaymentStatuses' => ['clear' => 'Clear', 'pending' => 'Pending'],
+                'customerPaymentStatuses' => ['paid' => 'Paid', 'unpaid' => 'Unpaid', 'partially_paid' => 'Partially Paid'],
                 'accountStatuses' => collect(self::ACCOUNT_STATUSES)->mapWithKeys(fn (string $status): array => [$status => $this->label($status)])->all(),
                 'locations' => DB::table('customers')->whereNotNull('location')->where('location', '!=', '')->distinct()->orderBy('location')->pluck('location', 'location'),
             ],
@@ -154,7 +155,8 @@ class SalesOfficerCustomerController extends Controller
             'f1GarageTankOptions' => $garageTanks->where('fuel_code', F1Split::F1_CODE)->values(),
             'garageOptions' => $garageOptions = $activeTab === 'receivables' ? app(GarageStockService::class)->lots(['with_empty' => true], null, $this->garageIdsOnSales() ?: [0])->values() : collect(),
             'f1GarageOptions' => $garageOptions->where('fuel_code', F1Split::F1_CODE)->values(),
-            'deliveryTrucks' => DB::table('trucks')->where('status', '!=', 'inactive')->orderByRaw(TruckLabel::orderSql())->get(['id', 'truck_code', 'name']),
+            // Part 24 #1: each truck's max capacity and what it can still carry (open deliveries and fuel on it counted).
+            'deliveryTrucks' => app(TruckAvailabilityService::class)->deliveryCapacities()->values(),
             'deliveryDrivers' => DB::table('users')->where('role', 'driver')->where('status', 'active')->orderBy('name')->get(['id', 'name']),
             'paymentStatuses' => self::PAYMENT_STATUSES,
             'accountStatuses' => self::ACCOUNT_STATUSES,
@@ -446,6 +448,57 @@ class SalesOfficerCustomerController extends Controller
         return redirect()->route($this->salesRedirectRoute($request))->with('status', 'The Standard order source was assigned successfully.');
     }
 
+    /**
+     * Part 24 #2: the Delivery Status of a Garage to Client order is updated from Sales with a dropdown (Pending, Out
+     * for Delivery, Delivered), by Admin or a Sales Officer; the assigned driver keeps their own Update Delivery. The
+     * change runs through SaleConfirmationService like the driver's: Delivered releases the order from its garage tank
+     * (Stock Out) exactly once and is final; Cancelled stays the Cancel Sale action. Other delivery types keep their
+     * own flows (Depot to Client follows its lift; Standard gets a source first).
+     */
+    public function updateGarageDeliveryStatus(Request $request, int $sale): RedirectResponse
+    {
+        $row = DB::table('sales')->where('id', $sale)->whereNull('deleted_at')->first(['id', 'sale_code', 'delivery_type', 'delivery_status', 'status']);
+        abort_unless($row, 404);
+        $keep = ['edit_sale_id' => $sale];
+
+        if ($row->delivery_type !== 'garage_to_client') {
+            return back()->withErrors(['garage_delivery_status' => 'Only a Garage to Client order\'s delivery status is updated here.'])->withInput($keep);
+        }
+
+        $data = $request->validate([
+            'garage_delivery_status' => ['required', Rule::in(\App\Services\DriverSaleDeliveryService::STATUSES)],
+            'idempotency_key' => ['nullable', 'uuid'],
+        ], [], ['garage_delivery_status' => 'delivery status']);
+        $status = (string) $data['garage_delivery_status'];
+
+        $write = function () use ($sale, $status, $request): array {
+            // Checked here, so a resent request (same key) is answered as already saved instead.
+            if ($status === DB::table('sales')->where('id', $sale)->value('delivery_status')) {
+                throw new \RuntimeException('The order is already '.$this->label($status).'.');
+            }
+            $this->saleConfirmationService->updateDeliveryStatus($sale, $status, (int) $request->user()->id);
+            $this->markUpdatedBy($sale, $request);
+
+            return ['reference_id' => $sale];
+        };
+
+        try {
+            $result = ($data['idempotency_key'] ?? null)
+                ? $this->idempotencyService->run((string) $data['idempotency_key'], 'sales.garage-delivery', (int) $request->user()->id, $write)
+                : $write();
+        } catch (ValidationException $exception) {
+            return back()->withErrors($exception->errors())->withInput($keep);
+        } catch (\RuntimeException $exception) {
+            return back()->withErrors(['garage_delivery_status' => $exception->getMessage()])->withInput($keep);
+        }
+
+        return redirect()
+            ->route($this->salesRedirectRoute($request))
+            ->with('status', ($result['duplicate'] ?? false)
+                ? 'This delivery update was already saved.'
+                : 'Delivery status of '.$row->sale_code.' updated to '.$this->label($status).'.');
+    }
+
     public function storeSale(Request $request): RedirectResponse
     {
         $data = $this->validatedSaleData($request);
@@ -460,6 +513,7 @@ class SalesOfficerCustomerController extends Controller
 
         $requestedStatus = $data['status'] ?? 'confirmed';
         $items = $this->normalizedSaleItems($data);
+        $this->assertDistinctSources($items, (string) $data['delivery_type']);
         $saleTotal = 0.0;
         foreach ($items as $item) {
             $lineTotal = (float) $item['line_total'];
@@ -499,6 +553,10 @@ class SalesOfficerCustomerController extends Controller
                 function () use ($request, $data, $items, $requestedStatus, $initialAmountPaid, $initialReference): array {
                     return $this->idempotencyService->retryOnCollision('sale_code', function () use ($request, $data, $items, $requestedStatus, $initialAmountPaid, $initialReference): array {
                         $saleCode = $this->saleCode($items);
+                        // Part 24 #1: the delivery truck must have room for the whole order (row-locked check).
+                        if (! empty($data['delivery_truck_id'])) {
+                            app(TruckAvailabilityService::class)->assertDeliveryFits((int) $data['delivery_truck_id'], round((float) collect($items)->sum('quantity_liters'), 2));
+                        }
 
                         $saleId = DB::table('sales')->insertGetId([
                             'sale_code' => $saleCode,
@@ -528,7 +586,7 @@ class SalesOfficerCustomerController extends Controller
                         DB::table('receivables')->insert([
                             'sale_id' => $saleId,
                             'due_date' => $data['due_date'] ?? null,
-                            'status' => $requestedStatus === 'cancelled' ? 'clear' : 'pending',
+                            'status' => 'unpaid',
                             'created_at' => $now,
                             'updated_at' => $now,
                         ]);
@@ -694,6 +752,18 @@ class SalesOfficerCustomerController extends Controller
                     // Part 19: payments, deliveries and lifts stay as recorded; only the lines' figures are corrected.
                     foreach ($this->lineCorrection($row, $data, $items) as $itemId => $values) {
                         DB::table('sale_items')->where('id', $itemId)->update($values + ['updated_at' => now()]);
+                    }
+                }
+
+                // Part 24 #1: a new truck, or a new quantity on the truck, must still fit (this order's own liters are
+                // left out of the truck's load). An unchanged assignment is not re-checked.
+                $truckId = $saleUpdate['delivery_truck_id'] ?? null;
+                if ($truckId) {
+                    $openLiters = round((float) DB::table('sale_items')->where('sale_id', $sale)->selectRaw('COALESCE(SUM(CASE WHEN quantity_liters > fulfilled_quantity_liters THEN quantity_liters - fulfilled_quantity_liters ELSE 0 END), 0) as liters')->value('liters'), 2);
+                    $litersBefore = round((float) $beforeItems->sum('quantity_liters'), 2);
+                    $litersAfter = round((float) DB::table('sale_items')->where('sale_id', $sale)->sum('quantity_liters'), 2);
+                    if ((int) $truckId !== (int) $row->delivery_truck_id || $litersAfter !== $litersBefore) {
+                        app(TruckAvailabilityService::class)->assertDeliveryFits((int) $truckId, $openLiters, $sale);
                     }
                 }
 
@@ -994,18 +1064,30 @@ class SalesOfficerCustomerController extends Controller
         $transactionSummaries = $this->transactionSummaries($customerIds);
         $outstandingTotals = $this->customerOutstandingTotals($customerIds);
 
-        $overdueCustomerIds = $customerIds->isEmpty()
+        $paidOnOpenTotals = $customerIds->isEmpty()
             ? []
-            : DB::table('receivables')
-                ->join('sales', 'sales.id', '=', 'receivables.sale_id')
+            : DB::table('sales')
+                ->leftJoinSub(
+                    DB::table('sale_items')->groupBy('sale_id')->selectRaw('sale_id, SUM(line_total) as total'),
+                    'co_items',
+                    'co_items.sale_id',
+                    '=',
+                    'sales.id'
+                )
+                ->leftJoinSub(
+                    ActivePayments::query()->groupBy('sale_id')->selectRaw('sale_id, SUM(amount) as paid'),
+                    'co_paid',
+                    'co_paid.sale_id',
+                    '=',
+                    'sales.id'
+                )
                 ->whereIn('sales.customer_id', $customerIds->all())
                 ->whereNull('sales.deleted_at')
                 ->where('sales.status', '!=', 'cancelled')
-                ->where('receivables.status', 'overdue')
-                ->pluck('sales.customer_id')
-                ->map(fn (mixed $id): int => (int) $id)
-                ->unique()
-                ->flip()
+                ->whereRaw('ROUND(COALESCE(co_items.total, 0), 2) > ROUND(COALESCE(co_paid.paid, 0), 2)')
+                ->groupBy('sales.customer_id')
+                ->selectRaw('sales.customer_id, COALESCE(SUM(COALESCE(co_paid.paid, 0)), 0) as paid_on_open')
+                ->pluck('paid_on_open', 'customer_id')
                 ->all();
 
         // Payments recorded on cancelled sales are owed back minus recorded refunds.
@@ -1033,15 +1115,19 @@ class SalesOfficerCustomerController extends Controller
                 ->all();
 
         $transformed = $rows
-            ->map(function (\stdClass $row) use ($transactionSummaries, $outstandingTotals, $overdueCustomerIds, $hasSalesCustomerIds, $refundDueTotals): array {
+            ->map(function (\stdClass $row) use ($transactionSummaries, $outstandingTotals, $paidOnOpenTotals, $hasSalesCustomerIds, $refundDueTotals): array {
                 $cid = (int) $row->id;
                 $outstanding = (float) ($outstandingTotals[$cid] ?? 0);
-                $hasOverdue = isset($overdueCustomerIds[$cid]);
+                $paidOnOpen = (float) ($paidOnOpenTotals[$cid] ?? 0);
                 $hasSales = isset($hasSalesCustomerIds[$cid]);
                 $refundDue = (float) ($refundDueTotals[$cid] ?? 0);
                 $derivedPaymentStatus = $hasSales
-                    ? ($hasOverdue ? 'overdue' : ($outstanding > 0 ? 'pending' : ($refundDue > 0 ? 'refund_due' : 'clear')))
-                    : ($row->payment_status ?: 'clear');
+                    ? ($outstanding > 0 ? (round($paidOnOpen, 2) > 0 ? 'partially_paid' : 'unpaid') : ($refundDue > 0 ? 'unpaid' : 'paid'))
+                    : match ($row->payment_status) {
+                        'clear', 'paid' => 'paid',
+                        'partial', 'partially_paid' => 'partially_paid',
+                        default => 'unpaid',
+                    };
 
                 return [
                     'id' => $cid,
@@ -1233,9 +1319,9 @@ class SalesOfficerCustomerController extends Controller
                 $saleTotal = (float) $row->sale_total;
                 $isCancelled = $row->status === 'cancelled';
                 $balance = $isCancelled ? 0 : max(0, $saleTotal - $paid);
-                // Payments on a voided sale are owed back to the customer, so they are not "clear".
+                // Payments on a voided sale are owed back to the customer, so they are never classified as paid.
                 $refundDue = $isCancelled ? round(max(0, $paid - collect($refundsBySale[$saleId] ?? [])->sum('amount_raw')), 2) : 0.0;
-                $receivableStatus = $isCancelled ? ($refundDue > 0 ? 'refund_due' : 'clear') : $this->receivableStatusForSale($saleTotal, $paid, $row->due_date);
+                $receivableStatus = $isCancelled ? 'unpaid' : $this->receivableStatusForSale($saleTotal, $paid, $row->due_date);
                 $status = match (true) {
                     $refundDue > 0 => 'Refund due: ₱'.number_format($refundDue, 2),
                     $isCancelled => 'Cancelled',
@@ -1690,6 +1776,43 @@ class SalesOfficerCustomerController extends Controller
             }
             if ($item['f1_unit_price'] <= 0) {
                 $errors["items.$index.f1_unit_price"] = 'Enter the F1 Price.';
+            }
+        }
+
+        if ($errors !== []) {
+            throw ValidationException::withMessages($errors);
+        }
+    }
+
+    /**
+     * Part 24 #3: an order may take its fuel from several purchases (one line per purchase), but a purchase (or a
+     * garage tank) appears on one line only; raise that line's quantity instead. Liters asked of a purchase across the
+     * order are still summed and checked against what it has (assertPurchaseStock), so nothing is allocated twice.
+     *
+     * @param  array<int, array<string, mixed>>  $items
+     *
+     * @throws ValidationException
+     */
+    private function assertDistinctSources(array $items, string $deliveryType = 'standard'): void
+    {
+        $seen = [];
+        $errors = [];
+        // A Depot to Client order rides on one lift, and a lift carries one fuel: every purchase line is that fuel.
+        $firstFuel = (int) ($items[array_key_first($items) ?? 0]['fuel_type_id'] ?? 0);
+        foreach ($items as $index => $item) {
+            if ($deliveryType === 'depot_to_client' && $firstFuel && (int) $item['fuel_type_id'] && (int) $item['fuel_type_id'] !== $firstFuel) {
+                $errors["items.$index.purchase_item_id"] = 'Every purchase line of a Depot to Client order must be the same fuel as line 1 (one lift carries one fuel).';
+
+                continue;
+            }
+            $key = $item['garage_tank_id'] ? 'tank:'.$item['garage_tank_id'] : ($item['purchase_item_id'] ? 'purchase:'.$item['purchase_item_id'] : null);
+            if ($key === null) {
+                continue;
+            }
+            if (isset($seen[$key])) {
+                $errors["items.$index.purchase_item_id"] = 'This '.($item['garage_tank_id'] ? 'garage tank' : 'purchase').' is already on line '.($seen[$key] + 1).' of this order. Change that line\'s quantity instead of adding it twice.';
+            } else {
+                $seen[$key] = $index;
             }
         }
 
@@ -2162,10 +2285,10 @@ class SalesOfficerCustomerController extends Controller
         }
 
         if ($paid > 0) {
-            return 'partial';
+            return 'partially_paid';
         }
 
-        return strtotime($dueDate) < strtotime(now()->toDateString()) ? 'overdue' : 'pending';
+        return 'unpaid';
     }
 
     private function salePaymentStatus(float $saleTotal, float $totalPaid): string
@@ -2180,14 +2303,14 @@ class SalesOfficerCustomerController extends Controller
     private function receivableStatusForSale(float $saleTotal, float $totalPaid, mixed $dueDate = null): string
     {
         if ($totalPaid <= 0) {
-            return $this->isOverdue($saleTotal, $totalPaid, $dueDate) ? 'overdue' : 'unpaid';
+            return 'unpaid';
         }
 
         if (round($totalPaid, 2) >= round($saleTotal, 2)) {
-            return 'clear';
+            return 'paid';
         }
 
-        return $this->isOverdue($saleTotal, $totalPaid, $dueDate) ? 'overdue' : 'partial';
+        return 'partially_paid';
     }
 
     /**
@@ -2201,16 +2324,13 @@ class SalesOfficerCustomerController extends Controller
 
         $paid = 'ROUND(COALESCE(payments_total.total_paid, 0), 2)';
         $total = 'ROUND(items_total.sale_total, 2)';
-        $overdue = "(receivables.due_date IS NOT NULL AND receivables.due_date < ? AND {$paid} < {$total})";
-        $today = now()->toDateString();
 
         $query->where('sales.status', '!=', 'cancelled');
 
         return match ($status) {
-            'clear' => $query->whereRaw("{$paid} >= {$total}"),
-            'overdue' => $query->whereRaw($overdue, [$today]),
-            'unpaid' => $query->whereRaw("{$paid} <= 0")->whereRaw("NOT {$overdue}", [$today]),
-            default => $query->whereRaw("{$paid} > 0 AND {$paid} < {$total}")->whereRaw("NOT {$overdue}", [$today]),
+            'paid', 'clear' => $query->whereRaw("{$paid} >= {$total}"),
+            'unpaid', 'pending' => $query->whereRaw("{$paid} <= 0"),
+            default => $query->whereRaw("{$paid} > 0 AND {$paid} < {$total}"),
         };
     }
 
@@ -2832,8 +2952,9 @@ class SalesOfficerCustomerController extends Controller
     private function receivableStatusLabel(string $status): string
     {
         return match ($status) {
-            'clear' => 'Settled',
-            'partial' => 'Partially Paid',
+            'paid', 'clear', 'settled' => 'Paid',
+            'partially_paid', 'partial' => 'Partially Paid',
+            'unpaid', 'pending', 'overdue' => 'Unpaid',
             default => $this->label($status),
         };
     }

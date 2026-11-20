@@ -140,7 +140,7 @@ class FunctionalTestingTest extends TestCase
                 'location' => 'Batangas City',
                 'email' => 'buyer@example.test',
                 'phone' => '09170000002',
-                'payment_status' => 'clear',
+                'payment_status' => 'paid',
                 'status' => 'active',
             ])
             ->assertRedirect(route('sales-officer.sales.customers'));
@@ -201,7 +201,7 @@ class FunctionalTestingTest extends TestCase
             ->assertSessionHasErrors(['amount' => 'Amount paid cannot exceed the remaining balance of PHP 80,000.00.']);
 
         $this->assertSame(100000.0, round((float) DB::table('payments')->where('sale_id', $sale->id)->sum('amount'), 2));
-        $this->assertDatabaseHas('receivables', ['sale_id' => $sale->id, 'status' => 'partial']);
+        $this->assertDatabaseHas('receivables', ['sale_id' => $sale->id, 'status' => 'partially_paid']);
         Carbon::setTestNow();
     }
 
@@ -282,7 +282,7 @@ class FunctionalTestingTest extends TestCase
             'customer_code' => 'CUS-FUNC',
             'name' => 'Functional Customer',
             'company_name' => 'Functional Customer Co.',
-            'payment_status' => 'clear',
+            'payment_status' => 'paid',
             'status' => 'active',
             'created_at' => now(),
             'updated_at' => now(),
@@ -414,7 +414,7 @@ class FunctionalTestingTest extends TestCase
         DB::table('receivables')->insert([
             'sale_id' => $saleId,
             'due_date' => '2026-09-30',
-            'status' => 'pending',
+            'status' => 'unpaid',
             'created_at' => now(),
             'updated_at' => now(),
         ]);

@@ -26,7 +26,7 @@ class SalesOfficerPaymentRecordingTest extends TestCase
             ->assertRedirect(route('sales-officer.sales'));
 
         $this->assertDatabaseHas('sales', ['id' => $saleId, 'status' => 'partially_paid']);
-        $this->assertDatabaseHas('receivables', ['sale_id' => $saleId, 'status' => 'partial']);
+        $this->assertDatabaseHas('receivables', ['sale_id' => $saleId, 'status' => 'partially_paid']);
 
         $this->actingAs($records['salesOfficer'])
             ->post(route('sales-officer.sales.payments.store', $saleId), $this->paymentPayload([
@@ -38,7 +38,7 @@ class SalesOfficerPaymentRecordingTest extends TestCase
 
         $this->assertSame(100000.0, $this->paidTotal($saleId));
         $this->assertDatabaseHas('sales', ['id' => $saleId, 'status' => 'paid']);
-        $this->assertDatabaseHas('receivables', ['sale_id' => $saleId, 'status' => 'clear']);
+        $this->assertDatabaseHas('receivables', ['sale_id' => $saleId, 'status' => 'paid']);
     }
 
     public function test_payment_history_and_receivable_table_use_real_payment_totals(): void
@@ -135,7 +135,7 @@ class SalesOfficerPaymentRecordingTest extends TestCase
 
         $this->assertSame(0, DB::table('payments')->count());
         $this->assertDatabaseHas('sales', ['id' => $saleId, 'status' => 'confirmed']);
-        $this->assertDatabaseHas('receivables', ['sale_id' => $saleId, 'status' => 'pending']);
+        $this->assertDatabaseHas('receivables', ['sale_id' => $saleId, 'status' => 'unpaid']);
     }
 
     public function test_duplicate_payment_submission_does_not_double_record_or_change_inventory(): void
@@ -199,7 +199,7 @@ class SalesOfficerPaymentRecordingTest extends TestCase
         $this->assertSame(2, DB::table('payments')->where('sale_id', $saleId)->count());
         $this->assertSame(30000.0, $this->paidTotal($saleId));
         $this->assertDatabaseHas('sales', ['id' => $saleId, 'status' => 'partially_paid']);
-        $this->assertDatabaseHas('receivables', ['sale_id' => $saleId, 'status' => 'partial']);
+        $this->assertDatabaseHas('receivables', ['sale_id' => $saleId, 'status' => 'partially_paid']);
         $this->assertSame(0, DB::table('inventory_movements')->count());
         $this->assertSame(0, DB::table('stock_outs')->count());
     }
@@ -216,7 +216,7 @@ class SalesOfficerPaymentRecordingTest extends TestCase
         $this->assertSame(0, DB::table('payments')->where('sale_id', $saleId)->count());
         $this->assertSame(0.0, $this->paidTotal($saleId));
         $this->assertDatabaseHas('sales', ['id' => $saleId, 'status' => 'confirmed']);
-        $this->assertDatabaseHas('receivables', ['sale_id' => $saleId, 'status' => 'pending']);
+        $this->assertDatabaseHas('receivables', ['sale_id' => $saleId, 'status' => 'unpaid']);
 
         $this->actingAs($records['salesOfficer'])
             ->post(route('sales-officer.sales.payments.store', $saleId), $this->paymentPayload([
@@ -227,7 +227,7 @@ class SalesOfficerPaymentRecordingTest extends TestCase
 
         $this->assertSame(40000.0, $this->paidTotal($saleId));
         $this->assertDatabaseHas('sales', ['id' => $saleId, 'status' => 'paid']);
-        $this->assertDatabaseHas('receivables', ['sale_id' => $saleId, 'status' => 'clear']);
+        $this->assertDatabaseHas('receivables', ['sale_id' => $saleId, 'status' => 'paid']);
         $this->assertSame(0, DB::table('inventory_movements')->count());
     }
 
@@ -267,7 +267,7 @@ class SalesOfficerPaymentRecordingTest extends TestCase
         $this->assertSame(3, DB::table('payments')->where('sale_id', $saleId)->count());
         $this->assertSame(120000.0, $this->paidTotal($saleId));
         $this->assertDatabaseHas('sales', ['id' => $saleId, 'status' => 'paid']);
-        $this->assertDatabaseHas('receivables', ['sale_id' => $saleId, 'status' => 'clear']);
+        $this->assertDatabaseHas('receivables', ['sale_id' => $saleId, 'status' => 'paid']);
 
         $this->actingAs($records['salesOfficer'])
             ->get(route('sales-officer.sales'))
@@ -303,8 +303,8 @@ class SalesOfficerPaymentRecordingTest extends TestCase
             ]))
             ->assertRedirect(route('sales-officer.sales'));
 
-        $this->assertDatabaseHas('payment_schedules', ['id' => $firstScheduleId, 'status' => 'partial']);
-        $this->assertDatabaseHas('payment_schedules', ['id' => $secondScheduleId, 'status' => 'pending']);
+        $this->assertDatabaseHas('payment_schedules', ['id' => $firstScheduleId, 'status' => 'partially_paid']);
+        $this->assertDatabaseHas('payment_schedules', ['id' => $secondScheduleId, 'status' => 'unpaid']);
         $this->assertDatabaseHas('sales', ['id' => $saleId, 'status' => 'partially_paid']);
 
         $this->actingAs($records['salesOfficer'])
@@ -335,7 +335,7 @@ class SalesOfficerPaymentRecordingTest extends TestCase
             ->assertSessionHasErrors('amount');
 
         $this->assertSame(0, DB::table('payments')->count());
-        $this->assertDatabaseHas('payment_schedules', ['id' => $scheduleId, 'status' => 'pending']);
+        $this->assertDatabaseHas('payment_schedules', ['id' => $scheduleId, 'status' => 'unpaid']);
 
         $this->actingAs($records['salesOfficer'])
             ->post(route('sales-officer.sales.payments.store', $saleId), $this->paymentPayload([
@@ -377,7 +377,7 @@ class SalesOfficerPaymentRecordingTest extends TestCase
 
         $this->assertSame(0, DB::table('payments')->count());
         $this->assertDatabaseHas('sales', ['id' => $saleId, 'status' => 'confirmed']);
-        $this->assertDatabaseHas('receivables', ['sale_id' => $saleId, 'status' => 'pending']);
+        $this->assertDatabaseHas('receivables', ['sale_id' => $saleId, 'status' => 'unpaid']);
     }
 
     public function test_only_sales_officer_and_admin_can_record_payments_in_existing_sales_workflow(): void
@@ -453,7 +453,7 @@ class SalesOfficerPaymentRecordingTest extends TestCase
 
         DB::table('receivables')->insert([
             'sale_id' => $saleId,
-            'status' => 'pending',
+            'status' => 'unpaid',
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -470,7 +470,7 @@ class SalesOfficerPaymentRecordingTest extends TestCase
             'sale_id' => $saleId,
             'due_date' => '2026-09-30',
             'amount_due' => 10000,
-            'status' => 'pending',
+            'status' => 'unpaid',
             'created_at' => now(),
             'updated_at' => now(),
         ], $overrides));
@@ -496,7 +496,7 @@ class SalesOfficerPaymentRecordingTest extends TestCase
             'customer_code' => 'CUS-PAY',
             'name' => 'Payment Customer',
             'company_name' => 'Payment Customer Co.',
-            'payment_status' => 'clear',
+            'payment_status' => 'paid',
             'status' => 'active',
             'created_at' => now(),
             'updated_at' => now(),

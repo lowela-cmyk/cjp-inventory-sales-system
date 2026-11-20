@@ -37,7 +37,7 @@ abstract class AuditTestCase extends TestCase
             'depot' => DB::table('depots')->insertGetId(['depot_code' => 'DEP-AUD', 'name' => 'Audit Terminal', 'address' => 'Audit Road', 'status' => 'active', 'created_at' => now(), 'updated_at' => now()]),
             'fuel' => (int) DB::table('fuel_types')->where('code', 'DSL')->value('id'),
             'truck' => DB::table('trucks')->insertGetId(['truck_code' => 'TRK-AUD', 'capacity_liters' => 30000, 'truck_type' => 'hauling', 'status' => 'available', 'created_at' => now(), 'updated_at' => now()]),
-            'customer' => DB::table('customers')->insertGetId(['customer_code' => 'CUS-AUD', 'name' => 'Audit Customer', 'company_name' => 'Audit Co.', 'payment_status' => 'clear', 'status' => 'active', 'created_at' => now(), 'updated_at' => now()]),
+            'customer' => DB::table('customers')->insertGetId(['customer_code' => 'CUS-AUD', 'name' => 'Audit Customer', 'company_name' => 'Audit Co.', 'payment_status' => 'paid', 'status' => 'active', 'created_at' => now(), 'updated_at' => now()]),
         ];
     }
 

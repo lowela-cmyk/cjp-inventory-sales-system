@@ -328,7 +328,7 @@ class Part18TankAverageCostTest extends AuditTestCase
             'main_quantity_liters' => $liters, 'f1_quantity_liters' => 0, 'f1_percentage' => 0, 'unit_price' => 70, 'line_total' => $liters * 70,
             'fulfilled_quantity_liters' => $deliveryStatus === 'delivered' ? $liters : 0, 'created_at' => now(), 'updated_at' => now(),
         ]);
-        DB::table('receivables')->insert(['sale_id' => $sale, 'status' => 'pending', 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('receivables')->insert(['sale_id' => $sale, 'status' => 'unpaid', 'created_at' => now(), 'updated_at' => now()]);
 
         return $sale;
     }

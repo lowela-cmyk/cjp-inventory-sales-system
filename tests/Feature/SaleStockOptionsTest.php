@@ -183,7 +183,7 @@ class SaleStockOptionsTest extends AuditTestCase
 
     private function insertPurchase(array $a, string $code, string $fuelCode, float $liters, string $status = 'ordered'): int
     {
-        $purchaseId = DB::table('purchases')->insertGetId(['purchase_code' => $code, 'depot_id' => $a['depot'], 'purchase_date' => '2026-09-08', 'payment_status' => 'paid', 'status' => $status, 'workflow_status' => $status === 'hauled' ? 'completed' : 'pending', 'created_at' => now(), 'updated_at' => now()]);
+        $purchaseId = DB::table('purchases')->insertGetId(['purchase_code' => $code, 'depot_id' => $a['depot'], 'purchase_date' => '2026-09-08', 'payment_status' => 'paid', 'status' => $status, 'workflow_status' => $status === 'hauled' ? 'completed' : 'unpaid', 'created_at' => now(), 'updated_at' => now()]);
 
         return DB::table('purchase_items')->insertGetId(['purchase_id' => $purchaseId, 'fuel_type_id' => $this->fuel($fuelCode), 'quantity_ordered_liters' => $liters, 'unit_cost' => 50, 'line_total' => $liters * 50, 'quantity_hauled_liters' => $status === 'hauled' ? $liters : 0, 'status' => $status === 'hauled' ? 'lifted' : 'unlifted', 'created_at' => now(), 'updated_at' => now()]);
     }

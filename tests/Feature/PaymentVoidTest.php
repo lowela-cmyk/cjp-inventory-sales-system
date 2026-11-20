@@ -35,7 +35,7 @@ class PaymentVoidTest extends AuditTestCase
         $saleId = $this->order($a);
         $kept = $this->pay($a, $saleId, 1000, '2026-10-20');
         $voided = $this->pay($a, $saleId, 3000, '2026-10-27');
-        $this->assertSame(['partially_paid', 'partial'], $this->statuses($saleId));
+        $this->assertSame(['partially_paid', 'partially_paid'], $this->statuses($saleId));
 
         $this->actingAs($a['admin'])->patch(route('admin.sales.payments.void', [$saleId, $voided]), ['void_reason' => 'Bounced bank transfer'])
             ->assertSessionHasNoErrors()->assertRedirect(route('admin.sales'));
@@ -48,7 +48,7 @@ class PaymentVoidTest extends AuditTestCase
         $this->assertTrue(DB::table('sale_change_logs')->where('sale_id', $saleId)->where('field', 'payments.'.$row->payment_code.'.voided')->where('changed_by', $a['admin']->id)->exists());
 
         // Status, balance and latest payment date come from the remaining 1,000 only.
-        $this->assertSame(['partially_paid', 'partial'], $this->statuses($saleId));
+        $this->assertSame(['partially_paid', 'partially_paid'], $this->statuses($saleId));
         $sale = $this->salesRow($a, $saleId);
         $this->assertSame(['1,000.00', '4,000.00', '2026-10-20'], [$sale['total_paid'], $sale['balance'], (string) $sale['latest_payment_date']]);
 
@@ -89,7 +89,7 @@ class PaymentVoidTest extends AuditTestCase
         // The voided 2,000 no longer reduces the balance, and an identical re-entry is not treated as a duplicate.
         $this->pay($a, $saleId, 2000, '2026-10-27');
         $this->pay($a, $saleId, 3000, '2026-10-28');
-        $this->assertSame(['paid', 'clear'], $this->statuses($saleId));
+        $this->assertSame(['paid', 'paid'], $this->statuses($saleId));
         $this->assertSame(['paid' => 1, 'unpaid' => 0, 'partial' => 0], app(DashboardService::class)->salesTrend([])['totals']['payment_status']);
         // Only the payments that count are numbered.
         $this->assertSame(['Voided', 'Installment #1', 'Installment #2'], array_column($this->salesRow($a, $saleId)['payments'], 'sequence'));

@@ -178,7 +178,7 @@ class Phase3OperationalAcceptanceTest extends TestCase
             // Receivable is clear
             $receivable = DB::table('receivables')->where('sale_id', $saleItem->sale_id)->first();
             $this->assertNotNull($receivable);
-            $this->assertSame('clear', $receivable->status);
+            $this->assertSame('paid', $receivable->status);
         }
 
         // Direct depot allocation check for UNL
@@ -327,7 +327,7 @@ class Phase3OperationalAcceptanceTest extends TestCase
 
         $this->assertDatabaseHas('receivables', [
             'sale_id' => $sale->id,
-            'status' => 'clear',
+            'status' => 'paid',
         ]);
 
         $this->assertDatabaseHas('sales', [

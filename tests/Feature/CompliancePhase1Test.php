@@ -122,7 +122,7 @@ class CompliancePhase1Test extends AuditTestCase
             ->assertSee('Refund due: ₱15,000.00')
             ->assertSee('Duplicate entry — Entered twice by mistake');
         $this->actingAs($a['sales'])->get(route('sales-officer.sales.customers'))->assertOk()
-            ->assertSee('Refund Due');
+            ->assertSee('Unpaid');
 
         // The cancel modal lists the reasons; a sale without payments stays plain "Cancelled".
         $unpaidId = $this->recordSale($a, 500, 65, 0);

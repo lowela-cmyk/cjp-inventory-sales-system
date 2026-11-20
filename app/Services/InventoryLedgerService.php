@@ -249,6 +249,7 @@ class InventoryLedgerService
                         'notes' => is_string($row->withdrawal_receipt_notes) && $row->withdrawal_receipt_notes !== '' ? $row->withdrawal_receipt_notes : null,
                         // The file is served by the role-gated withdrawal-receipts.show route, never a public URL.
                         'url' => route('withdrawal-receipts.show', $row->id).'?v='.strtotime((string) $row->withdrawal_receipt_uploaded_at),
+                        'download_url' => route('withdrawal-receipts.show', ['haul' => $row->id, 'download' => 1]),
                     ] : null,
                     'search_text' => strtolower(implode(' ', $details)),
                 ];

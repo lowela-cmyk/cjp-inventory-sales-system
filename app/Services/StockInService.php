@@ -14,16 +14,20 @@ use Illuminate\Support\Facades\DB;
 /**
  * Stock-In revisions (October 23, 2026): one stock-in record per purchase line, created with the purchase.
  *
- * - Stock Out (L): liters sales took from the purchase = delivered (released stock-outs) + promised to open orders
- *   not delivered yet. A sale deducts the moment it is saved; cancelling it gives the liters back.
- * - Remaining (L): purchased - stock out. This is the Total Inventory and the dashboard stock.
- * - Status: Available (liters left) or Sold Out (nothing left); a voided purchase's stock-in reads Cancelled.
+ * - Sold QTY / Stock Out (L), Part 24 #5: liters DELIVERED from the purchase (released stock-outs). A sale counts
+ *   here only once it is marked Delivered.
+ * - Reserved (L): liters promised to open orders not delivered yet. Saving a sale reserves; cancelling it gives the
+ *   liters back; delivering it moves them from Reserved to Sold.
+ * - Remaining / Current QTY (L): purchased - sold (on hand). This is the Total Inventory and the dashboard stock.
+ * - Available (L): remaining - reserved, what a new order can still take.
+ * - Status: Available, Fully Reserved (all remaining liters promised) or Sold Out (nothing left); a voided purchase's
+ *   stock-in reads Cancelled.
  * - Stock-Out Today: liters released that day, as listed on the Stock Out tab.
  */
 class StockInService
 {
-    /** Stock-In filter statuses: Available (liters left) and Sold Out (nothing left). */
-    public const STATUSES = ['available', 'sold_out'];
+    /** Stock-In filter statuses: Available (liters left to sell), Fully Reserved (Part 24 #5) and Sold Out. */
+    public const STATUSES = ['available', 'reserved', 'sold_out'];
 
     private bool $repaired = false;
 
@@ -164,7 +168,6 @@ class StockInService
         $released = DB::query()->fromSub(PurchaseStockService::releasesByPurchaseQuery(), 'release_rows')
             ->groupBy('purchase_item_id')->selectRaw('purchase_item_id, SUM(liters) as liters');
         $reserved = $this->purchaseStock->reservationTotalsQuery();
-        $used = '(COALESCE(released.liters, 0) + COALESCE(reserved.liters, 0))';
         // Historical imports: liters the source documents as consumed (e.g. F1 blended into gasoline sales) without
         // naming the sale are not verified stock. They are excluded from Remaining and reported separately; no stock
         // movement is invented. Lines without a register entry are unaffected.
@@ -172,8 +175,14 @@ class StockInService
         // fuel, so it is taken out of Sold. Together these give the source's own Current QTY and Sold QTY.
         $unverified = 'COALESCE(historical.unverified, 0)';
         $excess = 'COALESCE(historical.excess, 0)';
-        $consumed = "($used - $excess + $unverified)";
+        // Part 24 #5: Sold QTY counts a sale only once it is Delivered (its released stock-outs). Liters promised to
+        // orders not delivered yet are Reserved, tracked on their own and never in Sold. A delivery moves the liters
+        // from Reserved to Sold in the same transaction (reserved = ordered - released per line), so nothing is
+        // deducted twice. Current QTY = purchased - sold (on hand); Available = Current QTY - Reserved.
+        $consumed = "(COALESCE(released.liters, 0) - $excess + $unverified)";
         $remaining = "CASE WHEN stock_ins.status = 'voided' THEN 0 WHEN stock_ins.quantity_liters > $consumed THEN stock_ins.quantity_liters - $consumed ELSE 0 END";
+        $reservedLiters = "CASE WHEN stock_ins.status = 'voided' THEN 0 ELSE COALESCE(reserved.liters, 0) END";
+        $available = "CASE WHEN ($remaining) > ($reservedLiters) THEN ($remaining) - ($reservedLiters) ELSE 0 END";
         $historical = HistoricalReconciliation::stockInAdjustmentsByPurchaseItem();
         $query = $this->baseQuery($filters, $search)
             ->leftJoin('users', 'users.id', '=', 'stock_ins.created_by')
@@ -181,10 +190,11 @@ class StockInService
             ->leftJoinSub($reserved, 'reserved', 'reserved.purchase_item_id', '=', 'stock_ins.purchase_item_id')
             ->leftJoinSub($historical, 'historical', 'historical.purchase_item_id', '=', 'stock_ins.purchase_item_id')
             ->select('stock_ins.*', 'purchases.purchase_code', 'purchases.payment_status', 'purchases.created_at as recorded_at', 'fuel_types.name as fuel_name', 'fuel_types.code as fuel_code', 'depots.name as depot_name', 'users.name as created_by_name')
-            ->selectRaw("ROUND(COALESCE(released.liters, 0) - $excess + $unverified, 2) as delivered, ROUND(COALESCE(reserved.liters, 0), 2) as reserved, ROUND($consumed, 2) as stock_out, ROUND($remaining, 2) as remaining")
+            ->selectRaw("ROUND($consumed, 2) as delivered, ROUND($reservedLiters, 2) as reserved, ROUND($consumed, 2) as stock_out, ROUND($remaining, 2) as remaining, ROUND($available, 2) as available")
             ->selectRaw("ROUND(CASE WHEN stock_ins.status = 'voided' THEN 0 ELSE $unverified END, 2) as historical_unverified, ROUND($excess, 2) as historical_blended_f1")
-            // Available while liters are left, Sold Out when nothing is left (a voided purchase's stock-in: Cancelled).
-            ->selectRaw("CASE WHEN stock_ins.status = 'voided' THEN 'cancelled' WHEN ROUND($remaining, 2) <= 0 THEN 'sold_out' ELSE 'available' END as stock_status");
+            // Available while liters can still be sold, Fully Reserved when every liter left is promised to orders not
+            // delivered yet, Sold Out when nothing is left (a voided purchase's stock-in: Cancelled).
+            ->selectRaw("CASE WHEN stock_ins.status = 'voided' THEN 'cancelled' WHEN ROUND($remaining, 2) <= 0 THEN 'sold_out' WHEN ROUND($available, 2) <= 0 THEN 'reserved' ELSE 'available' END as stock_status");
 
         return DB::query()->fromSub($query, 'stock_rows')
             ->when($filters['status'] ?? null, fn (Builder $q, string $status) => $q->where('stock_status', $status));
@@ -218,7 +228,7 @@ class StockInService
 
     private function normalizeQuantities(object $row): object
     {
-        foreach (['delivered', 'reserved', 'stock_out', 'remaining', 'historical_unverified', 'historical_blended_f1'] as $field) $row->$field = (float) ($row->$field ?? 0);
+        foreach (['delivered', 'reserved', 'stock_out', 'remaining', 'available', 'historical_unverified', 'historical_blended_f1'] as $field) $row->$field = (float) ($row->$field ?? 0);
 
         return $row;
     }
@@ -333,6 +343,31 @@ class StockInService
             'stock_out' => $this->stockOutOn($filters, ($filters['status'] ?? null) ? (clone $query)->select('purchase_item_id') : null, $date),
             'date' => $date, 'active' => (int) $totals->active,
         ];
+    }
+
+    /**
+     * Part 24 #6: purchased, delivered (sold), reserved, on-hand and available liters over the active stock-ins that
+     * match $filters (and $purchaseItemIds when given), in total and per fuel. Purchased = delivered + on hand for
+     * every line, except historical lines whose recorded releases exceed the purchase (over_delivered, shown as a
+     * reconciliation exception; nothing is invented to hide it).
+     *
+     * @param  array<string, mixed>  $filters
+     * @param  array<int, int>|null  $purchaseItemIds
+     * @return array{purchased: float, delivered: float, reserved: float, remaining: float, available: float, over_delivered: float, by_fuel: array<int, array<string, float>>}
+     */
+    public function reconciliation(array $filters = [], ?array $purchaseItemIds = null): array
+    {
+        $rows = $this->query(array_intersect_key($filters, array_flip(['depot_id', 'fuel_type_id'])))
+            ->where('status', 'active')
+            ->when($purchaseItemIds !== null, fn (Builder $q) => $q->whereIn('purchase_item_id', $purchaseItemIds ?: [0]))
+            ->groupBy('fuel_type_id')
+            ->selectRaw('fuel_type_id, ROUND(SUM(quantity_liters), 2) as purchased, ROUND(SUM(delivered), 2) as delivered, ROUND(SUM(reserved), 2) as reserved, ROUND(SUM(remaining), 2) as remaining, ROUND(SUM(available), 2) as available')
+            ->selectRaw('ROUND(SUM(CASE WHEN delivered > quantity_liters THEN delivered - quantity_liters ELSE 0 END), 2) as over_delivered')
+            ->get();
+        $fields = ['purchased', 'delivered', 'reserved', 'remaining', 'available', 'over_delivered'];
+        $byFuel = $rows->mapWithKeys(fn (object $row): array => [(int) $row->fuel_type_id => collect($fields)->mapWithKeys(fn (string $field): array => [$field => (float) $row->$field])->all()])->all();
+
+        return collect($fields)->mapWithKeys(fn (string $field): array => [$field => round((float) $rows->sum($field), 2)])->all() + ['by_fuel' => $byFuel];
     }
 
     /**

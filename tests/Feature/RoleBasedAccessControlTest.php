@@ -551,7 +551,7 @@ class RoleBasedAccessControlTest extends TestCase
             'customer_code' => 'CUS-TEST',
             'name' => 'Test Customer',
             'company_name' => 'Test Customer Company',
-            'payment_status' => 'partial',
+            'payment_status' => 'partially_paid',
             'status' => 'active',
             'created_at' => now(),
             'updated_at' => now(),
@@ -570,7 +570,7 @@ class RoleBasedAccessControlTest extends TestCase
             'purchase_code' => 'PUR-TEST',
             'depot_id' => $depotId,
             'purchase_date' => now()->toDateString(),
-            'payment_status' => 'partial',
+            'payment_status' => 'partially_paid',
             'status' => 'partially_hauled',
             'created_by' => $admin->id,
             'created_at' => now(),
@@ -690,9 +690,10 @@ class RoleBasedAccessControlTest extends TestCase
         $this->actingAs($admin)
             ->get('/admin/dashboard')
             ->assertOk()
-            // In stock (stock-in remaining = purchased - released - promised to open orders):
-            //   Premium 100,000 - 5,000 released - (20,000 - 5,000) promised = 80,000; Diesel 1,000. Total 81,000 L.
-            ->assertSeeInOrder(['Total Inventory in Stock', '81,000 L'])
+            // In stock (Part 24 #6, stock-in remaining = purchased - delivered; promised liters are Reserved):
+            //   Premium 100,000 - 5,000 released = 95,000; Diesel 1,000. Total 96,000 L; 15,000 L reserved.
+            ->assertSeeInOrder(['Total Inventory in Stock', '96,000 L'])
+            ->assertSeeInOrder(['Reserved (Pending Delivery)', '15,000 L', 'Available to Sell', '81,000 L'])
             // Still at the depot: Premium 100,000 - 40,000 lifted - 5,000 released straight from the depot = 55,000;
             //   Diesel 1,000 (not lifted). Total 56,000 L.
             ->assertSeeInOrder(['Remaining Balance in Depots', '56,000 L'])
@@ -703,8 +704,8 @@ class RoleBasedAccessControlTest extends TestCase
             ->assertSeeInOrder(['Unpaid Amount', 'PHP 1,000,000.00'])
             ->assertDontSee('Month With Highest Sales :')
             ->assertDontSee('Simple Forecast Explanation')
-            // Current Stock by Fuel Type chart (Premium, Unleaded, Diesel, F1): 80,000, 0, 1,000, 0 (as above).
-            ->assertSee('"label":"Stock","data":[80000,0,1000,0]', false)
+            // Current Stock by Fuel Type chart (Premium, Unleaded, Diesel, F1): 95,000, 0, 1,000, 0 on hand (as above).
+            ->assertSee('"label":"Stock","data":[95000,0,1000,0]', false)
             ->assertSee('Premium')
             ->assertSee('Diesel');
 

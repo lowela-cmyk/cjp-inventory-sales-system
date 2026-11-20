@@ -274,7 +274,7 @@ class AnalyticsTestingTest extends TestCase
             'customer_code' => 'CUS-ANA',
             'name' => 'Analytics Customer',
             'company_name' => 'Analytics Customer Co.',
-            'payment_status' => 'partial',
+            'payment_status' => 'partially_paid',
             'status' => 'active',
             'created_at' => now(),
             'updated_at' => now(),
@@ -405,7 +405,7 @@ class AnalyticsTestingTest extends TestCase
         DB::table('receivables')->insert([
             'sale_id' => $saleId,
             'due_date' => '2026-09-30',
-            'status' => $status === 'paid' ? 'clear' : ($status === 'partially_paid' ? 'partial' : 'pending'),
+            'status' => $status === 'paid' ? 'paid' : ($status === 'partially_paid' ? 'partially_paid' : 'unpaid'),
             'created_at' => now(),
             'updated_at' => now(),
         ]);

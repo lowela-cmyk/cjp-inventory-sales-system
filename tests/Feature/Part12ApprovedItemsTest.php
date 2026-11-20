@@ -186,10 +186,10 @@ class Part12ApprovedItemsTest extends AuditTestCase
         app(AlertSyncService::class)->sync(true);
         $this->assertSame(1, DB::table('alerts')->where('deduplication_key', 'sync:sale-balance:'.$saleId)->count());
 
-        // Past its due date the alert becomes Overdue (critical) and unread again.
+        // Past its due date the alert becomes critical and unread again (with standardized status).
         $this->actingAs($a['sales'])->patch(route('sales-officer.alerts.read', $alert('sync:sale-balance:'.$saleId)->id));
         Carbon::setTestNow('2026-11-02 09:00:00');
-        $this->actingAs($a['sales'])->get(route('sales-officer.alerts'))->assertOk()->assertSee($saleCode.' Overdue');
+        $this->actingAs($a['sales'])->get(route('sales-officer.alerts'))->assertOk()->assertSee($saleCode.' Unpaid');
         $this->assertSame('critical', $alert('sync:sale-balance:'.$saleId)->severity);
         $this->assertDatabaseMissing('alert_reads', ['alert_id' => $alert('sync:sale-balance:'.$saleId)->id]);
 
@@ -197,9 +197,9 @@ class Part12ApprovedItemsTest extends AuditTestCase
         $this->actingAs($a['sales'])->post(route('sales-officer.sales.payments.store', $saleId), [
             'idempotency_key' => (string) Str::uuid(), 'payment_sale_id' => $saleId, 'amount' => 5000, 'method' => 'cash_on_delivery', 'payment_date' => '2026-11-02',
         ])->assertSessionHasNoErrors();
-        $this->actingAs($a['sales'])->get(route('sales-officer.alerts'))->assertOk()->assertDontSee($saleCode.' Overdue');
+        $this->actingAs($a['sales'])->get(route('sales-officer.alerts'))->assertOk()->assertDontSee($saleCode.' Unpaid');
         $this->assertSame('resolved', $alert('sync:sale-balance:'.$saleId)->status);
-        $this->actingAs($a['sales'])->get(route('sales-officer.alerts', ['read' => 'resolved']))->assertOk()->assertSee($saleCode.' Overdue')->assertSee('Resolved');
+        $this->actingAs($a['sales'])->get(route('sales-officer.alerts', ['read' => 'resolved']))->assertOk()->assertSee($saleCode.' Unpaid')->assertSee('Resolved');
 
         // Putting the Depot to Client order on a lift resolves its alert.
         $this->scheduleLift($a, [['purchase_item_id' => $premium, 'quantity_liters' => 200]], [$depotOrder])->assertSessionHasNoErrors();

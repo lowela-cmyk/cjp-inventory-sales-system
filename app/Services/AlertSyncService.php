@@ -93,7 +93,7 @@ class AlertSyncService
                 $paid = round((float) $sale->paid, 2);
                 $balance = round((float) $sale->total - $paid, 2);
                 $overdue = $sale->due_date && substr((string) $sale->due_date, 0, 10) < $today;
-                $state = $overdue ? 'Overdue' : ($paid > 0 ? 'Partially Paid' : 'Unpaid');
+                $state = $paid > 0 ? 'Partially Paid' : 'Unpaid';
 
                 return [
                     'deduplication_key' => 'sync:sale-balance:'.$sale->id,

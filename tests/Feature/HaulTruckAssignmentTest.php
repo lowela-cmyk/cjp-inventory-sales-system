@@ -255,7 +255,7 @@ class HaulTruckAssignmentTest extends TestCase
             'name' => 'Haul Customer',
             'company_name' => 'Haul Customer Co.',
             'location' => 'San Fernando',
-            'payment_status' => 'clear',
+            'payment_status' => 'paid',
             'status' => 'active',
             'created_at' => now(),
             'updated_at' => now(),

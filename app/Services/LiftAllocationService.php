@@ -95,32 +95,48 @@ class LiftAllocationService
                 continue;
             }
 
-            // The lift line that carries the order's purchase (or its fuel, for an order without a purchase).
-            $lineIndex = null;
-            foreach ($lines as $candidate => $line) {
-                $matches = $sale->delivery_type === 'standard'
-                    ? ($fuelTypeByItem[(int) $line['purchase_item_id']] ?? null) === (int) $sale->fuel_type_id
-                    : ($sale->purchase_item_id
-                    ? (int) $line['purchase_item_id'] === (int) $sale->purchase_item_id
-                    : ($fuelTypeByItem[(int) $line['purchase_item_id']] ?? null) === (int) $sale->fuel_type_id);
-                if ($matches) {
-                    $lineIndex = $candidate;
-                    break;
+            // Part 24 #3: a Depot to Client order may take its fuel from several purchases (one order line each). Each
+            // portion rides on the lift line that carries its purchase, so every purchase of the order must be on the
+            // lift; a Standard order (or a line without a purchase) is matched by its fuel as before.
+            $portions = $sale->delivery_type !== 'standard' && count($sale->portions) > 1 ? $sale->portions : [[
+                'purchase_item_id' => $sale->delivery_type === 'standard' ? null : $sale->purchase_item_id,
+                'purchase_code' => $sale->purchase_code,
+                'liters' => $sale->open_liters,
+            ]];
+            $placed = [];
+            $missing = [];
+            foreach ($portions as $portion) {
+                $lineIndex = null;
+                foreach ($lines as $candidate => $line) {
+                    $matches = $portion['purchase_item_id']
+                        ? (int) $line['purchase_item_id'] === (int) $portion['purchase_item_id']
+                        : ($fuelTypeByItem[(int) $line['purchase_item_id']] ?? null) === (int) $sale->fuel_type_id;
+                    if ($matches) {
+                        $lineIndex = $candidate;
+                        break;
+                    }
+                }
+                if ($lineIndex === null) {
+                    $missing[] = $portion['purchase_code'] ?: 'a '.$sale->fuel_name.' purchase';
+                } else {
+                    $placed[] = [$lineIndex, $portion];
                 }
             }
 
-            if ($lineIndex === null) {
-                $errors[$key] = 'Add '.($sale->purchase_code ?: 'a '.$sale->fuel_name.' purchase').' to this lift first: the order is supplied from it.';
+            if ($missing !== []) {
+                $errors[$key] = 'Add '.implode(' and ', array_unique($missing)).' to this lift first: the order is supplied from '.(count($portions) > 1 ? 'each of its purchases' : 'it').'.';
 
                 continue;
             }
 
-            $total = round($total + $sale->open_liters, 2);
-            $resolved[$lineIndex][] = ['sale_id' => $saleId, 'customer_id' => (int) $sale->customer_id, 'quantity_liters' => $sale->open_liters];
-            // A purchase line can only deliver what it carries.
-            $onLine = round((float) collect($resolved[$lineIndex])->sum('quantity_liters'), 2);
-            if ($onLine > round((float) $lines[$lineIndex]['quantity_liters'], 2)) {
-                $errors[$key] = 'The orders from '.($sale->purchase_code ?: 'this purchase').' add up to '.number_format($onLine, 2).' L, more than its Amount to Lift of '.number_format((float) $lines[$lineIndex]['quantity_liters'], 2).' L.';
+            foreach ($placed as [$lineIndex, $portion]) {
+                $total = round($total + $portion['liters'], 2);
+                $resolved[$lineIndex][] = ['sale_id' => $saleId, 'customer_id' => (int) $sale->customer_id, 'quantity_liters' => round((float) $portion['liters'], 2)];
+                // A purchase line can only deliver what it carries.
+                $onLine = round((float) collect($resolved[$lineIndex])->sum('quantity_liters'), 2);
+                if ($onLine > round((float) $lines[$lineIndex]['quantity_liters'], 2)) {
+                    $errors[$key] = 'The orders from '.($portion['purchase_code'] ?: 'this purchase').' add up to '.number_format($onLine, 2).' L, more than its Amount to Lift of '.number_format((float) $lines[$lineIndex]['quantity_liters'], 2).' L.';
+                }
             }
         }
 
@@ -253,6 +269,10 @@ class LiftAllocationService
         // Garage to Client orders sell from garage stock, not from a truck.
         return ($openSales ?? $this->openDirectSales($lock, ['depot_to_client', 'standard']))
             ->map(function (object $sale) use ($lines): ?object {
+                // Part 24 #3: an order taking fuel from several purchases needs a lift carrying all of them.
+                if (count($sale->portions) > 1) {
+                    return null;
+                }
                 $sale = clone $sale;
                 foreach ($lines as $line) {
                     $carries = $sale->purchase_item_id
@@ -290,7 +310,7 @@ class LiftAllocationService
             ->whereNotNull('sale_id')
             ->when($exceptHaulIds !== [], fn ($query) => $query->whereNotIn('haul_id', $exceptHaulIds));
 
-        return DB::table('sales')
+        $sales = DB::table('sales')
             ->join('customers', 'customers.id', '=', 'sales.customer_id')
             ->join('sale_items', 'sale_items.sale_id', '=', 'sales.id')
             ->join('fuel_types', 'fuel_types.id', '=', 'sale_items.fuel_type_id')
@@ -308,11 +328,32 @@ class LiftAllocationService
             ->selectRaw('sales.id as sale_id, sales.sale_code, sales.sales_order_number, sales.customer_id, customers.name as customer_name, customers.company_name, MIN(sales.delivery_type) as delivery_type')
             ->selectRaw('MIN(sale_items.purchase_item_id) as purchase_item_id, MIN(sale_items.fuel_type_id) as fuel_type_id, MIN(fuel_types.name) as fuel_name, MIN(purchases.purchase_code) as purchase_code')
             ->selectRaw('COALESCE(SUM(sale_items.quantity_liters - sale_items.fulfilled_quantity_liters), 0) as open_liters')
+            ->get();
+
+        // Part 24 #3: the open liters of each order per purchase (one portion per purchase its lines name).
+        $portions = $sales->isEmpty() ? collect() : DB::table('sale_items')
+            ->leftJoin('purchase_items', 'purchase_items.id', '=', 'sale_items.purchase_item_id')
+            ->leftJoin('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
+            ->whereIn('sale_items.sale_id', $sales->pluck('sale_id')->all())
+            ->groupBy('sale_items.sale_id', 'sale_items.purchase_item_id', 'purchases.purchase_code')
+            ->orderBy('sale_items.sale_id')
+            ->orderByRaw('MIN(sale_items.id)')
+            ->selectRaw('sale_items.sale_id, sale_items.purchase_item_id, purchases.purchase_code, COALESCE(SUM(sale_items.quantity_liters - sale_items.fulfilled_quantity_liters), 0) as liters')
             ->get()
-            ->map(function (object $sale): object {
+            ->groupBy('sale_id');
+
+        return $sales
+            ->map(function (object $sale) use ($portions): object {
                 $sale->open_liters = round((float) $sale->open_liters, 2);
                 $sale->purchase_item_id = $sale->purchase_item_id ? (int) $sale->purchase_item_id : null;
                 $sale->fuel_type_id = (int) $sale->fuel_type_id;
+                $sale->portions = collect($portions->get($sale->sale_id, []))
+                    ->map(fn (object $row): array => ['purchase_item_id' => $row->purchase_item_id ? (int) $row->purchase_item_id : null, 'purchase_code' => $row->purchase_code, 'liters' => round((float) $row->liters, 2)])
+                    ->filter(fn (array $row): bool => $row['liters'] > 0)
+                    ->values()->all();
+                if (count($sale->portions) > 1) {
+                    $sale->purchase_code = implode(' + ', array_filter(array_column($sale->portions, 'purchase_code')));
+                }
 
                 return $sale;
             })

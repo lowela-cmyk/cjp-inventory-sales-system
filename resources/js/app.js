@@ -312,8 +312,10 @@ const updateSalesTotals = (items) => {
     let total = 0;
 
     items.querySelectorAll('[data-sales-item]').forEach((row) => {
+        if (row.hidden) return;
         total += syncSaleItemRow(row);
     });
+    syncDuplicatePurchases(items);
 
     const scope = items.closest('.modal-backdrop') || items.parentElement;
     const amountPaidInput = scope?.querySelector('[data-sales-amount-paid]');
@@ -348,13 +350,80 @@ const updateSalesTotals = (items) => {
     if (paymentStatusOutput) {
         let paymentStatus = 'Unpaid';
         if (normalizedAmountPaid > 0) {
-            paymentStatus = total > 0 && normalizedAmountPaid >= total ? 'Fully Paid' : 'Partially Paid';
+            paymentStatus = total > 0 && normalizedAmountPaid >= total ? 'Paid' : 'Partially Paid';
         }
         paymentStatusOutput.textContent = paymentStatus;
     }
 };
 
 document.querySelectorAll('[data-sales-items]').forEach(updateSalesTotals);
+
+// Part 24 #3: a purchase may be on one line of an order only (the server refuses it twice as well).
+function syncDuplicatePurchases(items) {
+    const seen = new Map();
+    const firstFuel = items.querySelector('[data-sales-item] [data-sale-purchase]')?.selectedOptions[0]?.dataset.fuelCode || '';
+    items.querySelectorAll('[data-sales-item]').forEach((row, position) => {
+        const select = row.querySelector('[data-sale-purchase]');
+        if (!select) return;
+        if (row.hidden || !select.value) {
+            if (select.dataset.duplicate) { select.setCustomValidity(''); delete select.dataset.duplicate; }
+            return;
+        }
+        const fuel = select.selectedOptions[0]?.dataset.fuelCode || '';
+        if (seen.has(select.value)) {
+            select.setCustomValidity(`This purchase is already on line ${seen.get(select.value)}. Change that line's quantity instead.`);
+            select.dataset.duplicate = 'true';
+        } else if (row.matches('[data-sale-extra-line]') && firstFuel && fuel && fuel !== firstFuel) {
+            // One lift carries one fuel, so every purchase line of the order is line 1's fuel (the server checks too).
+            select.setCustomValidity('Every purchase line must be the same fuel as line 1 (one lift carries one fuel).');
+            select.dataset.duplicate = 'true';
+            seen.set(select.value, position + 1);
+        } else {
+            seen.set(select.value, position + 1);
+            if (select.dataset.duplicate) { select.setCustomValidity(''); delete select.dataset.duplicate; }
+        }
+    });
+}
+
+const renumberSaleLines = (items) => {
+    items.querySelectorAll('[data-sale-extra-line]').forEach((line, position) => {
+        const number = line.querySelector('[data-sale-line-number]');
+        if (number) number.textContent = String(position + 2);
+    });
+};
+
+document.addEventListener('click', (event) => {
+    const add = event.target.closest('[data-add-sale-line]');
+    if (add) {
+        const items = add.closest('[data-sales-items]');
+        const template = items?.querySelector('[data-sale-line-template]');
+        const target = items?.querySelector('[data-sale-extra-lines]');
+        if (!template || !target) return;
+        const used = [...items.querySelectorAll('[name^="items["]')].map((field) => Number((field.name.match(/^items\[(\d+)\]/) || [])[1] || 0));
+        const index = Math.max(0, ...used) + 1;
+        const html = template.innerHTML.replaceAll('__INDEX__', String(index)).replaceAll('__NUMBER__', String(target.children.length + 2));
+        target.insertAdjacentHTML('beforeend', html);
+        const form = add.closest('form') || items.closest('[data-sale-form]');
+        const type = form?.querySelector('[data-delivery-type]');
+        if (type) syncDeliveryType(type);
+        renumberSaleLines(items);
+        updateSalesTotals(items);
+        target.lastElementChild?.querySelector('[data-sale-quantity]')?.focus();
+        return;
+    }
+
+    const remove = event.target.closest('[data-remove-sale-line]');
+    if (remove) {
+        const items = remove.closest('[data-sales-items]');
+        remove.closest('[data-sale-extra-line]')?.remove();
+        if (items) {
+            renumberSaleLines(items);
+            updateSalesTotals(items);
+            const form = items.closest('form');
+            form?.querySelectorAll('[data-delivery-truck]').forEach((truck) => syncTruckCapacity(truck));
+        }
+    }
+});
 
 // Part 9: Bank Selection only shows for Bank Transfer / Cheque; otherwise it is hidden and cleared.
 function syncBankSelect(modeSelect) {
@@ -455,16 +524,32 @@ function syncStockHint(purchase) {
 
 function syncDeliveryType(select) {
     const form = select.closest('[data-sale-form]');
-    // Part 18 #3 / #5: only Garage to Client has Delivery Details here (Depot to Client takes them from its lift).
+    // Part 18 #3 / #5: only Garage to Client has Delivery Details (Driver, Delivery Date) at the bottom;
+    // Standard and Garage to Client both support Truck Selection in Order Details, while Depot to Client assigns its truck on the lift.
     const showDeliveryDetails = select.value === 'garage_to_client';
+    const garage = showDeliveryDetails;
+    const depot = select.value === 'depot_to_client';
+    form?.querySelectorAll('[data-sale-truck-section]').forEach((section) => {
+        const truck = section.querySelector('[data-delivery-truck]');
+        const note = section.querySelector('[data-depot-truck-note]');
+        if (truck) {
+            truck.disabled = depot;
+            truck.required = garage;
+            if (depot) truck.value = '';
+            syncTruckCapacity(truck);
+        }
+        if (note) note.hidden = !depot;
+    });
     form?.querySelectorAll('[data-delivery-details]').forEach((section) => {
         section.hidden = !showDeliveryDetails;
         section.querySelectorAll('select, input').forEach((field) => { field.disabled = !showDeliveryDetails; });
+        section.querySelectorAll('[data-delivery-truck]').forEach((truck) => syncTruckCapacity(truck));
     });
-
-    // Part 13: Garage to Client sells from garage tanks ("garage" options); the other types from the depot. Part 16: the
-    // F1 dropdown lists F1 purchases and F1 garage tanks for every delivery type.
-    const garage = select.value === 'garage_to_client';
+    form?.querySelectorAll('[data-sale-extra-line]').forEach((line) => {
+        line.hidden = !depot;
+        line.querySelectorAll('select, input').forEach((field) => { field.disabled = !depot; });
+    });
+    form?.querySelectorAll('[data-sale-add-line-row]').forEach((row) => { row.hidden = !depot; });
     // The "not in the depot" hint is for the depot delivery types only.
     // Part 23 #9: the stock hint stays hidden while no fuel is chosen (is-empty).
     form?.querySelectorAll('[data-depot-only]').forEach((hint) => { hint.hidden = garage || (hint.hasAttribute('data-stock-hint') && hint.classList.contains('is-empty')); });
@@ -495,6 +580,7 @@ const blankModalBody = (body) => {
     body.querySelectorAll('[aria-invalid]').forEach((field) => field.removeAttribute('aria-invalid'));
     body.querySelectorAll('[data-lifting-items]').forEach((items) => [...items.querySelectorAll('[data-lifting-item]')].slice(1).forEach((row) => row.remove()));
     body.querySelectorAll('[data-delivery-rows]').forEach((rows) => rows.replaceChildren());
+    body.querySelectorAll('[data-sale-extra-line]').forEach((line) => line.remove());
     body.querySelectorAll('input').forEach((input) => {
         if (input.type === 'hidden' || input.readOnly) return;
         if (input.type === 'checkbox' || input.type === 'radio') {
@@ -1095,6 +1181,92 @@ document.querySelectorAll('[data-delivery-update-form]').forEach((form) => {
     };
     select.addEventListener('change', sync);
     select.addEventListener('input', sync);
+    sync();
+});
+
+// Part 24 #1: the Delivery Details truck shows its max capacity and what it can still carry; an order larger than
+// that cannot be submitted (the server refuses it too). The order's liters are the form's Qty fields (or, on Assign
+// Source, the order's own liters in data-order-liters).
+const truckLiters = (value) => Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
+const truckLitersFixed = (value) => Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function syncTruckCapacity(select) {
+    const row = select.closest('.form-row');
+    const summary = row?.querySelector('[data-truck-capacity-summary]');
+    const hint = row?.querySelector('[data-truck-capacity-hint]');
+    const option = select.selectedOptions[0];
+    if (!summary && !hint) return;
+    if (select.disabled || !option?.value || option.dataset.capacity === undefined) {
+        if (summary) {
+            summary.hidden = true;
+            summary.classList.remove('is-error');
+            const err = summary.querySelector('[data-truck-capacity-error]');
+            if (err) {
+                err.hidden = true;
+                err.textContent = '';
+            }
+        }
+        if (hint) {
+            hint.hidden = true;
+            hint.classList.remove('is-error');
+        }
+        select.setCustomValidity('');
+        return;
+    }
+    const capacity = Number(option.dataset.capacity || 0);
+    const loaded = Number(option.dataset.loaded || 0);
+    const available = Number(option.dataset.available || 0);
+    const quantities = select.form ? [...select.form.elements].filter((field) => /\[quantity_liters\]$/.test(field.name || '') && !field.disabled) : [];
+    const order = select.dataset.orderLiters !== undefined
+        ? Number(select.dataset.orderLiters || 0)
+        : quantities.reduce((sum, field) => sum + (Number(field.value) || 0), 0);
+    const remaining = available - order;
+    const over = !select.disabled && order > available + 0.005;
+    if (summary) {
+        const maxEl = summary.querySelector('[data-truck-cap-max]');
+        const loadedEl = summary.querySelector('[data-truck-cap-loaded]');
+        const availEl = summary.querySelector('[data-truck-cap-available]');
+        const remEl = summary.querySelector('[data-truck-cap-remaining]');
+        const errEl = summary.querySelector('[data-truck-capacity-error]');
+        if (maxEl) maxEl.textContent = `${truckLitersFixed(capacity)} L`;
+        if (loadedEl) loadedEl.textContent = `${truckLitersFixed(loaded)} L`;
+        if (availEl) availEl.textContent = `${truckLitersFixed(available)} L`;
+        if (remEl) remEl.textContent = `${truckLitersFixed(remaining)} L`;
+        summary.classList.toggle('is-error', over);
+        summary.hidden = false;
+        if (errEl) {
+            const excess = Math.max(0, order - available);
+            errEl.textContent = over ? `Over capacity by ${truckLitersFixed(excess)} L. Choose another truck or lower the quantity.` : '';
+            errEl.hidden = !over;
+        }
+    }
+    if (hint) {
+        hint.textContent = `Max capacity ${truckLiters(capacity)} L · Available ${truckLiters(available)} L`
+            + (order > 0 ? ` · This order ${truckLiters(order)} L` : '')
+            + (over ? ' — over capacity, choose another truck or lower the quantity.' : '');
+        hint.classList.toggle('is-error', over);
+        hint.hidden = false;
+    }
+    select.setCustomValidity(over ? `This truck has only ${truckLiters(available)} L available for this ${truckLiters(order)} L order.` : '');
+}
+document.querySelectorAll('[data-delivery-truck]').forEach(syncTruckCapacity);
+document.addEventListener('change', (event) => {
+    if (event.target.matches('[data-delivery-truck]')) syncTruckCapacity(event.target);
+});
+document.addEventListener('input', (event) => {
+    if (!/\[quantity_liters\]$/.test(event.target.name || '') || !event.target.form) return;
+    [...event.target.form.elements].filter((field) => field.matches?.('[data-delivery-truck]')).forEach(syncTruckCapacity);
+});
+
+// Part 24 #2: the Sales Delivery Status dropdown of a Garage to Client order starts on its current status; Update is
+// enabled once another status is chosen (the server still checks every transition).
+document.querySelectorAll('[data-garage-delivery-select]').forEach((select) => {
+    const submit = select.form?.querySelector('[data-garage-delivery-submit]');
+    if (!submit) return;
+    const sync = () => {
+        if (select.form.dataset.submitted === 'true') return;
+        submit.disabled = select.value === select.dataset.current;
+    };
+    select.addEventListener('change', sync);
     sync();
 });
 

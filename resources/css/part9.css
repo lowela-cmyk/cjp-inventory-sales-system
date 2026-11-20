@@ -646,6 +646,12 @@
         grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 
+    /* Record Sales (no F1 column): Fuel Total | Line Total share the bar; a third empty column squeezed Line Total
+       until its amount broke over three lines. */
+    .admin-modal-sales-wide .sale-order-line > .sale-line-totals-no-f1 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
     .admin-modal-sales-wide .sale-line-total-row + .sale-line-total-row {
         border-left: 1px solid var(--admin-line);
         border-top: 0;
@@ -660,6 +666,21 @@
 @media (max-width: 639px) {
     .admin-modal-sales-wide .sale-form .sale-line-total output {
         font-size: 26px;
+    }
+
+    /* Phones: amounts stay on one line where they fit (tighter padding, smaller figures). */
+    .admin-modal-sales-wide .sale-line-total-row {
+        padding: 10px 8px;
+    }
+
+    .admin-modal-sales-wide .sale-line-total-row output {
+        font-size: 16px;
+        overflow-wrap: normal;
+        word-break: keep-all;
+    }
+
+    .admin-modal-sales-wide .sale-form .sale-line-total output {
+        font-size: 20px;
     }
 }
 

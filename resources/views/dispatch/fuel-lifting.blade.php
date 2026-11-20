@@ -350,6 +350,7 @@
                                 @if ($haul['withdrawal_uploaded'])
                                     <div class="receipt-line-actions">
                                         <a class="btn btn-small btn-secondary" href="{{ route('withdrawal-receipts.show', $haul['id']) }}" target="_blank" rel="noopener">View Receipt</a>
+                                        <a class="btn btn-small btn-secondary" href="{{ route('withdrawal-receipts.show', ['haul' => $haul['id'], 'download' => 1]) }}" data-receipt-download>Download</a>
                                         <form method="POST" action="{{ route('admin.fuel-lifting.hauls.withdrawal-receipt.destroy', $haul['id']) }}"
                                             data-confirm-item="the receipt of {{ $haul['code'] }}" data-confirm-action="Remove receipt"
                                             data-confirm-undo="The image is deleted. A new one can be uploaded afterwards.">

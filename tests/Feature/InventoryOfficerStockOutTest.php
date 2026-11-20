@@ -209,7 +209,7 @@ class InventoryOfficerStockOutTest extends TestCase
         foreach ($lines as [$purchase, $liters, $price]) {
             $itemId = (int) DB::table('sale_items')->insertGetId(['sale_id' => $saleId, 'fuel_type_id' => $records['fuelTypeId'], 'purchase_item_id' => $purchase, 'quantity_liters' => $liters, 'main_quantity_liters' => $liters, 'unit_price' => $price, 'line_total' => $liters * $price, 'fulfilled_quantity_liters' => 0, 'created_at' => now(), 'updated_at' => now()]);
         }
-        DB::table('receivables')->insert(['sale_id' => $saleId, 'status' => 'pending', 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('receivables')->insert(['sale_id' => $saleId, 'status' => 'unpaid', 'created_at' => now(), 'updated_at' => now()]);
 
         return ['saleId' => $saleId, 'itemId' => $itemId];
     }
@@ -236,7 +236,7 @@ class InventoryOfficerStockOutTest extends TestCase
         $salesOfficer = User::factory()->create(['role' => 'sales_officer', 'status' => 'active']);
         $depotId = DB::table('depots')->insertGetId(['depot_code' => 'DEP-STOCK-OUT', 'name' => 'Source Depot', 'status' => 'active', 'created_at' => now(), 'updated_at' => now()]);
         $fuelTypeId = (int) DB::table('fuel_types')->where('code', 'DSL')->value('id');
-        $customerId = DB::table('customers')->insertGetId(['customer_code' => 'CUS-STOCK-OUT', 'name' => 'Stock Out Customer', 'company_name' => 'Stock Out Customer Co.', 'payment_status' => 'clear', 'status' => 'active', 'created_at' => now(), 'updated_at' => now()]);
+        $customerId = DB::table('customers')->insertGetId(['customer_code' => 'CUS-STOCK-OUT', 'name' => 'Stock Out Customer', 'company_name' => 'Stock Out Customer Co.', 'payment_status' => 'paid', 'status' => 'active', 'created_at' => now(), 'updated_at' => now()]);
 
         return compact('inventoryOfficer', 'salesOfficer', 'depotId', 'fuelTypeId', 'customerId');
     }

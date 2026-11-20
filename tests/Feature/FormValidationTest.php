@@ -373,7 +373,7 @@ class FormValidationTest extends TestCase
             'company_name' => 'Validation Customer '.Str::upper(Str::random(5)),
             'email' => 'customer-'.Str::lower(Str::random(5)).'@example.test',
             'phone' => '09170000000',
-            'payment_status' => 'clear',
+            'payment_status' => 'paid',
             'status' => 'active',
             'created_at' => now(),
             'updated_at' => now(),
@@ -466,7 +466,7 @@ class FormValidationTest extends TestCase
         DB::table('receivables')->insert([
             'sale_id' => $saleId,
             'due_date' => '2026-09-30',
-            'status' => 'pending',
+            'status' => 'unpaid',
             'created_at' => now(),
             'updated_at' => now(),
         ]);

@@ -47,12 +47,12 @@ class AdminFullAccessTest extends TestCase
             ->assertSee('action="'.route('admin.sales.customers.store').'"', false);
 
         $this->actingAs($r['admin'])->post(route('admin.sales.customers.store'), [
-            'name' => 'Admin Customer', 'company_name' => 'Admin Customer Co.', 'payment_status' => 'clear', 'status' => 'active',
+            'name' => 'Admin Customer', 'company_name' => 'Admin Customer Co.', 'payment_status' => 'paid', 'status' => 'active',
         ])->assertSessionHasNoErrors()->assertRedirect(route('admin.sales.customers'));
         $customerId = (int) DB::table('customers')->where('company_name', 'Admin Customer Co.')->value('id');
 
         $this->actingAs($r['admin'])->patch(route('admin.sales.customers.update', $customerId), [
-            'name' => 'Admin Customer', 'company_name' => 'Admin Customer Co.', 'bank_name' => 'BPI', 'payment_status' => 'clear', 'status' => 'active',
+            'name' => 'Admin Customer', 'company_name' => 'Admin Customer Co.', 'bank_name' => 'BPI', 'payment_status' => 'paid', 'status' => 'active',
         ])->assertRedirect(route('admin.sales.customers'));
         $this->assertDatabaseHas('customers', ['id' => $customerId, 'bank_name' => 'BPI']);
 
@@ -174,11 +174,11 @@ class AdminFullAccessTest extends TestCase
         $r = $this->records();
 
         $this->actingAs($r['admin'])->post(route('admin.sales.customers.store'), [
-            'name' => 'Logged Customer', 'company_name' => 'Logged Co.', 'payment_status' => 'clear', 'status' => 'active',
+            'name' => 'Logged Customer', 'company_name' => 'Logged Co.', 'payment_status' => 'paid', 'status' => 'active',
         ]);
         $customerId = (int) DB::table('customers')->where('company_name', 'Logged Co.')->value('id');
         $this->actingAs($r['admin'])->patch(route('sales-officer.sales.customers.update', $customerId), [
-            'name' => 'Logged Customer', 'company_name' => 'Logged Co.', 'payment_status' => 'clear', 'status' => 'active',
+            'name' => 'Logged Customer', 'company_name' => 'Logged Co.', 'payment_status' => 'paid', 'status' => 'active',
         ]);
 
         $this->assertDatabaseHas('activity_logs', ['user_id' => $r['admin']->id, 'user_role' => 'admin', 'route_name' => 'admin.sales.customers.store', 'method' => 'POST', 'succeeded' => true]);
@@ -211,7 +211,7 @@ class AdminFullAccessTest extends TestCase
             'garage' => $garage,
             'depot' => DB::table('depots')->insertGetId(['depot_code' => 'DEP-ADM', 'name' => 'Admin Terminal', 'address' => 'Pier 1', 'status' => 'active', 'created_at' => now(), 'updated_at' => now()]),
             'truck' => DB::table('trucks')->insertGetId(['truck_code' => 'TRK-ADMIN', 'capacity_liters' => 20000, 'truck_type' => 'hauling', 'status' => 'available', 'created_at' => now(), 'updated_at' => now()]),
-            'customer' => DB::table('customers')->insertGetId(['customer_code' => 'CUS-ADM', 'name' => 'Existing Customer', 'company_name' => 'Existing Co.', 'payment_status' => 'clear', 'status' => 'active', 'created_at' => now(), 'updated_at' => now()]),
+            'customer' => DB::table('customers')->insertGetId(['customer_code' => 'CUS-ADM', 'name' => 'Existing Customer', 'company_name' => 'Existing Co.', 'payment_status' => 'paid', 'status' => 'active', 'created_at' => now(), 'updated_at' => now()]),
         ];
     }
 

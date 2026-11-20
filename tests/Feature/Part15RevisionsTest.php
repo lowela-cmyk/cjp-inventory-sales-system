@@ -164,10 +164,9 @@ class Part15RevisionsTest extends AuditTestCase
             $this->assertStringNotContainsString($plate, $form);
         }
 
-        // Sales (Record / Edit Sales delivery truck) and Stock Out never show plates.
+        // Sales Record Sales Truck Selection displays the truck's plate number, max capacity, loaded, and available liters; Stock Out never shows plates.
         $sales = $this->actingAs($a['sales'])->get(route('sales-officer.sales'))->assertOk()->getContent();
-        $this->assertStringContainsString('>Big Blue</option>', $sales);
-        $this->assertStringNotContainsString('XYZ-999', $sales);
+        $this->assertMatchesRegularExpression('/>Big Blue \(XYZ-999\) – Max [\d,]+ L · Loaded [\d,]+ L · Available [\d,]+ L<\/option>/u', $sales);
         $this->assertStringNotContainsString('XYZ-999', $this->actingAs($a['inventory'])->get(route('inventory-officer.inventory.stock-out'))->getContent());
 
         // The plate stays in the Trucks tab.

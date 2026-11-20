@@ -11,6 +11,8 @@
     $rawLiters = [
         'Total Inventory in Stock' => $inventory['totals']['stock_liters'] ?? null,
         'Remaining Balance in Depots' => $inventory['totals']['remaining_liters'] ?? null,
+        'Reserved (Pending Delivery)' => $inventory['totals']['reserved_liters'] ?? null,
+        'Available to Sell' => $inventory['totals']['available_liters'] ?? null,
         'Total Delivered' => $salesTrend['totals']['delivered_liters'] ?? null,
     ];
     // The Fuel Type / Depot cards only echoed the filters; the active filters show as chips instead.
@@ -126,6 +128,26 @@
                         </div>
                     </div>
                 </div>
+                {{-- Part 24 #6: Purchased = Delivered (sold) + Reserved (not delivered yet) + Available, per fuel, from the
+                     same stock-in rows as Inventory > Stock-In. --}}
+                @php $rec = $inventory['reconciliation'] ?? null; @endphp
+                @if ($rec)
+                    <div class="dash-chart-block dash-reconciliation" aria-label="Inventory reconciliation">
+                        <h3 class="dash-chart-title">Inventory Reconciliation (Purchased = Delivered + Reserved + Available)</h3>
+                        <div class="dash-chart">
+                            @include('admin.partials.dashboard-chart', ['chart' => $inventory['reconciliationChart'], 'label' => 'Delivered, reserved and available liters by fuel type'])
+                        </div>
+                        <p class="dash-note" data-inventory-reconciliation>
+                            Purchased: <strong>{{ number_format($rec['purchased'], 2) }} L</strong> ·
+                            Delivered (Sold): <strong>{{ number_format($rec['delivered'], 2) }} L</strong> ·
+                            Reserved: <strong>{{ number_format($rec['reserved'], 2) }} L</strong> ·
+                            Available: <strong>{{ number_format($rec['available'], 2) }} L</strong>
+                            @if ($rec['over_delivered'] > 0)
+                                <br><span class="dash-red">Historical reconciliation exceptions: {{ number_format($rec['over_delivered'], 2) }} L recorded as released beyond their purchases (kept as imported, not counted as stock).</span>
+                            @endif
+                        </p>
+                    </div>
+                @endif
                 {{-- Part 13: garage stock, each fuel's Tank 1 and Tank 2 (included in Total Inventory in Stock). --}}
                 <div class="dash-garage" aria-label="Garage tanks">
                     <h3 class="dash-chart-title">Garage Tanks</h3>

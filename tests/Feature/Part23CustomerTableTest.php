@@ -19,7 +19,7 @@ class Part23CustomerTableTest extends AuditTestCase
         foreach (['admin', 'sales'] as $role) {
             $prefix = $role === 'admin' ? 'admin' : 'sales-officer';
             foreach (['omitted', '', null, '   '] as $i => $name) {
-                $data = ['company_name' => "Company $role $i", 'status' => 'active', 'payment_status' => 'clear', 'phone' => '09171234567', 'bank_name' => 'Test bank'];
+                $data = ['company_name' => "Company $role $i", 'status' => 'active', 'payment_status' => 'paid', 'phone' => '09171234567', 'bank_name' => 'Test bank'];
                 if ($name !== 'omitted') $data['name'] = $name;
                 $this->actingAs($a[$role])->post(route("$prefix.sales.customers.store"), $data)->assertSessionHasNoErrors();
                 $customer = DB::table('customers')->where('company_name', $data['company_name'])->first();
@@ -38,16 +38,16 @@ class Part23CustomerTableTest extends AuditTestCase
             }
         }
         $this->assertEquals($original, DB::table('customers')->where('id', $a['customer'])->first());
-        $this->actingAs($a['sales'])->patch(route('sales-officer.sales.customers.update', $a['customer']), ['company_name' => $original->company_name, 'status' => 'active', 'payment_status' => 'clear'])->assertSessionHasNoErrors();
+        $this->actingAs($a['sales'])->patch(route('sales-officer.sales.customers.update', $a['customer']), ['company_name' => $original->company_name, 'status' => 'active', 'payment_status' => 'paid'])->assertSessionHasNoErrors();
         $this->assertDatabaseHas('customers', ['id' => $a['customer'], 'name' => $original->name]);
     }
 
     public function test_name_remains_length_validated_and_company_stays_required_and_unique(): void
     {
         $a = $this->actors();
-        $this->actingAs($a['sales'])->post(route('sales-officer.sales.customers.store'), ['name' => str_repeat('a', 256), 'company_name' => '', 'status' => 'active', 'payment_status' => 'clear'])->assertSessionHasErrors(['name', 'company_name']);
-        $this->post(route('sales-officer.sales.customers.store'), ['company_name' => 'Audit Co.', 'status' => 'active', 'payment_status' => 'clear'])->assertSessionHasErrors('company_name')->assertSessionDoesntHaveErrors('name');
-        $this->actingAs($a['inventory'])->post(route('sales-officer.sales.customers.store'), ['company_name' => 'Forbidden', 'status' => 'active', 'payment_status' => 'clear'])->assertForbidden();
+        $this->actingAs($a['sales'])->post(route('sales-officer.sales.customers.store'), ['name' => str_repeat('a', 256), 'company_name' => '', 'status' => 'active', 'payment_status' => 'paid'])->assertSessionHasErrors(['name', 'company_name']);
+        $this->post(route('sales-officer.sales.customers.store'), ['company_name' => 'Audit Co.', 'status' => 'active', 'payment_status' => 'paid'])->assertSessionHasErrors('company_name')->assertSessionDoesntHaveErrors('name');
+        $this->actingAs($a['inventory'])->post(route('sales-officer.sales.customers.store'), ['company_name' => 'Forbidden', 'status' => 'active', 'payment_status' => 'paid'])->assertForbidden();
         $this->patch(route('sales-officer.sales.customers.update', $a['customer']), ['name' => ''])->assertForbidden();
         $this->get(route('admin.sales.customers'))->assertForbidden();
         $this->assertDatabaseHas('customers', ['id' => $a['customer'], 'name' => 'Audit Customer']);
@@ -92,7 +92,7 @@ class Part23CustomerTableTest extends AuditTestCase
     public function test_customer_pagination_sort_and_form_keep_blank_names(): void
     {
         $a = $this->actors();
-        for ($i = 0; $i < 12; $i++) DB::table('customers')->insert(['customer_code' => sprintf('BLANK-%02d', $i), 'name' => '', 'company_name' => sprintf('Blank Company %02d', $i), 'status' => 'active', 'payment_status' => 'clear', 'location' => 'Lipa']);
+        for ($i = 0; $i < 12; $i++) DB::table('customers')->insert(['customer_code' => sprintf('BLANK-%02d', $i), 'name' => '', 'company_name' => sprintf('Blank Company %02d', $i), 'status' => 'active', 'payment_status' => 'paid', 'location' => 'Lipa']);
         foreach (['admin' => 'admin', 'sales' => 'sales-officer'] as $role => $prefix) {
             $response = $this->actingAs($a[$role])->get(route("$prefix.sales.customers", ['search' => 'Blank Company', 'status' => 'active', 'location' => 'Lipa', 'sort' => 'company', 'direction' => 'asc', 'per_page' => 10]))->assertOk();
             $rows = $response->viewData('customers');

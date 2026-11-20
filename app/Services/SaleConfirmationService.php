@@ -99,7 +99,7 @@ class SaleConfirmationService
                 // truck. Either way its liters are deducted from the order's purchases here, once.
                 // Part 12: a Standard order can also be delivered from fuel left on a lifted truck; it then has a
                 // delivery row on that lift too and is released through it (so the liters count as off the truck).
-                $allocation = DB::table('haul_allocations')
+                $allocations = DB::table('haul_allocations')
                     ->join('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')
                     ->where('haul_allocations.sale_id', $saleId)
                     ->where('haul_allocations.destination_type', 'customer')
@@ -108,7 +108,8 @@ class SaleConfirmationService
                     ->whereIn('hauls.status', ['lifted', 'completed'])
                     ->orderBy('haul_allocations.id')
                     ->lockForUpdate()
-                    ->first(['haul_allocations.id', 'haul_allocations.haul_id']);
+                    ->get(['haul_allocations.id', 'haul_allocations.haul_id', 'hauls.purchase_item_id']);
+                $allocation = $allocations->first();
                 if ($sale->delivery_type === 'depot_to_client' && ! $allocation) {
                     throw new \RuntimeException('This Depot to Client sale is delivered through its lift. Add it to a lift in Fuel Lifting and complete the lift first.');
                 }
@@ -116,23 +117,32 @@ class SaleConfirmationService
                 $items = DB::table('sale_items')
                     ->where('sale_id', $saleId)
                     ->lockForUpdate()
-                    ->get(['id']);
+                    ->get(['id', 'purchase_item_id']);
 
                 if ($items->isEmpty()) {
                     throw new \RuntimeException('The sale has no items available for delivery.');
                 }
 
+                // Part 24 #3: an order taking fuel from several purchases has one delivery row per lift line; each line
+                // is released through the row of the lift line carrying its own purchase (else the first row, as before).
+                $used = [];
                 foreach ($items as $item) {
-                    $error = $this->stockOutRelease->releaseSaleItem((int) $item->id, now()->toDateTimeString(), $userId, $allocation);
+                    $itemAllocation = $allocation
+                        ? ($allocations->first(fn (object $row): bool => $item->purchase_item_id && (int) $row->purchase_item_id === (int) $item->purchase_item_id) ?? $allocation)
+                        : null;
+                    $error = $this->stockOutRelease->releaseSaleItem((int) $item->id, now()->toDateTimeString(), $userId, $itemAllocation);
                     if ($error) {
                         throw new \RuntimeException($error);
+                    }
+                    if ($itemAllocation) {
+                        $used[(int) $itemAllocation->id] = true;
                     }
                 }
 
                 app(DeliveryIntegrityService::class)->assertReleased($saleId);
 
-                if ($allocation) {
-                    DB::table('haul_allocations')->where('id', $allocation->id)->update(['status' => 'delivered', 'updated_at' => now()]);
+                if ($used !== []) {
+                    DB::table('haul_allocations')->whereIn('id', array_keys($used))->update(['status' => 'delivered', 'updated_at' => now()]);
                 }
             }
 
@@ -186,19 +196,19 @@ class SaleConfirmationService
 
         if ($sale->status === 'cancelled') {
             $saleStatus = 'cancelled';
-            $receivableStatus = $paidTotal > 0 ? ($paidTotal >= $saleTotal ? 'clear' : 'partial') : 'clear';
+            $receivableStatus = 'unpaid';
         } elseif ($sale->status === 'draft') {
             $saleStatus = 'draft';
-            $receivableStatus = 'pending';
+            $receivableStatus = 'unpaid';
         } elseif ($saleTotal > 0 && $paidTotal >= $saleTotal) {
             $saleStatus = 'paid';
-            $receivableStatus = 'clear';
+            $receivableStatus = 'paid';
         } elseif ($paidTotal > 0) {
             $saleStatus = 'partially_paid';
-            $receivableStatus = $isOverdue ? 'overdue' : 'partial';
+            $receivableStatus = 'partially_paid';
         } else {
             $saleStatus = $sale->status === 'unpaid' ? 'unpaid' : 'confirmed';
-            $receivableStatus = $isOverdue ? 'overdue' : 'pending';
+            $receivableStatus = 'unpaid';
         }
 
         DB::table('sales')

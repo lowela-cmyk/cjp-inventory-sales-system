@@ -66,7 +66,7 @@ class SalesPaymentFlowTest extends TestCase
 
         $this->assertSame(10000.0, (float) DB::table('payments')->where('sale_id', $saleId)->sum('amount'));
         $this->assertSame('paid', DB::table('sales')->where('id', $saleId)->value('status'));
-        $this->assertSame('clear', DB::table('receivables')->where('sale_id', $saleId)->value('status'));
+        $this->assertSame('paid', DB::table('receivables')->where('sale_id', $saleId)->value('status'));
 
         $this->actingAs($user)->get(route($prefix.'.sales'))
             ->assertOk()
@@ -129,7 +129,7 @@ class SalesPaymentFlowTest extends TestCase
     private function records(string $role): array
     {
         $user = User::factory()->create(['role' => $role, 'status' => 'active', 'approval_status' => 'approved']);
-        $customer = DB::table('customers')->insertGetId(['customer_code' => 'CUS-PAY', 'name' => 'Payment Customer', 'company_name' => 'Payment Co.', 'payment_status' => 'clear', 'status' => 'active', 'created_at' => now(), 'updated_at' => now()]);
+        $customer = DB::table('customers')->insertGetId(['customer_code' => 'CUS-PAY', 'name' => 'Payment Customer', 'company_name' => 'Payment Co.', 'payment_status' => 'paid', 'status' => 'active', 'created_at' => now(), 'updated_at' => now()]);
         $fuel = (int) DB::table('fuel_types')->where('code', 'DSL')->value('id');
 
         return [$user, $customer, $fuel];

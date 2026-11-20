@@ -96,18 +96,18 @@ const renderChart = (canvas) => {
             maintainAspectRatio: false,
             layout: { padding: isPie ? 34 : { top: config.showValues ? 18 : 4 } },
             plugins: {
-                legend: { display: false },
+                legend: { display: Boolean(config.legend), position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } },
                 tooltip: {
                     callbacks: {
-                        label: (context) => (isPie ? `${context.label}: ${format(context.raw)}` : `${format(context.raw)}${config.tooltipSuffix || ''}`),
+                        label: (context) => (isPie ? `${context.label}: ${format(context.raw)}` : `${config.legend ? `${context.dataset.label}: ` : ''}${format(context.raw)}${config.tooltipSuffix || ''}`),
                     },
                 },
                 dashBarValues: { display: Boolean(config.showValues), format },
                 dashSliceLabels: { labels: config.sliceLabels || [] },
             },
             scales: isPie ? {} : {
-                x: { grid: { display: false }, border: { display: config.yAxis !== 'none' }, ticks: { font: { size: 10 } } },
-                y: { ...yScale(config.yAxis || 'ticks', config.format), title: { display: Boolean(config.axisTitle), text: config.axisTitle } },
+                x: { stacked: Boolean(config.stacked), grid: { display: false }, border: { display: config.yAxis !== 'none' }, ticks: { font: { size: 10 } } },
+                y: { ...yScale(config.yAxis || 'ticks', config.format), stacked: Boolean(config.stacked), title: { display: Boolean(config.axisTitle), text: config.axisTitle } },
             },
         },
         plugins: [barValues, sliceLabels],

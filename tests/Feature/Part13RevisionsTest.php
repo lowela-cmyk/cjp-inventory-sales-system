@@ -46,7 +46,7 @@ class Part13RevisionsTest extends AuditTestCase
         $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 100, 'unit_price' => 50])->assertSessionHasNoErrors();
         $partial = $this->lastSaleId();
         $this->pay($a, $partial, 1000);
-        DB::table('customers')->insert(['customer_code' => 'CUS-OFF', 'name' => 'Inactive Co', 'company_name' => 'Inactive Co', 'payment_status' => 'clear', 'status' => 'inactive', 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('customers')->insert(['customer_code' => 'CUS-OFF', 'name' => 'Inactive Co', 'company_name' => 'Inactive Co', 'payment_status' => 'paid', 'status' => 'inactive', 'created_at' => now(), 'updated_at' => now()]);
 
         $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 100, 'unit_price' => 50])->assertSessionHasNoErrors();
         $cancelled = $this->lastSaleId();
@@ -65,8 +65,8 @@ class Part13RevisionsTest extends AuditTestCase
     {
         $a = $this->actors();
         $premium = $this->purchaseLine($a, 'PREM', 10000);
-        $second = DB::table('customers')->insertGetId(['customer_code' => 'CUS-2', 'name' => 'Second', 'company_name' => 'Second Co', 'payment_status' => 'clear', 'status' => 'active', 'created_at' => now(), 'updated_at' => now()]);
-        $third = DB::table('customers')->insertGetId(['customer_code' => 'CUS-3', 'name' => 'Third', 'company_name' => 'Third Co', 'payment_status' => 'clear', 'status' => 'active', 'created_at' => now(), 'updated_at' => now()]);
+        $second = DB::table('customers')->insertGetId(['customer_code' => 'CUS-2', 'name' => 'Second', 'company_name' => 'Second Co', 'payment_status' => 'paid', 'status' => 'active', 'created_at' => now(), 'updated_at' => now()]);
+        $third = DB::table('customers')->insertGetId(['customer_code' => 'CUS-3', 'name' => 'Third', 'company_name' => 'Third Co', 'payment_status' => 'paid', 'status' => 'active', 'created_at' => now(), 'updated_at' => now()]);
         foreach ([[$a['customer'], 5000], [$a['customer'], 5000], [$second, 1000], [$third, 0]] as [$customer, $paid]) {
             $this->recordOrder($a, ['purchase_item_id' => $premium, 'quantity_liters' => 100, 'unit_price' => 50], ['customer_id' => $customer])->assertSessionHasNoErrors();
             if ($paid > 0) {

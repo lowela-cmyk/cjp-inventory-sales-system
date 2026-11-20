@@ -16,7 +16,7 @@ class PurchaseService
     /** Part 9: how a purchase was paid. A bank is chosen for Bank Transfer and Cheque only. */
     public const PAYMENT_MODES = ['bank_transfer' => 'Bank Transfer', 'cash' => 'Cash', 'cheque' => 'Cheque'];
 
-    public const BANKS = ['BPI', 'BDO', 'RCBC', 'METROBANK'];
+    public const BANKS = ['METROBANK', 'BDO'];
 
     /**
      * Part 23: imported purchases stored the mode in bank_name as "Bank (BDO)" with payment_mode NULL, so the table read

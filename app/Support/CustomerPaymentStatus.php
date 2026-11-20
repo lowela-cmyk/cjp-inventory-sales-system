@@ -16,23 +16,27 @@ final class CustomerPaymentStatus
         $sales = DB::table('sales')->leftJoinSub($items, 'cs_items', 'cs_items.sale_id', '=', 'sales.id')
             ->leftJoinSub($payments, 'cs_paid', 'cs_paid.sale_id', '=', 'sales.id')
             ->whereColumn('sales.customer_id', 'customers.id')->whereNull('sales.deleted_at');
-        $pending = clone $sales;
-        $pending->where(function (Builder $q): void {
-            $q->where(function (Builder $q): void {
-                $q->where('sales.status', '!=', 'cancelled')->where(function (Builder $q): void {
-                    $q->whereRaw('COALESCE(cs_items.total, 0) > COALESCE(cs_paid.paid, 0)')
-                        ->orWhereExists(fn (Builder $r) => $r->selectRaw('1')->from('receivables')->whereColumn('receivables.sale_id', 'sales.id')->where('receivables.status', 'overdue'));
-                });
-            })->orWhere(function (Builder $q): void {
-                $refund = Schema::hasTable('sale_refunds') ? '(SELECT COALESCE(SUM(amount), 0) FROM sale_refunds WHERE sale_id = sales.id)' : '0';
-                $q->where('sales.status', 'cancelled')->whereRaw('COALESCE(cs_paid.paid, 0) > '.$refund);
-            });
-        });
-        $query->where(function (Builder $q) use ($sales, $pending, $status): void {
-            if ($status === 'pending') {
-                $q->whereExists($pending)->orWhere(fn (Builder $q) => $q->whereNotExists($sales)->where('customers.payment_status', '!=', 'clear'));
+
+        $open = (clone $sales)->where('sales.status', '!=', 'cancelled')
+            ->whereRaw('ROUND(COALESCE(cs_items.total, 0), 2) > ROUND(COALESCE(cs_paid.paid, 0), 2)');
+        $openWithPayment = (clone $open)->whereRaw('ROUND(COALESCE(cs_paid.paid, 0), 2) > 0');
+        $refund = Schema::hasTable('sale_refunds') ? '(SELECT COALESCE(SUM(amount), 0) FROM sale_refunds WHERE sale_id = sales.id)' : '0';
+        $unrefunded = (clone $sales)->where('sales.status', 'cancelled')->whereRaw('COALESCE(cs_paid.paid, 0) > '.$refund);
+
+        $query->where(function (Builder $q) use ($sales, $open, $openWithPayment, $unrefunded, $status): void {
+            if ($status === 'paid') {
+                $q->where(function (Builder $q) use ($sales, $open, $unrefunded): void {
+                    $q->whereExists($sales)->whereNotExists($open)->whereNotExists($unrefunded);
+                })->orWhere(fn (Builder $q) => $q->whereNotExists($sales)->whereIn('customers.payment_status', ['paid', 'clear']));
+            } elseif ($status === 'partially_paid') {
+                $q->whereExists($openWithPayment)
+                    ->orWhere(fn (Builder $q) => $q->whereNotExists($sales)->whereIn('customers.payment_status', ['partially_paid', 'partial']));
             } else {
-                $q->whereNotExists($pending)->where(fn (Builder $q) => $q->whereExists($sales)->orWhere('customers.payment_status', 'clear'));
+                $q->where(function (Builder $q) use ($open, $openWithPayment, $unrefunded): void {
+                    $q->whereExists($open)->whereNotExists($openWithPayment);
+                })->orWhere(function (Builder $q) use ($open, $unrefunded): void {
+                    $q->whereNotExists($open)->whereExists($unrefunded);
+                })->orWhere(fn (Builder $q) => $q->whereNotExists($sales)->whereIn('customers.payment_status', ['unpaid', 'pending']));
             }
         });
     }

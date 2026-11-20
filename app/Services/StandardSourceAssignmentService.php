@@ -138,6 +138,8 @@ class StandardSourceAssignmentService
             $this->recordChange($saleId, $toType, $sourceType, $source->haul_id ?? null, null, $source->source_label, $userId, $sourceType === 'garage_tank' ? (int) $source->id : null);
 
             if ($sourceType === 'garage_tank') {
+                // Part 24 #1: the delivery truck must have room for the order.
+                $this->truckAvailability->assertDeliveryFits((int) $delivery['delivery_truck_id'], $needed, $saleId);
                 DB::table('sales')->where('id', $saleId)->update([
                     'delivery_truck_id' => $delivery['delivery_truck_id'],
                     'delivery_driver_user_id' => $delivery['delivery_driver_user_id'],

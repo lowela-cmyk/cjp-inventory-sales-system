@@ -161,7 +161,7 @@ class SystemAnalysisRevisionsTest extends TestCase
             'company_name' => 'Bank Customer Co.',
             'phone' => '09171234567',
             'bank_name' => 'BDO Unibank',
-            'payment_status' => 'clear',
+            'payment_status' => 'paid',
             'status' => 'active',
         ])->assertRedirect(route('sales-officer.sales.customers'));
 
@@ -172,7 +172,7 @@ class SystemAnalysisRevisionsTest extends TestCase
             'name' => 'Bank Customer',
             'company_name' => 'Bank Customer Co.',
             'bank_name' => 'Metrobank',
-            'payment_status' => 'clear',
+            'payment_status' => 'paid',
             'status' => 'active',
         ])->assertRedirect(route('sales-officer.sales.customers'));
         $this->assertDatabaseHas('customers', ['id' => $customerId, 'bank_name' => 'Metrobank']);
@@ -181,7 +181,7 @@ class SystemAnalysisRevisionsTest extends TestCase
             'name' => 'Bank Customer',
             'company_name' => 'Bank Customer Co.',
             'bank_name' => str_repeat('B', 256),
-            'payment_status' => 'clear',
+            'payment_status' => 'paid',
             'status' => 'active',
         ])->assertSessionHasErrors('bank_name');
 
@@ -368,7 +368,7 @@ class SystemAnalysisRevisionsTest extends TestCase
         $admin = User::factory()->create(['role' => 'admin', 'status' => 'active']);
         $customerId = DB::table('customers')->insertGetId([
             'customer_code' => 'CUS-SA', 'name' => 'Revision Customer', 'company_name' => 'Revision Company',
-            'payment_status' => 'clear', 'status' => 'active', 'created_at' => now(), 'updated_at' => now(),
+            'payment_status' => 'paid', 'status' => 'active', 'created_at' => now(), 'updated_at' => now(),
         ]);
         $fuelTypeId = (int) DB::table('fuel_types')->where('code', 'DSL')->where('status', 'active')->value('id');
 

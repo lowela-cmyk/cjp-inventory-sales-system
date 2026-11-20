@@ -23,7 +23,7 @@ class Part23ImprovementsTest extends TestCase
 
     private function customer(int $i, array $extra = []): int
     {
-        return DB::table('customers')->insertGetId($extra + ['customer_code' => 'C23-'.$i, 'name' => 'Contact '.$i, 'company_name' => 'Company '.$i, 'status' => 'active', 'payment_status' => 'clear', 'location' => 'Lipa', 'created_at' => now(), 'updated_at' => now()]);
+        return DB::table('customers')->insertGetId($extra + ['customer_code' => 'C23-'.$i, 'name' => 'Contact '.$i, 'company_name' => 'Company '.$i, 'status' => 'active', 'payment_status' => 'paid', 'location' => 'Lipa', 'created_at' => now(), 'updated_at' => now()]);
     }
 
     private function sale(int $customer, string $status, float $paid = 0, string $delivery = 'pending'): int
@@ -37,7 +37,7 @@ class Part23ImprovementsTest extends TestCase
     public function test_customer_forms_save_without_email_and_preserve_existing_email_and_relationships(): void
     {
         $user = $this->actor('sales_officer');
-        $data = ['name' => 'New contact', 'company_name' => 'New company', 'location' => 'Lipa', 'phone' => '+63 917 000 0000', 'bank_name' => 'BDO', 'payment_status' => 'clear', 'status' => 'active'];
+        $data = ['name' => 'New contact', 'company_name' => 'New company', 'location' => 'Lipa', 'phone' => '+63 917 000 0000', 'bank_name' => 'BDO', 'payment_status' => 'paid', 'status' => 'active'];
         $this->actingAs($user)->post(route('sales-officer.sales.customers.store'), $data)->assertSessionHasNoErrors();
         $id = DB::table('customers')->where('company_name', 'New company')->value('id');
         $this->assertNotNull($id);
@@ -54,12 +54,12 @@ class Part23ImprovementsTest extends TestCase
         for ($i = 0; $i < 31; $i++) $this->customer($i);
         $pending = $this->customer(100);
         $this->sale($pending, 'partially_paid', 100);
-        $clear = $this->customer(101, ['payment_status' => 'pending']);
+        $clear = $this->customer(101, ['payment_status' => 'unpaid']);
         $this->sale($clear, 'paid', 500);
         $this->actingAs($this->actor());
-        $response = $this->get(route('admin.sales.customers', ['payment_status' => 'pending', 'search' => 'Company', 'location' => 'Lipa', 'status' => 'active', 'per_page' => 10]));
+        $response = $this->get(route('admin.sales.customers', ['payment_status' => 'partially_paid', 'search' => 'Company', 'location' => 'Lipa', 'status' => 'active', 'per_page' => 10]));
         $response->assertOk()->assertViewHas('customers', fn ($rows) => $rows->total() === 1 && $rows->first()['id'] === $pending);
-        $this->get(route('admin.sales.customers', ['payment_status' => 'clear', 'per_page' => 10]))->assertOk()->assertViewHas('customers', fn ($rows) => $rows->total() === 32);
+        $this->get(route('admin.sales.customers', ['payment_status' => 'paid', 'per_page' => 10]))->assertOk()->assertViewHas('customers', fn ($rows) => $rows->total() === 32);
         $first = $this->get(route('admin.sales.customers', ['per_page' => 10]))->viewData('customers');
         $second = $this->get(route('admin.sales.customers', ['per_page' => 10, 'customers_page' => 2]))->viewData('customers');
         $this->assertCount(10, $first);

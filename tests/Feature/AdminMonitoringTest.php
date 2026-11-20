@@ -177,7 +177,7 @@ class AdminMonitoringTest extends TestCase
             'location' => 'Nasugbu',
             'email' => 'monitor-customer@example.com',
             'phone' => '09170000000',
-            'payment_status' => 'partial',
+            'payment_status' => 'partially_paid',
             'status' => 'active',
             'created_at' => now(),
             'updated_at' => now(),
@@ -197,7 +197,7 @@ class AdminMonitoringTest extends TestCase
             'depot_id' => $depotId,
             'purchase_date' => '2026-08-20',
             'receipt_reference' => 'DR-MONITOR',
-            'payment_status' => 'partial',
+            'payment_status' => 'partially_paid',
             'status' => 'partially_hauled',
             'created_by' => $admin->id,
             'created_at' => now(),
@@ -270,7 +270,7 @@ class AdminMonitoringTest extends TestCase
         DB::table('receivables')->insert([
             'sale_id' => $saleId,
             'due_date' => '2026-09-01',
-            'status' => 'partial',
+            'status' => 'partially_paid',
             'created_at' => now(),
             'updated_at' => now(),
         ]);

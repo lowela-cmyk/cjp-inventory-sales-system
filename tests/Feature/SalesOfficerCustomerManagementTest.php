@@ -21,7 +21,7 @@ class SalesOfficerCustomerManagementTest extends TestCase
             'location' => 'Nasugbu, Batangas',
             'email' => 'real@example.com',
             'phone' => '09171234567',
-            'payment_status' => 'pending',
+            'payment_status' => 'unpaid',
         ]);
 
         $this->actingAs($records['salesOfficer'])
@@ -45,7 +45,7 @@ class SalesOfficerCustomerManagementTest extends TestCase
                 'location' => 'Batangas City',
                 'email' => 'maria@santos.test',
                 'phone' => '09170000001',
-                'payment_status' => 'clear',
+                'payment_status' => 'paid',
                 'status' => 'active',
                 'customer_code' => 'HACKED',
             ])
@@ -100,7 +100,7 @@ class SalesOfficerCustomerManagementTest extends TestCase
                 'location' => 'Lipa City',
                 'email' => 'updated@example.com',
                 'phone' => '09179999999',
-                'payment_status' => 'partial',
+                'payment_status' => 'partially_paid',
                 'status' => 'active',
             ])
             ->assertRedirect(route('sales-officer.sales.customers'));
@@ -111,7 +111,7 @@ class SalesOfficerCustomerManagementTest extends TestCase
             'customer_code' => 'CSM-EDIT',
             'name' => 'Updated Contact',
             'company_name' => 'Updated Company',
-            'payment_status' => 'partial',
+            'payment_status' => 'partially_paid',
         ]);
     }
 
@@ -212,7 +212,7 @@ class SalesOfficerCustomerManagementTest extends TestCase
         $payload = [
             'name' => 'Blocked Contact',
             'company_name' => 'Blocked Company',
-            'payment_status' => 'clear',
+            'payment_status' => 'paid',
             'status' => 'active',
         ];
 
@@ -248,7 +248,7 @@ class SalesOfficerCustomerManagementTest extends TestCase
             'location' => 'Nasugbu, Batangas',
             'email' => uniqid('customer').'@example.com',
             'phone' => '09171234567',
-            'payment_status' => 'clear',
+            'payment_status' => 'paid',
             'status' => 'active',
             'created_at' => now(),
             'updated_at' => now(),

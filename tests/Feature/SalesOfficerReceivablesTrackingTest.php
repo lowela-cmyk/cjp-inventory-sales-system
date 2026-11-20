@@ -58,7 +58,7 @@ class SalesOfficerReceivablesTrackingTest extends TestCase
             ->assertSee('70,000.00')
             ->assertSee('Installment #2')
             ->assertSee('SLS-SETTLED-REC')
-            ->assertSee('Settled')
+            ->assertSee('Paid')
             ->assertSee('0.00');
 
         $this->assertSame(0.0, $this->negativeBalanceFor($unpaidSaleId));
@@ -83,7 +83,7 @@ class SalesOfficerReceivablesTrackingTest extends TestCase
             ->get(route('sales-officer.sales'))
             ->assertOk()
             ->assertSee('SLS-OVERDUE-REC')
-            ->assertSee('Overdue')
+            ->assertSee('Unpaid')
             ->assertSee('SLS-NO-DUE-REC')
             ->assertSee('N/A');
     }
@@ -141,7 +141,7 @@ class SalesOfficerReceivablesTrackingTest extends TestCase
             ->assertRedirect(route('sales-officer.sales'));
 
         $this->assertDatabaseHas('sales', ['id' => $saleId, 'status' => 'paid']);
-        $this->assertDatabaseHas('receivables', ['sale_id' => $saleId, 'status' => 'clear']);
+        $this->assertDatabaseHas('receivables', ['sale_id' => $saleId, 'status' => 'paid']);
         $this->assertSame($beforeInventory, DB::table('inventory_movements')->count());
         $this->assertSame(0, DB::table('stock_outs')->count());
         $this->assertSame(0, DB::table('hauls')->count());
@@ -153,7 +153,7 @@ class SalesOfficerReceivablesTrackingTest extends TestCase
             ->assertSee('SLS-TRACK-PAY')
             ->assertSee('60,000.00')
             ->assertSee('0.00')
-            ->assertSee('Settled');
+            ->assertSee('Paid');
     }
 
     public function test_admin_can_monitor_receivables_but_other_roles_cannot_access_sales_financial_pages(): void
@@ -214,7 +214,7 @@ class SalesOfficerReceivablesTrackingTest extends TestCase
         DB::table('receivables')->insert([
             'sale_id' => $saleId,
             'due_date' => array_key_exists('due_date', $overrides) ? $overrides['due_date'] : '2026-09-30',
-            'status' => 'pending',
+            'status' => 'unpaid',
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -260,7 +260,7 @@ class SalesOfficerReceivablesTrackingTest extends TestCase
             'customer_code' => 'CUS-REC',
             'name' => 'Receivable Customer',
             'company_name' => 'Receivable Customer Co.',
-            'payment_status' => 'clear',
+            'payment_status' => 'paid',
             'status' => 'active',
             'created_at' => now(),
             'updated_at' => now(),

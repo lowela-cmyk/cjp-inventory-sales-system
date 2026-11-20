@@ -370,7 +370,7 @@ class DispatchLiftingStatusManagementTest extends TestCase
             'name' => 'Lift Status Customer',
             'company_name' => 'Lift Status Customer Co.',
             'location' => 'San Fernando',
-            'payment_status' => 'clear',
+            'payment_status' => 'paid',
             'status' => 'active',
             'created_at' => now(),
             'updated_at' => now(),

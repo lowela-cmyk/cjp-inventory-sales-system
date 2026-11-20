@@ -46,19 +46,20 @@ class Part23RemediationTest extends AuditTestCase
         $second = $this->purchaseLine($a, 'DSL', 2000);
         $this->recordOrder($a, ['fuel_type_id' => $a['fuel'], 'purchase_item_id' => $first, 'quantity_liters' => 400, 'unit_price' => 60])->assertSessionHasNoErrors();
         $service = app(StockInService::class);
-        // Both still have liters left, so both are Available (statuses are Available / Sold Out).
+        // Both still have liters left, so both are Available. Part 24 #5: the undelivered 400 L is Reserved, so the first
+        // purchase keeps 1,000 L on hand (remaining) of which 600 L are available.
         $available = $service->query(['status' => 'available'])->get()->keyBy('purchase_item_id');
         $this->assertEqualsCanonicalizing([$first, $second], $available->keys()->map(fn ($id) => (int) $id)->all());
-        $this->assertEquals(600, $available[$first]->remaining);
+        $this->assertEquals([1000, 400, 600], [$available[$first]->remaining, $available[$first]->reserved, $available[$first]->available]);
         $this->assertEquals(2000, $available[$second]->remaining);
-        $this->assertEquals(2600, $service->totals()['total_inventory']);
+        $this->assertEquals(3000, $service->totals()['total_inventory']);
         $this->assertSame([], $service->query(['status' => 'sold_out'])->pluck('purchase_item_id')->all());
     }
 
     public function test_customers_are_lazy_and_user_selected_sorting_is_real(): void
     {
         $a = $this->actors();
-        DB::table('customers')->insert(['customer_code' => 'AAA', 'name' => 'AAA', 'company_name' => 'AAA', 'status' => 'active', 'payment_status' => 'clear']);
+        DB::table('customers')->insert(['customer_code' => 'AAA', 'name' => 'AAA', 'company_name' => 'AAA', 'status' => 'active', 'payment_status' => 'paid']);
         $this->actingAs($a['sales']);
         $response = $this->get(route('sales-officer.sales.customers', ['sort' => 'name', 'direction' => 'asc']));
         $response->assertOk()->assertViewHas('sales', fn ($rows) => $rows->isEmpty());

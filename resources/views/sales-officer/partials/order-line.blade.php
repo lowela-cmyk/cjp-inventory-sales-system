@@ -84,6 +84,51 @@
         @endforeach
     </p>
 @endif
+@if ($showTruckSelection ?? false)
+    @php
+        $truckLiters = fn (float $value): string => number_format($value, fmod($value, 1.0) === 0.0 ? 0 : 2);
+        $recordDeliveryType = $recordDeliveryType ?? 'standard';
+        $truckError = $truckError ?? null;
+        $selectedTruckId = $selectedTruckId ?? null;
+        $truckDisabled = $recordDeliveryType === 'depot_to_client';
+        $truckRequired = $recordDeliveryType === 'garage_to_client';
+    @endphp
+    <div class="form-row form-row-full" data-sale-truck-section>
+        <label for="{{ $idPrefix }}_delivery_truck_id">Truck Selection</label>
+        <select {!! $formAttr !!} id="{{ $idPrefix }}_delivery_truck_id" name="delivery_truck_id"
+            data-delivery-truck aria-describedby="{{ $idPrefix }}_delivery_truck_capacity"
+            @disabled($truckDisabled) @required($truckRequired)
+            @if ($truckError) aria-invalid="true" @endif>
+            <option value="">Select Truck</option>
+            @foreach (($deliveryTrucks ?? collect()) as $truck)
+                @php
+                    $capacity = (float) ($truck->capacity_liters ?? 0);
+                    $loaded = (float) ($truck->loaded_liters ?? 0);
+                    $available = (float) ($truck->available_liters ?? $capacity);
+                    $plate = trim((string) ($truck->plate_number ?? ''));
+                    $label = \App\Support\TruckLabel::make($truck->name, $truck->truck_code);
+                @endphp
+                <option value="{{ $truck->id }}"
+                    @selected((string) $selectedTruckId === (string) $truck->id)
+                    data-capacity="{{ $capacity }}"
+                    data-loaded="{{ $loaded }}"
+                    data-available="{{ $available }}"
+                    data-plate="{{ $plate }}">{{ $label }}{{ $plate !== '' ? ' ('.$plate.')' : '' }} – Max {{ $truckLiters($capacity) }} L · Loaded {{ $truckLiters($loaded) }} L · Available {{ $truckLiters($available) }} L</option>
+            @endforeach
+        </select>
+        <p class="form-hint" data-depot-truck-note @if (! $truckDisabled) hidden @endif>Truck is assigned during Fuel Lifting for Depot to Client orders.</p>
+        <div class="truck-capacity-summary" id="{{ $idPrefix }}_delivery_truck_capacity" data-truck-capacity-summary hidden role="status" aria-live="polite">
+            <div class="truck-capacity-grid">
+                <div class="f1-breakdown-cell"><span>Maximum Capacity (L)</span><output data-truck-cap-max>0.00 L</output></div>
+                <div class="f1-breakdown-cell"><span>Currently Loaded / Reserved (L)</span><output data-truck-cap-loaded>0.00 L</output></div>
+                <div class="f1-breakdown-cell"><span>Available Capacity (L)</span><output data-truck-cap-available>0.00 L</output></div>
+                <div class="f1-breakdown-cell"><span>Remaining Capacity After Order (L)</span><output data-truck-cap-remaining>0.00 L</output></div>
+            </div>
+            <p class="truck-capacity-error" data-truck-capacity-error hidden></p>
+        </div>
+        @if ($truckError)<p class="field-error form-row-message">{{ $truckError }}</p>@endif
+    </div>
+@endif
 @if ($showF1)
 <div class="sale-f1-row" data-f1-row data-f1-enabled hidden>
     <div class="form-row">

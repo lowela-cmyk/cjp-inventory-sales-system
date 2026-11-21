@@ -9,7 +9,12 @@
         <button class="receipt-lightbox-close" type="button" data-modal-close aria-label="Close receipt"></button>
         @foreach ($receipts as $receipt)
             <figure class="receipt-lightbox-slide" data-receipt-slide @if (! $loop->first) hidden @endif>
-                <img data-src="{{ $receipt['url'] }}" alt="Withdrawal receipt {{ $receipt['haul_code'] }} for {{ $purchaseCode }}">
+                @if ($receipt['is_pdf'] ?? false)
+                    {{-- Part 26 #5: a PDF receipt opens in a document frame (same role-gated route). --}}
+                    <iframe class="receipt-lightbox-pdf" data-src="{{ $receipt['url'] }}" title="Withdrawal receipt {{ $receipt['haul_code'] }} for {{ $purchaseCode }} (PDF)"></iframe>
+                @else
+                    <img data-src="{{ $receipt['url'] }}" alt="Withdrawal receipt {{ $receipt['haul_code'] }} for {{ $purchaseCode }}">
+                @endif
                 <figcaption>{{ $receipt['haul_code'] }} &middot; {{ $receipt['uploaded_at'] }}@if (count($receipts) > 1) &middot; {{ $loop->iteration }} / {{ count($receipts) }}@endif</figcaption>
             </figure>
         @endforeach
@@ -19,7 +24,11 @@
             <div class="receipt-lightbox-thumbs">
                 @foreach ($receipts as $receipt)
                     <button type="button" data-receipt-go="{{ $loop->index }}" aria-label="Show receipt {{ $receipt['haul_code'] }}" @class(['is-active' => $loop->first])>
-                        <img data-src="{{ $receipt['url'] }}" alt="">
+                        @if ($receipt['is_pdf'] ?? false)
+                            <span class="receipt-pdf-tile" aria-hidden="true">PDF</span>
+                        @else
+                            <img data-src="{{ $receipt['url'] }}" alt="">
+                        @endif
                     </button>
                 @endforeach
             </div>

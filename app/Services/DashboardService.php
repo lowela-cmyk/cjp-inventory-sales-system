@@ -66,7 +66,7 @@ class DashboardService
             'inventory' => $this->inventory($inventoryFilters),
             'revenue' => $this->revenue($today, $salesFilters),
             'salesTrend' => $this->salesTrend($salesFilters, $today),
-            'purchaseReport' => $this->purchaseReport($inventoryFilters, $today),
+            // Part 26 #1: the Purchase Reports chart is no longer on the dashboard; purchaseReport() stays for other callers.
             'filterOptions' => $this->filterOptions(),
             // Historical import limitations (empty unless a historical import recorded some).
             'historicalReconciliation' => HistoricalReconciliation::summary(),
@@ -700,17 +700,30 @@ class DashboardService
      */
     private function salePaymentsQuery(array $filters): Builder
     {
-        $matching = $this->matchingSaleLines($filters)
+        // Part 26 finalization: one grouped pass over the sales' lines gives both the matching total (the lines of the
+        // filtered fuel, or all of them) and the sale's whole total; the active payments are looked up per sale on the
+        // payments sale_id index. Joining two grouped derived tables (sale totals, payment totals) instead made MariaDB
+        // take about 30 s whenever its table statistics were missing or stale (e.g. right after a database import).
+        $fuelId = $filters['fuel_type_id'];
+        $matching = $this->validSaleLines()
+            ->where(fn (Builder $query) => $this->applySaleFilters($query, $filters))
             ->groupBy('sales.id', 'sales.customer_id')
-            ->selectRaw('sales.id as sale_id, sales.customer_id, COALESCE(SUM(sale_items.line_total), 0) as total');
-        $saleTotals = DB::table('sale_items')->groupBy('sale_id')->selectRaw('sale_id, COALESCE(SUM(line_total), 0) as sale_total');
-        $payments = ActivePayments::query()->groupBy('sale_id')->selectRaw('sale_id, COALESCE(SUM(amount), 0) as paid');
+            ->select(['sales.id as sale_id', 'sales.customer_id'])
+            ->selectRaw('COALESCE(SUM(sale_items.line_total), 0) as sale_total');
+        if ($fuelId) {
+            $matching->selectRaw('COALESCE(SUM(CASE WHEN sale_items.fuel_type_id = ? THEN sale_items.line_total ELSE 0 END), 0) as total', [$fuelId])
+                ->havingRaw('SUM(CASE WHEN sale_items.fuel_type_id = ? THEN 1 ELSE 0 END) > 0', [$fuelId]);
+        } else {
+            $matching->selectRaw('COALESCE(SUM(sale_items.line_total), 0) as total');
+        }
+        $paid = ActivePayments::query()->whereColumn('payments.sale_id', 'matching.sale_id')->selectRaw('COALESCE(SUM(payments.amount), 0)');
+        $withPaid = DB::query()->fromSub($matching, 'matching')
+            ->select(['matching.sale_id', 'matching.customer_id', 'matching.total', 'matching.sale_total'])
+            ->selectSub($paid, 'paid_total');
 
-        return DB::query()->fromSub($matching, 'matching')
-            ->leftJoinSub($saleTotals, 'sale_totals', 'sale_totals.sale_id', '=', 'matching.sale_id')
-            ->leftJoinSub($payments, 'payments_total', 'payments_total.sale_id', '=', 'matching.sale_id')
-            ->selectRaw('matching.sale_id, matching.customer_id, matching.total')
-            ->selectRaw('CASE WHEN COALESCE(sale_totals.sale_total, 0) > 0 THEN COALESCE(payments_total.paid, 0) * matching.total / sale_totals.sale_total ELSE 0 END as paid');
+        return DB::query()->fromSub($withPaid, 'with_paid')
+            ->selectRaw('with_paid.sale_id, with_paid.customer_id, with_paid.total')
+            ->selectRaw('CASE WHEN with_paid.sale_total > 0 THEN with_paid.paid_total * with_paid.total / with_paid.sale_total ELSE 0 END as paid');
     }
 
     /**
@@ -734,15 +747,9 @@ class DashboardService
      */
     private function releasesQuery(): Builder
     {
-        $linePrices = DB::table('sale_items')->groupBy('sale_id', 'fuel_type_id')
-            ->selectRaw('sale_id, fuel_type_id, AVG(unit_price) as unit_price');
-
         return DB::table('stock_outs')
             ->join('sales', 'sales.id', '=', 'stock_outs.sale_id')
             ->leftJoin('sale_items', 'sale_items.id', '=', 'stock_outs.sale_item_id')
-            ->leftJoinSub($linePrices, 'line_prices', function ($join): void {
-                $join->on('line_prices.sale_id', '=', 'stock_outs.sale_id')->on('line_prices.fuel_type_id', '=', 'stock_outs.fuel_type_id');
-            })
             ->leftJoin('inventory_movements as release_movement', 'release_movement.id', '=', 'stock_outs.inventory_movement_id')
             ->leftJoin('haul_allocations as release_allocation', 'release_allocation.id', '=', 'stock_outs.haul_allocation_id')
             ->leftJoin('hauls as release_haul', 'release_haul.id', '=', 'release_allocation.haul_id')
@@ -755,8 +762,15 @@ class DashboardService
 
     private function releasePriceSql(): string
     {
-        // The F1 portion has its own price (lines before October 22, 2026 billed it at the line price).
-        return "CASE WHEN stock_outs.portion = 'f1' AND sale_items.f1_unit_price > 0 THEN sale_items.f1_unit_price ELSE COALESCE(sale_items.unit_price, line_prices.unit_price, 0) END";
+        // The F1 portion has its own price (lines before October 22, 2026 billed it at the line price). A release
+        // recorded without a line takes the average price of its sale's lines of the same fuel.
+        // Part 26 finalization: that fallback is a correlated lookup on the sale_items (sale_id, fuel_type_id) index,
+        // evaluated only when COALESCE reaches it. It replaced a join to a grouped derived table, which MariaDB ran in
+        // 0.1 s with good table statistics but in about 29 s when they were missing or stale (e.g. right after a
+        // database import), for Expected Sales Revenue and Stock Out V.S Receivables. Same figures either way.
+        return "CASE WHEN stock_outs.portion = 'f1' AND sale_items.f1_unit_price > 0 THEN sale_items.f1_unit_price ELSE COALESCE(sale_items.unit_price, "
+            .'(SELECT AVG(line_price.unit_price) FROM sale_items AS line_price WHERE line_price.sale_id = stock_outs.sale_id AND line_price.fuel_type_id = stock_outs.fuel_type_id)'
+            .', 0) END';
     }
 
     private function releaseCostSql(): string
@@ -846,7 +860,7 @@ class DashboardService
             return 0.0;
         }
 
-        $values = array_values(array_map('floatval', array_slice($values, -($movements + 1))));
+        $values = array_map('floatval', array_slice($values, -($movements + 1)));
         $last = (float) end($values);
 
         if (count($values) < 2) {
@@ -858,7 +872,7 @@ class DashboardService
             $changes[] = $values[$index] - $values[$index - 1];
         }
 
-        return round($last + ($changes === [] ? 0.0 : array_sum($changes) / count($changes)), $precision);
+        return round($last + (array_sum($changes) / count($changes)), $precision);
     }
 
     public function money(float $value): string

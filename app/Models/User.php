@@ -10,6 +10,20 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
 /**
+ * @property int $id
+ * @property string $name
+ * @property string $email
+ * @property string $role
+ * @property string|null $phone
+ * @property string $status
+ * @property string $approval_status
+ * @property string $password
+ * @property string|null $remember_token
+ * @property \Illuminate\Support\Carbon|null $email_verified_at
+ * @property \Illuminate\Support\Carbon|null $last_login_at
+ * @property \Illuminate\Support\Carbon|null $created_at
+ * @property \Illuminate\Support\Carbon|null $updated_at
+ * @property-read string $role_label
  * @property-read string|null $driver_code  Only set when a query joins driver_profiles (e.g. the Drivers list).
  */
 class User extends Authenticatable

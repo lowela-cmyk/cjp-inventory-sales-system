@@ -10,7 +10,7 @@ final class DeliveryIntegrityService
 {
     public function assertReleased(int $saleId): void
     {
-        $sale = DB::table('sales')->find($saleId);
+        $sale = DB::table('sales')->where('id', $saleId)->first();
         $items = DB::table('sale_items')->where('sale_id', $saleId)->get()->keyBy('id');
         if (! $sale || $items->isEmpty()) throw new \RuntimeException('Delivery has no billable items.');
         $releases = DB::table('stock_outs')->where('sale_id', $saleId)->where('status', 'released')->get();

@@ -221,12 +221,15 @@ class Part25SalesModuleTest extends AuditTestCase
         $this->assertSame(40000.0, (float) DB::table('stock_outs')->where('sale_id', $saleId)->where('status', 'released')->sum('quantity_liters'));
         $this->assertSame(60000.0, $this->figures($line)['remaining']);
 
-        // The 60,000 L left: 20,000 L to the garage, 40,000 L to another sale, then nothing more.
+        // The 60,000 L left: 20,000 L onto another lift, 40,000 L to another sale. Part 26: the 20,000 L on that lift stay
+        // sellable as Depot to Client until an order or a garage unload claims them; then nothing more.
         $this->lift($a, $big, [$line => 20000])->assertSessionHasNoErrors();
         $this->depotSale($a, [$line => 40000.01])->assertSessionHasErrors('items.0.quantity_liters');
         $this->depotSale($a, [$line => 40000])->assertSessionHasNoErrors();
-        $this->depotSale($a, [$line => 1])->assertSessionHasErrors('items.0.quantity_liters');
         $this->assertSame(0.0, $this->figures($line)['available']);
+        $this->depotSale($a, [$line => 20000.01])->assertSessionHasErrors('items.0.quantity_liters');
+        $this->depotSale($a, [$line => 20000])->assertSessionHasNoErrors();
+        $this->depotSale($a, [$line => 1])->assertSessionHasErrors('items.0.quantity_liters');
     }
 
     public function test_a_depot_sale_is_not_delivered_without_its_lift(): void

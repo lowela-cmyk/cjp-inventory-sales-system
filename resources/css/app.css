@@ -6669,15 +6669,140 @@ body.login-page {
     display: none;
 }
 
-/* Part 24 #6: dashboard inventory reconciliation. */
-.dash-reconciliation {
-    margin-top: 16px;
-}
-
 .ledger-receipt-download {
     margin-top: 6px;
 }
 
 .form-row .truck-capacity-hint {
     grid-column: -2 / -1;
+}
+
+/* Part 26 #6: Stock Out Source wraps inside its column: the depot / garage source on one line, a source change on the
+   next, long text breaking between words (never one very long line that widens the table). */
+section[data-tab-panel="stock-out"] .table-wrap > table.admin-table.inventory-table.inventory-table-actions.stock-out-table td.stock-out-source,
+.stock-out-table td.stock-out-source {
+    min-width: 220px;
+    max-width: 300px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: normal;
+    line-height: 1.35;
+}
+
+.stock-out-source-lines,
+.stock-out-source-line {
+    display: block;
+    min-width: 0;
+}
+
+.stock-out-source-line.is-secondary {
+    margin-top: 4px;
+    color: var(--admin-muted, #667085);
+    font-size: 12px;
+}
+
+.stock-out-source-separator {
+    display: none;
+}
+
+/* Part 26 #3: a lift line's purchase figures (Purchased, Reserved, Lifted, Delivered, Remaining, on trucks). */
+.lift-purchase-figures {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 6px 12px;
+    margin: 0;
+}
+
+.lift-purchase-figures > div {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    background: var(--admin-soft-bg, #f8fafc);
+    font-size: 12px;
+}
+
+.lift-purchase-figures dt {
+    color: var(--admin-muted, #667085);
+}
+
+.lift-purchase-figures dd {
+    margin: 0;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.receipt-line-note.is-warning {
+    color: #b54708;
+}
+
+/* Part 26 #4: Fuel Lifting > Trucks: the purchases whose fuel is inside the truck. */
+.fleet-on-truck-line {
+    display: block;
+    margin-top: 2px;
+    color: var(--admin-muted, #667085);
+    font-size: 12px;
+    white-space: normal;
+}
+
+/* Part 26 #5: the receipt picked for upload, previewed before it is sent (image thumbnail or PDF frame) with Remove. */
+.withdrawal-preview img[hidden],
+.withdrawal-preview iframe[hidden] {
+    display: none;
+}
+
+.withdrawal-preview img {
+    width: 140px;
+    height: 105px;
+    object-fit: contain;
+    background: #fff;
+}
+
+.withdrawal-preview-pdf {
+    width: 180px;
+    height: 220px;
+    border: 1px solid var(--admin-soft-line);
+    border-radius: 6px;
+    background: #fff;
+}
+
+.withdrawal-preview-meta {
+    display: grid;
+    gap: 8px;
+    justify-items: start;
+    min-width: 0;
+}
+
+.receipt-pdf-tile {
+    display: inline-grid;
+    place-items: center;
+    width: 96px;
+    height: 72px;
+    border: 1px solid var(--admin-soft-line);
+    border-radius: 6px;
+    background: #fff5f5;
+    color: #b42318;
+    font-weight: 800;
+    letter-spacing: .08em;
+}
+
+.receipt-pdf-tile[hidden] {
+    display: none;
+}
+
+.receipt-lightbox-pdf {
+    width: min(90vw, 900px);
+    height: min(80vh, 1100px);
+    border: 0;
+    border-radius: 8px;
+    background: #fff;
+}
+
+@media (max-width: 640px) {
+    .withdrawal-preview {
+        flex-direction: column;
+        align-items: flex-start;
+    }
 }

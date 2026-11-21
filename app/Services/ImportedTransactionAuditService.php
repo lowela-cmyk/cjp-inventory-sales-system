@@ -17,7 +17,7 @@ class ImportedTransactionAuditService
         $proposals = [];
         foreach ($records as $record) {
             if (($record['table'] ?? '') === 'sales' && isset($record['id'])) {
-                $sale = DB::table('sales')->find($record['id']);
+                $sale = DB::table('sales')->where('id', $record['id'])->first();
                 if (! $sale) { $issues[] = ['record' => $record, 'issue' => 'Missing imported sale']; continue; }
                 $total = (float) DB::table('sale_items')->where('sale_id', $sale->id)->sum('line_total');
                 $paid = (float) ActivePayments::query()->where('sale_id', $sale->id)->sum('amount');
@@ -33,7 +33,7 @@ class ImportedTransactionAuditService
                 if ($paid < $total && $paid > 0) $issues[] = $evidence + ['issue' => 'Partially paid: retain partial status; no Paid correction proposed'];
             }
             if (($record['table'] ?? '') === 'purchases' && isset($record['id'])) {
-                $purchase = DB::table('purchases')->find($record['id']);
+                $purchase = DB::table('purchases')->where('id', $record['id'])->first();
                 if (! $purchase) { $issues[] = ['record' => $record, 'issue' => 'Missing imported purchase']; continue; }
                 foreach (DB::table('purchase_items')->where('purchase_id', $purchase->id)->get() as $item) {
                     $lifted = (float) DB::table('hauls')->where('purchase_item_id', $item->id)->whereNull('deleted_at')->whereIn('status', ['lifted', 'in_transit', 'completed'])->sum('quantity_liters');
@@ -42,7 +42,7 @@ class ImportedTransactionAuditService
             }
             if (in_array($record['table'] ?? '', ['hauls', 'lifting_schedules'], true)) {
                 $table = $record['table'];
-                $row = isset($record['id']) ? DB::table($table)->find($record['id']) : DB::table($table)->where('haul_code', $record['code'])->first();
+                $row = isset($record['id']) ? DB::table($table)->where('id', $record['id'])->first() : DB::table($table)->where('haul_code', $record['code'])->first();
                 if (! $row || ! DB::table('trucks')->where('id', $row->truck_id)->exists() || ! DB::table('depots')->where('id', $row->depot_id)->exists()) $issues[] = ['record' => $record, 'issue' => 'Missing lifting record, truck or depot'];
                 if ($row && $table === 'hauls' && ! DB::table('purchase_items')->where('id', $row->purchase_item_id)->where('purchase_id', $row->purchase_id)->exists()) $issues[] = ['record' => $record, 'issue' => 'Lifting purchase relationship does not reconcile'];
             }

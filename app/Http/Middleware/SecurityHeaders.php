@@ -26,10 +26,12 @@ class SecurityHeaders
             $response->headers->set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
         }
 
+        // Part 26 #5: frame-src allows the private receipt route (a PDF receipt) and the local preview of a PDF picked
+        // for upload (a blob: URL that never leaves the browser).
         if (! $response->headers->has('Content-Security-Policy')) {
             $response->headers->set(
                 'Content-Security-Policy',
-                "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.bunny.net; font-src 'self' https://fonts.bunny.net data:; img-src 'self' data: blob:; connect-src 'self' ws: wss:; frame-ancestors 'self'; form-action 'self';"
+                "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.bunny.net; font-src 'self' https://fonts.bunny.net data:; img-src 'self' data: blob:; frame-src 'self' blob:; connect-src 'self' ws: wss:; frame-ancestors 'self'; form-action 'self';"
             );
         }
 

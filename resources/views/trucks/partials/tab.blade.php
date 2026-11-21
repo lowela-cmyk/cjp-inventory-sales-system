@@ -1,4 +1,4 @@
-{{-- Fuel Lifting > Trucks tab. Expects: $truckDirectory, $truckSearch, $truckStatusFilter, $truckStatuses, $truckRoutePrefix, $liftRoutePrefix. --}}
+{{-- Fuel Lifting > Trucks tab. Expects: $truckDirectory, $truckFuel, $truckSearch, $truckStatusFilter, $truckStatuses, $truckRoutePrefix, $liftRoutePrefix. --}}
 <x-filter.bar class="fleet-toolbar" :action="route($liftRoutePrefix.'.trucks')">
     <x-filter.search label="Search trucks" placeholder="Search plate or truck code" :value="$truckSearch" />
     <x-filter.select name="status" label="Status" :selected="$truckStatusFilter"
@@ -17,7 +17,13 @@
                     <td>{{ number_format((float) $truck->capacity_liters, 2) }} L</td>
                     {{-- Part 12: fuel still on the truck from a lift (Loaded until delivered or returned). --}}
                     {{-- Part 23 #8: never more than the truck can hold (only Lifted lines carry fuel). --}}
-                    <td>{{ number_format(min((float) ($truck->leftover_liters ?? 0), (float) $truck->capacity_liters), 2) }} L</td>
+                    <td class="fleet-on-truck">
+                        {{ number_format(min((float) ($truck->leftover_liters ?? 0), (float) $truck->capacity_liters), 2) }} L
+                        {{-- Part 26: which purchases that fuel belongs to (Deliver from Truck or Unload to Garage in the lift's View). --}}
+                        @foreach (($truckFuel ?? [])[$truck->id] ?? [] as $load)
+                            <small class="fleet-on-truck-line" data-truck-fuel="{{ $load['purchase_code'] }}">{{ $load['purchase_code'] }} · {{ $load['fuel_name'] }} · {{ number_format($load['liters'], 2) }} L ({{ $load['haul_code'] }})</small>
+                        @endforeach
+                    </td>
                     <td><x-admin.status-badge :status="ucwords(str_replace('_', ' ', $truck->effective_status))" /></td>
                     <td>{{ number_format((int) $truck->active_lift_count) }}</td>
                     <td>{{ $truck->next_schedule ? \Carbon\CarbonImmutable::parse($truck->next_schedule)->format('M d, Y g:i A') : '-' }}</td>

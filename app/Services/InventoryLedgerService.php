@@ -9,7 +9,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
- * @phpstan-type LedgerLift array{sequence: int, code: mixed, quantity: string, display_quantity: string, display_date: string, status: string, counts_as_lifted: bool, details: array{'Lift ID': mixed, 'Date Lifted': string, Quantity: string, Driver: mixed, Truck: string, Status: string, Receipt: string}, receipt: array{uploaded_at: string, uploaded_by: mixed, notes: string|null, url: string}|null, search_text: string}
+ * @phpstan-type LedgerLift array{sequence: int, code: mixed, quantity: string, display_quantity: string, display_date: string, status: string, counts_as_lifted: bool, details: array{'Lift ID': mixed, 'Date Lifted': string, Quantity: string, Driver: mixed, Truck: string, Status: string, Receipt: string}, receipt: array{uploaded_at: string, uploaded_by: mixed, notes: string|null, url: string, download_url: string, is_pdf: bool}|null, search_text: string}
  * @phpstan-type LedgerCells array{mixed, mixed, mixed, string, string, string, string}
  * @phpstan-type LedgerTransaction array{id: string, purchase_id: int, purchase_item_id: int, purchase_code: mixed, status: string, status_class: string, purchased_liters: string, lifted_liters: string, remaining_liters: string, driver_names: string, truck_names: string, inventory_status: string, lifts: Collection<int, LedgerLift>, lift_export: string, receipt_count: int, search_text: string, cells: LedgerCells, details: array{'Purchase ID': mixed, 'Purchase Date': string, 'Fuel Type': mixed, Depot: mixed, 'Purchased Quantity': string, 'Total Lifted': string, 'Remaining Quantity': string, 'Lift Transactions': string, Deliveries: string, Status: string}}
  */
@@ -121,7 +121,7 @@ class InventoryLedgerService
     }
 
     /**
-     * @param  array{date_from?: ?string, date_to?: ?string, depot_id?: mixed, fuel_type_id?: mixed, status?: ?string}  $filters
+     * @param  array{date_from?: ?string, date_to?: ?string, depot_id?: mixed, fuel_type_id?: mixed, status?: ?string, _page_tab?: string}  $filters
      * @return Collection<int, \stdClass>
      */
     private function purchaseProgressRows(?string $search, array $filters = []): Collection
@@ -187,7 +187,8 @@ class InventoryLedgerService
             return [];
         }
 
-        return DB::table('hauls')
+        /** @var array<int|string, Collection<int, LedgerLift>> $grouped */
+        $grouped = DB::table('hauls')
             ->join('trucks', 'trucks.id', '=', 'hauls.truck_id')
             ->leftJoin('users as drivers', 'drivers.id', '=', 'hauls.driver_user_id')
             ->leftJoin('driver_profiles', 'driver_profiles.user_id', '=', 'drivers.id')
@@ -250,11 +251,14 @@ class InventoryLedgerService
                         // The file is served by the role-gated withdrawal-receipts.show route, never a public URL.
                         'url' => route('withdrawal-receipts.show', $row->id).'?v='.strtotime((string) $row->withdrawal_receipt_uploaded_at),
                         'download_url' => route('withdrawal-receipts.show', ['haul' => $row->id, 'download' => 1]),
+                        'is_pdf' => str_ends_with(strtolower((string) $row->withdrawal_receipt_path), '.pdf'),
                     ] : null,
                     'search_text' => strtolower(implode(' ', $details)),
                 ];
             }))
             ->all();
+
+        return $grouped;
     }
 
     private function liftingStatus(float $lifted, float $purchased): string

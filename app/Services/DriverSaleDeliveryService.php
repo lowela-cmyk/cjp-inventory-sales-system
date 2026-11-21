@@ -104,7 +104,8 @@ class DriverSaleDeliveryService
             ->get(['haul_allocations.sale_id', 'hauls.haul_code', 'hauls.status', 'hauls.scheduled_at', 'hauls.hauled_at', 'trucks.name as truck_name', 'trucks.truck_code'])
             ->groupBy('sale_id');
 
-        return $sales->map(function (object $sale) use ($fuelBySale, $liftsBySale): array {
+        /** @var Collection<int, array<string, mixed>> $rows */
+        $rows = $sales->map(function (object $sale) use ($fuelBySale, $liftsBySale): array {
             $lifts = $liftsBySale->get($sale->id, collect());
             $lift = $lifts->first();
             $items = $fuelBySale->get($sale->id, collect());
@@ -138,6 +139,8 @@ class DriverSaleDeliveryService
                 ],
             ];
         });
+
+        return $rows;
     }
 
     /** Customer delivery rows of lifts that still count (the row and its lift are not cancelled or deleted). */

@@ -84,7 +84,9 @@ class DriverDeliveryController extends Controller
     public function storeWithdrawalReceipt(Request $request, int $haul): RedirectResponse|JsonResponse
     {
         $data = $request->validate([
-            'withdrawal_receipt' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+            // Part 26 #5: a JPG, JPEG, PNG or WEBP photo, or a PDF scan. The extension and the detected content must
+            // both match, so a renamed file is refused.
+            'withdrawal_receipt' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'mimetypes:image/jpeg,image/png,image/webp,application/pdf', 'max:5120'],
             'withdrawal_notes' => ['nullable', 'string', 'max:1000'],
         ]);
 
@@ -152,6 +154,7 @@ class DriverDeliveryController extends Controller
                 'uploaded_at' => $this->formatDateTime($uploadedAt),
                 'notes' => $data['withdrawal_notes'] ?? null,
                 'url' => route('withdrawal-receipts.show', $row->id).'?v='.$uploadedAt->timestamp,
+                'is_pdf' => str_ends_with(strtolower($path), '.pdf'),
             ]);
         }
 
@@ -376,6 +379,7 @@ class DriverDeliveryController extends Controller
                     'withdrawal_url' => $row->withdrawal_receipt_path
                         ? route('withdrawal-receipts.show', $row->id).'?v='.strtotime((string) $row->withdrawal_receipt_uploaded_at)
                         : null,
+                    'withdrawal_is_pdf' => str_ends_with(strtolower((string) $row->withdrawal_receipt_path), '.pdf'),
                 ];
             })
             ->values();

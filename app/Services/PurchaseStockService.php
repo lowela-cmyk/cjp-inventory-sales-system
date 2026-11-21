@@ -70,8 +70,10 @@ class PurchaseStockService
         $directFromDepot = $this->releasedWithoutOwnLift($ids);
         $offLifts = $this->leftLiftsByPurchase($ids);
         $inGarage = app(GarageStockService::class)->inGarageByPurchase($ids);
+        $truckFree = $this->freeOnOpenLifts($ids);
+        $unlifted = $this->unliftedOrders($ids);
 
-        return $lines->mapWithKeys(function (object $line) use ($released, $reserved, $reservedDepot, $lifted, $physicallyLifted, $directFromDepot, $offLifts, $inGarage): array {
+        return $lines->mapWithKeys(function (object $line) use ($released, $reserved, $reservedDepot, $lifted, $physicallyLifted, $directFromDepot, $offLifts, $inGarage, $truckFree, $unlifted): array {
             $id = (int) $line->id;
             $ordered = round((float) $line->quantity_ordered_liters, 2);
             $line->ordered = $ordered;
@@ -88,6 +90,19 @@ class PurchaseStockService
             $line->conservation_difference_liters = round($line->remaining_in_depot + $line->on_truck + $line->in_garage + $line->released - $ordered, 2);
             $line->requires_reconciliation = abs($line->conservation_difference_liters) > .005;
             if ($line->requires_reconciliation) $line->available = 0.0;
+            // Part 26: lifted fuel no order or garage unload has claimed yet stays sellable as Depot to Client under its
+            // purchase until it is delivered or unloaded into a garage tank (the order then rides that truck through
+            // Fuel Lifting > Deliver from Truck, or a later lift of the purchase). Each open order of the purchase not on
+            // a lift yet is placed on one source (the depot, or one truck's unclaimed liters, best fit); a new order may
+            // take at most the biggest single source left, so nothing is sold twice and every order can still be
+            // delivered whole.
+            $lineFree = $truckFree[$id] ?? [];
+            $line->truck_free = round((float) array_sum($lineFree), 2);
+            $placed = self::place($line->remaining_in_depot, $lineFree, $unlifted[$id] ?? [], false);
+            $line->reserved_for_lift = round(max(0, $line->remaining_in_depot - $placed['depot']), 2);
+            $line->depot_to_client_pool = round(max(0, $placed['depot']) + array_sum($placed['lines']), 2);
+            $line->depot_to_client_available = $line->requires_reconciliation || $placed['depot'] < -0.005 ? 0.0
+                : round(max($placed['depot'], $placed['lines'] === [] ? 0.0 : max($placed['lines'])), 2);
             $line->not_lifted = round(max(0, $ordered - (float) ($physicallyLifted[$id] ?? 0) - (float) ($directFromDepot[$id] ?? 0)), 2);
             $line->label = $line->purchase_code.' · '.mb_strtoupper((string) $line->fuel_name);
             // Record Sales dropdowns: "PUR-002 – PREMIUM – 60,000 L in stock – ₱55.00/L".
@@ -95,6 +110,14 @@ class PurchaseStockService
                 $line->purchase_code,
                 mb_strtoupper((string) $line->fuel_name),
                 number_format($line->available, fmod($line->available, 1.0) === 0.0 ? 0 : 2).' L in depot',
+                '₱'.number_format((float) $line->unit_cost, 2).'/L',
+            ]);
+            // Part 26: the same purchase as a Depot to Client source ("PUR-002 – DIESEL – 60,000 L available (lifted fuel on trucks included) – ₱55.00/L").
+            $liters = fn (float $value): string => number_format($value, fmod($value, 1.0) === 0.0 ? 0 : 2).' L';
+            $line->depot_to_client_label = implode(' – ', [
+                $line->purchase_code,
+                mb_strtoupper((string) $line->fuel_name),
+                $liters($line->depot_to_client_available).' available'.($line->truck_free > 0 ? ' (lifted fuel on trucks included)' : ' in depot'),
                 '₱'.number_format((float) $line->unit_cost, 2).'/L',
             ]);
 
@@ -133,12 +156,21 @@ class PurchaseStockService
     {
         $lines = $this->lines($purchaseItemIds, $lock);
         $ids = $lines->keys()->map(fn (mixed $id): int => (int) $id)->all();
-        $reserved = $ids === [] ? [] : $this->reservedByPurchase($ids, array_values(array_unique(array_map('intval', $carriedSaleIds))), array_values(array_unique(array_map('intval', $exceptHaulIds))))[1];
+        $exceptHaulIds = array_values(array_unique(array_map('intval', $exceptHaulIds)));
+        $carriedSaleIds = array_values(array_unique(array_map('intval', $carriedSaleIds)));
+        // Part 26: an open order not on a lift may also be delivered whole from the unclaimed fuel already on one truck
+        // of its purchase (Deliver from Truck); only the orders no truck can take keep depot liters from a new lift.
+        $truckFree = $this->freeOnOpenLifts($ids, $exceptHaulIds);
+        $unlifted = $this->unliftedOrders($ids, $carriedSaleIds, $exceptHaulIds);
 
-        return $lines->mapWithKeys(fn (object $line, int $id): array => [$id => [
-            'remaining_in_depot' => (float) $line->remaining_in_depot,
-            'reserved_for_sales' => round((float) ($reserved[$id] ?? 0), 2),
-        ]])->all();
+        return $lines->mapWithKeys(function (object $line, int $id) use ($truckFree, $unlifted): array {
+            $placed = self::place((float) $line->remaining_in_depot, $truckFree[$id] ?? [], $unlifted[$id] ?? [], false);
+
+            return [$id => [
+                'remaining_in_depot' => (float) $line->remaining_in_depot,
+                'reserved_for_sales' => round(max(0, (float) $line->remaining_in_depot - $placed['depot']), 2),
+            ]];
+        })->all();
     }
 
     public function line(int $purchaseItemId, bool $lock = false): ?\stdClass
@@ -156,7 +188,7 @@ class PurchaseStockService
     public function saleOptions(array $keep = []): Collection
     {
         return $this->lines()
-            ->filter(fn (object $line): bool => $line->available > 0 || in_array((int) $line->id, $keep, true))
+            ->filter(fn (object $line): bool => $line->available > 0 || $line->depot_to_client_available > 0 || in_array((int) $line->id, $keep, true))
             ->values();
     }
 
@@ -371,6 +403,155 @@ class PurchaseStockService
         }
 
         return $left;
+    }
+
+    /**
+     * Part 26: fuel on open lifts (Scheduled, In Transit or Lifted; never Completed or Cancelled) that no delivery row
+     * or garage unload has claimed, per purchase and lift line.
+     *
+     * @param  array<int, int>  $ids
+     * @param  array<int, int>  $exceptHaulIds  a lift being edited: its liters are given back by the caller
+     * @return array<int, array<int, float>> purchase_item_id => [haul_id => liters]
+     */
+    public function freeOnOpenLifts(array $ids, array $exceptHaulIds = []): array
+    {
+        if ($ids === []) {
+            return [];
+        }
+        $claimed = DB::table('haul_allocations')->where('status', '!=', 'cancelled')->groupBy('haul_id')
+            ->selectRaw('haul_id, COALESCE(SUM(quantity_liters), 0) as liters');
+        $free = [];
+        DB::table('hauls')
+            ->leftJoinSub($claimed, 'claimed', 'claimed.haul_id', '=', 'hauls.id')
+            ->whereNull('hauls.deleted_at')
+            ->whereIn('hauls.status', ['scheduled', 'in_transit', 'lifted'])
+            ->whereIn('hauls.purchase_item_id', $ids)
+            ->when($exceptHaulIds !== [], fn (Builder $query): Builder => $query->whereNotIn('hauls.id', $exceptHaulIds))
+            ->orderBy('hauls.id')
+            ->get(['hauls.id', 'hauls.purchase_item_id', 'hauls.quantity_liters', 'claimed.liters as claimed'])
+            ->each(function (object $haul) use (&$free): void {
+                $liters = round(max(0, (float) $haul->quantity_liters - (float) ($haul->claimed ?? 0)), 2);
+                if ($liters > 0) {
+                    $free[(int) $haul->purchase_item_id][(int) $haul->id] = $liters;
+                }
+            });
+
+        return $free;
+    }
+
+    /**
+     * Part 26: liters each lift line may unload into the garage = its unclaimed liters less what the open orders of
+     * its purchase not on a lift yet need from it (they are placed on the depot first, then on the trucks).
+     *
+     * @param  array<int, int>  $purchaseItemIds
+     * @return array<int, float> haul_id => liters
+     */
+    public function unloadableByHaul(array $purchaseItemIds, bool $lock = false): array
+    {
+        $lines = $this->lines($purchaseItemIds, $lock);
+        $ids = $lines->keys()->map(fn (mixed $id): int => (int) $id)->all();
+        $truckFree = $this->freeOnOpenLifts($ids);
+        $unlifted = $this->unliftedOrders($ids);
+        $unloadable = [];
+        foreach ($lines as $id => $line) {
+            foreach (self::place((float) $line->remaining_in_depot, $truckFree[$id] ?? [], $unlifted[$id] ?? [], true)['lines'] as $haulId => $liters) {
+                $unloadable[(int) $haulId] = round(max(0, $liters), 2);
+            }
+        }
+
+        return $unloadable;
+    }
+
+    /**
+     * Part 26: undelivered liters each open order still takes from a purchase outside a lift (garage lots excluded),
+     * per order: its own fuel while it is not on a lift, and its F1 portion (always from the depot). The totals match
+     * the depot promises of reservedByPurchase(). "flexible" = the order may also be delivered from a truck already carrying the purchase (its own fuel,
+     * from this purchase only); an F1 portion or an order supplied from several purchases needs a lift from the depot.
+     *
+     * @param  array<int, int>  $ids
+     * @param  array<int, int>  $exceptSaleIds  orders a lift being saved carries
+     * @param  array<int, int>  $exceptHaulIds  a lift being edited: its orders count as off it
+     * @return array<int, list<array{liters: float, flexible: bool}>> purchase_item_id => orders
+     */
+    private function unliftedOrders(array $ids, array $exceptSaleIds = [], array $exceptHaulIds = []): array
+    {
+        if ($ids === []) {
+            return [];
+        }
+        $releasedByLine = DB::table('stock_outs')->where('status', 'released')->whereNotNull('sale_item_id')->groupBy('sale_item_id')
+            ->selectRaw("sale_item_id, COALESCE(SUM(CASE WHEN stock_outs.portion = 'f1' THEN quantity_liters ELSE 0 END), 0) as f1_released, COALESCE(SUM(CASE WHEN stock_outs.portion = 'f1' THEN 0 ELSE quantity_liters END), 0) as main_released");
+        $onLift = DB::table('haul_allocations')->join('hauls', 'hauls.id', '=', 'haul_allocations.haul_id')->whereNull('hauls.deleted_at')
+            ->where('haul_allocations.destination_type', 'customer')->where('haul_allocations.status', '!=', 'cancelled')->whereNotNull('haul_allocations.sale_id')
+            ->when($exceptHaulIds !== [], fn (Builder $query): Builder => $query->whereNotIn('haul_allocations.haul_id', $exceptHaulIds))
+            ->distinct()->select('haul_allocations.sale_id');
+        $purchasesPerSale = DB::table('sale_items')->whereNotNull('purchase_item_id')->groupBy('sale_id')
+            ->selectRaw('sale_id, COUNT(DISTINCT purchase_item_id) as purchases');
+        $rows = DB::table('sale_items')
+            ->join('sales', 'sales.id', '=', 'sale_items.sale_id')
+            ->leftJoinSub($releasedByLine, 'released', 'released.sale_item_id', '=', 'sale_items.id')
+            ->leftJoinSub($purchasesPerSale, 'per_sale', 'per_sale.sale_id', '=', 'sales.id')
+            ->leftJoinSub($onLift, 'on_lift', 'on_lift.sale_id', '=', 'sales.id')
+            ->whereNull('sales.deleted_at')
+            ->whereIn('sales.status', self::OPEN_SALE_STATUSES)
+            ->whereNotIn('sales.delivery_status', ['delivered', 'cancelled'])
+            ->when($exceptSaleIds !== [], fn (Builder $query): Builder => $query->whereNotIn('sales.id', $exceptSaleIds))
+            ->where(fn (Builder $query): Builder => $query->whereIn('sale_items.purchase_item_id', $ids)->orWhereIn('sale_items.f1_purchase_item_id', $ids))
+            ->get(['sales.id as sale_id', 'sales.delivery_type', 'per_sale.purchases', 'on_lift.sale_id as on_lift_sale_id', 'sale_items.purchase_item_id', 'sale_items.f1_purchase_item_id', 'sale_items.garage_stock_id', 'sale_items.f1_garage_stock_id',
+                'sale_items.main_quantity_liters', 'sale_items.f1_quantity_liters', 'released.main_released', 'released.f1_released']);
+
+        $orders = [];
+        foreach ($rows as $row) {
+            // The order's own fuel rides its lift once it is on one; an F1 portion is always taken from the depot.
+            $portions = [
+                [$row->garage_stock_id || $row->on_lift_sale_id ? null : $row->purchase_item_id, (float) $row->main_quantity_liters - (float) ($row->main_released ?? 0), in_array($row->delivery_type, ['depot_to_client', 'standard'], true) && (int) ($row->purchases ?? 0) <= 1],
+                [$row->f1_garage_stock_id ? null : $row->f1_purchase_item_id, (float) $row->f1_quantity_liters - (float) ($row->f1_released ?? 0), false],
+            ];
+            foreach ($portions as [$purchaseItemId, $liters, $flexible]) {
+                if (! $purchaseItemId || $liters <= 0 || ! in_array((int) $purchaseItemId, $ids, true)) {
+                    continue;
+                }
+                $key = (int) $purchaseItemId.':'.(int) $row->sale_id.':'.($flexible ? 'f' : 'd');
+                $orders[(int) $purchaseItemId][$key] = ['liters' => round(($orders[(int) $purchaseItemId][$key]['liters'] ?? 0) + $liters, 2), 'flexible' => $flexible];
+            }
+        }
+
+        return array_map('array_values', $orders);
+    }
+
+    /**
+     * Part 26: puts each open order (biggest first) on one source: the depot or the lift line it fits best. Orders
+     * that must come from the depot always go there; the others go to the depot first ($preferDepot, e.g. before a
+     * garage unload) or to a truck first (before a new sale or lift). An order that fits nowhere is counted against
+     * the depot (it can then go negative: the purchase is over-promised).
+     *
+     * @param  array<int, float>  $lines  haul_id => unclaimed liters
+     * @param  list<array{liters: float, flexible: bool}>  $orders
+     * @return array{depot: float, lines: array<int, float>}
+     */
+    private static function place(float $depot, array $lines, array $orders, bool $preferDepot): array
+    {
+        usort($orders, fn (array $a, array $b): int => $b['liters'] <=> $a['liters']);
+        $bestLine = function (float $liters) use (&$lines): ?int {
+            $best = null;
+            foreach ($lines as $haulId => $free) {
+                if ($free + 0.005 >= $liters && ($best === null || $free < $lines[$best])) {
+                    $best = $haulId;
+                }
+            }
+
+            return $best;
+        };
+        foreach ($orders as $order) {
+            $liters = (float) $order['liters'];
+            $line = $order['flexible'] && ! ($preferDepot && $depot + 0.005 >= $liters) ? $bestLine($liters) : null;
+            if ($line !== null) {
+                $lines[$line] = round($lines[$line] - $liters, 2);
+            } else {
+                $depot = round($depot - $liters, 2);
+            }
+        }
+
+        return ['depot' => $depot, 'lines' => $lines];
     }
 
     /**

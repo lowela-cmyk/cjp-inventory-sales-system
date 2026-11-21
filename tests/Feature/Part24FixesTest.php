@@ -92,7 +92,7 @@ class Part24FixesTest extends AuditTestCase
         $this->assertStringNotContainsString('data-truck-capacity-summary', $html);
 
         // More than the truck can carry is refused, and nothing is saved.
-        $this->garageOrder($a, $tank, 1500, $small)->assertSessionHasErrors(['delivery_truck_id' => 'Truck TRK-SMALL can carry at most 1,000.00 L and already has 0.00 L loaded or assigned to open deliveries, so only 1,000.00 L is available. This order needs 1,500.00 L.']);
+        $this->garageOrder($a, $tank, 1500, $small)->assertSessionHasErrors(['delivery_truck_id' => 'Truck TRK-SMALL can carry at most 1,000.00 L. This order needs 1,500.00 L.']);
         $this->assertSame(0, DB::table('sales')->count());
 
         // Exactly the capacity fits; the next order on that truck no longer does.
@@ -522,8 +522,9 @@ class Part24FixesTest extends AuditTestCase
         // Reserved / on hand.
         $this->assertSame(round(4000 / 26000 * 100, 2), $inventory['totals']['stock_out_rate']);
 
+        // Part 26 #1: the reconciliation chart is no longer on the dashboard; its figures above stay the same.
         $this->actingAs($a['admin'])->get(route('admin.dashboard'))->assertOk()
-            ->assertSee('Inventory Reconciliation (Purchased = Delivered + Reserved + Available)')
-            ->assertSeeInOrder(['Purchased:', '30,000.00 L', 'Delivered (Sold):', '4,000.00 L', 'Reserved:', '4,000.00 L', 'Available:', '22,000.00 L']);
+            ->assertDontSee('Inventory Reconciliation (Purchased = Delivered + Reserved + Available)')
+            ->assertDontSee('data-inventory-reconciliation', false);
     }
 }

@@ -458,7 +458,7 @@ class SalesOfficerCustomerController extends Controller
     public function updateGarageDeliveryStatus(Request $request, int $sale): RedirectResponse
     {
         $row = DB::table('sales')->where('id', $sale)->whereNull('deleted_at')->first(['id', 'sale_code', 'delivery_type', 'delivery_status', 'status']);
-        abort_unless($row, 404);
+        abort_unless((bool) $row, 404);
         $keep = ['edit_sale_id' => $sale];
 
         if ($row->delivery_type !== 'garage_to_client') {
@@ -1007,7 +1007,7 @@ class SalesOfficerCustomerController extends Controller
     }
 
     /**
-     * @param  array{status?: string, location?: string}  $filters
+     * @param  array{status?: string, payment_status?: string, location?: string}  $filters
      */
     private function customerRows(?string $search, ?int $perPage = 25, array $filters = [])
     {
@@ -1688,7 +1688,8 @@ class SalesOfficerCustomerController extends Controller
      * Each line names a usable source of its fuel and has the liters available; sources are row-locked so two orders
      * can't promise the same liters.
      * - Standard / Depot to Client (Part 13): the purchase's liters in the depot (remaining in depot less what other
-     *   open orders will take from the depot).
+     *   open orders will take from the depot). Part 26: a Depot to Client order's own fuel may also take the purchase's
+     *   lifted fuel that is still on a truck and claimed by no order or garage unload.
      * - Garage to Client (Part 18 add-on): a garage tank of the line's fuel; its liters less what open orders were
      *   promised from it (and what older orders hold on its lots). Its F1 portion may come from an F1 tank or an F1
      *   purchase. A lot is accepted only when it is already on the order being changed ($ownLots, older orders).
@@ -1716,8 +1717,11 @@ class SalesOfficerCustomerController extends Controller
         $errors = [];
         $ownLot = fn (?object $lot): bool => $lot !== null && in_array((int) $lot->id, $ownLots, true);
 
-        // Liters asked of a tank, a lot or a purchase's depot stock, with the error when they are not there.
-        $take = function (string $key, ?object $tank, ?object $lot, ?object $line, float $liters, string $what) use (&$requested, &$requestedFromLot, &$requestedFromTank, &$errors): void {
+        // Liters asked of a tank, a lot or a purchase's depot stock, with the error when they are not there. Part 26: a
+        // Depot to Client order's own fuel may also come from the purchase's lifted fuel no order or unload claimed yet
+        // (depot_to_client_available); a Standard order and every F1 portion stay with the depot liters (available).
+        $requestedTruckPool = [];
+        $take = function (string $key, ?object $tank, ?object $lot, ?object $line, float $liters, string $what, bool $truckFuel = false) use (&$requested, &$requestedFromLot, &$requestedFromTank, &$requestedTruckPool, &$errors): void {
             if ($tank) {
                 $requestedFromTank[$tank->id] = round(($requestedFromTank[$tank->id] ?? 0) + $liters, 2);
                 if ($requestedFromTank[$tank->id] > $tank->available) {
@@ -1735,6 +1739,18 @@ class SalesOfficerCustomerController extends Controller
                 return;
             }
             $requested[$line->id] = round(($requested[$line->id] ?? 0) + $liters, 2);
+            if ($truckFuel) {
+                // Depot to Client: one pool of depot and free truck liters, shared with any depot-only portion asked of
+                // the same purchase on this order.
+                $requestedTruckPool[$line->id] = round(($requestedTruckPool[$line->id] ?? 0) + $liters, 2);
+                $limit = (float) $line->depot_to_client_available;
+                if ($requestedTruckPool[$line->id] > $limit || $requested[$line->id] > (float) $line->depot_to_client_pool) {
+                    $errors[$key] = 'Only '.number_format(min($limit, (float) $line->depot_to_client_pool), 2).' L of '.$line->purchase_code.' ('.$line->fuel_name.') are left for '.$what
+                        .($line->truck_free > 0 ? ' (in the depot or still unclaimed on a truck of this purchase).' : ' in the depot.');
+                }
+
+                return;
+            }
             if ($requested[$line->id] > $line->available) {
                 $errors[$key] = 'Only '.number_format($line->available, 2).' L of '.$line->purchase_code.' ('.$line->fuel_name.') are left in the depot for '.$what.'.';
             }
@@ -1755,7 +1771,7 @@ class SalesOfficerCustomerController extends Controller
             } elseif (! $tank && ! $line) {
                 $errors["items.$index.purchase_item_id"] = 'Select an available Fuel Type purchase.';
             } else {
-                $take("items.$index.quantity_liters", $tank, $lot, $line, $item['main_quantity_liters'], 'this order');
+                $take("items.$index.quantity_liters", $tank, $lot, $line, $item['main_quantity_liters'], 'this order', $deliveryType === 'depot_to_client');
             }
 
             if ($item['f1_quantity_liters'] <= 0) {
@@ -2334,13 +2350,6 @@ class SalesOfficerCustomerController extends Controller
         };
     }
 
-    private function isOverdue(float $saleTotal, float $totalPaid, mixed $dueDate): bool
-    {
-        return $dueDate
-            && round($totalPaid, 2) < round($saleTotal, 2)
-            && strtotime((string) $dueDate) < strtotime(now()->toDateString());
-    }
-
     /**
      * @param  Collection<int, int>  $saleIds
      * @return array<int, string|null>
@@ -2693,7 +2702,7 @@ class SalesOfficerCustomerController extends Controller
 
     /**
      * @param  Collection<int, int>  $saleIds
-     * @return array<int, array<int, array<string, string>>>
+     * @return array<int, array<int, array<string, mixed>>>
      */
     private function paymentsForSales(Collection $saleIds): array
     {

@@ -147,7 +147,11 @@
                                 @if ($lift['receipt'])
                                     @if ($canViewReceipts)
                                         <a class="withdrawal-thumb ledger-receipt-thumb" href="{{ $lift['receipt']['url'] }}" target="_blank" rel="noopener">
-                                            <img src="{{ $lift['receipt']['url'] }}" alt="Withdrawal receipt for {{ $lift['code'] }}" loading="lazy">
+                                            @if ($lift['receipt']['is_pdf'] ?? false)
+                                                <span class="receipt-pdf-tile" aria-hidden="true">PDF</span>
+                                            @else
+                                                <img src="{{ $lift['receipt']['url'] }}" alt="Withdrawal receipt for {{ $lift['code'] }}" loading="lazy">
+                                            @endif
                                             <span>View receipt</span>
                                         </a>
                                         {{-- Part 24 #4: the same role-gated file, saved instead of opened. --}}

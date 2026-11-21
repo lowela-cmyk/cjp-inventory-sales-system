@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Services\GarageStockService;
 use App\Services\LiftAllocationService;
+use App\Services\PurchaseStockService;
 use App\Services\SaleConfirmationService;
 use App\Services\TruckAvailabilityService;
 use Illuminate\Http\RedirectResponse;
@@ -28,7 +29,8 @@ class LiftLeftoverController extends Controller
         private readonly LiftAllocationService $liftAllocations,
         private readonly SaleConfirmationService $saleConfirmation,
         private readonly GarageStockService $garageStock,
-        private readonly TruckAvailabilityService $truckAvailability
+        private readonly TruckAvailabilityService $truckAvailability,
+        private readonly PurchaseStockService $purchaseStock
     ) {}
 
     public function deliver(Request $request, int $haul): RedirectResponse
@@ -121,6 +123,24 @@ class LiftLeftoverController extends Controller
             }
             if ($plan === [] && $errors === []) {
                 $errors['unload'] = 'Enter the liters to unload into Tank 1 and / or Tank 2.';
+            }
+            // Part 26: open orders of a purchase not on a lift yet (sold from its depot or its unclaimed truck fuel) keep
+            // their liters: a garage unload may take only what the depot and the trucks of the purchase still hold
+            // beyond them, so truck fuel is never both sold and put into a tank.
+            if ($errors === []) {
+                $byHaul = [];
+                foreach ($plan as [$line, , $liters]) {
+                    $byHaul[$line['haul_id']] = round(($byHaul[$line['haul_id']] ?? 0) + $liters, 2);
+                }
+                $unloadable = $this->purchaseStock->unloadableByHaul($lines->pluck('purchase_item_id')->unique()->values()->all(), true);
+                foreach ($byHaul as $haulId => $liters) {
+                    $line = $lines->get($haulId);
+                    $limit = (float) ($unloadable[$haulId] ?? 0);
+                    if ($liters > $limit + 0.005) {
+                        $errors["unload.$haulId"] = 'Only '.number_format($limit, 2).' L of '.$line['purchase_code'].' on this truck can go to the garage: the rest is needed by open orders sold from '
+                            .$line['purchase_code'].' that are not on a lift yet. Deliver those orders from this truck first, or unload less.';
+                    }
+                }
             }
             if ($errors !== []) {
                 throw ValidationException::withMessages($errors);

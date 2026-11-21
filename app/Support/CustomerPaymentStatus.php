@@ -32,7 +32,7 @@ final class CustomerPaymentStatus
                 $q->whereExists($openWithPayment)
                     ->orWhere(fn (Builder $q) => $q->whereNotExists($sales)->whereIn('customers.payment_status', ['partially_paid', 'partial']));
             } else {
-                $q->where(function (Builder $q) use ($open, $openWithPayment, $unrefunded): void {
+                $q->where(function (Builder $q) use ($open, $openWithPayment): void {
                     $q->whereExists($open)->whereNotExists($openWithPayment);
                 })->orWhere(function (Builder $q) use ($open, $unrefunded): void {
                     $q->whereNotExists($open)->whereExists($unrefunded);

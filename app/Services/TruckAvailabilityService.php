@@ -219,11 +219,9 @@ class TruckAvailabilityService
         }
 
         throw \Illuminate\Validation\ValidationException::withMessages([$field => sprintf(
-            '%s can carry at most %s L and already has %s L loaded or assigned to open deliveries, so only %s L is available. This order needs %s L.',
+            '%s can carry at most %s L. This order needs %s L.',
             TruckLabel::make($truck->name, $truck->truck_code),
             number_format($truck->capacity_liters, 2),
-            number_format($truck->loaded_liters, 2),
-            number_format($truck->available_liters, 2),
             number_format($liters, 2),
         )]);
     }
@@ -233,6 +231,40 @@ class TruckAvailabilityService
     {
         // Summed in SQL over the grouped rows (no rows: NULL, read as 0).
         return round((float) DB::query()->fromSub($this->leftoverByTruck()->where('hauls.truck_id', $truckId), 'truck_leftovers')->sum('leftover_liters'), 2);
+    }
+
+    /**
+     * Part 26: the fuel inside each truck per Purchase ID: Lifted lift lines minus their delivery rows and garage
+     * unloads. It stays here (and off the depot's stock) until it is delivered or unloaded into a garage tank.
+     *
+     * @param  array<int, int>  $truckIds
+     * @return array<int, list<array{haul_code: string, purchase_code: string, fuel_name: string, liters: float}>>
+     */
+    public function fuelOnTrucks(array $truckIds): array
+    {
+        if ($truckIds === []) {
+            return [];
+        }
+        $rows = DB::table('haul_allocations')->where('status', '!=', 'cancelled')->groupBy('haul_id')
+            ->selectRaw('haul_id, COALESCE(SUM(quantity_liters), 0) as allocated');
+        $fuel = [];
+        DB::table('hauls')
+            ->join('purchases', 'purchases.id', '=', 'hauls.purchase_id')
+            ->join('fuel_types', 'fuel_types.id', '=', 'hauls.fuel_type_id')
+            ->leftJoinSub($rows, 'rows_on_lift', 'rows_on_lift.haul_id', '=', 'hauls.id')
+            ->whereNull('hauls.deleted_at')
+            ->whereIn('hauls.status', LiftAllocationService::CARRYING_STATUSES)
+            ->whereIn('hauls.truck_id', $truckIds)
+            ->orderBy('hauls.id')
+            ->get(['hauls.truck_id', 'hauls.haul_code', 'hauls.quantity_liters', 'rows_on_lift.allocated', 'purchases.purchase_code', 'fuel_types.name as fuel_name'])
+            ->each(function (object $haul) use (&$fuel): void {
+                $liters = round((float) $haul->quantity_liters - (float) ($haul->allocated ?? 0), 2);
+                if ($liters > self::EMPTY_LITERS) {
+                    $fuel[(int) $haul->truck_id][] = ['haul_code' => (string) $haul->haul_code, 'purchase_code' => (string) $haul->purchase_code, 'fuel_name' => (string) $haul->fuel_name, 'liters' => $liters];
+                }
+            });
+
+        return $fuel;
     }
 
     /**

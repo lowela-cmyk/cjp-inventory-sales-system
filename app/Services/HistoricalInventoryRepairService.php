@@ -86,7 +86,7 @@ class HistoricalInventoryRepairService
 
             $result['stock_out_rows_applied'] = $plan['rows_applied'];
             $result['stock_out_allocations'] = count($plan['allocations']);
-            $result['garage_tanks'] = $garagePlan['tank_count'] ?? 0;
+            $result['garage_tanks'] = $garagePlan['tank_count'];
             $result['garage_lots'] = count($garagePlan['lots']);
 
             return $result;
@@ -185,7 +185,7 @@ class HistoricalInventoryRepairService
         return ['allocations' => $allocations, 'rows_applied' => $rowsApplied];
     }
 
-    /** @return array<int, mixed> */
+    /** @return array{lots: list<array<string, mixed>>, tank_count: int} */
     private function planGarage(array $rows, array &$result, bool $dryRun): array
     {
         if (! $dryRun) {
@@ -308,6 +308,9 @@ class HistoricalInventoryRepairService
         $reader = IOFactory::createReaderForFile($path);
         $reader->setReadDataOnly(true);
         $reader->setLoadSheetsOnly([$name]);
+        if (! method_exists($reader, 'listWorksheetInfo')) {
+            throw new \RuntimeException('Spreadsheet reader does not support worksheet inspection.');
+        }
         $info = collect($reader->listWorksheetInfo($path))->firstWhere('worksheetName', $name);
         if (! $info) throw new \RuntimeException('Missing required worksheet: '.$name);
         for ($start = 2; $start <= $info['totalRows']; $start += 1000) {

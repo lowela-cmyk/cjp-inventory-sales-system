@@ -101,7 +101,7 @@ class InventoryOfficerPurchaseController extends Controller
                 ->get(['id', 'name']),
             'depotRows' => $activeTab === 'depots' ? $this->depotRows($search === '' ? null : $search, $filtersFor('depots')) : collect(),
             // Part 13: Garage tab (tank cards per fuel and garage lots).
-            'garage' => $activeTab === 'garage' ? $this->garageStock->tab($activeTab === 'garage' ? ['fuel_type_id' => $data['fuel_type_id'] ?? null, 'tank_id' => $data['tank_id'] ?? null, 'date_from' => $unloaded['from'], 'date_to' => $unloaded['to']] : [], $activeTab === 'garage' && $search !== '' ? $search : null) : ['fuels' => collect(), 'tankRows' => collect(), 'lots' => collect(), 'tankOptions' => [], 'fuelOptions' => []],
+            'garage' => $activeTab === 'garage' ? $this->garageStock->tab(['fuel_type_id' => $data['fuel_type_id'] ?? null, 'tank_id' => $data['tank_id'] ?? null, 'date_from' => $unloaded['from'], 'date_to' => $unloaded['to']], $search !== '' ? $search : null) : ['fuels' => collect(), 'tankRows' => collect(), 'lots' => collect(), 'tankOptions' => [], 'fuelOptions' => []],
             'garageFilters' => $activeTab === 'garage' ? ['fuel_type_id' => $data['fuel_type_id'] ?? null, 'tank_id' => $data['tank_id'] ?? null, 'date_from' => $unloaded['from'], 'date_to' => $unloaded['to']] : [],
             'filters' => $filters,
             'filterOptions' => [
@@ -245,6 +245,7 @@ class InventoryOfficerPurchaseController extends Controller
             'Content-Type' => match (strtolower($extension)) {
                 'jpg', 'jpeg' => 'image/jpeg',
                 'webp' => 'image/webp',
+                'pdf' => 'application/pdf',
                 default => 'image/png',
             },
             // Part 24 #4: ?download=1 saves the file (Download receipt); otherwise it opens in the browser.
@@ -554,6 +555,12 @@ class InventoryOfficerPurchaseController extends Controller
                     $row->status === 'cancelled' ? '—' : $this->formatFinancial($amounts['margin']),
                     $row->status === 'cancelled' ? '—' : $this->formatFinancial($amounts['profit']),
                 ],
+                // Part 26 #6: the Source cell shows its parts on their own lines (depot or garage source, then the source
+                // change), wrapping inside the column; the cell above keeps the full text for Export.
+                'source_lines' => array_values(array_filter([
+                    $this->stockOutSourceLabel($row, $rowDraws !== null),
+                    $sourceChanges->get((int) $row->sale_id),
+                ])),
                 // Delivery Details: the lift (Depot to Client) or the order's own delivery (Standard).
                 'delivery' => [
                     'truck' => $row->delivery_truck_code ? TruckLabel::make($row->delivery_truck_name, $row->delivery_truck_code) : 'N/A',

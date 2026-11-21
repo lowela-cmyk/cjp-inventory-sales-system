@@ -266,7 +266,7 @@ class LiftAllocationService
      * purchases were chosen, of its fuel), and no larger than the liters still on that line.
      *
      * @param  array<int, array{haul_id: int, purchase_item_id: int, fuel_type_id: int, leftover: float}>  $lines
-     * @return Collection<int, \stdClass> each with haul_id (the lift line it would come from) and label
+     * @return Collection<int, object> each with haul_id (the lift line it would come from) and label
      */
     public function truckOrderOptions(array $lines, bool $lock = false, ?Collection $openSales = null): Collection
     {
@@ -391,7 +391,10 @@ class LiftAllocationService
                 $sale->purchase_item_id = $sale->purchase_item_id ? (int) $sale->purchase_item_id : null;
                 $sale->fuel_type_id = (int) $sale->fuel_type_id;
                 $sale->portions = collect($portions->get($sale->sale_id, []))
-                    ->map(fn (object $row): array => ['purchase_item_id' => $row->purchase_item_id ? (int) $row->purchase_item_id : null, 'purchase_code' => $row->purchase_code, 'liters' => round((float) $row->liters, 2)])
+                    ->map(function (mixed $row): array {
+                        /** @var object{purchase_item_id: mixed, purchase_code: mixed, liters: mixed} $row */
+                        return ['purchase_item_id' => $row->purchase_item_id ? (int) $row->purchase_item_id : null, 'purchase_code' => $row->purchase_code, 'liters' => round((float) $row->liters, 2)];
+                    })
                     ->filter(fn (array $row): bool => $row['liters'] > 0)
                     ->values()->all();
                 if (count($sale->portions) > 1) {

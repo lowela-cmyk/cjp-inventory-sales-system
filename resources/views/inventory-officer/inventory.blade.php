@@ -202,7 +202,15 @@
                                 <td>{{ $c[4] }}</td>
                                 <td class="stock-out-name stock-out-crew">{{ $d['driver'] }}</td>
                                 <td class="stock-out-name stock-out-crew">{{ $d['truck_name'] }}</td>
-                                <td class="stock-out-name">{{ $c[13] }}</td>
+                                <td class="stock-out-source" data-stock-out-source>
+                                    {{-- One wrapper, so a phone card keeps every line in the value column. --}}
+                                    <span class="stock-out-source-lines">
+                                        @foreach ($row['source_lines'] as $sourceLine)
+                                            @unless ($loop->first)<span class="stock-out-source-separator" aria-hidden="true"> — </span>@endunless
+                                            <span @class(['stock-out-source-line', 'is-secondary' => ! $loop->first])>{{ $sourceLine }}</span>
+                                        @endforeach
+                                    </span>
+                                </td>
                                 @foreach ([$d['date'], $d['status'], $d['atl'], $d['dr']] as $exportOnly)
                                     <td class="export-only" hidden>{{ $exportOnly }}</td>
                                 @endforeach

@@ -90,7 +90,9 @@ class DispatchDeliveryController extends Controller
             'activeTab' => $activeTab,
             'haulPages' => $this->haulPages,
             'search' => $search === '' ? null : $search,
-            'truckDirectory' => $this->truckAvailability->directory($truckSearch, $truckFilters['status'] ?? null),
+            'truckDirectory' => $truckDirectory = $this->truckAvailability->directory($truckSearch, $truckFilters['status'] ?? null),
+            // Part 26: what is inside each truck, per Purchase ID (lifted fuel not yet delivered or unloaded).
+            'truckFuel' => $this->truckAvailability->fuelOnTrucks(collect($truckDirectory->items())->pluck('id')->map(fn (mixed $id): int => (int) $id)->all()),
             'truckSearch' => $truckSearch === '' ? null : $truckSearch,
             'truckStatusFilter' => $truckFilters['status'] ?? null,
             'nextTruckCode' => $this->truckAvailability->nextTruckCode(),
@@ -564,7 +566,11 @@ class DispatchDeliveryController extends Controller
         $driverPhones = DB::table('users')->where('role', 'driver')->whereNotNull('phone')->where('phone', '!=', '')
             ->get(['name', 'phone'])->mapWithKeys(fn (object $driver): array => [mb_strtolower(trim((string) $driver->name)) => $driver->phone])->all();
 
-        return $rows
+        // Part 26: each lift line shows its purchase's figures (one source: PurchaseStockService), so the same Purchase
+        // ID reads the same in Sales, Fuel Lifting, Stock-In and Stock-Out.
+        $stock = $this->purchaseStock->lines($rows->pluck('purchase_item_id')->map(fn (mixed $id): int => (int) $id)->unique()->values()->all(), false, true);
+
+        $grouped = $rows
             ->map(function (object $row) use ($liftRows, $loads, $driverPhones): array {
                 $truck = TruckLabel::make($row->truck_name, $row->truck_code);
                 $driverPhone = $row->driver_phone ?: ($driverPhones[mb_strtolower(trim((string) $row->driver_name))] ?? null);
@@ -685,6 +691,26 @@ class DispatchDeliveryController extends Controller
                 return $row;
             })
             ->values();
+
+        return $grouped->map(function (array $row) use ($stock): array {
+            $row['hauls'] = array_map(function (array $haul) use ($stock): array {
+                $line = $stock->get($haul['purchase_item_id']);
+                $haul['purchase_figures'] = $line ? [
+                    'Purchased' => $this->formatLiters($line->ordered),
+                    'Reserved (open sales)' => $this->formatLiters($line->reserved),
+                    'Lifted' => $this->formatLiters($line->lifted),
+                    'Delivered' => $this->formatLiters($line->released),
+                    'Remaining in depot' => $this->formatLiters($line->remaining_in_depot),
+                    'Unclaimed on trucks' => $this->formatLiters($line->truck_free),
+                    'Sellable (Depot to Client)' => $this->formatLiters($line->depot_to_client_available),
+                ] : [];
+                $haul['open_unlifted_orders'] = $line ? round((float) $line->reserved_depot, 2) : 0.0;
+
+                return $haul;
+            }, $row['hauls']);
+
+            return $row;
+        });
     }
 
     /**
@@ -814,7 +840,8 @@ class DispatchDeliveryController extends Controller
         $lines = $this->purchaseStock->lines();
         // Part 25: liters of each purchase that open sales not on a lift (or on the lift being edited) have reserved.
         $reserved = $exceptHaulIds === []
-            ? $lines->map(fn (object $line): float => (float) $line->reserved_depot)->all()
+            // Part 26: an open order one truck of the purchase can deliver whole does not hold depot liters.
+            ? $lines->map(fn (object $line): float => (float) $line->reserved_for_lift)->all()
             : collect($this->purchaseStock->liftableLiters($lines->keys()->map(fn (mixed $id): int => (int) $id)->all(), [], $exceptHaulIds))->map(fn (array $figures): float => $figures['reserved_for_sales'])->all();
 
         return $lines

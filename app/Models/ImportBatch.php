@@ -5,6 +5,26 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+/**
+ * @property int $id
+ * @property string $batch_uuid
+ * @property string $original_filename
+ * @property string $stored_path
+ * @property string $file_hash
+ * @property string $file_type
+ * @property string $status
+ * @property array<string, mixed>|null $workbook_summary
+ * @property array<string, mixed>|null $mapping_summary
+ * @property array<string, mixed>|null $validation_summary
+ * @property array<string, mixed>|null $result_summary
+ * @property int|null $created_by
+ * @property int|null $confirmed_by
+ * @property \Illuminate\Support\Carbon|null $confirmed_at
+ * @property \Illuminate\Support\Carbon|null $completed_at
+ * @property string|null $failure_message
+ * @property \Illuminate\Support\Carbon|null $created_at
+ * @property \Illuminate\Support\Carbon|null $updated_at
+ */
 class ImportBatch extends Model
 {
     protected $fillable = [

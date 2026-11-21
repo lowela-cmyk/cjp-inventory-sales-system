@@ -66,7 +66,7 @@ const openModal = (modal) => {
     }
 
     if (modal.matches('[data-receipt-lightbox]')) {
-        modal.querySelectorAll('img[data-src]').forEach((img) => { img.src = img.dataset.src; img.removeAttribute('data-src'); });
+        modal.querySelectorAll('img[data-src], iframe[data-src]').forEach((media) => { media.src = media.dataset.src; media.removeAttribute('data-src'); });
         showReceiptSlide(modal, 0);
     }
 
@@ -557,14 +557,28 @@ function syncDeliveryType(select) {
         const isF1 = stock.matches('[data-sale-f1-purchase]');
         [...stock.options].forEach((option) => {
             if (!option.dataset.source) return;
-            const show = isF1 || (option.dataset.source === 'garage' ? garage : !garage);
+            let show = isF1 || (option.dataset.source === 'garage' ? garage : !garage);
+            // Part 26: a depot purchase shows the liters of the Delivery Type picked. Depot to Client may also sell the
+            // purchase's lifted fuel still unclaimed on a truck; Standard sells depot liters only.
+            if (!isF1 && option.dataset.availableD2c !== undefined) {
+                const type = depot ? 'D2c' : 'Standard';
+                option.dataset.available = option.dataset[`available${type}`];
+                option.dataset.breakdown = option.dataset[`breakdown${type}`];
+                option.textContent = option.dataset[`label${type}`];
+                show = show && (Number(option.dataset.available) > 0 || option.hasAttribute('data-keep'));
+            }
             option.hidden = !show;
             option.disabled = !show;
         });
+        const placeholder = stock.options[0];
+        if (!isF1 && placeholder && placeholder.value === '' && ['No purchases with stock', 'Select Fuel Type'].includes(placeholder.textContent.trim())) {
+            placeholder.textContent = [...stock.options].some((option) => option.value !== '' && !option.disabled) ? 'Select Fuel Type' : 'No purchases with stock';
+        }
         if (stock.selectedOptions[0]?.disabled) {
             stock.value = '';
             stock.dispatchEvent(new Event('change', { bubbles: true }));
         }
+        if (!isF1) syncPurchaseBreakdown(stock);
     });
 }
 
@@ -1011,60 +1025,96 @@ document.addEventListener('wheel', (event) => {
     wrap.scrollLeft += event.deltaY;
 }, { passive: false });
 
-// Part 11: Withdrawal receipt upload (driver Schedule modal). Picking an image previews it; Upload sends it in the
-// background, shows progress and the result, then updates the modal and the table in place (no page refresh).
-// Without JavaScript the form still posts normally.
-const WITHDRAWAL_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+// Part 26 #5: Withdrawal receipt preview (driver Schedule modal and Admin Fuel Lifting View). Picking a file shows it
+// at once, before anything is uploaded: a JPG / PNG / WEBP image as a thumbnail, a PDF in a small document frame.
+// Choose again to replace it, or Remove to clear the choice. Nothing leaves the browser until Upload is pressed; the
+// server checks the file again (type, content and 5 MB).
+const WITHDRAWAL_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+const WITHDRAWAL_EXTENSIONS = /\.(jpe?g|png|webp|pdf)$/i;
 const WITHDRAWAL_MAX_BYTES = 5 * 1024 * 1024;
 
-document.querySelectorAll('[data-withdrawal-upload]').forEach((form) => {
+const receiptPreview = (form) => {
     const input = form.querySelector('input[type="file"]');
-    const button = form.querySelector('[data-upload-button]');
     const preview = form.querySelector('[data-withdrawal-preview]');
     const previewImage = form.querySelector('[data-preview-image]');
+    const previewPdf = form.querySelector('[data-preview-pdf]');
     const previewName = form.querySelector('[data-preview-name]');
+    const remove = form.querySelector('[data-preview-remove]');
     const message = form.querySelector('[data-upload-message]');
-    const modal = form.closest('.modal-backdrop');
     let previewUrl = null;
 
     const say = (text, type) => {
+        if (!message) return;
         message.textContent = text;
         message.className = `withdrawal-upload-message is-${type}`;
         message.hidden = false;
     };
+    const clear = () => {
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
+        previewUrl = null;
+        if (previewImage) { previewImage.removeAttribute('src'); previewImage.hidden = true; }
+        if (previewPdf) { previewPdf.removeAttribute('src'); previewPdf.hidden = true; }
+        if (preview) preview.hidden = true;
+    };
 
     input?.addEventListener('change', () => {
-        if (previewUrl) URL.revokeObjectURL(previewUrl);
-        message.hidden = true;
+        clear();
+        if (message) message.hidden = true;
         const file = input.files?.[0];
-        if (! file) {
-            preview.hidden = true;
-            return;
-        }
-        if (! WITHDRAWAL_TYPES.includes(file.type)) {
-            say('Choose a JPG, PNG or WEBP image.', 'error');
+        if (!file) return;
+        // Some browsers leave the type empty for a PDF; the extension then decides (the server checks the content).
+        if (!(WITHDRAWAL_TYPES.includes(file.type) || (file.type === '' && WITHDRAWAL_EXTENSIONS.test(file.name)))) {
+            say('Choose a JPG, JPEG, PNG, WEBP image or a PDF file.', 'error');
             input.value = '';
-            preview.hidden = true;
             return;
         }
         if (file.size > WITHDRAWAL_MAX_BYTES) {
-            say('The image is larger than 5 MB. Choose a smaller one.', 'error');
+            say('The file is larger than 5 MB. Choose a smaller one.', 'error');
             input.value = '';
-            preview.hidden = true;
             return;
         }
+        const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
         previewUrl = URL.createObjectURL(file);
-        previewImage.src = previewUrl;
-        previewImage.alt = `Selected receipt ${file.name}`;
-        previewName.textContent = `Selected: ${file.name} (${Math.max(1, Math.round(file.size / 1024))} KB)`;
-        preview.hidden = false;
+        if (isPdf && previewPdf) {
+            previewPdf.src = previewUrl;
+            previewPdf.title = `Selected receipt ${file.name}`;
+            previewPdf.hidden = false;
+        } else if (!isPdf && previewImage) {
+            previewImage.src = previewUrl;
+            previewImage.alt = `Selected receipt ${file.name}`;
+            previewImage.hidden = false;
+        }
+        if (previewName) previewName.textContent = `Selected: ${file.name} (${Math.max(1, Math.round(file.size / 1024))} KB)${isPdf ? ' · PDF' : ''}`;
+        if (preview) preview.hidden = false;
     });
+
+    remove?.addEventListener('click', () => {
+        if (input) input.value = '';
+        clear();
+        if (message) message.hidden = true;
+        input?.focus();
+    });
+
+    return { input, say, clear };
+};
+
+document.querySelectorAll('[data-receipt-preview-form]').forEach((form) => {
+    if (!form.matches('[data-withdrawal-upload]')) receiptPreview(form);
+});
+
+// Part 11: the driver's upload is sent in the background, shows progress and the result, then updates the modal and
+// the table in place (no page refresh). Without JavaScript the form still posts normally.
+document.querySelectorAll('[data-withdrawal-upload]').forEach((form) => {
+    const { input, say, clear } = receiptPreview(form);
+    const button = form.querySelector('[data-upload-button]');
+    const message = form.querySelector('[data-upload-message]');
+    const modal = form.closest('.modal-backdrop');
 
     form.addEventListener('submit', async (event) => {
         if (! window.fetch || ! window.FormData) return;
         event.preventDefault();
         if (! input?.files?.length) {
-            say('Choose the receipt image first.', 'error');
+            say('Choose the receipt file first.', 'error');
             return;
         }
 
@@ -1103,7 +1153,11 @@ document.querySelectorAll('[data-withdrawal-upload]').forEach((form) => {
             const link = modal?.querySelector('[data-withdrawal-link]');
             if (link) {
                 link.href = data.url;
-                link.querySelector('[data-withdrawal-image]').src = data.url;
+                const image = link.querySelector('[data-withdrawal-image]');
+                const pdf = link.querySelector('[data-withdrawal-pdf]');
+                // Part 26 #5: a PDF receipt shows a PDF tile instead of an image.
+                if (image) { image.hidden = Boolean(data.is_pdf); if (data.is_pdf) image.removeAttribute('src'); else image.src = data.url; }
+                if (pdf) pdf.hidden = !data.is_pdf;
                 link.hidden = false;
             }
             // Part 20 #1: the uploaded receipt can now be removed from the same modal.
@@ -1115,8 +1169,8 @@ document.querySelectorAll('[data-withdrawal-upload]').forEach((form) => {
             });
 
             form.reset();
-            preview.hidden = true;
-            form.querySelector('[data-file-label]').textContent = 'Choose replacement image';
+            clear();
+            form.querySelector('[data-file-label]').textContent = 'Choose replacement file';
             button.dataset.done = 'Replace Receipt';
             say(data.message || 'Withdrawal receipt uploaded successfully.', 'success');
         } catch (error) {

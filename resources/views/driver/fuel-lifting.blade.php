@@ -243,7 +243,8 @@
                 <span data-withdrawal-notes @unless ($row['withdrawal_notes']) hidden @endunless>Notes: {{ $row['withdrawal_notes'] }}</span>
                 {{-- The uploaded receipt: click to open it full size in a new tab. --}}
                 <a class="withdrawal-thumb" href="{{ $row['withdrawal_url'] ?? '#' }}" target="_blank" rel="noopener" data-withdrawal-link @unless ($row['withdrawal_url'] ?? null) hidden @endunless>
-                    <img src="{{ $row['withdrawal_url'] ?? '' }}" alt="Uploaded withdrawal receipt for {{ $row['cells'][0] }}" loading="lazy" data-withdrawal-image>
+                    <img src="{{ ($row['withdrawal_is_pdf'] ?? false) ? '' : ($row['withdrawal_url'] ?? '') }}" alt="Uploaded withdrawal receipt for {{ $row['cells'][0] }}" loading="lazy" data-withdrawal-image @if ($row['withdrawal_is_pdf'] ?? false) hidden @endif>
+                    <span class="receipt-pdf-tile" data-withdrawal-pdf aria-hidden="true" @unless ($row['withdrawal_is_pdf'] ?? false) hidden @endunless>PDF</span>
                     <span>View full size</span>
                 </a>
                 {{-- Part 20 #1: the driver may remove the receipt of their own lift (e.g. a wrong photo) and upload again. --}}
@@ -274,20 +275,16 @@
                     </form>
                 @endif
                 @if (($row['kind'] ?? '') === 'Lift' && ! empty($row['can_upload_withdrawal']))
-                    <form class="withdrawal-upload-form" method="POST" action="{{ route('driver.fuel-lifting.hauls.withdrawal-receipt.store', $row['record_id']) }}" enctype="multipart/form-data" data-withdrawal-upload="{{ $row['record_id'] }}">
+                    <form class="withdrawal-upload-form" method="POST" action="{{ route('driver.fuel-lifting.hauls.withdrawal-receipt.store', $row['record_id']) }}" enctype="multipart/form-data" data-withdrawal-upload="{{ $row['record_id'] }}" data-receipt-preview-form>
                         @csrf
                         <label class="file-button">
-                            <span data-file-label>{{ $row['withdrawal_uploaded'] ? 'Choose replacement image' : 'Choose receipt image' }}</span>
-                            <input name="withdrawal_receipt" type="file" accept="image/jpeg,image/png,image/webp" required>
+                            <span data-file-label>{{ $row['withdrawal_uploaded'] ? 'Choose replacement file' : 'Choose receipt (image or PDF)' }}</span>
+                            <input name="withdrawal_receipt" type="file" accept="image/jpeg,image/png,image/webp,application/pdf,.jpg,.jpeg,.png,.webp,.pdf" required>
                         </label>
                         <input name="withdrawal_notes" type="text" maxlength="1000" placeholder="Optional notes">
                         <button class="btn btn-pill btn-primary" type="submit" data-upload-button>{{ $row['withdrawal_uploaded'] ? 'Replace Receipt' : 'Upload Withdrawal Receipt' }}</button>
                         {{-- The chosen file, shown before it is uploaded. --}}
-                        <div class="withdrawal-preview" data-withdrawal-preview hidden>
-                            <img alt="" data-preview-image>
-                            <span data-preview-name></span>
-                        </div>
-                        <p class="withdrawal-upload-message" role="status" aria-live="polite" data-upload-message hidden></p>
+                        @include('dispatch.partials.receipt-preview')
                     </form>
                 @endif
                 <button class="btn btn-pill btn-secondary" type="button" data-modal-close>Close</button>

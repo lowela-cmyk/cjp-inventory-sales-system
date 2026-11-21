@@ -238,6 +238,14 @@
                     <div class="receipt-line">
                         <p class="receipt-line-title"><strong>{{ $haul['purchase_code'] }}</strong> &middot; {{ $haul['fuel_name'] }} &middot; {{ $haul['quantity'] }} &middot; ATL: {{ $haul['atl_number'] }}</p>
                         <p class="receipt-line-note">Delivered: {{ number_format($haul['load']['delivered'], 2) }} L &middot; Remaining on truck: {{ number_format($haul['load']['remaining'], 2) }} L</p>
+                        {{-- Part 26: the purchase behind this line, with the same figures Sales and Stock-In use. --}}
+                        @if (! empty($haul['purchase_figures']))
+                            <dl class="lift-purchase-figures" data-lift-purchase-figures="{{ $haul['purchase_code'] }}" aria-label="{{ $haul['purchase_code'] }} purchase figures">
+                                @foreach ($haul['purchase_figures'] as $figure => $value)
+                                    <div><dt>{{ $figure }}</dt><dd>{{ $value }}</dd></div>
+                                @endforeach
+                            </dl>
+                        @endif
                         @forelse ($haul['lifts'] as $lift)
                             <p class="receipt-line-note">{{ $lift['type'] }}: {{ $lift['destination'] }} &middot; {{ $lift['quantity'] }} &middot; {{ $lift['status'] }}</p>
                         @empty
@@ -274,6 +282,10 @@
                         <h4 class="garage-unload-title">Unload to Garage</h4>
                         @foreach ($row['truck_leftover_lines'] as $line)
                             <p class="receipt-line-note">{{ $line['purchase_code'] }} · {{ $line['fuel_name'] }}: {{ number_format($line['leftover'], 2) }} L on the truck</p>
+                            @php $openOrders = collect($row['hauls'])->firstWhere('id', $line['haul_id'])['open_unlifted_orders'] ?? 0; @endphp
+                            @if ($openOrders > 0)
+                                <p class="receipt-line-note is-warning" data-open-unlifted-orders>{{ number_format($openOrders, 2) }} L of {{ $line['purchase_code'] }} are sold to open orders not on a lift yet; deliver them from this truck first. Those liters cannot be unloaded to the garage.</p>
+                            @endif
                             <div class="garage-unload-tanks">
                                 @forelse ($garageTanks->where('fuel_type_id', $line['fuel_type_id']) as $tank)
                                     <label class="garage-unload-tank" for="unload_{{ $line['haul_id'] }}_{{ $tank->id }}">
@@ -337,14 +349,17 @@
                         <div class="receipt-line">
                             <p class="receipt-line-title"><strong>{{ $haul['code'] }}</strong> &middot; {{ $haul['purchase_code'] }} &middot; {{ $haul['withdrawal_uploaded_label'] }}</p>
                             @if ($haul['can_upload_withdrawal'])
-                                <form class="withdrawal-upload-form" method="POST" action="{{ route('admin.fuel-lifting.hauls.withdrawal-receipt.store', $haul['id']) }}" enctype="multipart/form-data">
+                                <form class="withdrawal-upload-form" method="POST" action="{{ route('admin.fuel-lifting.hauls.withdrawal-receipt.store', $haul['id']) }}" enctype="multipart/form-data" data-receipt-preview-form>
                                     @csrf
                                     <label class="file-button">
-                                        <span>{{ $haul['withdrawal_uploaded'] ? 'Choose replacement image' : 'Choose receipt image' }}</span>
-                                        <input name="withdrawal_receipt" type="file" accept="image/jpeg,image/png,image/webp" required>
+                                        <span>{{ $haul['withdrawal_uploaded'] ? 'Choose replacement file' : 'Choose receipt (image or PDF)' }}</span>
+                                        <input name="withdrawal_receipt" type="file" accept="image/jpeg,image/png,image/webp,application/pdf,.jpg,.jpeg,.png,.webp,.pdf" required>
                                     </label>
                                     <input name="withdrawal_notes" type="text" maxlength="1000" placeholder="Optional notes" aria-label="Receipt notes for {{ $haul['code'] }}">
                                     <button class="btn btn-pill btn-primary" type="submit">{{ $haul['withdrawal_uploaded'] ? 'Replace Receipt' : 'Upload Receipt' }}</button>
+                                    {{-- Part 26 #5: the chosen file, shown before it is uploaded. --}}
+                                    @include('dispatch.partials.receipt-preview')
+                                    @error('withdrawal_receipt')<p class="field-error">{{ $message }}</p>@enderror
                                 </form>
                                 {{-- Part 20 #1: view or remove the receipt already on this lift. --}}
                                 @if ($haul['withdrawal_uploaded'])

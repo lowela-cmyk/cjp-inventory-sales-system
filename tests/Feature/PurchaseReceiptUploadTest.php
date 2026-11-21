@@ -88,10 +88,10 @@ class PurchaseReceiptUploadTest extends TestCase
             ->assertSee('data-withdrawal-upload="'.$records['haulId'].'"', false)
             ->assertSee('src="'.route('withdrawal-receipts.show', $records['haulId']).'?v=', false);
 
-        // Errors come back as JSON for the modal to show.
+        // Errors come back as JSON for the modal to show (Part 26: a PDF is accepted, a text file named .pdf is not).
         $this->actingAs($records['driver'])
             ->postJson(route('driver.fuel-lifting.hauls.withdrawal-receipt.store', $records['haulId']), [
-                'withdrawal_receipt' => UploadedFile::fake()->create('receipt.pdf', 10, 'application/pdf'),
+                'withdrawal_receipt' => UploadedFile::fake()->create('receipt.pdf', 10, 'text/plain'),
             ])
             ->assertStatus(422)->assertJsonValidationErrors('withdrawal_receipt');
         $this->actingAs($other)

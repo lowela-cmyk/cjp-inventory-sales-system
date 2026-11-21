@@ -53,10 +53,11 @@ class SaleStockOptionsTest extends AuditTestCase
         $haulId = $this->lastHaulId();
         $this->completeLift($a, $haulId);
 
-        // Fully promised (0 L available) and fully lifted (0 L in the depot) purchases are not offered for a new order.
+        // A fully promised purchase (0 L available) is not offered for a new order. Part 26: a fully lifted one still is,
+        // for Depot to Client only (its 10,000 L are on the truck, claimed by no order), with 0 L for a Standard order.
         $form = $this->recordSalesForm($a);
         $this->assertStringNotContainsString('<option value="'.$sold.'" data-source="depot"', $form);
-        $this->assertStringNotContainsString('<option value="'.$lifted.'" data-source="depot"', $form);
+        $this->assertMatchesRegularExpression('/<option value="'.$lifted.'" data-source="depot"[^>]*data-available="0"[^>]*data-available-standard="0"[^>]*data-available-d2c="10000"/s', $form);
         $code = (string) DB::table('purchase_items')->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')->where('purchase_items.id', $lifted)->value('purchase_code');
         // Part 16 #2: one line per fuel (shown for the selected fuel) and a one-line summary while none is selected.
         // Part 23 #9: one short line per fuel from the same sources the form offers and the save validates.

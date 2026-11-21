@@ -508,7 +508,7 @@ class PurchaseService
 
     /**
      * @param  Collection<int, object>  $rows
-     * @return array<int, array<int, array<string, string|null>>>
+     * @return array<int, array<int, array{haul_code: string, uploaded_at: string, notes: string|null, url: string, is_pdf: bool}>>
      */
     public function batchWithdrawalsForPurchaseItems(Collection $rows): array
     {
@@ -529,7 +529,7 @@ class PurchaseService
             ->whereNotNull('withdrawal_receipt_path')
             ->orderByDesc('withdrawal_receipt_uploaded_at')
             ->orderByDesc('id')
-            ->get(['id', 'purchase_item_id', 'haul_code', 'withdrawal_receipt_notes', 'withdrawal_receipt_uploaded_at']);
+            ->get(['id', 'purchase_item_id', 'haul_code', 'withdrawal_receipt_path', 'withdrawal_receipt_notes', 'withdrawal_receipt_uploaded_at']);
 
         $grouped = [];
         foreach ($ids as $id) {
@@ -543,6 +543,8 @@ class PurchaseService
                 'uploaded_at' => $this->formatDateTime($withdrawal->withdrawal_receipt_uploaded_at),
                 'notes' => $withdrawal->withdrawal_receipt_notes ?: null,
                 'url' => route('withdrawal-receipts.show', $withdrawal->id),
+                // Part 26 #5: a PDF receipt is shown in a document frame, not as an image.
+                'is_pdf' => str_ends_with(strtolower((string) $withdrawal->withdrawal_receipt_path), '.pdf'),
             ];
         }
 

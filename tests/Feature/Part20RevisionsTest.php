@@ -146,8 +146,9 @@ class Part20RevisionsTest extends AuditTestCase
         $a = $this->actors();
         $lifts = $this->twoLiftsOfOnePurchase($a);
 
-        // Only JPG, PNG and WEBP images up to 5 MB.
-        $this->upload($a['driver'], $lifts['first'], file: UploadedFile::fake()->create('receipt.pdf', 20, 'application/pdf'))->assertSessionHasErrors('withdrawal_receipt');
+        // Only JPG, PNG and WEBP images (Part 26: or a PDF) up to 5 MB; a file whose content is not one of them is refused.
+        $this->upload($a['driver'], $lifts['first'], file: UploadedFile::fake()->create('receipt.pdf', 20, 'text/plain'))->assertSessionHasErrors('withdrawal_receipt');
+        $this->upload($a['driver'], $lifts['first'], file: UploadedFile::fake()->create('receipt.txt', 20, 'text/plain'))->assertSessionHasErrors('withdrawal_receipt');
         $this->upload($a['driver'], $lifts['first'], file: UploadedFile::fake()->image('big.png')->size(6000))->assertSessionHasErrors('withdrawal_receipt');
         $this->upload($a['driver'], $lifts['first'], file: UploadedFile::fake()->image('ok.webp'))->assertSessionHasNoErrors();
         $this->assertStringEndsWith('.webp', DB::table('hauls')->where('id', $lifts['first'])->value('withdrawal_receipt_path'));

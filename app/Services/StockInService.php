@@ -151,7 +151,7 @@ class StockInService
      * Stock-in records with their liters out, remaining and status, newest first.
      *
      * @param  array{status?: ?string, date?: ?string, date_from?: ?string, date_to?: ?string, depot_id?: mixed, fuel_type_id?: mixed}  $filters
-     * @return Collection<int, \stdClass>
+     * @return Collection<int, object>
      */
     public function records(array $filters = [], ?string $search = null): Collection
     {

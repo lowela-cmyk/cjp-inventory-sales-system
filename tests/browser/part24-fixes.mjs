@@ -99,7 +99,7 @@ try {
         await page.goto(`${base}/sales-officer/sales?search=SO-P24-MULTI`, { waitUntil: 'domcontentloaded' });
         const rowText = await page.locator('[data-tab-panel="receivables"] tbody tr').first().textContent();
         return {
-            pass: addRowVisible && deliveryHidden && firstLabel.includes('3,000 L in depot') && duplicateMessage.includes('already on line 1') && fixed
+            pass: addRowVisible && deliveryHidden && firstLabel.includes('3,000 L available in depot') && duplicateMessage.includes('already on line 1') && fixed
                 && rowText.includes('SO-P24-MULTI') && rowText.replace(/\s+/g, ' ').includes('5,000'),
             firstLabel: firstLabel.trim(), duplicateMessage, toast: (toast || '').trim().slice(0, 120), row: rowText.replace(/\s+/g, ' ').trim().slice(0, 200),
         };
@@ -185,13 +185,12 @@ try {
     });
 
     await login('admin');
-    await check('#6 dashboard reconciliation block and cards render', async () => {
+    // Part 26 #1 removed the reconciliation chart from the dashboard; the Reserved / Available cards stay.
+    await check('#6 dashboard cards render (Part 26: reconciliation chart removed)', async () => {
         await page.goto(`${base}/admin/dashboard`, { waitUntil: 'networkidle' });
-        const block = page.locator('[aria-label="Inventory reconciliation"]');
-        const text = (await block.textContent()).replace(/\s+/g, ' ');
-        const canvas = await block.locator('canvas[data-dashboard-chart]').count();
+        const blocks = await page.locator('[aria-label="Inventory reconciliation"]').count();
         const kpis = (await page.locator('.dash-kpi span').allTextContents()).map((t) => t.trim());
-        return { pass: canvas === 1 && text.includes('Purchased:') && text.includes('Reserved:') && kpis.includes('Reserved (Pending Delivery)') && kpis.includes('Available to Sell'), note: text.slice(0, 400) };
+        return { pass: blocks === 0 && kpis.includes('Reserved (Pending Delivery)') && kpis.includes('Available to Sell'), kpis };
     });
 } finally {
     await browser.close();

@@ -89,7 +89,7 @@ try {
         const breakdown = await text(modal.locator('[data-purchase-breakdown]').first());
         await modal.screenshot({ path: `${out}/2-depot-to-client-no-truck-purchase-id.png` });
         return {
-            pass: truckHidden && truckDisabled && addLine && option.startsWith('PUR-DSL-002 – DIESEL – 100,000 L in depot')
+            pass: truckHidden && truckDisabled && addLine && option.startsWith('PUR-DSL-002 – DIESEL – 100,000 L available in depot')
                 && breakdown === 'PUR-DSL-002 · Purchased 100,000 L · On lifts 0 L · Reserved 0 L · Delivered 0 L · Available 100,000 L',
             option, breakdown,
         };
@@ -187,7 +187,7 @@ try {
         const breakdown = await text(modal.locator('[data-purchase-breakdown]').first());
         await modal.locator('#sale_purchase_item_id_0').locator('xpath=..').screenshot({ path: `${out}/6-purchase-after-delivery.png` });
         return {
-            pass: /Delivered/.test(row) && option.startsWith('PUR-DSL-002 – DIESEL – 60,000 L in depot')
+            pass: /Delivered/.test(row) && option.startsWith('PUR-DSL-002 – DIESEL – 60,000 L available in depot')
                 && breakdown === 'PUR-DSL-002 · Purchased 100,000 L · On lifts 40,000 L · Reserved 0 L · Delivered 40,000 L · Available 60,000 L',
             row: row.slice(0, 220), option, breakdown,
         };

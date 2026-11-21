@@ -35,7 +35,13 @@
         default => (string) ($item['f1_purchase_item_id'] ?? ''),
     };
     // A purchase with no liters left in the depot is not offered (it stays on the order that already uses it).
-    $purchaseOptions = $purchaseOptions->filter(fn (object $purchase): bool => $purchase->available > 0 || $selectedPurchase === (string) $purchase->id);
+    // Part 26: a Depot to Client order may also sell the purchase's lifted fuel still unclaimed on a truck, so a purchase
+    // with no depot liters left stays listed for it (app.js shows the figure of the Delivery Type picked).
+    $purchaseOptions = $purchaseOptions->filter(fn (object $purchase): bool => match ($lineDeliveryType) {
+        'depot_to_client' => ($purchase->depot_to_client_available ?? 0) > 0,
+        null => $purchase->available > 0 || ($purchase->depot_to_client_available ?? 0) > 0,
+        default => $purchase->available > 0,
+    } || $selectedPurchase === (string) $purchase->id);
     $f1PurchaseOptions = $f1PurchaseOptions->filter(fn (object $purchase): bool => $purchase->available > 0 || $selectedF1 === (string) $purchase->id);
     $garageTankOptions = $garageTankOptions->filter(fn (object $tank): bool => $tank->available > 0 || $selectedPurchase === 'tank:'.$tank->id);
     $f1GarageTankOptions = $f1GarageTankOptions->filter(fn (object $tank): bool => $tank->available > 0 || $selectedF1 === 'tank:'.$tank->id);
@@ -43,9 +49,12 @@
     $f1GarageOptions = $f1GarageOptions->filter(fn (object $lot): bool => $selectedF1 === 'garage:'.$lot->id);
     // Part 25 #4: what each purchase's liters are doing, tracked separately (shown under Fuel Type once chosen).
     $breakdownLiters = fn (mixed $value): string => number_format((float) $value, fmod((float) $value, 1.0) === 0.0 ? 0 : 2).' L';
-    $purchaseBreakdown = fn (object $purchase): string => $purchase->purchase_code.' · Purchased '.$breakdownLiters($purchase->ordered ?? 0)
+    $purchaseBreakdown = fn (object $purchase, bool $depotToClient = false): string => $purchase->purchase_code.' · Purchased '.$breakdownLiters($purchase->ordered ?? 0)
         .' · On lifts '.$breakdownLiters($purchase->lifted ?? 0).' · Reserved '.$breakdownLiters($purchase->reserved ?? 0)
-        .' · Delivered '.$breakdownLiters($purchase->released ?? 0).' · Available '.$breakdownLiters($purchase->available ?? 0);
+        .' · Delivered '.$breakdownLiters($purchase->released ?? 0)
+        .(($purchase->truck_free ?? 0) > 0 ? ' · Unclaimed on trucks '.$breakdownLiters($purchase->truck_free) : '')
+        .' · Available '.$breakdownLiters($depotToClient ? ($purchase->depot_to_client_available ?? 0) : ($purchase->available ?? 0));
+    $isDepotToClient = $lineDeliveryType === 'depot_to_client';
     $showDepot = $lineDeliveryType !== 'garage_to_client';
     $showGarage = in_array($lineDeliveryType, [null, 'garage_to_client'], true);
 @endphp
@@ -56,7 +65,12 @@
             <option value="">{{ ($item['legacy'] ?? false) ? ($item['fuel_name'] ?? 'Fuel').' (no purchase recorded)' : ($purchaseOptions->isEmpty() ? 'No purchases with stock' : 'Select Fuel Type') }}</option>
             @if ($showDepot)
                 @foreach ($purchaseOptions as $purchase)
-                    <option value="{{ $purchase->id }}" data-source="depot" data-fuel-code="{{ $purchase->fuel_code }}" data-fuel-name="{{ $purchase->fuel_name }}" data-available="{{ $purchase->available }}" data-purchase-code="{{ $purchase->purchase_code }}" data-breakdown="{{ $purchaseBreakdown($purchase) }}" @selected($selectedPurchase === (string) $purchase->id)>{{ $purchase->option_label }}</option>
+                    <option value="{{ $purchase->id }}" data-source="depot" data-fuel-code="{{ $purchase->fuel_code }}" data-fuel-name="{{ $purchase->fuel_name }}" data-purchase-code="{{ $purchase->purchase_code }}"
+                        data-available="{{ $isDepotToClient ? ($purchase->depot_to_client_available ?? 0) : $purchase->available }}" data-breakdown="{{ $purchaseBreakdown($purchase, $isDepotToClient) }}"
+                        data-available-standard="{{ $purchase->available }}" data-label-standard="{{ $purchase->option_label }}" data-breakdown-standard="{{ $purchaseBreakdown($purchase) }}"
+                        data-available-d2c="{{ $purchase->depot_to_client_available ?? 0 }}" data-label-d2c="{{ $purchase->depot_to_client_label ?? $purchase->option_label }}" data-breakdown-d2c="{{ $purchaseBreakdown($purchase, true) }}"
+                        @if ($selectedPurchase === (string) $purchase->id) data-keep @endif
+                        @selected($selectedPurchase === (string) $purchase->id)>{{ $isDepotToClient ? ($purchase->depot_to_client_label ?? $purchase->option_label) : $purchase->option_label }}</option>
                 @endforeach
             @endif
             @if ($showGarage)

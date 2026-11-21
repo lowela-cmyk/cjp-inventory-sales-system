@@ -81,7 +81,7 @@ class Part23ImprovementsTest extends TestCase
         $report = app(DashboardService::class)->purchaseReport();
         $this->assertSame(2, array_sum($report['datasets'][0]['data']));
         $this->assertSame('count', $report['format']);
-        $this->actingAs($admin)->get(route('admin.dashboard'))->assertOk()->assertSee('Purchase Reports')->assertSee('data-dashboard-export', false)->assertDontSee('data-revenue-period')->assertDontSee('page-heading-actions');
+        $this->actingAs($admin)->get(route('admin.dashboard'))->assertOk()->assertDontSee('Purchase Reports')->assertSee('data-dashboard-export', false)->assertDontSee('data-revenue-period')->assertDontSee('page-heading-actions');
     }
 
 

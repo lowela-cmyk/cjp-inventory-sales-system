@@ -186,8 +186,10 @@ class Part2ButtonRevisionsTest extends AuditTestCase
         // Schedule Lift offers it as "Customer · Sales Order No." with its Ordered Quantity.
         $this->actingAs($a['dispatch'])->get(route('dispatch.fuel-lifting'))->assertOk()
             ->assertSee('Audit Customer · SH09357043')
-            ->assertSee('data-ordered="PREMIUM - 4,000.00 L"', false)
-            ->assertSee('data-remaining-label="PREMIUM - 60,000.00 L"', false);
+            // Part 25: with the Purchase ID it was sold from, and the 3,600 L of Premium it reserves (its F1 portion
+            // reserves the F1 purchase).
+            ->assertSee(' · PREMIUM - 4,000.00 L"', false)
+            ->assertSee('data-remaining-label="PREMIUM - 60,000.00 L · 3,600.00 L reserved for sales · 56,400.00 L free to lift"', false);
 
         $this->scheduleLift($a, [['purchase_item_id' => $premium, 'quantity_liters' => 40000, 'atl_number' => 'ATL-001']], [$saleId])->assertSessionHasNoErrors();
         $haulId = $this->lastHaulId();

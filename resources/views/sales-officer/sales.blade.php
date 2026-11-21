@@ -400,7 +400,7 @@
                                     {{-- Part 18 #3: the order becomes Garage to Client, so its Delivery Details are asked in the same step. --}}
                                     <div class="form-grid source-assignment-delivery" data-garage-delivery>
                                         <p class="sale-locked-note">Garage to Client Delivery Details: required to assign a garage tank.</p>
-                                        @include('sales-officer.partials.delivery-fields', ['idPrefix' => 'assign_'.$row['id'], 'formId' => null, 'value' => $editOld, 'showErrors' => $isEditedSale, 'ownTruckId' => $row['delivery_truck_id'], 'ownLiters' => collect($row['items'])->sum(fn ($item) => (float) ($item['quantity_liters'] ?? 0)), 'orderLiters' => collect($row['items'])->sum(fn ($item) => (float) ($item['quantity_liters'] ?? 0))])
+                                        @include('sales-officer.partials.delivery-fields', ['idPrefix' => 'assign_'.$row['id'], 'formId' => null, 'value' => $editOld, 'showErrors' => $isEditedSale, 'orderLiters' => collect($row['items'])->sum(fn ($item) => (float) ($item['quantity_liters'] ?? 0))])
                                     </div>
                                 @endif
                             </form>
@@ -502,7 +502,7 @@
                         @endif
                         {{-- Part 18 #3: a Garage to Client order's Delivery Details stay editable (and required) until Delivered. --}}
                         @if ($isGarageSale && $isOpenSale)
-                            @include('sales-officer.partials.delivery-fields', ['idPrefix' => 'sale_'.$row['id'], 'formId' => 'sale-update-'.$row['id'], 'value' => fn (string $key) => $editOld($key, $row[$key]), 'showErrors' => $isEditedSale, 'ownTruckId' => $row['delivery_truck_id'], 'ownLiters' => collect($row['items'])->sum(fn ($item) => (float) ($item['quantity_liters'] ?? 0))])
+                            @include('sales-officer.partials.delivery-fields', ['idPrefix' => 'sale_'.$row['id'], 'formId' => 'sale-update-'.$row['id'], 'value' => fn (string $key) => $editOld($key, $row[$key]), 'showErrors' => $isEditedSale])
                         @endif
                         <div class="form-row">
                             <label for="sale_method_{{ $row['id'] }}">Payment Method</label>

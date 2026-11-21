@@ -76,6 +76,17 @@ const update = (form) => {
         fuelNote.hidden = !cleared && (fuelNote.hidden || rows.slice(1).every((row) => row.querySelector('[data-lifting-purchase]')?.value));
     }
 
+    // Part 25: liters the orders chosen in Delivery Details hold in each purchase. A sale reserves its purchase when it
+    // is recorded, so a lift takes at most the purchase's unreserved liters (data-free) plus what its own orders hold.
+    const carried = new Map();
+    form.querySelectorAll('[data-delivery-row] [data-delivery-sale]').forEach((select) => {
+        const option = select.selectedOptions[0];
+        if (!option?.value || option.disabled) return;
+        let byPurchase = {};
+        try { byPurchase = JSON.parse(option.dataset.reservedByPurchase || '{}') || {}; } catch { byPurchase = {}; }
+        Object.entries(byPurchase).forEach(([purchaseId, value]) => carried.set(purchaseId, (carried.get(purchaseId) || 0) + Number(value || 0)));
+    });
+
     rows.forEach((row) => {
         const option = row.querySelector('[data-lifting-purchase]')?.selectedOptions?.[0];
         const quantityInput = row.querySelector('[data-lifting-quantity]');
@@ -93,8 +104,12 @@ const update = (form) => {
             depotId ||= option.dataset.depotId;
             depotLabel ||= option.dataset.pickup || '';
             const remaining = Number(option.dataset.remaining || 0);
+            const reservedForSales = Number(option.dataset.reservedForSales || 0);
+            const free = option.dataset.free !== undefined ? Number(option.dataset.free || 0) : remaining;
+            const liftable = Math.min(remaining, Math.round((free + (carried.get(option.value) || 0)) * 100) / 100);
             if (quantity > remaining) error ||= `An Amount to Lift is more than the ${liters(remaining)} remaining in the depot.`;
-            if (quantityInput) quantityInput.max = String(remaining);
+            else if (quantity > liftable + 0.005) error ||= `An Amount to Lift is more than the ${liters(liftable)} of this purchase not reserved for sales. Add the orders sold from it to this lift, or lift less.`;
+            if (quantityInput) quantityInput.max = String(reservedForSales > 0 ? liftable : remaining);
             if (summary) summary.textContent = option.dataset.remainingLabel || '';
         } else if (summary) {
             summary.textContent = 'Select Purchase ID';

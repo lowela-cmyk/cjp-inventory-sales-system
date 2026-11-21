@@ -9,7 +9,7 @@
         <select id="{{ $prefix ?? 'dispatch' }}_delivery_sale_{{ $deliveryIndex }}" name="deliveries[{{ $deliveryIndex }}][sale_id]" data-delivery-sale required @if ($deliveryError) aria-invalid="true" @endif>
             <option value="">Select Order ID</option>
             @foreach ($directSaleOptions as $directSale)
-                <option value="{{ $directSale->sale_id }}" data-delivery-type="{{ $directSale->delivery_type }}" data-purchase-item-id="{{ $directSale->purchase_item_id }}" data-fuel-type-id="{{ $directSale->fuel_type_id }}" data-liters="{{ $directSale->open_liters }}" data-ordered="{{ $directSale->ordered_label }}" @selected((string) $selectedSale === (string) $directSale->sale_id)>{{ $directSale->label }}</option>
+                <option value="{{ $directSale->sale_id }}" data-delivery-type="{{ $directSale->delivery_type }}" data-purchase-item-id="{{ $directSale->purchase_item_id }}" data-fuel-type-id="{{ $directSale->fuel_type_id }}" data-liters="{{ $directSale->open_liters }}" data-ordered="{{ $directSale->ordered_label }}" data-reserved-by-purchase='@json((object) ($directSale->reserved_by_purchase ?? []))' @selected((string) $selectedSale === (string) $directSale->sale_id)>{{ $directSale->label }}</option>
             @endforeach
         </select>
         @if ($deliveryError)<p class="field-error">{{ $deliveryError }}</p>@endif

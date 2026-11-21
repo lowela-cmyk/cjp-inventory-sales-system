@@ -89,12 +89,15 @@ class Part23RemediationTest extends AuditTestCase
         $purchase = $this->purchaseLine($a, 'DSL', 1000);
         $this->recordOrder($a, ['fuel_type_id' => $a['fuel'], 'purchase_item_id' => $purchase, 'quantity_liters' => 200, 'unit_price' => 60])->assertSessionHasNoErrors();
         $sale = $this->lastSaleId();
-        $this->scheduleLift($a, [['purchase_item_id' => $purchase, 'quantity_liters' => 1000]])->assertSessionHasNoErrors();
-        try { app(SaleConfirmationService::class)->updateDeliveryStatus($sale, 'delivered', $a['driver']->id); $this->fail('Expected depot source guard'); }
-        catch (\RuntimeException $e) { $this->assertStringContainsString('already left the depot', $e->getMessage()); }
-        $this->assertDatabaseHas('sales', ['id' => $sale, 'delivery_status' => 'pending']);
-        $this->assertDatabaseCount('stock_outs', 0);
-        $this->assertDatabaseHas('sale_items', ['sale_id' => $sale, 'fulfilled_quantity_liters' => 0]);
+        // Part 25: the order's 200 L are reserved in the depot, so a lift not carrying it cannot take them in the first
+        // place (it used to be accepted and the delivery refused later).
+        $this->scheduleLift($a, [['purchase_item_id' => $purchase, 'quantity_liters' => 1000]])->assertSessionHasErrors('lift');
+        $this->assertDatabaseCount('hauls', 0);
+        $this->scheduleLift($a, [['purchase_item_id' => $purchase, 'quantity_liters' => 800]])->assertSessionHasNoErrors();
+        app(SaleConfirmationService::class)->updateDeliveryStatus($sale, 'delivered', $a['driver']->id);
+        $this->assertDatabaseHas('sales', ['id' => $sale, 'delivery_status' => 'delivered']);
+        $this->assertSame(200.0, (float) DB::table('stock_outs')->where('sale_id', $sale)->where('status', 'released')->sum('quantity_liters'));
+        $this->assertDatabaseHas('sale_items', ['sale_id' => $sale, 'fulfilled_quantity_liters' => 200]);
     }
 
     public function test_linked_lift_delivery_conserves_quantities_and_is_idempotent(): void

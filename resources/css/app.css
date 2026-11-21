@@ -6628,7 +6628,7 @@ body.login-page {
 .cjp-page-links [aria-disabled] { opacity: .55; }
 @media (max-width: 640px) { .cjp-pagination > * { max-width: 100%; } .cjp-page-links { width: 100%; } }
 
-/* Part 24 #1: the Delivery Details truck's max capacity and available liters. */
+/* Part 24 #1 / Part 25 #1: a delivery truck's maximum capacity (and the over-capacity warning). */
 .truck-capacity-hint {
     margin: 4px 0 0;
     font-size: 12px;
@@ -6638,55 +6638,6 @@ body.login-page {
 .truck-capacity-hint.is-error {
     color: #a31318;
     font-weight: 600;
-}
-
-.truck-capacity-summary {
-    margin-top: 8px;
-    padding: 10px 12px;
-    border: 1px solid #d7e2db;
-    border-radius: 10px;
-    background: #f8fbf9;
-}
-
-.truck-capacity-summary.is-error {
-    border-color: #e29598;
-    background: #fff5f5;
-}
-
-.truck-capacity-grid {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 10px 14px;
-}
-
-.truck-capacity-grid .f1-breakdown-cell span {
-    display: block;
-    font-size: 11px;
-    color: #4b5563;
-    margin-bottom: 2px;
-}
-
-.truck-capacity-grid .f1-breakdown-cell output {
-    font-weight: 700;
-    font-size: 13.5px;
-    color: #111827;
-}
-
-.truck-capacity-summary.is-error [data-truck-cap-remaining] {
-    color: #a31318;
-}
-
-.truck-capacity-error {
-    margin: 8px 0 0;
-    font-size: 12.5px;
-    font-weight: 600;
-    color: #a31318;
-}
-
-@media (max-width: 767px) {
-    .truck-capacity-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
 }
 
 /* Part 24 #3: extra purchase lines of a Depot to Client order. Each line is a copy of the original order-line grid

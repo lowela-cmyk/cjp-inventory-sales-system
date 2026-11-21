@@ -87,8 +87,9 @@ class Part24FixesTest extends AuditTestCase
         $this->assertSame([30000.0, 2000.0, 28000.0], [$trucks[$a['truck']]->capacity_liters, $trucks[$a['truck']]->loaded_liters, $trucks[$a['truck']]->available_liters]);
         $this->assertSame([1000.0, 0.0, 1000.0], [$trucks[$small]->capacity_liters, $trucks[$small]->loaded_liters, $trucks[$small]->available_liters]);
         $html = $this->actingAs($a['sales'])->get(route('sales-officer.sales'))->getContent();
-        $this->assertStringContainsString('Truck TRK-SMALL – Max 1,000 L · Loaded 0 L · Available 1,000 L', $html);
-        $this->assertStringContainsString('data-truck-capacity-summary', $html);
+        // Part 25 #1: the dropdown shows the maximum capacity only (the figures above still drive the server check).
+        $this->assertStringContainsString('Truck TRK-SMALL – Max 1,000 L</option>', $html);
+        $this->assertStringNotContainsString('data-truck-capacity-summary', $html);
 
         // More than the truck can carry is refused, and nothing is saved.
         $this->garageOrder($a, $tank, 1500, $small)->assertSessionHasErrors(['delivery_truck_id' => 'Truck TRK-SMALL can carry at most 1,000.00 L and already has 0.00 L loaded or assigned to open deliveries, so only 1,000.00 L is available. This order needs 1,500.00 L.']);
@@ -155,7 +156,7 @@ class Part24FixesTest extends AuditTestCase
         foreach ([$a['sales'], $a['admin']] as $user) {
             $route = $user->role === 'admin' ? 'admin.sales' : 'sales-officer.sales';
             $html = $this->actingAs($user)->get(route($route))->assertOk()->getContent();
-            $this->assertStringContainsString('Small Tanker (ABC-1234) – Max 1,500 L · Loaded 0 L · Available 1,500 L', $html);
+            $this->assertStringContainsString('Small Tanker (ABC-1234) – Max 1,500 L</option>', $html);
         }
 
         // Overloading a Standard order's chosen truck is rejected.
@@ -331,7 +332,7 @@ class Part24FixesTest extends AuditTestCase
             $rest = substr($modal, strpos($modal, '</template>'));
 
             // The original fields, in their original order: order line (with Truck Selection under Fuel Type / Fuel Price), payment details, delivery details, buttons.
-            $this->assertSame(1, preg_match_all('/Delivery Type<\/label>.*Customer<\/label>.*Sales Order<\/label>.*Order Date<\/label>.*Qty Ordered<\/label>.*Fuel Type<\/label>.*Fuel Price<\/label>.*Truck Selection<\/label>.*Maximum Capacity \(L\).*Currently Loaded \/ Reserved \(L\).*Available Capacity \(L\).*Remaining Capacity After Order \(L\).*Ordered Amount.*Fuel Amount.*Total Amount.*Fuel Total.*Line Total/s', $form));
+            $this->assertSame(1, preg_match_all('/Delivery Type<\/label>.*Customer<\/label>.*Sales Order<\/label>.*Order Date<\/label>.*Qty Ordered<\/label>.*Fuel Type<\/label>.*Fuel Price<\/label>.*Truck Selection<\/label>.*data-truck-capacity-hint.*Ordered Amount.*Fuel Amount.*Total Amount.*Fuel Total.*Line Total/s', $form));
             $this->assertMatchesRegularExpression('/Order Payment Details.*Amount Payment<\/label>.*Reference Number<\/label>.*Date of Payment<\/label>.*Payment Terms<\/label>.*Payment Method<\/label>.*Due Date<\/label>.*Payment Status<\/label>.*Delivery Details.*Driver Name<\/label>.*Delivery Date<\/label>.*Add Order<\/button>.*Cancel<\/button>/s', $rest);
             // One order line on open; no F1 column; the Fuel Total | Line Total bar.
             $this->assertSame(1, preg_match_all('/data-sales-item[\s>]/', $form));

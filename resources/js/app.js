@@ -525,20 +525,20 @@ function syncStockHint(purchase) {
 function syncDeliveryType(select) {
     const form = select.closest('[data-sale-form]');
     // Part 18 #3 / #5: only Garage to Client has Delivery Details (Driver, Delivery Date) at the bottom;
-    // Standard and Garage to Client both support Truck Selection in Order Details, while Depot to Client assigns its truck on the lift.
+    // Standard and Garage to Client have Truck Selection in Order Details; Depot to Client gets its truck from the lift.
     const showDeliveryDetails = select.value === 'garage_to_client';
     const garage = showDeliveryDetails;
     const depot = select.value === 'depot_to_client';
+    // Part 25 #3: Depot to Client has no Truck Selection at all (hidden, disabled, cleared); its truck is the lift's.
     form?.querySelectorAll('[data-sale-truck-section]').forEach((section) => {
         const truck = section.querySelector('[data-delivery-truck]');
-        const note = section.querySelector('[data-depot-truck-note]');
+        section.hidden = depot;
         if (truck) {
             truck.disabled = depot;
             truck.required = garage;
             if (depot) truck.value = '';
             syncTruckCapacity(truck);
         }
-        if (note) note.hidden = !depot;
     });
     form?.querySelectorAll('[data-delivery-details]').forEach((section) => {
         section.hidden = !showDeliveryDetails;
@@ -568,8 +568,22 @@ function syncDeliveryType(select) {
     });
 }
 
+// Part 25 #4: under Fuel Type, the chosen purchase's Purchase ID with its purchased, on-lift, reserved, delivered and
+// available liters (each tracked separately). Garage tanks and an empty choice show nothing.
+function syncPurchaseBreakdown(purchase) {
+    const note = purchase.closest('.form-row')?.querySelector('[data-purchase-breakdown]');
+    if (!note) return;
+    const text = purchase.selectedOptions[0]?.dataset?.breakdown || '';
+    note.textContent = text;
+    note.hidden = text === '';
+}
+
 document.querySelectorAll('[data-delivery-type]').forEach(syncDeliveryType);
 document.querySelectorAll('[data-sale-purchase]').forEach(syncStockHint);
+document.querySelectorAll('[data-sale-purchase]').forEach(syncPurchaseBreakdown);
+document.addEventListener('change', (event) => {
+    if (event.target.matches?.('[data-sale-purchase]')) syncPurchaseBreakdown(event.target);
+});
 
 // Part 12: a create modal ([data-reset-on-close]: Schedule Lift, Record Purchase, Record Sales, Add Truck, ...) starts
 // blank every time. A blank copy of its body is kept from page load (typed values, added purchase / delivery rows,
@@ -1184,69 +1198,36 @@ document.querySelectorAll('[data-delivery-update-form]').forEach((form) => {
     sync();
 });
 
-// Part 24 #1: the Delivery Details truck shows its max capacity and what it can still carry; an order larger than
-// that cannot be submitted (the server refuses it too). The order's liters are the form's Qty fields (or, on Assign
-// Source, the order's own liters in data-order-liters).
+// Part 25 #1: a delivery truck shows its maximum capacity only (no loaded / available / remaining figures). An order
+// larger than that capacity cannot be submitted; the server also refuses an order the truck cannot take with what is
+// already on it or assigned to it. The order's liters are the form's Qty fields (or, on Assign Source, the order's own
+// liters in data-order-liters).
 const truckLiters = (value) => Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
-const truckLitersFixed = (value) => Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 function syncTruckCapacity(select) {
     const row = select.closest('.form-row');
-    const summary = row?.querySelector('[data-truck-capacity-summary]');
     const hint = row?.querySelector('[data-truck-capacity-hint]');
     const option = select.selectedOptions[0];
-    if (!summary && !hint) return;
     if (select.disabled || !option?.value || option.dataset.capacity === undefined) {
-        if (summary) {
-            summary.hidden = true;
-            summary.classList.remove('is-error');
-            const err = summary.querySelector('[data-truck-capacity-error]');
-            if (err) {
-                err.hidden = true;
-                err.textContent = '';
-            }
-        }
         if (hint) {
             hint.hidden = true;
+            hint.textContent = '';
             hint.classList.remove('is-error');
         }
         select.setCustomValidity('');
         return;
     }
     const capacity = Number(option.dataset.capacity || 0);
-    const loaded = Number(option.dataset.loaded || 0);
-    const available = Number(option.dataset.available || 0);
     const quantities = select.form ? [...select.form.elements].filter((field) => /\[quantity_liters\]$/.test(field.name || '') && !field.disabled) : [];
     const order = select.dataset.orderLiters !== undefined
         ? Number(select.dataset.orderLiters || 0)
         : quantities.reduce((sum, field) => sum + (Number(field.value) || 0), 0);
-    const remaining = available - order;
-    const over = !select.disabled && order > available + 0.005;
-    if (summary) {
-        const maxEl = summary.querySelector('[data-truck-cap-max]');
-        const loadedEl = summary.querySelector('[data-truck-cap-loaded]');
-        const availEl = summary.querySelector('[data-truck-cap-available]');
-        const remEl = summary.querySelector('[data-truck-cap-remaining]');
-        const errEl = summary.querySelector('[data-truck-capacity-error]');
-        if (maxEl) maxEl.textContent = `${truckLitersFixed(capacity)} L`;
-        if (loadedEl) loadedEl.textContent = `${truckLitersFixed(loaded)} L`;
-        if (availEl) availEl.textContent = `${truckLitersFixed(available)} L`;
-        if (remEl) remEl.textContent = `${truckLitersFixed(remaining)} L`;
-        summary.classList.toggle('is-error', over);
-        summary.hidden = false;
-        if (errEl) {
-            const excess = Math.max(0, order - available);
-            errEl.textContent = over ? `Over capacity by ${truckLitersFixed(excess)} L. Choose another truck or lower the quantity.` : '';
-            errEl.hidden = !over;
-        }
-    }
+    const over = order > capacity + 0.005;
     if (hint) {
-        hint.textContent = `Max capacity ${truckLiters(capacity)} L · Available ${truckLiters(available)} L`
-            + (order > 0 ? ` · This order ${truckLiters(order)} L` : '')
-            + (over ? ' — over capacity, choose another truck or lower the quantity.' : '');
+        hint.textContent = `Maximum capacity: ${truckLiters(capacity)} L` + (over ? ' — this order is larger than the truck can carry.' : '');
         hint.classList.toggle('is-error', over);
         hint.hidden = false;
     }
-    select.setCustomValidity(over ? `This truck has only ${truckLiters(available)} L available for this ${truckLiters(order)} L order.` : '');
+    select.setCustomValidity(over ? `This truck can carry at most ${truckLiters(capacity)} L; this order is ${truckLiters(order)} L.` : '');
 }
 document.querySelectorAll('[data-delivery-truck]').forEach(syncTruckCapacity);
 document.addEventListener('change', (event) => {

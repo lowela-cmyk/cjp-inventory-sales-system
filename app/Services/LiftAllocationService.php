@@ -45,10 +45,18 @@ class LiftAllocationService
      */
     public function directSaleOptions(array $exceptHaulIds = []): Collection
     {
-        return $this->openDirectSales(false, ['depot_to_client', 'standard'], $exceptHaulIds)
-            ->map(function (object $sale): object {
-                $sale->label = ($sale->customer_name ?: $sale->company_name).' · '.($sale->sales_order_number ?: $sale->sale_code);
-                $sale->ordered_label = mb_strtoupper((string) $sale->fuel_name).' - '.number_format($sale->open_liters, 2).' L';
+        $sales = $this->openDirectSales(false, ['depot_to_client', 'standard'], $exceptHaulIds);
+        // Part 25: the depot liters each order holds per purchase (its own fuel and its F1 portion), which a lift carrying
+        // the order may take on top of the purchase's unreserved liters.
+        $reserved = $this->depotLitersByPurchase($sales->pluck('sale_id')->all());
+
+        return $sales
+            ->map(function (object $sale) use ($reserved): object {
+                // Part 25: the Purchase ID the order was sold from, so Fuel Lifting recognises the sale and its purchase.
+                $purchase = $sale->delivery_type === 'standard' ? null : $sale->purchase_code;
+                $sale->label = ($sale->customer_name ?: $sale->company_name).' · '.($sale->sales_order_number ?: $sale->sale_code).($purchase ? ' · '.$purchase : '');
+                $sale->ordered_label = ($purchase ? $purchase.' · ' : '').mb_strtoupper((string) $sale->fuel_name).' - '.number_format($sale->open_liters, 2).' L';
+                $sale->reserved_by_purchase = $reserved[(int) $sale->sale_id] ?? [];
 
                 return $sale;
             })
@@ -291,6 +299,41 @@ class LiftAllocationService
             })
             ->filter()
             ->values();
+    }
+
+    /**
+     * Part 25: undelivered liters each open order takes from the depot, per purchase (its own fuel unless it sells from
+     * a garage lot, and its F1 portion unless that comes from a garage lot), as PurchaseStockService reserves them.
+     *
+     * @param  array<int, int>  $saleIds
+     * @return array<int, array<int, float>> sale_id => [purchase_item_id => liters]
+     */
+    private function depotLitersByPurchase(array $saleIds): array
+    {
+        if ($saleIds === []) {
+            return [];
+        }
+        $released = DB::table('stock_outs')->where('status', 'released')->whereNotNull('sale_item_id')->whereIn('sale_id', $saleIds)
+            ->groupBy('sale_item_id')
+            ->selectRaw("stock_outs.sale_item_id, COALESCE(SUM(CASE WHEN stock_outs.portion = 'f1' THEN stock_outs.quantity_liters ELSE 0 END), 0) as f1, COALESCE(SUM(CASE WHEN stock_outs.portion = 'f1' THEN 0 ELSE stock_outs.quantity_liters END), 0) as main")
+            ->get()->keyBy('sale_item_id');
+        $totals = [];
+        DB::table('sale_items')->whereIn('sale_id', $saleIds)
+            ->get(['id', 'sale_id', 'purchase_item_id', 'f1_purchase_item_id', 'garage_stock_id', 'f1_garage_stock_id', 'main_quantity_liters', 'f1_quantity_liters'])
+            ->each(function (object $item) use ($released, &$totals): void {
+                $done = $released->get($item->id);
+                $portions = [
+                    [$item->garage_stock_id ? null : $item->purchase_item_id, (float) $item->main_quantity_liters - (float) ($done->main ?? 0)],
+                    [$item->f1_garage_stock_id ? null : $item->f1_purchase_item_id, (float) $item->f1_quantity_liters - (float) ($done->f1 ?? 0)],
+                ];
+                foreach ($portions as [$purchaseItemId, $liters]) {
+                    if ($purchaseItemId && $liters > 0) {
+                        $totals[(int) $item->sale_id][(int) $purchaseItemId] = round(($totals[(int) $item->sale_id][(int) $purchaseItemId] ?? 0) + $liters, 2);
+                    }
+                }
+            });
+
+        return $totals;
     }
 
     /**

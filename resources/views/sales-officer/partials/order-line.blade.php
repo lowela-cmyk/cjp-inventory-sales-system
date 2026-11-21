@@ -41,6 +41,11 @@
     $f1GarageTankOptions = $f1GarageTankOptions->filter(fn (object $tank): bool => $tank->available > 0 || $selectedF1 === 'tank:'.$tank->id);
     $garageOptions = $garageOptions->filter(fn (object $lot): bool => $selectedPurchase === 'garage:'.$lot->id);
     $f1GarageOptions = $f1GarageOptions->filter(fn (object $lot): bool => $selectedF1 === 'garage:'.$lot->id);
+    // Part 25 #4: what each purchase's liters are doing, tracked separately (shown under Fuel Type once chosen).
+    $breakdownLiters = fn (mixed $value): string => number_format((float) $value, fmod((float) $value, 1.0) === 0.0 ? 0 : 2).' L';
+    $purchaseBreakdown = fn (object $purchase): string => $purchase->purchase_code.' · Purchased '.$breakdownLiters($purchase->ordered ?? 0)
+        .' · On lifts '.$breakdownLiters($purchase->lifted ?? 0).' · Reserved '.$breakdownLiters($purchase->reserved ?? 0)
+        .' · Delivered '.$breakdownLiters($purchase->released ?? 0).' · Available '.$breakdownLiters($purchase->available ?? 0);
     $showDepot = $lineDeliveryType !== 'garage_to_client';
     $showGarage = in_array($lineDeliveryType, [null, 'garage_to_client'], true);
 @endphp
@@ -51,7 +56,7 @@
             <option value="">{{ ($item['legacy'] ?? false) ? ($item['fuel_name'] ?? 'Fuel').' (no purchase recorded)' : ($purchaseOptions->isEmpty() ? 'No purchases with stock' : 'Select Fuel Type') }}</option>
             @if ($showDepot)
                 @foreach ($purchaseOptions as $purchase)
-                    <option value="{{ $purchase->id }}" data-source="depot" data-fuel-code="{{ $purchase->fuel_code }}" data-fuel-name="{{ $purchase->fuel_name }}" data-available="{{ $purchase->available }}" @selected($selectedPurchase === (string) $purchase->id)>{{ $purchase->option_label }}</option>
+                    <option value="{{ $purchase->id }}" data-source="depot" data-fuel-code="{{ $purchase->fuel_code }}" data-fuel-name="{{ $purchase->fuel_name }}" data-available="{{ $purchase->available }}" data-purchase-code="{{ $purchase->purchase_code }}" data-breakdown="{{ $purchaseBreakdown($purchase) }}" @selected($selectedPurchase === (string) $purchase->id)>{{ $purchase->option_label }}</option>
                 @endforeach
             @endif
             @if ($showGarage)
@@ -67,6 +72,7 @@
         @if ($item['legacy'] ?? false)
             <input {!! $formAttr !!} type="hidden" name="{{ $name('fuel_type_id') }}" value="{{ $item['fuel_type_id'] }}" data-legacy-fuel data-fuel-code="{{ $item['fuel_code'] ?? '' }}" data-fuel-name="{{ $item['fuel_name'] ?? '' }}">
         @endif
+        <p class="form-hint sale-purchase-breakdown" data-purchase-breakdown role="note" hidden></p>
         @if ($err('purchase_item_id') ?? $err('garage_tank_id'))<p class="field-error form-row-message">{{ $err('purchase_item_id') ?? $err('garage_tank_id') }}</p>@endif
     </div>
     <div class="form-row">
@@ -90,10 +96,14 @@
         $recordDeliveryType = $recordDeliveryType ?? 'standard';
         $truckError = $truckError ?? null;
         $selectedTruckId = $selectedTruckId ?? null;
+        // Part 25 #3: Depot to Client has no Truck Selection (its truck comes from the lift); the section is hidden
+        // and disabled so it is never sent. Garage to Client requires a truck.
         $truckDisabled = $recordDeliveryType === 'depot_to_client';
         $truckRequired = $recordDeliveryType === 'garage_to_client';
     @endphp
-    <div class="form-row form-row-full" data-sale-truck-section>
+    {{-- Part 25 #1: each truck shows its maximum capacity only. The server still refuses an order the truck cannot
+         take (fuel already on it and its open deliveries counted). --}}
+    <div class="form-row form-row-full" data-sale-truck-section @if ($truckDisabled) hidden @endif>
         <label for="{{ $idPrefix }}_delivery_truck_id">Truck Selection</label>
         <select {!! $formAttr !!} id="{{ $idPrefix }}_delivery_truck_id" name="delivery_truck_id"
             data-delivery-truck aria-describedby="{{ $idPrefix }}_delivery_truck_capacity"
@@ -103,29 +113,16 @@
             @foreach (($deliveryTrucks ?? collect()) as $truck)
                 @php
                     $capacity = (float) ($truck->capacity_liters ?? 0);
-                    $loaded = (float) ($truck->loaded_liters ?? 0);
-                    $available = (float) ($truck->available_liters ?? $capacity);
                     $plate = trim((string) ($truck->plate_number ?? ''));
                     $label = \App\Support\TruckLabel::make($truck->name, $truck->truck_code);
                 @endphp
                 <option value="{{ $truck->id }}"
                     @selected((string) $selectedTruckId === (string) $truck->id)
                     data-capacity="{{ $capacity }}"
-                    data-loaded="{{ $loaded }}"
-                    data-available="{{ $available }}"
-                    data-plate="{{ $plate }}">{{ $label }}{{ $plate !== '' ? ' ('.$plate.')' : '' }} – Max {{ $truckLiters($capacity) }} L · Loaded {{ $truckLiters($loaded) }} L · Available {{ $truckLiters($available) }} L</option>
+                    data-plate="{{ $plate }}">{{ $label }}{{ $plate !== '' ? ' ('.$plate.')' : '' }} – Max {{ $truckLiters($capacity) }} L</option>
             @endforeach
         </select>
-        <p class="form-hint" data-depot-truck-note @if (! $truckDisabled) hidden @endif>Truck is assigned during Fuel Lifting for Depot to Client orders.</p>
-        <div class="truck-capacity-summary" id="{{ $idPrefix }}_delivery_truck_capacity" data-truck-capacity-summary hidden role="status" aria-live="polite">
-            <div class="truck-capacity-grid">
-                <div class="f1-breakdown-cell"><span>Maximum Capacity (L)</span><output data-truck-cap-max>0.00 L</output></div>
-                <div class="f1-breakdown-cell"><span>Currently Loaded / Reserved (L)</span><output data-truck-cap-loaded>0.00 L</output></div>
-                <div class="f1-breakdown-cell"><span>Available Capacity (L)</span><output data-truck-cap-available>0.00 L</output></div>
-                <div class="f1-breakdown-cell"><span>Remaining Capacity After Order (L)</span><output data-truck-cap-remaining>0.00 L</output></div>
-            </div>
-            <p class="truck-capacity-error" data-truck-capacity-error hidden></p>
-        </div>
+        <p class="form-hint truck-capacity-hint" id="{{ $idPrefix }}_delivery_truck_capacity" data-truck-capacity-hint role="status" aria-live="polite" hidden></p>
         @if ($truckError)<p class="field-error form-row-message">{{ $truckError }}</p>@endif
     </div>
 @endif

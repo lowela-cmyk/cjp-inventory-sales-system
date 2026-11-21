@@ -445,12 +445,22 @@ class DispatchDeliveryController extends Controller
             throw new \RuntimeException('The combined lift quantity cannot exceed the selected truck capacity.');
         }
 
-        // Part 2 revisions: a lift takes at most the purchase's fuel still in the depot.
-        $stock = $this->purchaseStock->lines($purchaseItems->pluck('id')->map(fn (mixed $id): int => (int) $id)->all(), true);
+        // Part 2 revisions: a lift takes at most the purchase's fuel still in the depot. Part 25: less what open sales
+        // not carried by this lift have reserved from it (a sale reserves its purchase before any lift), so the same
+        // liters are never both sold and lifted to the garage or another truck.
+        $carriedSaleIds = collect($allocations)->flatten(1)->pluck('sale_id')->map(fn (mixed $id): int => (int) $id)->unique()->values()->all();
+        $exceptHaulIds = $scheduleId ? DB::table('hauls')->where('lifting_schedule_id', $scheduleId)->whereNull('deleted_at')->pluck('id')->map(fn (mixed $id): int => (int) $id)->all() : [];
+        $stock = $this->purchaseStock->liftableLiters($purchaseItems->pluck('id')->map(fn (mixed $id): int => (int) $id)->all(), $carriedSaleIds, $exceptHaulIds, true);
         foreach ($purchaseItems as $purchaseItem) {
-            $remaining = round((float) ($stock->get((int) $purchaseItem->id)->remaining_in_depot ?? 0) + (float) ($ownLiters[(int) $purchaseItem->id] ?? 0), 2);
+            $figures = $stock[(int) $purchaseItem->id] ?? ['remaining_in_depot' => 0.0, 'reserved_for_sales' => 0.0];
+            $remaining = round($figures['remaining_in_depot'] + (float) ($ownLiters[(int) $purchaseItem->id] ?? 0), 2);
             if ((float) $purchaseItem->scheduled_quantity_liters > $remaining) {
                 throw new \RuntimeException('Lift quantity cannot exceed the '.number_format($remaining, 2).' L of '.$purchaseItem->purchase_code.' remaining in the depot.');
+            }
+            $free = round(max(0, $remaining - $figures['reserved_for_sales']), 2);
+            if ((float) $purchaseItem->scheduled_quantity_liters > $free) {
+                throw new \RuntimeException('Lift quantity cannot exceed the '.number_format($free, 2).' L of '.$purchaseItem->purchase_code.' not reserved for sales: '
+                    .number_format($figures['reserved_for_sales'], 2).' L of its '.number_format($remaining, 2).' L in the depot are reserved for open sales this lift does not carry. Add those orders to this lift, or lift less.');
             }
         }
 
@@ -785,7 +795,7 @@ class DispatchDeliveryController extends Controller
                 'lines' => $hauls->map(fn (array $haul): array => ['purchase_item_id' => $haul['purchase_item_id'], 'quantity_liters' => $haul['quantity_liters'], 'atl_number' => $haul['atl_raw']])->all(),
                 'deliveries' => DB::table('haul_allocations')->whereIn('haul_id', $haulIds)->where('destination_type', 'customer')->where('status', 'planned')->whereNotNull('sale_id')
                     ->orderBy('id')->pluck('sale_id')->map(fn (mixed $id): array => ['sale_id' => (int) $id])->all(),
-                'purchaseItems' => $this->availablePurchaseItemOptions($hauls->groupBy('purchase_item_id')->map(fn ($lines): float => (float) $lines->sum('quantity_liters'))->all()),
+                'purchaseItems' => $this->availablePurchaseItemOptions($hauls->groupBy('purchase_item_id')->map(fn ($lines): float => (float) $lines->sum('quantity_liters'))->all(), array_map('intval', $haulIds)),
                 'trucks' => $ownTruck
                     ? collect([tap($ownTruck, fn (object $truck) => $truck->is_current = true)])->merge($trucks->where('id', '!=', $ownTruck->id))->values()
                     : $trucks,
@@ -799,17 +809,30 @@ class DispatchDeliveryController extends Controller
     /**
      * @param  array<int, float>  $giveBack  purchase_item_id => liters a lift being edited already holds (Part 16 #4)
      */
-    private function availablePurchaseItemOptions(array $giveBack = [])
+    private function availablePurchaseItemOptions(array $giveBack = [], array $exceptHaulIds = [])
     {
-        return $this->purchaseStock->lines()
-            ->each(fn (object $line) => $line->remaining_liters = round($line->remaining_in_depot + (float) ($giveBack[(int) $line->id] ?? 0), 2))
+        $lines = $this->purchaseStock->lines();
+        // Part 25: liters of each purchase that open sales not on a lift (or on the lift being edited) have reserved.
+        $reserved = $exceptHaulIds === []
+            ? $lines->map(fn (object $line): float => (float) $line->reserved_depot)->all()
+            : collect($this->purchaseStock->liftableLiters($lines->keys()->map(fn (mixed $id): int => (int) $id)->all(), [], $exceptHaulIds))->map(fn (array $figures): float => $figures['reserved_for_sales'])->all();
+
+        return $lines
+            ->each(function (object $line) use ($giveBack, $reserved): void {
+                $line->remaining_liters = round($line->remaining_in_depot + (float) ($giveBack[(int) $line->id] ?? 0), 2);
+                $line->reserved_for_sales = round((float) ($reserved[(int) $line->id] ?? 0), 2);
+                // What a lift may take without the orders it carries; app (lift-schedule.js) adds the liters of the
+                // orders chosen in Delivery Details from this purchase, as the server does.
+                $line->free_liters = round(max(0, $line->remaining_liters - $line->reserved_for_sales), 2);
+            })
             ->filter(fn (object $line): bool => $line->remaining_liters > 0)
             ->filter(fn (object $line): bool => DB::table('depots')->where('id', $line->depot_id)->where('status', 'active')->exists())
             ->sortBy('purchase_code')
             ->values()
             ->map(function (object $line): object {
                 $line->label = $line->purchase_code.' | '.$line->fuel_name.' | '.$line->depot_name;
-                $line->remaining_label = mb_strtoupper((string) $line->fuel_name).' - '.$this->formatLiters($line->remaining_liters);
+                $line->remaining_label = mb_strtoupper((string) $line->fuel_name).' - '.$this->formatLiters($line->remaining_liters)
+                    .($line->reserved_for_sales > 0 ? ' · '.$this->formatLiters($line->reserved_for_sales).' reserved for sales · '.$this->formatLiters($line->free_liters).' free to lift' : '');
                 $line->pickup_label = DepotLabel::make($line->depot_name, $line->depot_address);
 
                 return $line;

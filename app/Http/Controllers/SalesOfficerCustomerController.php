@@ -1387,7 +1387,7 @@ class SalesOfficerCustomerController extends Controller
                         $this->formatDate($row->sale_date),
                         $row->customer_name,
                         $row->company_name,
-                        $this->fuelSummary((string) $row->first_fuel_name, (int) $row->item_count),
+                        $this->fuelSummary((string) $row->first_fuel_name, (int) $row->item_count, $saleItems),
                         $this->formatNumber($row->total_quantity_liters),
                         $this->itemPriceSummary($saleItems),
                         $this->formatNumber($saleTotal),
@@ -1408,7 +1408,7 @@ class SalesOfficerCustomerController extends Controller
                             'Transaction Date' => $this->formatDate($row->sale_date),
                             'Customer Name' => $row->customer_name,
                             'Company Name' => $row->company_name,
-                            'Fuel Type' => $this->fuelSummary((string) $row->first_fuel_name, (int) $row->item_count),
+                            'Fuel Type' => $this->fuelSummary((string) $row->first_fuel_name, (int) $row->item_count, $saleItems),
                             'Quantity Ordered' => $this->formatLiters($row->total_quantity_liters),
                             'Purchase ID' => collect($saleItems)->pluck('source')->implode('; ') ?: 'N/A',
                         ] + ($f1Summary !== '' ? ['F1 Split' => $f1Summary] : []) + [
@@ -2972,8 +2972,23 @@ class SalesOfficerCustomerController extends Controller
         };
     }
 
-    private function fuelSummary(string $firstFuel, int $itemCount): string
+    /**
+     * Part 25 #2: the fuel with the Purchase ID(s) its liters come from, e.g. "Diesel · PUR-DSL-002" or, for a Depot
+     * to Client order taking fuel from two purchases, "Diesel · PUR-DSL-002 + PUR-DSL-003". Garage tank lines and lines
+     * recorded before purchases were chosen show the fuel alone.
+     *
+     * @param  array<int, array<string, mixed>>  $items
+     */
+    private function fuelSummary(string $firstFuel, int $itemCount, array $items = []): string
     {
+        $fuels = collect($items)->groupBy('fuel_name');
+        if ($fuels->isNotEmpty()) {
+            return $fuels->map(function ($lines, string $fuel): string {
+                $codes = collect($lines)->pluck('purchase_code')->filter()->unique()->values();
+
+                return trim($fuel).($codes->isNotEmpty() ? ' · '.$codes->implode(' + ') : '');
+            })->implode('; ');
+        }
         if ($itemCount <= 1) {
             return $firstFuel;
         }

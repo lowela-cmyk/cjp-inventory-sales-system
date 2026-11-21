@@ -49,33 +49,27 @@ try {
     const modal = page.locator('#so-sales-add');
     await modal.waitFor({ state: 'visible' });
 
-    await check('#1 truck capacity hint and overload block (Garage to Client)', async () => {
+    // Part 25 #1 superseded the Part 24 capacity figures: the truck shows its maximum capacity only. The browser blocks
+    // an order above that capacity; the server still checks what is on the truck (Part25SalesModuleTest).
+    await check('#1 truck shows max capacity only and blocks an order above it (Garage to Client)', async () => {
         await modal.locator('#sale_delivery_type').selectOption('garage_to_client');
         const truck = modal.locator('#sale_delivery_truck_id');
         const hint = modal.locator('#sale_delivery_truck_capacity');
-        const smallOption = truck.locator(`option[value="${ids.smallTruck}"]`);
-        const smallAvailable = Number(await smallOption.getAttribute('data-available'));
-        const smallLabel = (await smallOption.textContent()).trim();
-        // 500 L more than the small (1,000 L) truck can still take: blocked with the reason.
-        await modal.locator('#sale_quantity_liters_0').fill(String(smallAvailable + 500));
+        const smallLabel = (await truck.locator(`option[value="${ids.smallTruck}"]`).textContent()).trim();
+        await modal.locator('#sale_quantity_liters_0').fill('1500');
         await truck.selectOption(String(ids.smallTruck));
         const overText = await hint.textContent();
         const overInvalid = await truck.evaluate((el) => !el.checkValidity());
         const overMessage = await truck.evaluate((el) => el.validationMessage);
-        // Lowering the quantity to what is available clears it (the hint follows the Qty field).
-        await modal.locator('#sale_quantity_liters_0').fill(String(smallAvailable));
+        await modal.locator('#sale_quantity_liters_0').fill('1000');
         const fitsValid = await truck.evaluate((el) => el.checkValidity());
         await modal.locator('#sale_quantity_liters_0').fill('500');
         await truck.selectOption(String(ids.bigTruck));
         const bigText = await hint.textContent();
-        const bigValid = await truck.evaluate((el) => el.checkValidity());
-        const money = (n) => n.toLocaleString('en-US');
+        const noFigures = (await modal.locator('[data-truck-capacity-summary], [data-truck-cap-loaded], [data-truck-cap-available], [data-truck-cap-remaining]').count()) === 0;
         return {
-            pass: overInvalid && overText.includes('Max capacity 1,000 L') && overText.includes(`Available ${money(smallAvailable)} L`) && overText.includes('over capacity')
-                && overMessage.includes('only') && (smallAvailable === 0 || fitsValid) && bigValid
-                // The 30,000 L truck still carries 2,000 L from its seeded lift.
-                && bigText.includes('Max capacity 30,000 L · Available 28,000 L · This order 500 L')
-                && smallLabel.includes(`Max 1,000 L – ${money(smallAvailable)} L available`),
+            pass: overInvalid && overText.includes('Maximum capacity: 1,000 L') && overMessage.includes('at most 1,000 L') && fitsValid
+                && bigText.trim() === 'Maximum capacity: 30,000 L' && /– Max 1,000 L$/.test(smallLabel) && !/Loaded|available/i.test(smallLabel) && noFigures,
             smallLabel, overText, overMessage, bigText,
         };
     });

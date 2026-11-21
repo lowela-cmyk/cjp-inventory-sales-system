@@ -117,6 +117,30 @@ class PurchaseStockService
         ];
     }
 
+    /**
+     * Part 25: liters a lift may take from each purchase = remaining in the depot - what open orders will still take
+     * from the depot once the lift is saved. A sale reserves its purchase's liters the moment it is recorded (lifted or
+     * not), so a lift to the garage or a truck cannot take them; the orders the lift itself carries ($carriedSaleIds) move
+     * their liters onto the lift and are left out. Editing a lift ($exceptHaulIds), its current orders count as off it
+     * (an order removed from it goes back to the depot reservations) and its own liters are given back by the caller.
+     *
+     * @param  array<int, int>  $purchaseItemIds
+     * @param  array<int, int>  $carriedSaleIds
+     * @param  array<int, int>  $exceptHaulIds
+     * @return array<int, array{remaining_in_depot: float, reserved_for_sales: float}> keyed by purchase_item_id
+     */
+    public function liftableLiters(array $purchaseItemIds, array $carriedSaleIds = [], array $exceptHaulIds = [], bool $lock = false): array
+    {
+        $lines = $this->lines($purchaseItemIds, $lock);
+        $ids = $lines->keys()->map(fn (mixed $id): int => (int) $id)->all();
+        $reserved = $ids === [] ? [] : $this->reservedByPurchase($ids, array_values(array_unique(array_map('intval', $carriedSaleIds))), array_values(array_unique(array_map('intval', $exceptHaulIds))))[1];
+
+        return $lines->mapWithKeys(fn (object $line, int $id): array => [$id => [
+            'remaining_in_depot' => (float) $line->remaining_in_depot,
+            'reserved_for_sales' => round((float) ($reserved[$id] ?? 0), 2),
+        ]])->all();
+    }
+
     public function line(int $purchaseItemId, bool $lock = false): ?\stdClass
     {
         return $this->lines([$purchaseItemId], $lock, true)->get($purchaseItemId);
@@ -232,7 +256,7 @@ class PurchaseStockService
      * @param  array<int, int>  $ids
      * @return array{0: array<int, float>, 1: array<int, float>}
      */
-    private function reservedByPurchase(array $ids): array
+    private function reservedByPurchase(array $ids, array $exceptSaleIds = [], array $exceptHaulIds = []): array
     {
         $releasedByLine = DB::table('stock_outs')
             ->where('status', 'released')
@@ -247,6 +271,7 @@ class PurchaseStockService
             ->whereIn('sales.status', self::OPEN_SALE_STATUSES)
             ->whereNotIn('sales.delivery_status', ['delivered', 'cancelled'])
             ->whereIn("sale_items.$column", $ids ?: [0])
+            ->when($exceptSaleIds !== [], fn (Builder $query): Builder => $query->whereNotIn('sales.id', $exceptSaleIds))
             ->groupBy("sale_items.$column");
 
         // Depot promises leave out what is not taken from the depot: garage lots (Garage to Client) and the own fuel of
@@ -257,6 +282,7 @@ class PurchaseStockService
             ->where('haul_allocations.destination_type', 'customer')
             ->where('haul_allocations.status', '!=', 'cancelled')
             ->whereNotNull('haul_allocations.sale_id')
+            ->when($exceptHaulIds !== [], fn (Builder $query): Builder => $query->whereNotIn('haul_allocations.haul_id', $exceptHaulIds))
             ->select('haul_allocations.sale_id');
         $mainLiters = 'COALESCE(SUM(CASE WHEN sale_items.main_quantity_liters - COALESCE(released.main_released, 0) > 0 THEN sale_items.main_quantity_liters - COALESCE(released.main_released, 0) ELSE 0 END), 0)';
         $f1Liters = 'COALESCE(SUM(CASE WHEN sale_items.f1_quantity_liters - COALESCE(released.f1_released, 0) > 0 THEN sale_items.f1_quantity_liters - COALESCE(released.f1_released, 0) ELSE 0 END), 0)';

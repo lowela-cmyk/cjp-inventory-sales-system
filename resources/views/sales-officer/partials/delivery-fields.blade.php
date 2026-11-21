@@ -12,9 +12,6 @@
     $includeTruck = $includeTruck ?? true;
     $showErrors = $showErrors ?? false;
     $error = fn (string $field): ?string => $showErrors && $errors->has($field) ? $errors->first($field) : null;
-    // Part 24 #1: an order being edited does not count against its own truck ($ownTruckId carries $ownLiters already).
-    $ownTruckId = $ownTruckId ?? null;
-    $ownLiters = (float) ($ownLiters ?? 0);
     $orderLiters = $orderLiters ?? null;
     $liters = fn (float $value): string => number_format($value, fmod($value, 1.0) === 0.0 ? 0 : 2);
 @endphp
@@ -27,17 +24,13 @@
         @foreach ($deliveryTrucks as $truck)
             @php
                 $capacity = (float) ($truck->capacity_liters ?? 0);
-                $loaded = max(0, (float) ($truck->loaded_liters ?? 0) - ((string) $ownTruckId === (string) $truck->id ? $ownLiters : 0));
-                $available = (float) ($truck->available_liters ?? $capacity) + ((string) $ownTruckId === (string) $truck->id ? $ownLiters : 0);
-                $available = min($capacity, $available);
                 $plate = trim((string) ($truck->plate_number ?? ''));
                 $label = \App\Support\TruckLabel::make($truck->name, $truck->truck_code);
             @endphp
-            <option value="{{ $truck->id }}" @selected((string) $value('delivery_truck_id') === (string) $truck->id) data-capacity="{{ $capacity }}" data-loaded="{{ $loaded }}" data-available="{{ $available }}" data-plate="{{ $plate }}">{{ $label }}{{ $plate !== '' ? ' ('.$plate.')' : '' }} – Max {{ $liters($capacity) }} L – {{ $liters($available) }} L available</option>
+            {{-- Part 25 #1: the maximum capacity only; the server still checks what the truck can take. --}}
+            <option value="{{ $truck->id }}" @selected((string) $value('delivery_truck_id') === (string) $truck->id) data-capacity="{{ $capacity }}" data-plate="{{ $plate }}">{{ $label }}{{ $plate !== '' ? ' ('.$plate.')' : '' }} – Max {{ $liters($capacity) }} L</option>
         @endforeach
     </select>
-    {{-- Part 24 #1: the chosen truck's max capacity and what it can still carry; app.js adds this order's liters and
-         blocks an order larger than what is available (the server refuses it too). --}}
     <p class="form-hint truck-capacity-hint" id="{{ $idPrefix }}_delivery_truck_capacity" data-truck-capacity-hint role="status" aria-live="polite" hidden></p>
     @if ($error('delivery_truck_id'))<p class="field-error form-row-message">{{ $error('delivery_truck_id') }}</p>@endif
 </div>

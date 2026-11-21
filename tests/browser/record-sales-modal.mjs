@@ -56,7 +56,7 @@ for (const [role, prefix] of [['sales-officer', 'sales-officer'], ['admin', 'adm
             const modal = await openModal(page, prefix);
             const labels = (await modal.locator('label, .f1-breakdown-cell > span, .sale-line-total-row > span').evaluateAll((els) => els
                 .filter((el) => el.offsetParent !== null).map((el) => el.textContent.trim()))).filter(Boolean);
-            const expected = ['Delivery Type', 'Customer', 'Sales Order', 'Order Date', 'Qty Ordered', 'Fuel Type', 'Fuel Price', 'Ordered Amount', 'Fuel Amount', 'Total Amount', 'Fuel Total', 'Line Total', 'Amount Payment', 'Reference Number', 'Date of Payment', 'Payment Terms', 'Payment Method', 'Due Date', 'Payment Status'];
+            const expected = ['Delivery Type', 'Customer', 'Sales Order', 'Order Date', 'Qty Ordered', 'Fuel Type', 'Fuel Price', 'Truck Selection', 'Ordered Amount', 'Fuel Amount', 'Total Amount', 'Fuel Total', 'Line Total', 'Amount Payment', 'Reference Number', 'Date of Payment', 'Payment Terms', 'Payment Method', 'Due Date', 'Payment Status'];
             const body = modal.locator('.modal-body');
             const scroll = await body.evaluate((el) => ({ scrollable: el.scrollHeight > el.clientHeight, overflowY: getComputedStyle(el).overflowY }));
             await modal.locator('#sale_delivery_type').selectOption('garage_to_client');
@@ -68,7 +68,7 @@ for (const [role, prefix] of [['sales-officer', 'sales-officer'], ['admin', 'adm
             const noSideScroll = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
             return {
                 pass: JSON.stringify(labels) === JSON.stringify(expected) && scroll.scrollable && ['auto', 'scroll'].includes(scroll.overflowY)
-                    && deliveryLabels.map((l) => l.trim()).join('|') === 'Truck ID|Driver Name|Delivery Date' && lastFieldVisible
+                    && deliveryLabels.map((l) => l.trim()).join('|') === 'Driver Name|Delivery Date' && lastFieldVisible
                     && buttons && buttons.y + buttons.height <= viewport.height && cancel && cancel.y + cancel.height <= viewport.height && noSideScroll,
                 labels, scroll, deliveryLabels,
             };
